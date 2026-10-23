@@ -192,12 +192,43 @@ class FailureSummaryTests(unittest.TestCase):
 
     def test_redirect_does_not_forward_api_token_to_external_log_host(self):
         opener = Opener([Response(status=302, headers={"Location": "https://logs.example/log?sig=private"}),
-                         Response(b"error: actual failure", status=206)])
+                         Response(b"error: actual failure", status=206,
+                                  headers={"Content-Range": "bytes 0-20/21"})])
         api = summary.GitHubAPI("https://api.github.com", "super-sensitive", opener)
         self.assertEqual(api.get("/repos/o/r/actions/jobs/1/logs", logs=True)[0], b"error: actual failure")
         self.assertEqual(opener.requests[0].get_header("Authorization"), "Bearer super-sensitive")
         self.assertIsNone(opener.requests[1].get_header("Authorization"))
         self.assertEqual(opener.requests[1].get_header("Range"), f"bytes=-{summary.LOG_LIMIT}")
+
+    def test_suffix_range_drops_partial_credential_line_and_reports_missing_prefix(self):
+        body = b"private-value error: credential tail\nerror: actual failure\n"
+        opener = Opener([Response(body, status=206, headers={
+            "Content-Range": f"bytes 50-{49 + len(body)}/{50 + len(body)}",
+        })])
+        api = summary.GitHubAPI("https://api.github.com", "", opener)
+        result, truncated = api.get("/logs", logs=True)
+        self.assertTrue(truncated)
+        self.assertEqual(result, b"error: actual failure\n")
+        self.assertNotIn("private-value", "\n".join(summary.error_excerpt(result.decode())))
+
+    def test_partial_log_ranges_require_consistent_metadata(self):
+        for content_range in (None, "bytes 9-1/10", "bytes 0-10/10", "bytes 0-5/20"):
+            with self.subTest(content_range=content_range):
+                headers = {} if content_range is None else {"Content-Range": content_range}
+                api = summary.GitHubAPI("https://api.github.com", "", Opener([
+                    Response(b"error: private-value", status=206, headers=headers),
+                ]))
+                with self.assertRaisesRegex(RuntimeError, "byte range"):
+                    api.get("/logs", logs=True)
+
+    def test_suffix_range_without_complete_lines_does_not_expose_a_credential_tail(self):
+        body = b"private-value error: credential tail"
+        api = summary.GitHubAPI("https://api.github.com", "", Opener([
+            Response(body, status=206, headers={
+                "Content-Range": f"bytes 50-{49 + len(body)}/{50 + len(body)}",
+            }),
+        ]))
+        self.assertEqual(api.get("/logs", logs=True), (b"", True))
 
     def test_redirect_errors_hide_signed_destination_and_reject_http(self):
         for destination in ["https://logs.example/log?sig=private", "http://logs.example/log"]:
@@ -277,17 +308,19 @@ class FailureSummaryTests(unittest.TestCase):
         self.assertEqual(summary.error_excerpt(body.decode()), [assertion.decode()])
         self.assertEqual(opener.requests[0].get_header("Range"), f"bytes=-{summary.LOG_LIMIT}")
 
-    def test_partial_content_retains_late_assertion_and_bounds_oversized_response(self):
+    def test_partial_content_retains_late_assertion_and_rejects_oversized_response(self):
         assertion = b"/project/Tests.swift:118: error: XCTAssertTrue failed - late failure\n"
         suffix = b"setup\n" * 100 + assertion
-        api = summary.GitHubAPI("https://api.github.com", "", Opener([Response(suffix, status=206),
-            Response(b"x" * (summary.LOG_LIMIT + 20), status=206)]))
-        body, truncated = api.get("/logs", logs=True)
-        self.assertFalse(truncated)
-        self.assertEqual(summary.error_excerpt(body.decode()), [assertion.decode().strip()])
+        api = summary.GitHubAPI("https://api.github.com", "", Opener([
+            Response(suffix, status=206, headers={"Content-Range": f"bytes 50-{49 + len(suffix)}/{50 + len(suffix)}"}),
+            Response(b"x" * (summary.LOG_LIMIT + 20), status=206,
+                     headers={"Content-Range": f"bytes 0-{summary.LOG_LIMIT + 19}/{summary.LOG_LIMIT + 20}"}),
+        ]))
         body, truncated = api.get("/logs", logs=True)
         self.assertTrue(truncated)
-        self.assertEqual(len(body), summary.LOG_LIMIT)
+        self.assertEqual(summary.error_excerpt(body.decode()), [assertion.decode().strip()])
+        with self.assertRaisesRegex(RuntimeError, "inconsistent byte range"):
+            api.get("/logs", logs=True)
 
     def test_ignored_range_stream_has_a_read_deadline(self):
         class EndlessResponse(Response):

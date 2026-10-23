@@ -3,6 +3,26 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationDevelopmentWorkflowTests {
+    @Test(arguments: [(Int.max, 2), (2, Int.max), (101, 1), (0, 1), (1, 0), (-1, 1)])
+    func experimentOrderRejectsInvalidOrOversizedPlans(caseCount: Int, repetitions: Int) {
+        #expect(EvaluationExperimentAnalyzer.balancedOrder(
+            currentID: UUID(), candidateID: UUID(), caseCount: caseCount, repetitions: repetitions
+        ).isEmpty)
+    }
+
+    @Test func experimentOrderSupportsMaximumPlanAndRequiresDistinctVariants() {
+        let current = UUID(), candidate = UUID()
+        let order = EvaluationExperimentAnalyzer.balancedOrder(
+            currentID: current, candidateID: candidate, caseCount: 20, repetitions: 5
+        )
+        #expect(order.count == 200)
+        #expect(order.count(where: { $0 == current }) == 100)
+        #expect(order.count(where: { $0 == candidate }) == 100)
+        #expect(EvaluationExperimentAnalyzer.balancedOrder(
+            currentID: current, candidateID: current, caseCount: 1, repetitions: 1
+        ).isEmpty)
+    }
+
     @Test func legacyBootstrapCopiesWithoutRemovingOriginals() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -679,10 +699,10 @@ struct EvaluationDevelopmentWorkflowTests {
         let originalInstructions = store.suite.instructions
         let experimentID = try store.createInstructionExperiment(
             name: "Candidate",
-            candidateInstructions: String(
-                repeating: "x",
-                count: EvaluationStore.maximumFieldCharacters + 1
-            )
+            candidateInstructions: "A valid frozen candidate"
+        )
+        store.draftSuite.cases[0].prompt = String(
+            repeating: "x", count: EvaluationStore.maximumFieldCharacters + 1
         )
         let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(
             supportDirectory: directory,
@@ -836,6 +856,118 @@ struct EvaluationDevelopmentWorkflowTests {
         #expect(unscoredSummary.suggestedDecision == .collectMoreEvidence)
     }
 
+    @Test(arguments: [false, true], ["current", "candidate"])
+    func experimentAnalysisNeverChoosesAWinnerFromCancelledRuns(candidateWins: Bool, cancelledVariant: String) {
+        let cases = (0..<4).map { EvaluationCase(name: "Case \($0)", prompt: "P", expected: "E") }
+        var current = makeRun(cases: cases, statuses: Array(repeating: [candidateWins ? .failed : .passed], count: 4))
+        var candidate = makeRun(cases: cases, statuses: Array(repeating: [candidateWins ? .passed : .failed], count: 4))
+        candidate.suiteID = current.suiteID
+        let healthy = EvaluationExperimentAnalyzer.summarize(current: current, candidate: candidate)
+        #expect(healthy.suggestedDecision == (candidateWins ? .adoptCandidate : .keepCurrent))
+
+        if cancelledVariant == "current" { current.cancelled = true }
+        else { candidate.cancelled = true }
+        let cancelled = EvaluationExperimentAnalyzer.summarize(current: current, candidate: candidate)
+        #expect(cancelled.suggestedDecision == .collectMoreEvidence)
+        #expect(cancelled.distinctCaseCoverage == 4)
+        #expect(cancelled.improvedCaseIDs == healthy.improvedCaseIDs)
+        #expect(cancelled.regressedCaseIDs == healthy.regressedCaseIDs)
+        #expect(cancelled.explanation.contains("Cancelled runs"))
+    }
+
+    @MainActor
+    @Test(arguments: ["candidateTooLong", "emptyPrompt", "duplicateCases"])
+    func experimentCreationRejectsInvalidDefinitionsWithoutSaving(mutation: String) throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = EvaluationStore(supportDirectory: directory)
+        let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: original.selectedProjectID, suiteID: original.selectedSuiteID
+        )
+        var suite = original.suite
+        if mutation == "emptyPrompt" { suite.cases[0].prompt = "" }
+        if mutation == "duplicateCases" { suite.cases.append(suite.cases[0]) }
+        try CanonicalJSON.data(for: suite).write(to: suiteDirectory.appending(path: "suite.json"), options: .atomic)
+        let store = EvaluationStore(supportDirectory: directory)
+        let stateURL = suiteDirectory.appending(path: "state.json")
+        let previousState = try? Data(contentsOf: stateURL)
+        let candidate = mutation == "candidateTooLong"
+            ? String(repeating: "x", count: EvaluationStore.maximumFieldCharacters + 1)
+            : "A valid candidate"
+
+        #expect(throws: EvaluationStoreError.self) {
+            try store.createInstructionExperiment(name: "Invalid", candidateInstructions: candidate)
+        }
+        #expect(store.suiteLocalState.experiments.isEmpty)
+        #expect((try? Data(contentsOf: stateURL)) == previousState)
+    }
+
+    @MainActor
+    @Test(arguments: [
+        "casesDigest", "scoringDigest", "judgeDigest", "currentInstructions", "candidateInstructions",
+        "currentRevision", "candidateRevision", "missingCurrentRevision", "missingCandidateRevision",
+        "blankCandidate", "untrimmedCandidate", "unchangedCandidate", "oversizedCandidate",
+        "duplicateVariantIDs", "executionOrder", "staleSuiteRevision",
+    ])
+    func persistedExperimentRejectsMutatedProvenanceBeforeRunOrAdoption(mutation: String) async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = EvaluationStore(supportDirectory: directory)
+        original.draftSuite.scoringMode = .exactMatch
+        original.draftSuite.cases = [EvaluationCase(name: "Sample", prompt: "ready", expected: "READY")]
+        #expect(original.saveSuite())
+        let id = try original.createInstructionExperiment(name: "Frozen", candidateInstructions: "Return READY")
+        var state = original.suiteLocalState
+        switch mutation {
+        case "casesDigest": state.experiments[0].casesDigest = "changed"
+        case "scoringDigest": state.experiments[0].scoringDigest = "changed"
+        case "judgeDigest": state.experiments[0].judgeDigest = "changed"
+        case "currentInstructions": state.experiments[0].current.instructions = "Different current"
+        case "candidateInstructions": state.experiments[0].candidate.instructions = "Different candidate"
+        case "currentRevision": state.experiments[0].current.suiteRevision = "changed"
+        case "candidateRevision": state.experiments[0].candidate.suiteRevision = "changed"
+        case "missingCurrentRevision": state.experiments[0].current.suiteRevision = nil
+        case "missingCandidateRevision": state.experiments[0].candidate.suiteRevision = nil
+        case "blankCandidate": state.experiments[0].candidate.instructions = ""
+        case "untrimmedCandidate": state.experiments[0].candidate.instructions = " Return READY "
+        case "unchangedCandidate": state.experiments[0].candidate.instructions = original.suite.instructions
+        case "oversizedCandidate":
+            state.experiments[0].candidate.instructions = String(
+                repeating: "x", count: EvaluationStore.maximumFieldCharacters + 1
+            )
+            var candidate = original.suite
+            candidate.instructions = state.experiments[0].candidate.instructions
+            state.experiments[0].candidate.suiteRevision = try EvaluationStore.revision(for: candidate)
+        case "duplicateVariantIDs": state.experiments[0].candidate.id = state.experiments[0].current.id
+        case "executionOrder": state.experiments[0].executionOrder.reverse()
+        case "staleSuiteRevision": state.experiments[0].suiteRevision = "stale"
+        default: Issue.record("Unexpected fixture")
+        }
+        let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: original.selectedProjectID, suiteID: original.selectedSuiteID
+        )
+        let stateURL = suiteDirectory.appending(path: "state.json")
+        let persistedState = try CanonicalJSON.data(for: state)
+        try persistedState.write(to: stateURL, options: .atomic)
+        let store = EvaluationStore(supportDirectory: directory)
+        let savedSuite = store.suite
+        let savedDraft = store.draftSuite
+
+        store.runExperiment(id: id)
+        #expect(!store.isRunning)
+        #expect(store.notice != nil)
+        #expect(store.runs.isEmpty)
+        #expect(throws: EvaluationStoreError.self) {
+            try store.decideExperiment(id: id, decision: .adoptCandidate)
+        }
+        #expect(store.suite == savedSuite)
+        #expect(store.draftSuite == savedDraft)
+        #expect(store.suiteLocalState.experiments[0].decision == nil)
+        #expect(try Data(contentsOf: stateURL) == persistedState)
+        // Drain an accidentally admitted task before removing its workspace if this test regresses.
+        await store.closeAndWait()
+    }
+
     @MainActor
     @Test func experimentVariantsCarryActualRevisionsBeforeAndAfterAdoption() throws {
         let directory = try temporaryDirectory()
@@ -933,6 +1065,150 @@ struct EvaluationDevelopmentWorkflowTests {
             run: run, baseline: run, approvedBaseline: staleApproval
         )
         #expect(staleBaseline.outcome == .passed)
+    }
+
+    @Test func releaseChecksRejectDuplicateAssessmentSamplesWithoutTrapping() throws {
+        var suite = EvaluationSuite()
+        suite.scoringMode = .modelJudge
+        suite.releasePolicy.criticalCaseIDs = [suite.cases[0].id]
+        var run = makeRun(cases: suite.cases, statuses: [[.passed]])
+        run.suiteID = suite.id
+        run.criteria = suite.criteria
+        run.suiteDefinition = EvaluationSuiteDefinition(suite: suite)
+        var assessment = try makeAssessment(run: run, suite: suite, status: .passed, judge: fixtureJudge())
+        assessment.samples.append(assessment.samples[0])
+        run.assessments = [assessment]
+        run.selectedAssessmentID = assessment.id
+
+        let report = EvaluationReleaseCheckEvaluator.report(
+            projectID: UUID(), suite: suite, currentSuiteRevision: "current",
+            run: run, baseline: nil, approvedBaseline: nil
+        )
+        #expect(report.outcome == .incompleteOrIncompatibleEvidence || report.outcome == .executionError)
+        #expect(report.failures.contains { $0.contains("duplicate sample") })
+    }
+
+    @Test(arguments: [-1.0, Double.nan, Double.infinity, 1e100])
+    func releaseLatencyLimitRejectsInvalidOrVeryLargeEvidence(duration: Double) {
+        var suite = EvaluationSuite()
+        suite.scoringMode = .exactMatch
+        suite.releasePolicy.maximumAverageLatencyMilliseconds = 10
+        var run = makeRun(cases: suite.cases, statuses: [[.passed]])
+        run.suiteID = suite.id
+        run.scoringMode = suite.scoringMode
+        run.suiteDefinition = EvaluationSuiteDefinition(suite: suite)
+        run.results[0].durationMilliseconds = duration
+
+        let report = EvaluationReleaseCheckEvaluator.report(
+            projectID: UUID(), suite: suite, currentSuiteRevision: "current",
+            run: run, baseline: nil, approvedBaseline: nil
+        )
+        #expect(report.outcome == (duration.isFinite && duration >= 0
+            ? .regression : .incompleteOrIncompatibleEvidence))
+        #expect(report.failures.contains { $0.lowercased().contains("latency") })
+    }
+
+    @Test(arguments: ["valid", "cancelled", "corrupt"])
+    func releaseChecksRevalidateApprovedBaselineEvidence(state: String) throws {
+        var suite = EvaluationSuite()
+        suite.scoringMode = .exactMatch
+        suite.releasePolicy.requireApprovedBaseline = true
+        var run = makeRun(cases: suite.cases, statuses: [[.passed]])
+        run.suiteID = suite.id
+        run.scoringMode = suite.scoringMode
+        run.suiteDefinition = EvaluationSuiteDefinition(suite: suite)
+        var baseline = run
+        baseline.id = UUID()
+        let digest = try EvaluationSubjectEvidenceSnapshot.digest(
+            instructions: suite.instructions, cases: suite.cases, attachments: []
+        )
+        baseline.subjectEvidence = .init(
+            instructions: suite.instructions, cases: suite.cases, attachments: [], digest: digest
+        )
+        let approval = EvaluationBaselineApproval(
+            id: UUID(), runID: baseline.id, assessmentID: nil, suiteRevision: "current",
+            approvedAt: Date(), note: nil, revokedAt: nil,
+            scoringContract: try EvaluationScoringContract(run: baseline)
+        )
+        if state == "cancelled" { baseline.cancelled = true }
+        if state == "corrupt" { baseline.subjectEvidence?.digest = "tampered" }
+        let report = EvaluationReleaseCheckEvaluator.report(
+            projectID: UUID(), suite: suite, currentSuiteRevision: "current",
+            run: run, baseline: baseline, approvedBaseline: approval
+        )
+        #expect(report.outcome == (state == "valid" ? .passed : .incompleteOrIncompatibleEvidence))
+        if state != "valid" {
+            #expect(report.failures.contains { $0.contains("approved baseline") })
+        }
+    }
+
+    @Test(arguments: ["sampleID", "coordinate"])
+    func releaseChecksRejectDuplicateApprovedBaselineSamples(duplicate: String) throws {
+        var suite = EvaluationSuite()
+        suite.scoringMode = .exactMatch
+        suite.repetitions = 2
+        suite.releasePolicy.requireApprovedBaseline = true
+        var run = makeRun(cases: suite.cases, statuses: [[.passed, .passed]])
+        run.suiteID = suite.id
+        run.scoringMode = suite.scoringMode
+        run.suiteDefinition = EvaluationSuiteDefinition(suite: suite)
+        var baseline = run
+        baseline.id = UUID()
+        let approval = EvaluationBaselineApproval(
+            id: UUID(), runID: baseline.id, assessmentID: nil, suiteRevision: "current",
+            approvedAt: Date(), note: nil, revokedAt: nil,
+            scoringContract: try EvaluationScoringContract(run: baseline)
+        )
+        if duplicate == "sampleID" { baseline.results[1].id = baseline.results[0].id }
+        else { baseline.results[1].repetition = baseline.results[0].repetition }
+        #expect(EvaluationRunComparison(current: run, baseline: baseline).compatibility == .incompatible)
+        let report = EvaluationReleaseCheckEvaluator.report(
+            projectID: UUID(), suite: suite, currentSuiteRevision: "current",
+            run: run, baseline: baseline, approvedBaseline: approval
+        )
+        #expect(report.outcome == .incompleteOrIncompatibleEvidence)
+        #expect(report.failures.contains { $0.contains("approved baseline") })
+    }
+
+    @Test(arguments: [Int.min, -1, 0, Int.max])
+    func releaseChecksRejectInvalidPersistedRepetitionsWithoutExpandingThePlan(repetitions: Int) {
+        var suite = EvaluationSuite()
+        suite.scoringMode = .exactMatch
+        var run = makeRun(cases: suite.cases, statuses: [[.passed]])
+        run.suiteID = suite.id
+        run.scoringMode = suite.scoringMode
+        run.suiteDefinition = EvaluationSuiteDefinition(suite: suite)
+        run.repetitions = repetitions
+        let report = EvaluationReleaseCheckEvaluator.report(
+            projectID: UUID(), suite: suite, currentSuiteRevision: "current",
+            run: run, baseline: nil, approvedBaseline: nil
+        )
+        #expect(report.outcome == .incompleteOrIncompatibleEvidence)
+        #expect(report.failures.contains { $0.contains("every planned case and repetition") })
+    }
+
+    @Test(arguments: ["empty", "duplicate"])
+    func releaseChecksRejectInvalidPersistedCasePlans(plan: String) {
+        var suite = EvaluationSuite()
+        suite.scoringMode = .exactMatch
+        var run = makeRun(cases: suite.cases, statuses: [[.passed]])
+        run.suiteID = suite.id
+        run.scoringMode = suite.scoringMode
+        run.suiteDefinition = EvaluationSuiteDefinition(suite: suite)
+        if plan == "empty" {
+            run.plannedCases = []
+            run.results = []
+            run.repetitions = 0
+            run.plannedSampleCount = 0
+        } else {
+            run.plannedCases = [suite.cases[0], suite.cases[0]]
+        }
+        let report = EvaluationReleaseCheckEvaluator.report(
+            projectID: UUID(), suite: suite, currentSuiteRevision: "current",
+            run: run, baseline: nil, approvedBaseline: nil
+        )
+        #expect(report.outcome == .incompleteOrIncompatibleEvidence)
+        #expect(report.failures.contains { $0.contains("every planned case and repetition") })
     }
 
     @Test func releaseChecksUseTheSelectedAssessmentForCriticalCases() {

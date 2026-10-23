@@ -376,6 +376,7 @@ struct EvaluationCustomTool: Tool {
         definitions: [String: EvaluationSchemaField],
         history: History
     ) throws -> Any where History.Element == Transcript.Entry {
+        if field.isOptional, value is NSNull { return value }
         switch field.type {
         case .imageReference:
             return try resolvedImageMetadata(from: value, fieldName: field.name, history: history)

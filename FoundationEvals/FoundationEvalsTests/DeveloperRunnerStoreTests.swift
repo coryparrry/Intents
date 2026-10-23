@@ -4,6 +4,19 @@ import Testing
 
 struct DeveloperRunnerStoreTests {
     @MainActor
+    @Test func legacyCancelledRunWithoutTerminationReasonRemainsCancelled() throws {
+        let original = try FeatureCompletionTestFixture.make()
+        var run = original
+        run.cancelled = true
+        run.terminationReason = nil
+        var status: DeveloperRunStatus? = initialStatus(id: run.id)
+        DeveloperRunnerStore.projectCompletion(.success(run), status: &status)
+        #expect(status?.phase == .cancelled)
+        #expect(status?.detail == "cancelled")
+        #expect(status?.completedSamples == run.results.count)
+    }
+
+    @MainActor
     @Test(arguments: ["completed", "cancelled", "developerRunner:cancelled", "developerRunner:deadlineExceeded",
                       "developerRunner:disconnected", "assessmentUnavailable"])
     func terminalRunsReplaceProgressWithoutChangingIdentity(reason: String) throws {

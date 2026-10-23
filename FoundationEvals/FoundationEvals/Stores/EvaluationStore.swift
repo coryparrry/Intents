@@ -57,7 +57,7 @@ final class EvaluationStore {
     private let runner = EvaluationRunner()
     private let experimentRunner = EvaluationExperimentRunner()
     private let featureAdapterRunner = EvaluationFeatureAdapterRunner()
-    private let reassessmentService = EvaluationReassessmentService()
+    private let reassessmentService: EvaluationReassessmentService
     private let supportDirectory: URL
     private let suiteLocalStateWriter: (Data, URL) throws -> Void
     private let workspaceCatalogWriter: (EvaluationWorkspaceCatalog, URL) throws -> Void
@@ -72,6 +72,7 @@ final class EvaluationStore {
     private(set) var isDraftSavePending = false
     private var runTask: Task<Void, Never>?
     private var directFeatureTask: Task<EvaluationRun, Error>?
+    private var reassessmentTask: Task<Void, Never>?
     private var isClosing = false
     private var activeRunSuite: EvaluationSuite?
     private var activeRunEvidence: EvaluationSubjectEvidenceSnapshot?
@@ -106,6 +107,7 @@ final class EvaluationStore {
     init(
         supportDirectory customSupportDirectory: URL? = nil,
         telemetry: TelemetryController? = nil,
+        reassessmentService: EvaluationReassessmentService = .init(),
         suiteLocalStateWriter: @escaping (Data, URL) throws -> Void = {
             try $0.write(to: $1, options: .atomic)
         },
@@ -124,6 +126,7 @@ final class EvaluationStore {
                 .appending(path: "FoundationEvals", directoryHint: .isDirectory)
         supportDirectory = base
         self.telemetry = telemetry
+        self.reassessmentService = reassessmentService
         self.suiteLocalStateWriter = suiteLocalStateWriter
         self.workspaceCatalogWriter = workspaceCatalogWriter
         self.runWriter = runWriter
@@ -205,7 +208,7 @@ final class EvaluationStore {
             }
         }
 
-        let loadedSuite = EvaluationWorkspaceStatePersistence.loadSuite(from: activeDirectory)
+        let loadedSuite = EvaluationWorkspaceStatePersistence.loadSuite(from: activeDirectory, expectedSuiteID: initialSuiteID)
         var initialSuite = loadedSuite.suite ?? EvaluationSuite()
         if loadedSuite.suite == nil {
             initialSuite.id = initialSuiteID
@@ -247,7 +250,7 @@ final class EvaluationStore {
         let loadedLocalState = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(
             from: activeDirectory.appending(path: "state.json")
         )
-        let initialNotice = [startupNotice, legacySuite.notice, loadedSuite.notice,
+        let initialNotice = [startupNotice, legacySuite.notice, loadedSuite.notice, loadedSuite.persistenceBlocker,
                              loadedDraft.notice, loadedRuns.notice, recovery.notice,
                              snapshotRecoveryNotice,
                              loadedJudgeConnections.notice, loadedLocalState.notice]
@@ -278,7 +281,7 @@ final class EvaluationStore {
         totalSamples = recovery.pending?.summary.totalSamples ?? 0
         workspacePersistenceBlocker = catalogRecoveryAttempted && !catalogRecoveryCanPublish
             ? "The unreadable workspace catalog could not be preserved. Resolve the storage conflict and reopen the app before saving workspace changes."
-            : nil
+            : loadedSuite.persistenceBlocker
         migrationNotice = bootstrap.notice
         notice = initialNotice.isEmpty ? nil : initialNotice
         do {
@@ -327,7 +330,7 @@ final class EvaluationStore {
                 let directory = EvaluationWorkspacePersistence.suiteDirectory(
                     supportDirectory: supportDirectory, projectID: project.id, suiteID: record.id
                 )
-                let suite = EvaluationWorkspaceStatePersistence.loadSuite(from: directory).suite
+                let suite = EvaluationWorkspaceStatePersistence.loadSuite(from: directory, expectedSuiteID: record.id).suite
                 let storedRuns = Self.loadRuns(
                     from: directory.appending(path: "Runs", directoryHint: .isDirectory),
                     projectID: project.id,
@@ -421,24 +424,17 @@ final class EvaluationStore {
                 let sourceDirectory = EvaluationWorkspacePersistence.suiteDirectory(
                     supportDirectory: supportDirectory, projectID: source.id, suiteID: sourceRecord.id
                 )
-                guard var copiedSuite = EvaluationWorkspaceStatePersistence.loadSuite(from: sourceDirectory).suite else {
-                    throw EvaluationWorkspaceError.missingSuite
-                }
-                guard copiedSuite.id == sourceRecord.id else {
-                    throw EvaluationWorkspaceError.missingSuite
-                }
-                copiedSuite = try suiteForDuplication(copiedSuite, projectID: source.id)
+                let snapshot = try duplicationSnapshot(
+                    from: sourceDirectory, projectID: source.id, suiteID: sourceRecord.id
+                )
+                var copiedSuite = snapshot.canonical
                 copiedSuite.id = UUID()
                 copiedSuite.name += " copy"
                 let target = EvaluationWorkspacePersistence.suiteDirectory(
                     supportDirectory: supportDirectory, projectID: newProjectID, suiteID: copiedSuite.id
                 )
-                try EvaluationWorkspacePersistence.createSuiteDirectories(at: target)
-                try CanonicalJSON.data(for: copiedSuite).write(to: target.appending(path: "suite.json"), options: .atomic)
-                try Self.copyAttachmentFiles(
-                    from: sourceDirectory.appending(path: "Attachments", directoryHint: .isDirectory),
-                    to: target.appending(path: "Attachments", directoryHint: .isDirectory),
-                    suite: copiedSuite
+                try Self.writeDuplicatedSuite(
+                    copiedSuite, draft: snapshot.draft, from: sourceDirectory, to: target
                 )
                 copiedRecords.append(.init(
                     id: copiedSuite.id, name: copiedSuite.name, createdAt: now, updatedAt: now,
@@ -613,25 +609,18 @@ final class EvaluationStore {
         let sourceDirectory = EvaluationWorkspacePersistence.suiteDirectory(
             supportDirectory: supportDirectory, projectID: selectedProjectID, suiteID: id
         )
-        guard var copied = EvaluationWorkspaceStatePersistence.loadSuite(from: sourceDirectory).suite else {
-            throw EvaluationWorkspaceError.missingSuite
-        }
-        guard copied.id == sourceRecord.id else {
-            throw EvaluationWorkspaceError.missingSuite
-        }
-        copied = try suiteForDuplication(copied, projectID: selectedProjectID)
+        let snapshot = try duplicationSnapshot(
+            from: sourceDirectory, projectID: selectedProjectID, suiteID: sourceRecord.id
+        )
+        var copied = snapshot.canonical
         copied.id = UUID()
         copied.name += " copy"
         let target = EvaluationWorkspacePersistence.suiteDirectory(
             supportDirectory: supportDirectory, projectID: selectedProjectID, suiteID: copied.id
         )
         do {
-            try EvaluationWorkspacePersistence.createSuiteDirectories(at: target)
-            try CanonicalJSON.data(for: copied).write(to: target.appending(path: "suite.json"), options: .atomic)
-            try Self.copyAttachmentFiles(
-                from: sourceDirectory.appending(path: "Attachments", directoryHint: .isDirectory),
-                to: target.appending(path: "Attachments", directoryHint: .isDirectory),
-                suite: copied
+            try Self.writeDuplicatedSuite(
+                copied, draft: snapshot.draft, from: sourceDirectory, to: target
             )
             let now = Date()
             try updateProject(selectedProjectID) { project in
@@ -858,7 +847,7 @@ final class EvaluationStore {
         let loadedLocalState = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(from: suiteStateURL)
         suiteLocalState = loadedLocalState.state
         suiteLocalStatePersistenceBlocker = loadedLocalState.persistenceBlocker
-        let loaded = EvaluationWorkspaceStatePersistence.loadSuite(from: suiteDirectory)
+        let loaded = EvaluationWorkspaceStatePersistence.loadSuite(from: suiteDirectory, expectedSuiteID: selectedSuiteID)
         guard var canonical = loaded.suite, canonical.id == selectedSuiteID else {
             throw EvaluationWorkspaceError.missingSuite
         }
@@ -1041,17 +1030,25 @@ final class EvaluationStore {
     }
 
     func reassessRun(id: UUID, connectionID: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
-        guard !isRunning, !isReassessing, let runIndex = runs.firstIndex(where: { $0.id == id }) else {
+        guard !isClosing, !isRunning, !isReassessing, let runIndex = runs.firstIndex(where: { $0.id == id }) else {
             completion?("The saved run is unavailable or another operation is active.")
+            return
+        }
+        do {
+            try requireWorkspaceWritable()
+        } catch {
+            notice = error.localizedDescription
+            completion?(error.localizedDescription)
             return
         }
         let run = runs[runIndex]
         isReassessing = true
-        Task { [weak self] in
+        reassessmentTask = Task { [weak self] in
             guard let self else { return }
             var completionError: String?
-            defer { completion?(completionError); isReassessing = false }
+            defer { completion?(completionError); isReassessing = false; reassessmentTask = nil }
             do {
+                try Task.checkCancellation()
                 let resolved = try resolvedJudge(connectionID: connectionID)
                 let scoringSuite = suite
                 var judgingSuite = scoringSuite
@@ -1069,6 +1066,8 @@ final class EvaluationStore {
                     scoringContract: context.scoringContract,
                     subjectEvidenceDigest: context.evidence.digest
                 )
+                try Task.checkCancellation()
+                try requireWorkspaceWritable()
                 guard let currentIndex = runs.firstIndex(where: { $0.id == id }) else {
                     completionError = "The saved run was removed before reassessment could be saved."
                     return
@@ -1079,6 +1078,7 @@ final class EvaluationStore {
                 try persistRun(candidate)
                 runs[currentIndex] = candidate
                 selection = .run(id)
+            } catch is CancellationError {
             } catch {
                 notice = "Could not reassess the saved responses: \(error.localizedDescription)"
                 completionError = notice
@@ -1087,6 +1087,7 @@ final class EvaluationStore {
     }
 
     func selectAssessment(runID: UUID, assessmentID: UUID) throws {
+        try requireWorkspaceWritable()
         guard let index = runs.firstIndex(where: { $0.id == runID }),
               runs[index].assessments?.contains(where: { $0.id == assessmentID }) == true else {
             throw EvaluationStoreError.resourceNotFound("Assessment")
@@ -1209,17 +1210,18 @@ final class EvaluationStore {
     }
 
     func runJudgeChecks(connectionID: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
-        guard !isReassessing else {
+        guard !isClosing, !isReassessing else {
             completion?("Another reassessment or judge check is active.")
             return
         }
         isReassessing = true
         latestJudgeCheck = nil
-        Task { [weak self] in
+        reassessmentTask = Task { [weak self] in
             guard let self else { return }
             var completionError: String?
-            defer { completion?(completionError); isReassessing = false }
+            defer { completion?(completionError); isReassessing = false; reassessmentTask = nil }
             do {
+                try Task.checkCancellation()
                 let resolved = try resolvedJudge(connectionID: connectionID)
                 let sources = suiteLocalState.reviewedJudgeExamples.map { example -> EvaluationJudgeCheckSource in
                     do {
@@ -1251,10 +1253,13 @@ final class EvaluationStore {
                         )
                     }
                 }
-                latestJudgeCheck = try await reassessmentService.checkJudge(
+                let report = try await reassessmentService.checkJudge(
                     sources: sources,
                     resolved: resolved
                 )
+                try Task.checkCancellation()
+                latestJudgeCheck = report
+            } catch is CancellationError {
             } catch {
                 notice = "Could not run judge checks: \(error.localizedDescription)"
                 completionError = notice
@@ -1333,6 +1338,10 @@ final class EvaluationStore {
         let sourceRevision = try currentSuiteRevision()
         var candidateSuite = suite
         candidateSuite.instructions = trimmed
+        if let issue = validationIssue(for: suite, includeModelReadiness: false)
+            ?? validationIssue(for: candidateSuite, includeModelReadiness: false) {
+            throw EvaluationStoreError.invalidSuite(issue)
+        }
         let current = EvaluationExperimentVariant(
             id: UUID(), name: "Current", instructions: suite.instructions,
             suiteRevision: sourceRevision
@@ -1341,16 +1350,20 @@ final class EvaluationStore {
             id: UUID(), name: "Candidate", instructions: trimmed,
             suiteRevision: try Self.revision(for: candidateSuite)
         )
+        let executionOrder = EvaluationExperimentAnalyzer.balancedOrder(
+            currentID: current.id, candidateID: candidate.id,
+            caseCount: suite.cases.count, repetitions: suite.repetitions
+        )
+        guard !executionOrder.isEmpty else {
+            throw EvaluationStoreError.invalidSuite("Choose a nonempty suite with a supported sample count before creating an experiment.")
+        }
         let experiment = EvaluationExperiment(
             id: UUID(), name: name, createdAt: Date(), suiteRevision: sourceRevision,
             casesDigest: Self.sha256(try CanonicalJSON.data(for: suite.cases, prettyPrinted: false)),
             scoringDigest: Self.sha256(try CanonicalJSON.data(for: [suite.scoringMode.rawValue, suite.criteria], prettyPrinted: false)),
             judgeDigest: Self.sha256(try CanonicalJSON.data(for: suite.judgeConfiguration, prettyPrinted: false)),
             current: current, candidate: candidate,
-            executionOrder: EvaluationExperimentAnalyzer.balancedOrder(
-                currentID: current.id, candidateID: candidate.id,
-                caseCount: suite.cases.count, repetitions: suite.repetitions
-            ),
+            executionOrder: executionOrder,
             runIDs: [], decision: nil
         )
         let previousState = suiteLocalState
@@ -1372,11 +1385,7 @@ final class EvaluationStore {
         var previousDraft = draftSuite
         var adoptionSnapshot: CandidateAdoptionSnapshot?
         if decision == .adoptCandidate {
-            guard suiteLocalState.experiments[index].suiteRevision == suiteRevision else {
-                throw EvaluationStoreError.resourceConflict(
-                    "The suite changed after this experiment was frozen. Create a new experiment before adopting a candidate."
-                )
-            }
+            try validateFrozenExperiment(suiteLocalState.experiments[index])
             applyPendingPromptEdits()
             previousDraft = draftSuite
             let snapshot = try candidateAdoptionSnapshot()
@@ -1412,17 +1421,50 @@ final class EvaluationStore {
         }
     }
 
+    private func validateFrozenExperiment(_ experiment: EvaluationExperiment) throws {
+        let trimmed = experiment.candidate.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed == experiment.candidate.instructions,
+              trimmed != suite.instructions else {
+            throw EvaluationStoreError.resourceConflict(
+                "The frozen candidate instructions must be nonempty, trimmed, and different from current instructions."
+            )
+        }
+        var candidateSuite = suite
+        candidateSuite.instructions = experiment.candidate.instructions
+        if let issue = validationIssue(for: suite, includeModelReadiness: false)
+            ?? validationIssue(for: candidateSuite, includeModelReadiness: false) {
+            throw EvaluationStoreError.invalidSuite(issue)
+        }
+        let revision = try currentSuiteRevision()
+        guard experiment.suiteRevision == revision,
+              experiment.current.instructions == suite.instructions,
+              experiment.casesDigest == Self.sha256(try CanonicalJSON.data(for: suite.cases, prettyPrinted: false)),
+              experiment.scoringDigest == Self.sha256(try CanonicalJSON.data(for: [suite.scoringMode.rawValue, suite.criteria], prettyPrinted: false)),
+              experiment.judgeDigest == Self.sha256(try CanonicalJSON.data(for: suite.judgeConfiguration, prettyPrinted: false)),
+              experiment.current.id != experiment.candidate.id,
+              experiment.executionOrder == EvaluationExperimentAnalyzer.balancedOrder(
+                currentID: experiment.current.id, candidateID: experiment.candidate.id,
+                caseCount: suite.cases.count, repetitions: suite.repetitions
+              ) else {
+            throw EvaluationStoreError.resourceConflict(
+                "The suite changed after the experiment was frozen, or its frozen order/digests are invalid. Create a new experiment."
+            )
+        }
+        guard experiment.current.suiteRevision == revision,
+              experiment.candidate.suiteRevision == (try Self.revision(for: candidateSuite)) else {
+            throw EvaluationStoreError.resourceConflict(
+                "The frozen experiment variant revisions do not match their instructions. Create a new experiment."
+            )
+        }
+    }
+
     func runExperiment(id: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
         do {
             try requireIdle()
             guard let experiment = suiteLocalState.experiments.first(where: { $0.id == id }) else {
                 throw EvaluationStoreError.resourceNotFound("Experiment")
             }
-            guard experiment.suiteRevision == suiteRevision else {
-                throw EvaluationStoreError.resourceConflict(
-                    "The suite changed after this experiment was frozen. Create a new experiment for the current definition."
-                )
-            }
+            try validateFrozenExperiment(experiment)
             let externalJudge = try resolvedJudge(for: suite)
             let suiteSnapshot = suite
             let images = try imageInputs(for: suiteSnapshot)
@@ -1450,6 +1492,7 @@ final class EvaluationStore {
                     ) { [weak self] _, completed, total in
                         await self?.updateExperimentProgress(completed: completed, total: total)
                     }
+                    try Task.checkCancellation()
                     outcome.current.projectID = ownerProjectID
                     outcome.current.repository = repositorySnapshot
                     outcome.candidate.projectID = ownerProjectID
@@ -3040,18 +3083,22 @@ final class EvaluationStore {
     }
 
     /// Called after paired and coordinated feature owners have joined their work.
-    /// Await ordinary and direct feature terminal saves before the app exits.
+    /// Await run saves and judge cleanup before the app exits.
     func closeAndWait() async {
         let task = runTask
         let featureTask = directFeatureTask
+        let judgingTask = reassessmentTask
         beginClosing()
         await task?.value
         _ = await featureTask?.result
+        await judgingTask?.value
         _ = saveSuite()
     }
 
     func beginClosing() {
         isClosing = true
+        reviewDrafts.flushPendingDrafts()
+        reassessmentTask?.cancel()
         cancelRun()
     }
 
@@ -4436,6 +4483,9 @@ final class EvaluationStore {
             throw EvaluationStoreError.persistence(suiteLocalStatePersistenceBlocker)
         }
         do {
+            try EvaluationWorkspaceStatePersistence.preserveUnreadableBeforeReplacing(
+                at: suiteStateURL, as: EvaluationSuiteLocalState.self, prefix: "state-unreadable"
+            )
             try suiteLocalStateWriter(CanonicalJSON.data(for: suiteLocalState), suiteStateURL)
         } catch {
             throw EvaluationStoreError.persistence(error.localizedDescription)
@@ -4584,6 +4634,10 @@ final class EvaluationStore {
 
     private func persistJudgeConnections(_ connections: [EvaluationJudgeConnection]) throws {
         do {
+            try EvaluationWorkspaceStatePersistence.preserveUnreadableBeforeReplacing(
+                at: judgeConnectionsURL, as: [EvaluationJudgeConnection].self,
+                prefix: "judge-connections-unreadable"
+            )
             try CanonicalJSON.data(for: connections).write(to: judgeConnectionsURL, options: .atomic)
         } catch {
             throw EvaluationStoreError.persistence(error.localizedDescription)
@@ -4640,6 +4694,66 @@ final class EvaluationStore {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try CanonicalJSON.data(for: definition).write(to: url, options: .atomic)
         try updateSelectedSuiteRecord { record in record.lastRepositoryRevision = candidateRevision }
+    }
+
+    private func duplicationSnapshot(
+        from directory: URL, projectID: UUID, suiteID: UUID
+    ) throws -> (canonical: EvaluationSuite, draft: EvaluationSuite?) {
+        // Read strictly: duplication must not archive or overwrite a damaged source.
+        let canonical: EvaluationSuite
+        do {
+            canonical = try CanonicalJSON.decode(
+                EvaluationSuite.self, from: Data(contentsOf: directory.appending(path: "suite.json"))
+            )
+        } catch {
+            throw EvaluationWorkspaceError.missingSuite
+        }
+        guard canonical.id == suiteID else { throw EvaluationWorkspaceError.missingSuite }
+        let revision = try Self.revision(for: canonical)
+        if projectID == selectedProjectID, suiteID == selectedSuiteID {
+            guard draftSuite.id == suiteID, try currentSuiteRevision() == revision else {
+                throw EvaluationStoreError.resourceConflict("The source suite changed before it could be duplicated.")
+            }
+            var draft = draftSuite
+            for index in draft.cases.indices {
+                if let prompt = pendingPromptEdits[draft.cases[index].id] {
+                    draft.cases[index].prompt = prompt
+                }
+            }
+            return (canonical, draft == canonical ? nil : draft)
+        }
+        let draftURL = directory.appending(path: "suite-draft.json")
+        guard FileManager.default.fileExists(atPath: draftURL.path) else { return (canonical, nil) }
+        let record: SuiteDraftRecord
+        do {
+            record = try CanonicalJSON.decode(SuiteDraftRecord.self, from: Data(contentsOf: draftURL))
+        } catch {
+            throw EvaluationStoreError.persistence("The source suite draft could not be read: \(error.localizedDescription)")
+        }
+        guard record.suite.id == suiteID, record.canonicalRevision == revision else {
+            throw EvaluationStoreError.resourceConflict("The saved draft does not match the source suite.")
+        }
+        return (canonical, record.suite)
+    }
+
+    private static func writeDuplicatedSuite(
+        _ canonical: EvaluationSuite, draft: EvaluationSuite?, from source: URL, to target: URL
+    ) throws {
+        try EvaluationWorkspacePersistence.createSuiteDirectories(at: target)
+        try CanonicalJSON.data(for: canonical).write(to: target.appending(path: "suite.json"), options: .atomic)
+        var attachmentSuite = canonical
+        if var draft {
+            draft.id = canonical.id
+            draft.name += " copy"
+            let record = SuiteDraftRecord(canonicalRevision: try revision(for: canonical), suite: draft)
+            try CanonicalJSON.data(for: record).write(to: target.appending(path: "suite-draft.json"), options: .atomic)
+            attachmentSuite.attachments.append(contentsOf: draft.attachments)
+        }
+        try copyAttachmentFiles(
+            from: source.appending(path: "Attachments", directoryHint: .isDirectory),
+            to: target.appending(path: "Attachments", directoryHint: .isDirectory),
+            suite: attachmentSuite
+        )
     }
 
     private static func copyAttachmentFiles(

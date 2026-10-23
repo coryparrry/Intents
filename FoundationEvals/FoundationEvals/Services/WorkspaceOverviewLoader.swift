@@ -14,8 +14,14 @@ actor WorkspaceOverviewLoader {
                     EvaluationSuite.self, from: Data(contentsOf: root.appending(path: "suite.json"))
                 )
                 guard suite.id == record.id else { throw EvaluationWorkspaceError.missingSuite }
+                let revision = try EvaluationStore.revision(for: suite)
                 let draftURL = root.appending(path: "suite-draft.json")
-                let draft = try optional(Draft.self, at: draftURL)?.suite
+                let savedDraft = try optional(Draft.self, at: draftURL)
+                // Match the editor's recovery contract without moving recovery
+                // files while loading a background overview.
+                let draft = savedDraft.flatMap {
+                    $0.suite.id == suite.id && $0.canonicalRevision == revision ? $0.suite : nil
+                }
                 let local = try optional(EvaluationSuiteLocalState.self, at: root.appending(path: "state.json"))
                     ?? EvaluationSuiteLocalState()
                 let pending = try optional(PendingRuns.self, at: root.appending(path: "pending-completed-runs.json"))
@@ -36,7 +42,6 @@ actor WorkspaceOverviewLoader {
                     // its history. Admit those records after the retry commits.
                     if !pendingRunIDs.contains(run.id) { runs.append(run) }
                 }
-                let revision = try EvaluationStore.revision(for: suite)
                 summary = SuiteOverviewSummary(record: record, suite: suite, currentRevision: revision,
                                                      draft: draft, runs: runs, localState: local)
                 if let definitionURL = EvaluationWorkspacePersistence.repositoryDefinitionURL(project: project, suite: record) {
@@ -66,6 +71,9 @@ actor WorkspaceOverviewLoader {
         catch CocoaError.fileReadNoSuchFile { return nil }
     }
 
-    private struct Draft: Decodable { var suite: EvaluationSuite }
     private struct PendingRuns: Decodable { var runs: [EvaluationRun] }
+    private struct Draft: Decodable {
+        var canonicalRevision: String
+        var suite: EvaluationSuite
+    }
 }

@@ -37,13 +37,16 @@ actor EvaluationReassessmentService {
         subjectEvidenceDigest: String? = nil,
         origin: EvaluationAssessmentOrigin = .reassessment
     ) async throws -> EvaluationAssessment {
+        let savedCases = run.subjectEvidence?.cases ?? run.plannedCases ?? run.suiteDefinition?.cases ?? suite.cases
+        var assessmentSuite = suite
+        assessmentSuite.cases = savedCases
         var samples: [EvaluationSampleAssessment] = []
         var totalUsage = EvaluationUsage()
         var hasUsage = false
         var usageComplete = true
         var totalCost = 0.0
         var costAvailability = EvaluationCostAvailability.known
-        var identity = (suite.scoringMode == .modelJudge ? resolved : nil).map { requestedIdentity($0.connection) } ?? EvaluationJudgeIdentity(
+        var identity = EvaluationJudgeIdentity(
             mode: .sameModel,
             connectionID: nil,
             connectionName: "Deterministic checks",
@@ -63,7 +66,7 @@ actor EvaluationReassessmentService {
                 break
             }
             guard saved.hasCompleteSubjectEvidenceForJudging,
-                  let evaluationCase = (run.plannedCases ?? suite.cases).first(where: { $0.id == saved.caseID }) else {
+                  let evaluationCase = savedCases.first(where: { $0.id == saved.caseID }) else {
                 samples.append(.init(
                     id: UUID(), sampleID: saved.id, status: .unscored, score: nil,
                     rationale: "The saved sample has no complete response or immutable case definition.",
@@ -121,6 +124,7 @@ actor EvaluationReassessmentService {
                 costAvailability = .unavailable
                 break
             }
+            identity = requestedIdentity(resolved.connection)
             let judgeStarted = ContinuousClock.now
             do {
                 let judged = try await client.judge(
@@ -209,7 +213,7 @@ actor EvaluationReassessmentService {
             durationMilliseconds: EvaluationAssessment.summedJudgeDurationMilliseconds(samples), cost: cost,
             supersedesAssessmentID: origin == .reassessment ? run.selectedAssessmentID : nil,
             observedJudgeIdentities: observedIdentities.isEmpty ? [assessmentIdentity] : observedIdentities,
-            scoringContract: scoringContract ?? (try? EvaluationScoringContract(suite: suite)),
+            scoringContract: scoringContract ?? (try? EvaluationScoringContract(suite: assessmentSuite)),
             subjectEvidenceDigest: subjectEvidenceDigest
         )
     }

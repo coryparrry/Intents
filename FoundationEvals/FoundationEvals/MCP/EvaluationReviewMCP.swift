@@ -21,7 +21,9 @@ enum EvaluationReviewMCP {
         .init(name: "eval_list_review_samples", title: "List saved review outputs",
               description: "Read a bounded page of captured samples and human reviews from the explicitly named current suite. Input/output previews are bounded; retrieve the saved run for complete evidence. Discovery ordering does not estimate failure prevalence.",
               inputSchema: schema([
-                "suiteID": field("string"), "offset": field("integer"), "limit": field("integer")
+                "suiteID": field("string"),
+                "offset": .object(["type": .string("integer"), "minimum": .integer(0)]),
+                "limit": .object(["type": .string("integer"), "minimum": .integer(1), "maximum": .integer(20)])
               ], required: ["suiteID"]), annotations: .init(readOnlyHint: true, destructiveHint: false, idempotentHint: false)),
         .init(name: "eval_propose_review", title: "Propose an output review",
               description: "Store a pending suggestion tied to the exact source digest. A person must accept or reject it in Review; proposals do not change human labels, scores, patterns, baselines or release checks. Reuse proposalID only for an identical retry.",
@@ -37,7 +39,7 @@ enum EvaluationReviewMCP {
     ]
 
     static func validate(_ arguments: MCPReviewSamplesArguments) throws {
-        guard (0...10_000).contains(arguments.offset ?? 0), (1...20).contains(arguments.limit ?? 10) else {
+        guard (arguments.offset ?? 0) >= 0, (1...20).contains(arguments.limit ?? 10) else {
             throw MCPToolInputError.invalidArguments
         }
     }

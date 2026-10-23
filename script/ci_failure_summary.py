@@ -142,6 +142,19 @@ class GitHubAPI:
                     body = response.read(limit + 1)
                 except (OSError, urllib.error.URLError, http.client.HTTPException):
                     raise RuntimeError("GitHub response could not be read") from None
+                if logs and response.status == 206:
+                    content_range = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)",
+                                                 response.headers.get("Content-Range", ""))
+                    if not content_range:
+                        raise RuntimeError("GitHub log response omitted a valid byte range")
+                    start, end, total = map(int, content_range.groups())
+                    if not (start <= end < total and end - start + 1 == len(body) <= limit):
+                        raise RuntimeError("GitHub log response has an inconsistent byte range")
+                    # A suffix range can start inside a credential line. Without
+                    # the preceding byte, discard the first line conservatively.
+                    if start:
+                        body = body.split(b"\n", 1)[1] if b"\n" in body else b""
+                    return body, start > 0 or end + 1 < total
                 truncated = len(body) > limit
                 if truncated and not logs:
                     raise RuntimeError("GitHub JSON response exceeded its size limit")

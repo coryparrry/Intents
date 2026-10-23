@@ -30,11 +30,14 @@ struct MCPDebugLaunchConfigurationTests {
         let credentials = MCPDebugLaunchConfiguration.credentialStore(
             arguments: [MCPDebugLaunchConfiguration.existingCredentialArgument], environment: [:],
             isolatedStorage: root, existing: existing)
+        let readOnlyAccess = MCPDebugLaunchConfiguration.requiresReadOnlyAccess(
+            arguments: [MCPDebugLaunchConfiguration.existingCredentialArgument], environment: [:], isolatedStorage: root)
+        #expect(readOnlyAccess)
         let controller = MCPSettingsController(serverControl: .init(start: { configuration in
             #expect(configuration.port == CodexMCPConfiguration.defaultPort)
             starts += 1
         }, stop: { stops += 1 }), userDefaults: defaults, credentialStore: credentials,
-            existingCredentialOnly: true, configurationDirectory: root)
+            existingCredentialOnly: readOnlyAccess, configurationDirectory: root)
         #expect(loads == 0)
         await controller.startServer()
         #expect(controller.serverState == .running)
@@ -94,47 +97,76 @@ struct MCPDebugLaunchConfigurationTests {
     }
 
     @MainActor
-    @Test func rejectedExplicitLaunchKeepsReadOnlyGateAndNeverLoadsCredential() async throws {
+    @Test func isolatedAndHostedLaunchesCannotChangeConfigurationOrCredentials() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let config = root.appending(path: "config.toml")
-        let original = Data("model = \"fixture-model\"\n".utf8)
+        let configuration = try CodexMCPConfiguration(credential: String(repeating: "A", count: 43))
+        let original = Data(("model = \"fixture-model\"\n" + configuration.tomlBlock + "\n").utf8)
         try original.write(to: config)
-        let requests: [(URL?, [String: String])] = [
-            (nil, [:]), (root, ["XCTestBundlePath": "fixture"]),
-            (root, ["XCTestConfigurationFilePath": "fixture"])
+        let flag = [MCPDebugLaunchConfiguration.existingCredentialArgument]
+        let requests: [([String], URL?, [String: String])] = [
+            ([], root, [:]),
+            ([], nil, ["XCTestBundlePath": "fixture"]),
+            ([], nil, ["XCTestConfigurationFilePath": "fixture"]),
+            ([], root, ["XCTestBundlePath": "fixture"]),
+            ([], root, ["XCTestConfigurationFilePath": "fixture"]),
+            (flag, nil, [:]),
+            (flag, root, ["XCTestBundlePath": "fixture"]),
+            (flag, root, ["XCTestConfigurationFilePath": "fixture"])
         ]
-        for (storage, environment) in requests {
+        for (arguments, storage, environment) in requests {
             let suiteName = "MCPDebugLaunchConfigurationTests-\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             defaults.set(19_001, forKey: "mcp.server.port")
+            defaults.set(Data("fixture-bookmark".utf8), forKey: "mcp.codex.configuration-directory-bookmark")
             let before = defaults.persistentDomain(forName: suiteName) ?? [:]
             var loads = 0
             var saves = 0
             var removes = 0
             var starts = 0
-            let arguments = [MCPDebugLaunchConfiguration.existingCredentialArgument]
+            var stops = 0
             let credentials = MCPDebugLaunchConfiguration.credentialStore(arguments: arguments, environment: environment,
                 isolatedStorage: storage, existing: .init(load: { loads += 1; return String(repeating: "A", count: 43) },
                     save: { _ in saves += 1 }, remove: { removes += 1 }))
-            let controller = MCPSettingsController(serverControl: .init(start: { _ in starts += 1 }, stop: {}),
+            let readOnlyAccess = MCPDebugLaunchConfiguration.requiresReadOnlyAccess(
+                arguments: arguments, environment: environment, isolatedStorage: storage)
+            #expect(readOnlyAccess)
+            let controller = MCPSettingsController(serverControl: .init(start: { _ in starts += 1 }, stop: { stops += 1 }),
                 userDefaults: defaults, credentialStore: credentials,
-                existingCredentialOnly: MCPDebugLaunchConfiguration.requestsExistingCredential(arguments: arguments),
+                existingCredentialOnly: readOnlyAccess,
                 configurationDirectory: root)
             await controller.startServer()
             await controller.installOrUpdateCodex()
             await controller.removeFromCodex()
+            await controller.copyManualConfiguration()
             controller.refreshInstallationState()
             #expect(loads == 0)
             #expect(saves == 0)
             #expect(removes == 0)
             #expect(starts == 0)
+            #expect(stops == 0)
             #expect(controller.serverState == .stopped)
+            #expect(controller.notice == MCPSettingsAccessError.configurationReadOnly.localizedDescription)
             #expect(try Data(contentsOf: config) == original)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["config.toml"])
             #expect(NSDictionary(dictionary: before).isEqual(to: defaults.persistentDomain(forName: suiteName) ?? [:]))
         }
+    }
+
+    @Test func ordinaryLaunchKeepsExistingCredentialStoreWritable() throws {
+        #expect(!MCPDebugLaunchConfiguration.requiresReadOnlyAccess(arguments: [], environment: [:], isolatedStorage: nil))
+        var stored: String? = String(repeating: "A", count: 43)
+        let credentials = MCPDebugLaunchConfiguration.credentialStore(arguments: [], environment: [:], isolatedStorage: nil,
+            existing: .init(load: { stored }, save: { stored = $0 }, remove: { stored = nil }))
+        #expect(try credentials.load() == stored)
+        let replacement = String(repeating: "B", count: 43)
+        try credentials.save(replacement)
+        #expect(try credentials.load() == replacement)
+        try credentials.remove()
+        #expect(try credentials.load() == nil)
     }
 
     @MainActor

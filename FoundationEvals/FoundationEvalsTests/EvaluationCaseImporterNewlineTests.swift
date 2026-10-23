@@ -33,6 +33,18 @@ struct EvaluationCaseImporterNewlineTests {
         #expect(cases.count == 2)
     }
 
+    @Test(arguments: ["\n", "\r\n", "\r"])
+    func csvPreservesQuotedCarriageReturnsAtExpectedValueBoundaries(newline: String) throws {
+        // Exercise both a record separator and EOF after the final quoted field.
+        let source = ["name,prompt,expected", "First,Ask,\"\ranswer\r\"", "Second,Ask,\"\r\""].joined(separator: newline)
+        let data = Data(source.utf8)
+        let preview = try EvaluationCaseImporter.preview(data: data, format: .csv, mapping: mapping)
+        #expect(preview.canImport)
+        #expect(preview.rows.map(\.expected) == ["\ranswer\r", "\r"])
+        let cases = try EvaluationCaseImporter.cases(data: data, format: .csv, mapping: mapping, maximumCases: 10)
+        #expect(cases.map(\.expected) == ["\ranswer\r", "\r"])
+    }
+
     @Test func windowsCSVReportsTheActualInvalidRow() throws {
         let data = Data("name,prompt,expected\r\nFirst,Apple,apple\r\nSecond,,banana\r\n".utf8)
         let preview = try EvaluationCaseImporter.preview(data: data, format: .csv, mapping: mapping)

@@ -16,7 +16,8 @@ enum EvaluationExperimentAnalyzer {
         let expectedCurrentCases = Set((current.plannedCases ?? []).map(\.id))
         let expectedCandidateCases = Set((candidate.plannedCases ?? []).map(\.id))
         let expectedCommon = expectedCurrentCases.intersection(expectedCandidateCases)
-        let completeCoverage = comparison.compatibility == .compatible
+        let completeCoverage = !current.cancelled && !candidate.cancelled
+            && comparison.compatibility == .compatible
             && currentResults.count == current.plannedResultCount
             && candidateResults.count == candidate.plannedResultCount
             && currentResults.allSatisfy { !hasError($0)
@@ -47,7 +48,7 @@ enum EvaluationExperimentAnalyzer {
         let explanation: String
         if !completeCoverage {
             decision = .collectMoreEvidence
-            explanation = "The variants do not have complete, error-free, scored coverage for every planned case and repetition. Missing, unscored, or failed executions cannot justify adoption."
+            explanation = "The variants do not have complete, error-free, scored coverage for every planned case and repetition. Cancelled runs and missing, unscored, or failed executions cannot justify adoption."
         } else if common.count < 3 || discordant < 2 {
             decision = .collectMoreEvidence
             explanation = "Too few distinct comparable cases changed outcome to justify a winner. Repetitions improve stability but do not add case coverage."
@@ -82,8 +83,10 @@ enum EvaluationExperimentAnalyzer {
         caseCount: Int,
         repetitions: Int
     ) -> [UUID] {
-        guard caseCount > 0, repetitions > 0 else { return [] }
-        return (0..<(caseCount * repetitions)).flatMap { index in
+        let (sampleCount, overflowed) = caseCount.multipliedReportingOverflow(by: repetitions)
+        guard caseCount > 0, repetitions > 0, currentID != candidateID,
+              !overflowed, sampleCount <= AppEngineValidation.maximumPlannedSamples else { return [] }
+        return (0..<sampleCount).flatMap { index in
             index.isMultiple(of: 2) ? [currentID, candidateID] : [candidateID, currentID]
         }
     }
@@ -173,14 +176,7 @@ enum EvaluationReleaseCheckEvaluator {
         if run.cancelled || run.stoppedEarly || run.results.count != run.plannedResultCount {
             incomplete.append("The run did not complete every planned sample.")
         }
-        let plannedCases = run.plannedCases ?? run.suiteDefinition?.cases ?? []
-        let expectedCoordinates = Set((0..<max(0, run.repetitions)).flatMap { offset in
-            plannedCases.map { "\($0.id.uuidString):\(offset + 1)" }
-        })
-        let actualCoordinates = Set(run.results.map { "\($0.caseID.uuidString):\($0.repetition)" })
-        if Set(run.results.map(\.id)).count != run.results.count
-            || actualCoordinates.count != run.results.count
-            || actualCoordinates != expectedCoordinates {
+        if !hasCompleteSampleCoordinates(run) {
             incomplete.append("The run does not contain exactly one result for every planned case and repetition.")
         }
         if run.suiteID != suite.id {
@@ -228,12 +224,22 @@ enum EvaluationReleaseCheckEvaluator {
         if run.errorCount > policy.maximumErrorCount {
             execution.append("The run has \(run.errorCount) errors; the limit is \(policy.maximumErrorCount).")
         }
-        if let maximum = policy.maximumAverageLatencyMilliseconds,
-           run.averageDurationMilliseconds > maximum {
-            regressions.append("Average latency \(Int(run.averageDurationMilliseconds)) ms exceeds the \(Int(maximum)) ms limit.")
+        if let maximum = policy.maximumAverageLatencyMilliseconds, maximum.isFinite, maximum >= 0 {
+            let durations = run.results.map(\.durationMilliseconds)
+            let average = durations.reduce(0) { $0 + $1 / Double(max(1, durations.count)) }
+            if durations.contains(where: { !$0.isFinite || $0 < 0 }) || !average.isFinite {
+                incomplete.append("The run has invalid latency evidence for the configured latency limit.")
+            } else if average > maximum {
+                regressions.append("Average latency \(average.formatted(.number.precision(.fractionLength(0)))) ms exceeds the \(maximum.formatted(.number.precision(.fractionLength(0)))) ms limit.")
+            }
+        }
+        let selectedSamples = run.selectedAssessment?.samples ?? []
+        if Set(selectedSamples.map(\.sampleID)).count != selectedSamples.count {
+            incomplete.append("The selected assessment contains duplicate sample evidence.")
         }
         let selectedStatusBySampleID = Dictionary(
-            uniqueKeysWithValues: (run.selectedAssessment?.samples ?? []).map { ($0.sampleID, $0.status) }
+            selectedSamples.map { ($0.sampleID, $0.status) },
+            uniquingKeysWith: { first, _ in first }
         )
         for caseID in policy.criticalCaseIDs {
             let results = run.results.filter { $0.caseID == caseID }
@@ -254,6 +260,14 @@ enum EvaluationReleaseCheckEvaluator {
                   let baseline,
                   baseline.id == approvedBaseline.runID else {
                 incomplete.append("The approved baseline run is missing or no longer current.")
+                return result(projectID: projectID, suite: suite, run: run,
+                              incomplete: incomplete, regressions: regressions, execution: execution)
+            }
+            guard !baseline.cancelled, !baseline.stoppedEarly,
+                  baseline.results.count == baseline.plannedResultCount,
+                  hasCompleteSampleCoordinates(baseline),
+                  baseline.subjectEvidence?.hasValidDigest != false else {
+                incomplete.append("The approved baseline is incomplete, cancelled, or failed its subject evidence integrity check.")
                 return result(projectID: projectID, suite: suite, run: run,
                               incomplete: incomplete, regressions: regressions, execution: execution)
             }
@@ -307,6 +321,23 @@ enum EvaluationReleaseCheckEvaluator {
         }
         return result(projectID: projectID, suite: suite, run: run,
                       incomplete: incomplete, regressions: regressions, execution: execution)
+    }
+
+    private static func hasCompleteSampleCoordinates(_ run: EvaluationRun) -> Bool {
+        let plannedCases = run.plannedCases ?? run.suiteDefinition?.cases ?? []
+        guard run.repetitions > 0, !plannedCases.isEmpty else { return false }
+        let (expectedCount, overflowed) = plannedCases.count.multipliedReportingOverflow(by: run.repetitions)
+        guard !overflowed, expectedCount == run.results.count else { return false }
+        let caseIDs = Set(plannedCases.map(\.id))
+        guard caseIDs.count == plannedCases.count else { return false }
+        var sampleIDs = Set<UUID>()
+        var coordinates = Set<String>()
+        return run.results.allSatisfy { sample in
+            caseIDs.contains(sample.caseID)
+                && (1...run.repetitions).contains(sample.repetition)
+                && sampleIDs.insert(sample.id).inserted
+                && coordinates.insert("\(sample.caseID.uuidString):\(sample.repetition)").inserted
+        }
     }
 
     static func projectMarkdown(_ report: EvaluationProjectReleaseCheckReport) -> String {

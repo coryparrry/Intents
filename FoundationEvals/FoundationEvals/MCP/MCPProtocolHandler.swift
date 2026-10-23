@@ -96,7 +96,10 @@ actor MCPProtocolHandler {
             return rpcError(status: 400, id: .null, code: -32_600, message: "Invalid Request.")
         }
 
-        guard request.jsonrpc == "2.0", request.validID,
+        guard request.validID else {
+            return rpcError(status: 400, id: .null, code: -32_600, message: "Invalid Request.")
+        }
+        guard request.jsonrpc == "2.0",
               request.params == nil || request.params?.objectValue != nil
         else {
             return rpcError(status: 400, id: request.id ?? .null, code: -32_600, message: "Invalid Request.")
@@ -220,12 +223,12 @@ actor MCPProtocolHandler {
         if payload.isError {
             return resourceError(payload, requestedURI: uri, id: request.id!)
         }
-        guard payload.uri == uri, (payload.text == nil) != (payload.blob == nil) else {
+        guard MCPResourceRequest(uri: payload.uri) == resource, (payload.text == nil) != (payload.blob == nil) else {
             return rpcError(id: request.id!, code: -32_603, message: "Internal error.")
         }
 
         var content: [String: MCPJSONValue] = [
-            "uri": .string(payload.uri),
+            "uri": .string(uri),
             "mimeType": .string(payload.mimeType)
         ]
         if let text = payload.text {
@@ -414,6 +417,20 @@ private struct MCPRPCRequest: Decodable {
     var id: MCPJSONValue?
     var method: String
     var params: MCPJSONValue?
+
+    private enum CodingKeys: String, CodingKey {
+        case jsonrpc, id, method, params
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        jsonrpc = try container.decode(String.self, forKey: .jsonrpc)
+        method = try container.decode(String.self, forKey: .method)
+        // Only an absent ID denotes a notification. Explicit null must reach
+        // validation, as must a present params value that is not an object.
+        id = container.contains(.id) ? try container.decode(MCPJSONValue.self, forKey: .id) : nil
+        params = container.contains(.params) ? try container.decode(MCPJSONValue.self, forKey: .params) : nil
+    }
 
     var validID: Bool {
         guard let id else { return true }

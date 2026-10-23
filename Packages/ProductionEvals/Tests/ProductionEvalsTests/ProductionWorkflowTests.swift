@@ -338,6 +338,170 @@ private actor Calls {
 }
 
 @Suite(.serialized) struct ProductionRecoveryTests {
+    @Test func largeFrozenExecutionContextRemainsReadable() throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input")])
+        let context = Data(repeating: 1, count: 53_000_000)
+        let config = ProductionJobConfiguration(scoringRevision: ProductionCodec.digest(Data("score".utf8)),
+            executionRevision: ProductionCodec.digest(context), executionContext: context)
+        let job = try fixture.storage.createJob(name: "Large context", datasetRevision: dataset.revision, configuration: config)
+        let file = fixture.storage.jobDirectory(job.id).appendingPathComponent("job.json")
+        #expect(try ProductionCodec.fileSize(file) > 70_000_000)
+        let loaded = try fixture.storage.loadJob(job.id)
+        #expect(loaded.configuration.executionContext == context && loaded.revision == job.revision)
+    }
+
+    @Test func escapedFullPayloadChunkRemainsReadable() throws {
+        // Character limits permit large combining sequences; the encoded dataset row
+        // limit, rather than Character count, bounds retained metadata.
+        let metadata = ["note": "a" + String(repeating: "\u{0301}", count: 125_000)]
+        let fixture = try Fixture(), dataset = try fixture.dataset((0..<100).map { .init(id: String($0), prompt: "input", metadata: metadata) })
+        let job = try fixture.job(dataset)
+        var worker = fixture.worker; worker.name = "a" + String(repeating: "\u{0301}", count: 9_000)
+        try fixture.storage.register(worker)
+        var chunk = ProductionChunk(index: 0)
+        for slot in 0..<100 {
+            let response = ProductionResponse(requestID: fixture.storage.requestID(job, slot: slot), outcome: .passed,
+                output: String(repeating: "\u{0001}", count: 64_000), explanation: String(repeating: "\u{0001}", count: 8_000),
+                cost: 0, artifact: Data(repeating: 1, count: 262_144))
+            try fixture.storage.validateResponse(response, requestID: response.requestID)
+            chunk.records[slot] = ProductionRecord(slot: slot, sourceID: String(slot), exampleID: String(slot), partition: .regression,
+                metadata: metadata, targetIndex: 0, repetition: 1, attempt: 1, worker: worker, response: response, completedAt: Date())
+            chunk.attempts[slot] = ProductionAttempt(requestID: response.requestID, number: 1, startedAt: Date(), worker: worker)
+        }
+        let file = fixture.storage.chunkURL(job, 0)
+        try ProductionCodec.write(chunk, to: file)
+        #expect(try ProductionCodec.fileSize(file) > 100_000_000)
+        let restored = try fixture.storage.chunk(job, index: 0)
+        #expect(restored.records.count == 100)
+        #expect(restored.records[99]?.response == chunk.records[99]?.response)
+        #expect(restored.records[99]?.metadata == metadata)
+    }
+
+    @Test func oversizedWorkerCannotBeRegisteredOrClaimAChunk() throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input")])
+        let job = try fixture.job(dataset)
+        for oversizedName in [false, true] {
+            var worker = fixture.worker
+            if oversizedName { worker.name = String(repeating: "a", count: 20_000) }
+            else { worker.hardware = "a" + String(repeating: "\u{0301}", count: 20_000) }
+            #expect(throws: ProductionFailure.self) { try fixture.storage.register(worker) }
+            #expect(throws: ProductionFailure.self) { try fixture.storage.claim(job, worker: worker) }
+        }
+        #expect(try fixture.storage.workers().isEmpty)
+        #expect(try fixture.storage.chunk(job, index: 0).lease == nil)
+    }
+
+    @Test func boundedWritesPreserveExistingEvidenceWhenEncodingExceedsLimit() throws {
+        let fixture = try Fixture(), file = fixture.directory.appendingPathComponent("bounded.json")
+        try ProductionCodec.write("old", to: file, maximumBytes: 5)
+        #expect(throws: ProductionFailure.self) { try ProductionCodec.write("\u{0001}", to: file, maximumBytes: 5) }
+        #expect(try ProductionCodec.read(String.self, from: file, maximumBytes: 5) == "old")
+    }
+
+    @Test func datasetIdentityPreservesLegacyNewlinesAndRejectsAmbiguousImports() throws {
+        let fixture = try Fixture(), file = fixture.directory.appendingPathComponent("identity.jsonl")
+        var input = try ProductionCodec.encode(ProductionExample(id: "a", prompt: "input")); input.append(10)
+        try input.write(to: file)
+        var original = try fixture.storage.importDataset(from: file, name: "Legacy seed", version: "1")
+        let originalFolder = try fixture.storage.datasetDirectory(original.revision)
+        original.name = "a\nb"; original.version = "c"
+        let legacyIdentity = "\(original.name)\n\(original.version)\n\(original.sampling.rawValue)\n\(original.productionData)\n\(original.dataDigest)\n\(original.indexDigest)\n\(original.count)\n\(try ProductionCodec.digest(ProductionCodec.encode(original.partitionCounts)))"
+        original.revision = ProductionCodec.digest(Data(legacyIdentity.utf8))
+        try ProductionCodec.write(original, to: originalFolder.appendingPathComponent("manifest.json"))
+        try FileManager.default.moveItem(at: originalFolder, to: fixture.storage.datasetDirectory(original.revision))
+        #expect(try fixture.storage.loadDataset(original.revision, verifyFiles: true).name == "a\nb")
+        for (name, version) in [("a\nb", "c"), ("a", "b\nc")] {
+            #expect(throws: ProductionFailure.self) {
+                try fixture.storage.importDataset(from: file, name: name, version: version)
+            }
+        }
+        let other = try fixture.storage.importDataset(from: file, name: "a", version: "b")
+        #expect(other.revision != original.revision && other.name == "a" && other.version == "b")
+        #expect(try fixture.storage.importDataset(from: file, name: "a", version: "b").revision == other.revision)
+        // New structured revisions detect an ambiguous name/version boundary change.
+        var changed = other; changed.name = "a\nb"; changed.version = "c"
+        try ProductionCodec.write(changed, to: fixture.storage.datasetDirectory(other.revision).appendingPathComponent("manifest.json"))
+        #expect(throws: ProductionFailure.self) { try fixture.storage.loadDataset(other.revision) }
+    }
+
+    @Test(arguments: [ProductionReplaySafety.inference, .sideEffects])
+    func multibyteExecutorErrorsLeaveReadableEvidence(safety: ProductionReplaySafety) async throws {
+        struct WorkerError: Error, LocalizedError, CustomStringConvertible {
+            var errorDescription: String? { description }
+            var description: String { String(repeating: "a", count: 7_999) + String(repeating: "🙂", count: 3_000) }
+        }
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input")])
+        let job = try fixture.job(dataset, safety: safety)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) { _ in
+            throw WorkerError()
+        }
+        let response = try fixture.storage.record(jobID: job.id, slot: 0).response
+        #expect((response.explanation?.utf8.count ?? 0) <= 8_000)
+        #expect(response.explanation?.hasPrefix(String(repeating: "a", count: 7_999)) == true)
+        try fixture.storage.validateResponse(response, requestID: response.requestID)
+        let report = try fixture.storage.report(jobID: job.id)
+        #expect(report.completed == 1 && report.exitCode != 0)
+        #expect(response.outcome == (safety == .sideEffects ? .needsEvidence : .error))
+    }
+
+    @Test func fullReconciledPayloadRemainsReadable() async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input")])
+        let job = try fixture.job(dataset, safety: .sideEffects)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) {
+            .init(requestID: $0.requestID, outcome: .needsEvidence)
+        }
+        let id = fixture.storage.requestID(job, slot: 0)
+        try fixture.storage.appendReview(jobID: job.id, slot: 0, event: .init(requestID: id, reviewer: "A", action: .assign, assignee: "A", note: "Verify state"))
+        let response = ProductionResponse(requestID: id, outcome: .passed,
+            output: String(repeating: "\u{0001}", count: 64_000), explanation: String(repeating: "\u{0001}", count: 8_000),
+            cost: 0, artifact: Data(repeating: 1, count: 262_144))
+        try fixture.storage.appendReview(jobID: job.id, slot: 0, event: .init(requestID: id, reviewer: "A", action: .reconcile,
+            note: String(repeating: "\u{0001}", count: 8_000), reconciledResponse: response))
+        #expect(try fixture.storage.review(jobID: job.id, requestID: id).response == response)
+        #expect(try fixture.storage.report(jobID: job.id).exitCode == 0)
+    }
+
+    @Test func reconciliationCannotOverrideFailedEvidenceWithPassingVerdict() async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input")])
+        let job = try fixture.job(dataset, safety: .sideEffects)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) {
+            .init(requestID: $0.requestID, outcome: .needsEvidence)
+        }
+        let id = fixture.storage.requestID(job, slot: 0)
+        try fixture.storage.appendReview(jobID: job.id, slot: 0, event: .init(requestID: id, reviewer: "A", action: .assign, assignee: "A", note: "Verify state"))
+        var event = ProductionReviewEvent(requestID: id, reviewer: "A", action: .reconcile, outcome: .passed,
+            note: "Verified failed action", reconciledResponse: .init(requestID: id, outcome: .failed, cost: 0))
+        #expect(throws: ProductionFailure.self) { try fixture.storage.appendReview(jobID: job.id, slot: 0, event: event) }
+        #expect(try fixture.storage.review(jobID: job.id, requestID: id).events.count == 1)
+        event.outcome = nil
+        try fixture.storage.appendReview(jobID: job.id, slot: 0, event: event)
+        #expect(try fixture.storage.report(jobID: job.id).counts.failed == 1)
+        // Older clients could persist conflicting fields; the verified response remains authoritative.
+        event.outcome = .passed
+        var legacy = try ProductionCodec.encode(event); legacy.append(10)
+        try legacy.write(to: fixture.storage.reviewURL(jobID: job.id, requestID: id))
+        #expect(try fixture.storage.report(jobID: job.id).counts.failed == 1)
+    }
+
+    @Test func captureRejectsUnimportableEncodedRecordsWithoutChangingExistingEvidence() async throws {
+        let fixture = try Fixture(), file = fixture.directory.appendingPathComponent("bounded-capture.jsonl")
+        let capture = try DeveloperProductionCapture(file: file, sourceKey: Data(repeating: 1, count: 32), metadataKeys: [""]) { $0 }
+        await capture.setEnabled(true)
+        #expect(try await capture.record(eventID: "valid", sourceID: "valid", prompt: "input", output: "output"))
+        let original = try Data(contentsOf: file)
+        do {
+            _ = try await capture.record(eventID: "escaped", sourceID: "escaped",
+                prompt: String(repeating: "\u{0001}", count: 64_000), output: String(repeating: "\u{0001}", count: 64_000))
+            Issue.record("Capture accepted a JSONL row larger than the import limit")
+        } catch DeveloperProductionCapture.CaptureError.oversizedRecord { }
+        do {
+            _ = try await capture.record(eventID: "empty-key", sourceID: "empty-key", prompt: "input", output: "output", metadata: ["": "value"])
+            Issue.record("Capture accepted an empty metadata key")
+        } catch DeveloperProductionCapture.CaptureError.oversizedRecord { }
+        #expect(try Data(contentsOf: file) == original)
+        #expect(try fixture.storage.importDataset(from: file, name: "Capture", version: "v1").count == 1)
+    }
+
     @Test func canonicalTimestampsRemainStableAcrossRepeatedRoundTrips() throws {
         for index in 0..<100 {
             let date = Date(timeIntervalSince1970: 1_791_000_000 + Double(index)/123.4567)
@@ -379,6 +543,42 @@ private actor Calls {
         }
         #expect(await calls.total() == 0)
         #expect(try fixture.storage.report(jobID: job.id).counts.uncertain == 1)
+    }
+
+    @Test(arguments: [ProductionReplaySafety.inference, .sideEffects])
+    func resumingWithoutExecutionRetainsOriginalAttemptWorker(safety: ProductionReplaySafety) async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input")])
+        let job = try fixture.job(dataset, safety: safety)
+        let original = fixture.worker
+        var resumed = original
+        resumed.id = "resuming-worker"; resumed.name = "Resuming worker"
+        resumed.hardware = "different-hardware"; resumed.model = "different-model"
+        var chunk = try #require(try fixture.storage.claim(job, worker: original))
+        chunk.lease = nil
+        let attempts = safety == .sideEffects ? 1 : job.configuration.maximumAttempts
+        var attempt = ProductionAttempt(requestID: fixture.storage.requestID(job, slot: 0), number: attempts,
+                                        startedAt: Date(), worker: original)
+        attempt.reportedCost = 0.4; attempt.hasUnknownCost = false
+        chunk.attempts[0] = attempt
+        try ProductionCodec.write(chunk, to: fixture.storage.chunkURL(job, 0))
+        let journaledWorker = try #require(fixture.storage.chunk(job, index: 0).attempts[0]?.worker)
+        let calls = Calls()
+        let count = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: resumed) { request in
+            _ = await calls.record(request.requestID)
+            return .init(requestID: request.requestID, outcome: .passed, cost: 0)
+        }
+        #expect(count == 1)
+        #expect(await calls.total() == 0)
+        let record = try fixture.storage.record(jobID: job.id, slot: 0)
+        #expect(record.worker == journaledWorker)
+        #expect(record.attempt == attempts)
+        #expect(record.response.cost == 0.4)
+        #expect(record.response.outcome == (safety == .sideEffects ? .needsEvidence : .error))
+        let report = try fixture.storage.report(jobID: job.id)
+        #expect(report.cohorts["hardware=\(original.hardware)"]?.samples == 1)
+        #expect(report.cohorts["model=\(original.model)"]?.samples == 1)
+        #expect(report.cohorts["hardware=\(resumed.hardware)"] == nil)
+        #expect(report.cohorts["model=\(resumed.model)"] == nil)
     }
     @Test func compatibleBaselineShowsCohortDriftAndRejectsChangedScoring() async throws {
         let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input", metadata: ["task":"safety"])]), baseline = try fixture.job(dataset)

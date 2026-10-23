@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import ProductionEvals
 #if canImport(FoundationModels)
 import FoundationModels
@@ -74,6 +75,10 @@ struct Options {
       tick
     Storage and worker provenance are local/trusted; they are not hardware attestation.
     """
+}
+
+private final class WorkerCommitProgress: Sendable {
+    let count = Mutex(0)
 }
 
 @main
@@ -188,13 +193,17 @@ struct ProductionEvalsCLI {
                     let context = try ProductionCodec.decode(ProductionCommandContext.self, job.configuration.executionContext)
                     guard context.executableDigest == (try ProductionCommandExecutor(executable: options.url("executor"))).executableDigest else { continue }
                 }
+                let committed = WorkerCommitProgress()
+                defer { remaining -= committed.count.withLock { $0 } }
                 let count: Int
-                do { count = try await ProductionBatchRunner(storage: storage).run(jobID: job.id, worker: worker, maximumResponses: remaining, execute: execute) }
+                do {
+                    count = try await ProductionBatchRunner(storage: storage).run(jobID: job.id, worker: worker,
+                        maximumResponses: remaining, onCommit: { committed.count.withLock { $0 += 1 } }, execute: execute)
+                }
                 catch {
                     if options.values["job"] != nil { throw error }
                     FileHandle.standardError.write(Data(("\(job.id): \(error.localizedDescription)\n").utf8)); continue
                 }
-                remaining -= count
                 if count > 0 { FileHandle.standardError.write(Data(("\(job.id): committed \(count) responses\n").utf8)) }
             }
             if options.values["poll"] == nil || remaining == 0 { break }

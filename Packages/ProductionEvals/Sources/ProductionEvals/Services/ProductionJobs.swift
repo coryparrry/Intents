@@ -1,6 +1,10 @@
 import Foundation
 
 extension ProductionStorage {
+    static let maximumJobBytes = 100_000_000
+    // Each of 100 records may retain a 256 KiB example's metadata, a ~784 KB
+    // escaped/base64 response and a 20 KB worker; attempts retain workers too.
+
     public func createJob(name: String, datasetRevision: String, configuration: ProductionJobConfiguration,
                           id: UUID = UUID(), resolveCriticalCaseIDs: Bool = false) throws -> ProductionJob {
         let reader = try ProductionDatasetReader(storage: self, revision: datasetRevision)
@@ -44,13 +48,14 @@ extension ProductionStorage {
             let staging = root.appendingPathComponent("Jobs/.new-\(UUID().uuidString)")
             defer { try? FileManager.default.removeItem(at: staging) }
             try FileManager.default.createDirectory(at: staging.appendingPathComponent("Chunks"), withIntermediateDirectories: true)
-            try ProductionCodec.write(job, to: staging.appendingPathComponent("job.json"))
+            try ProductionCodec.write(job, to: staging.appendingPathComponent("job.json"), maximumBytes: Self.maximumJobBytes)
             try ProductionCodec.write(ProductionControl(), to: staging.appendingPathComponent("control.json"))
             try FileManager.default.moveItem(at: staging, to: directory)
             return job
     }
     public func loadJob(_ id: UUID) throws -> ProductionJob {
-        let job = try ProductionCodec.read(ProductionJob.self, from: jobDirectory(id).appendingPathComponent("job.json"))
+        // The 64 MB execution context expands by 4/3 when JSON encodes it as base64.
+        let job = try ProductionCodec.read(ProductionJob.self, from: jobDirectory(id).appendingPathComponent("job.json"), maximumBytes: Self.maximumJobBytes)
         var unhashed = job; unhashed.revision = ""
         let dataset = try loadDataset(job.datasetRevision)
         try Self.validate(job.configuration)
@@ -92,14 +97,17 @@ extension ProductionStorage {
         }
     }
     public func register(_ worker: ProductionWorker) throws {
-        guard !worker.id.isEmpty, worker.id.count <= 200, !worker.name.isEmpty, worker.name.count <= 200,
-              [worker.platform, worker.operatingSystem, worker.hardware, worker.locale, worker.model].allSatisfy({ !$0.isEmpty && $0.count <= 200 }) else {
-            throw ProductionFailure.invalid("Worker provenance is incomplete.")
-        }
+        try Self.validateWorker(worker)
         try transaction {
             let key = ProductionCodec.digest(Data(worker.id.utf8))
-            try ProductionCodec.write(worker, to: root.appendingPathComponent("Workers/\(key).json"),
-                                      maximumBytes: ProductionStorageLimits.encodedWorkerBytes)
+            try ProductionCodec.write(worker, to: root.appendingPathComponent("Workers/\(key).json"), maximumBytes: ProductionStorageLimits.encodedWorkerBytes)
+        }
+    }
+    private static func validateWorker(_ worker: ProductionWorker) throws {
+        guard !worker.id.isEmpty, worker.id.count <= 200, !worker.name.isEmpty, worker.name.count <= 200,
+              [worker.platform, worker.operatingSystem, worker.hardware, worker.locale, worker.model].allSatisfy({ !$0.isEmpty && $0.count <= 200 }),
+              try ProductionCodec.encode(worker).count <= ProductionStorageLimits.encodedWorkerBytes else {
+            throw ProductionFailure.invalid("Worker provenance is incomplete.")
         }
     }
     public func workers() throws -> [ProductionWorker] {
@@ -143,10 +151,17 @@ extension ProductionStorage {
             targetIndex: targetIndex(job, slot: slot), example: try reader.example(at: slot / (matrixSize * repetitions)),
             configuration: job.configuration, deadline: now.addingTimeInterval(job.configuration.timeoutSeconds))
     }
+    func canFinalizeWithoutExecution(_ job: ProductionJob, attempt: ProductionAttempt?) -> Bool {
+        guard let attempt else { return false }
+        return job.configuration.replaySafety == .sideEffects || attempt.number >= job.configuration.maximumAttempts
+    }
     public func claim(_ job: ProductionJob, worker: ProductionWorker, now: Date = Date()) throws -> ProductionChunk? {
-        try transaction {
+        try Self.validateWorker(worker)
+        return try transaction {
             var settings = try control(job)
             guard !settings.paused, !settings.cancelled else { return nil }
+            let elapsed = settings.startedAt.map { now.timeIntervalSince($0) >= job.configuration.maximumElapsedSeconds } ?? false
+            var blockedByElapsedBudget = false
             for index in claimStartIndex(job)..<chunkCount(job) {
                 var value = try chunk(job, index: index)
                 guard value.lease == nil || value.lease!.expiresAt <= now else { continue }
@@ -154,13 +169,16 @@ extension ProductionStorage {
                     advanceClaimPrefix(job, completedIndex: index)
                     continue
                 }
-                let available = slots(job, chunk: index).contains { slot in
+                let pending = slots(job, chunk: index).filter { slot in
                     job.configuration.targets[targetIndex(job, slot: slot)].matches(worker)
                     && value.records[slot] == nil
                 }
-                guard available else { continue }
-                if let start = settings.startedAt, now.timeIntervalSince(start) > job.configuration.maximumElapsedSeconds {
-                    throw ProductionFailure.budget("Job elapsed-time budget was exhausted; evidence was retained.")
+                guard !pending.isEmpty else { continue }
+                // Admission may be exhausted while interrupted actions still need
+                // a result for review. Scan later chunks before reporting the budget.
+                if elapsed && !pending.contains(where: { canFinalizeWithoutExecution(job, attempt: value.attempts[$0]) }) {
+                    blockedByElapsedBudget = true
+                    continue
                 }
 
                 if settings.startedAt == nil {
@@ -170,6 +188,9 @@ extension ProductionStorage {
                 value.lease = ProductionLease(token: UUID(), workerID: worker.id,
                     expiresAt: now.addingTimeInterval(max(300, job.configuration.timeoutSeconds * 3)))
                 try writeChunk(value, job: job, index: index); return value
+            }
+            if blockedByElapsedBudget {
+                throw ProductionFailure.budget("Job elapsed-time budget was exhausted; evidence was retained.")
             }
             return nil
         }

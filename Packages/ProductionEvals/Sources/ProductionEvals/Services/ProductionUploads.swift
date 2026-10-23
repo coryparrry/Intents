@@ -26,6 +26,8 @@ public struct ProductionUpload: Codable, Sendable, Equatable {
     self.expectedDigest = expectedDigest
   }
 }
+private let maximumUploadManifestBytes = 4096
+
 private struct ProductionUploadChunk: Codable {
   var bytes: Int
   var digest: String
@@ -41,6 +43,14 @@ extension ProductionStorage {
       upload.expectedDigest.allSatisfy({ "0123456789abcdef".contains($0) }),
       !upload.previewed, upload.datasetRevision == nil
     else { throw ProductionFailure.invalid("Invalid upload contract.") }
+    // Reserve the completed-state fields before accepting source bytes. Character
+    // limits alone do not bound Unicode strings in the persisted JSON manifest.
+    var completed = upload
+    completed.previewed = true
+    completed.datasetRevision = String(repeating: "0", count: 64)
+    guard try ProductionCodec.encode(upload).count <= maximumUploadManifestBytes,
+      try ProductionCodec.encode(completed).count <= maximumUploadManifestBytes
+    else { throw ProductionFailure.invalid("Upload contract exceeds its storage byte limit.") }
     return try transaction {
       let folder = uploadDirectory(upload.id)
       let manifest = folder.appendingPathComponent("upload.json")
@@ -67,7 +77,7 @@ extension ProductionStorage {
         return
           (try? ProductionCodec.read(
             ProductionUpload.self, from: folder.appendingPathComponent("upload.json"),
-            maximumBytes: 4096))?.datasetRevision == nil
+            maximumBytes: maximumUploadManifestBytes))?.datasetRevision == nil
       }
       guard pending.count < 10 else {
         throw ProductionFailure.invalid(
@@ -75,14 +85,17 @@ extension ProductionStorage {
       }
       try FileManager.default.createDirectory(
         at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-      try ProductionCodec.write(upload, to: manifest)
+      try ProductionCodec.write(upload, to: manifest, maximumBytes: maximumUploadManifestBytes)
       return upload
     }
   }
   public func upload(_ id: UUID) throws -> ProductionUpload {
-    try ProductionCodec.read(
+    guard !FileManager.default.fileExists(atPath: discardMarker(id).path) else {
+      throw ProductionFailure.invalid("This upload ID was discarded. Use a new ID for new source data.")
+    }
+    return try ProductionCodec.read(
       ProductionUpload.self, from: uploadDirectory(id).appendingPathComponent("upload.json"),
-      maximumBytes: 4096)
+      maximumBytes: maximumUploadManifestBytes)
   }
   public func uploadStatus(_ id: UUID) throws -> [Int] {
     let value = try upload(id)
@@ -129,7 +142,7 @@ extension ProductionStorage {
       var value = try upload(id)
       value.previewed = true
       try ProductionCodec.write(
-        value, to: uploadDirectory(id).appendingPathComponent("upload.json"))
+        value, to: uploadDirectory(id).appendingPathComponent("upload.json"), maximumBytes: maximumUploadManifestBytes)
     }
     return preview
   }
@@ -153,17 +166,27 @@ extension ProductionStorage {
       }
       current.datasetRevision = dataset.revision
       try ProductionCodec.write(
-        current, to: uploadDirectory(id).appendingPathComponent("upload.json"))
+        current, to: uploadDirectory(id).appendingPathComponent("upload.json"), maximumBytes: maximumUploadManifestBytes)
     }
     return dataset
   }
   public func discardUpload(_ id: UUID) throws {
     try transaction {
-      _ = try upload(id)
-      try Data(id.uuidString.utf8).write(to: discardMarker(id), options: .atomic)
-      try FileManager.default.setAttributes(
-        [.posixPermissions: 0o600], ofItemAtPath: discardMarker(id).path)
-      try FileManager.default.removeItem(at: uploadDirectory(id))
+      if !FileManager.default.fileExists(atPath: discardMarker(id).path) {
+        // Explicit cleanup must also recover legacy oversized or corrupt manifests.
+        // Require the requested upload's manifest, but do not decode its contents.
+        guard FileManager.default.fileExists(
+          atPath: uploadDirectory(id).appendingPathComponent("upload.json").path)
+        else { throw ProductionFailure.invalid("Upload does not exist.") }
+        try Data(id.uuidString.utf8).write(to: discardMarker(id), options: .atomic)
+        try FileManager.default.setAttributes(
+          [.posixPermissions: 0o600], ofItemAtPath: discardMarker(id).path)
+      }
+      // A persisted tombstone is authoritative even when folder removal was
+      // interrupted. Retrying discard must still finish that cleanup.
+      if FileManager.default.fileExists(atPath: uploadDirectory(id).path) {
+        try FileManager.default.removeItem(at: uploadDirectory(id))
+      }
     }
   }
   private func discardMarker(_ id: UUID) -> URL {

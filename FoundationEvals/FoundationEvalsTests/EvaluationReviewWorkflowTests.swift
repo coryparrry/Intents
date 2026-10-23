@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import FoundationEvals
@@ -35,6 +36,38 @@ struct EvaluationReviewWorkflowTests {
                     sample: fixture.sample, suite: fixture.suite, expected: invalid)
             }
         }
+    }
+
+    @MainActor @Test(arguments: [4_000, 4_001])
+    func mcpReviewUsesTheSameUnicodeCharacterLimitAsNativeReview(characterCount: Int) async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let fixture = try ReviewFixture(suite: store.suite)
+        store.runs = [fixture.run]
+        var annotation = fixture.annotation(verdict: .failed)
+        annotation.note = String(repeating: "界", count: characterCount)
+        let allowed = characterCount <= 4_000
+        if allowed {
+            #expect(try EvaluationReviewWorkflow.validated(annotation, sample: fixture.sample).note == annotation.note)
+        } else {
+            #expect(throws: EvaluationReviewError.self) {
+                _ = try EvaluationReviewWorkflow.validated(annotation, sample: fixture.sample)
+            }
+        }
+        let call = try MCPToolCatalog.parse(name: "eval_review_save", arguments: .object([
+            "operationID": .string(UUID().uuidString),
+            "projectID": .string(store.selectedProjectID.uuidString),
+            "suiteID": .string(store.selectedSuiteID.uuidString),
+            "expectedRevision": .string(store.suiteRevision),
+            "expectedWorkspaceRevision": .string(try MCPWorkspaceControl.revision(store)),
+            "confirmHumanReview": .bool(true),
+            "annotationJSON": .string(String(decoding: try JSONEncoder().encode(annotation), as: UTF8.self)),
+        ]))
+        let result = await MCPStoreAuthority.make(store: store).call(call)
+        #expect(result.isError == !allowed)
+        #expect(store.suiteLocalState.review.annotations.count == (allowed ? 1 : 0))
+        if allowed { #expect(store.suiteLocalState.review.annotations.first?.note == annotation.note) }
     }
 
     @Test func legacyStateAndCaseDecodeWithoutReviewFields() throws {
@@ -204,6 +237,44 @@ struct EvaluationReviewWorkflowTests {
         #expect(throws: EvaluationReviewError.self) { try store.saveReview(fixture.annotation(verdict: .failed)) }
     }
 
+    @MainActor @Test func savingAnOlderReviewIDBecomesCurrentOnlyAfterPersistenceSucceeds() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var failWrites = false
+        let store = EvaluationStore(supportDirectory: directory, suiteLocalStateWriter: { data, url in
+            if failWrites { throw CocoaError(.fileWriteNoPermission) }
+            try data.write(to: url, options: .atomic)
+        })
+        let fixture = try ReviewFixture(suite: store.suite)
+        store.runs = [fixture.run]
+        var restoredDraft = fixture.annotation(verdict: .failed, tags: ["wrong date"])
+        try store.saveReview(restoredDraft)
+        let laterReview = fixture.annotation(verdict: .passed)
+        try store.saveReview(laterReview)
+        restoredDraft.note = "Confirmed the original date failure."
+        // Currentness follows the successful save, not caller-controlled timestamps.
+        restoredDraft.updatedAt = .distantPast
+
+        failWrites = true
+        #expect(throws: EvaluationStoreError.self) { try store.saveReview(restoredDraft) }
+        #expect(store.suiteLocalState.review.annotation(runID: fixture.run.id, sampleID: fixture.sample.sample.id)?.id == laterReview.id)
+        let afterFailure = EvaluationStore(supportDirectory: directory)
+        #expect(afterFailure.suiteLocalState.review.annotation(runID: fixture.run.id, sampleID: fixture.sample.sample.id)?.id == laterReview.id)
+
+        failWrites = false
+        try store.saveReview(restoredDraft)
+        let reloaded = EvaluationStore(supportDirectory: directory)
+        for state in [store.suiteLocalState.review, reloaded.suiteLocalState.review] {
+            let current = try #require(state.annotation(runID: fixture.run.id, sampleID: fixture.sample.sample.id))
+            #expect(current.id == restoredDraft.id)
+            #expect(current.note == restoredDraft.note)
+            #expect(current.verdict == .failed)
+            #expect(state.annotations.count == 2)
+            #expect(Set(state.annotations.map(\.id)) == [restoredDraft.id, laterReview.id])
+            #expect(EvaluationReviewWorkflow.patterns(samples: [fixture.sample], state: state).first?.tag == "wrong date")
+        }
+    }
+
     @MainActor @Test func regressionIsDurableDeduplicatedAndDoesNotOverwriteDraftEdits() throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -269,6 +340,63 @@ struct EvaluationReviewWorkflowTests {
         }
     }
 
+    @Test func reviewMCPOffsetBoundsDoNotLimitHistorySize() throws {
+        for offset in [0, 10_000, 10_020, Int.max] {
+            _ = try MCPToolCatalog.parse(name: "eval_list_review_samples", arguments: .encode(
+                MCPReviewSamplesArguments(suiteID: UUID(), offset: offset, limit: 20)
+            ))
+        }
+        #expect(throws: MCPToolInputError.self) {
+            try MCPToolCatalog.parse(name: "eval_list_review_samples", arguments: .encode(
+                MCPReviewSamplesArguments(suiteID: UUID(), offset: -1, limit: 20)
+            ))
+        }
+    }
+
+    @MainActor @Test func reviewMCPNextOffsetCanBrowseBeyondTenThousandSamples() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let fixture = try ReviewFixture(suite: store.suite)
+        store.runs = (0..<158).map { index in
+            var run = fixture.run
+            run.id = UUID()
+            run.startedAt = Date(timeIntervalSince1970: Double(index))
+            run.results = (0..<64).map { repetition in
+                var sample = fixture.run.results[0]
+                sample.id = UUID()
+                sample.repetition = repetition + 1
+                return sample
+            }
+            return run
+        }
+        let page = try EvaluationReviewMCP.list(.init(suiteID: store.selectedSuiteID, offset: 10_000, limit: 20), store: store)
+        #expect(page.structuredContent.objectValue?["total"] == .integer(10_112))
+        let nextOffset = try #require(page.structuredContent.objectValue?["nextOffset"])
+        #expect(nextOffset == .integer(10_020))
+        let call = try MCPToolCatalog.parse(name: "eval_list_review_samples", arguments: .object([
+            "suiteID": .string(store.selectedSuiteID.uuidString), "offset": nextOffset, "limit": .integer(20)
+        ]))
+        guard case .listReviewSamples(let arguments) = call else {
+            Issue.record("Expected review page request")
+            return
+        }
+        let nextPage = try EvaluationReviewMCP.list(arguments, store: store)
+        guard case .array(let first)? = page.structuredContent.objectValue?["samples"],
+              case .array(let second)? = nextPage.structuredContent.objectValue?["samples"] else {
+            Issue.record("Expected review sample arrays")
+            return
+        }
+        #expect(first.count == 20)
+        #expect(second.count == 20)
+        let pageIDsAreDisjoint = Set(first.compactMap { $0.objectValue?["sampleID"]?.stringValue }).isDisjoint(with:
+            second.compactMap { $0.objectValue?["sampleID"]?.stringValue })
+        #expect(pageIDsAreDisjoint)
+        let end = try EvaluationReviewMCP.list(.init(suiteID: store.selectedSuiteID, offset: Int.max, limit: 20), store: store)
+        #expect(end.structuredContent.objectValue?["samples"] == .array([]))
+        #expect(end.structuredContent.objectValue?["nextOffset"] == .null)
+    }
+
     @Test func sourceDigestIncludesSubjectDefinitionButIgnoresJudgeConfiguration() throws {
         var fixture = try ReviewFixture()
         let before = fixture.sample.sourceDigest
@@ -279,15 +407,100 @@ struct EvaluationReviewWorkflowTests {
         #expect(fixture.sample.sourceDigest != before)
     }
 
+    @Test(arguments: ["instructions", "attachments", "conversation"])
+    func legacyReviewCurrentnessIncludesSavedSubjectInputs(change: String) throws {
+        var fixture = try ReviewFixture()
+        fixture.run.subjectEvidence = nil
+        fixture.run.suiteDefinition = nil
+        let annotation = fixture.annotation(verdict: .failed)
+        let proposal = EvaluationReviewProposal(id: UUID(), annotation: annotation)
+        var state = EvaluationReviewState()
+        try EvaluationReviewWorkflow.propose(proposal, sample: fixture.sample, state: &state)
+        switch change {
+        case "instructions": fixture.run.instructions += " Changed instructions"
+        case "attachments": fixture.run.attachments.append(.init(name: "Reference", kind: .text, byteCount: 7, sha256: "changed"))
+        default: fixture.run.plannedCases?[0].conversation.setupTurns = [.init(prompt: "Changed history")]
+        }
+        #expect(!EvaluationReviewWorkflow.isCurrent(annotation, sample: fixture.sample))
+        #expect(throws: EvaluationReviewError.self) {
+            try EvaluationReviewWorkflow.decideProposal(id: proposal.id, accept: true, sample: fixture.sample, state: &state)
+        }
+        #expect(state.annotations.isEmpty)
+        #expect(state.proposals.first?.status == .pending)
+        try EvaluationReviewWorkflow.decideProposal(id: proposal.id, accept: false, sample: fixture.sample, state: &state)
+        #expect(state.proposals.first?.status == .rejected)
+    }
+
+    @Test func completeEvidenceKeepsTheExistingReviewDigestFormat() throws {
+        // The pre-fix source format is the compatibility contract for modern saved reviews.
+        struct Context: Encodable {
+            var instructions: String
+            var model: EvaluationModelConfiguration
+            var features: EvaluationFeatureConfiguration
+        }
+        struct OriginalSource: Encodable {
+            var runID: UUID
+            var sample: EvaluationSampleResult
+            var subjectEvidence: EvaluationSubjectEvidenceSnapshot?
+            var subjectContext: Context?
+            var environment: EvaluationEnvironment
+            var execution: EvaluationExecutionTrace?
+            var developerExecution: EvaluationDeveloperExecution?
+        }
+        let fixture = try ReviewFixture()
+        let run = fixture.run
+        let source = OriginalSource(runID: run.id, sample: run.results[0], subjectEvidence: run.subjectEvidence,
+            subjectContext: run.suiteDefinition.map { .init(instructions: $0.instructions, model: $0.modelConfiguration, features: $0.features) },
+            environment: run.environment, execution: run.execution, developerExecution: run.developerExecution)
+        let originalDigest = SHA256.hash(data: try CanonicalJSON.data(for: source, prettyPrinted: false))
+            .map { String(format: "%02x", $0) }.joined()
+        #expect(fixture.sample.sourceDigest == originalDigest)
+    }
+
     @Test func judgeLabelsCannotReplayAgainstChangedOutputs() throws {
         var fixture = try ReviewFixture()
+        let assessment = try fixture.addAssessment()
         let review = fixture.annotation(verdict: .failed)
         let example = EvaluationReviewedJudgeExample(reviewSource: .init(reviewID: review.id, runID: review.runID,
             sampleID: review.sampleID, sourceDigest: review.sourceDigest), id: UUID(), sourceRunID: review.runID,
-            sourceAssessmentID: UUID(), sampleID: review.sampleID, expectedStatus: .failed, reason: review.note, createdAt: Date())
+            sourceAssessmentID: assessment.id, sampleID: review.sampleID, expectedStatus: .failed, reason: review.note, createdAt: Date())
         try EvaluationReviewWorkflow.validateJudgeSource(example, run: fixture.run)
         fixture.run.results[0].response = "A different output"
         #expect(throws: EvaluationReviewError.self) { try EvaluationReviewWorkflow.validateJudgeSource(example, run: fixture.run) }
+    }
+
+    @MainActor @Test(arguments: ["foreignRun", "duplicateAssessment", "duplicateSample"])
+    func invalidAssessmentIdentityCannotEnrollOrReplayHumanJudgeChecks(kind: String) throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        var fixture = try ReviewFixture(suite: store.suite)
+        fixture.suite.scoringMode = .modelJudge
+        try fixture.refresh()
+        var assessment = try fixture.addAssessment()
+        let annotation = fixture.annotation(verdict: .failed)
+        let example = EvaluationReviewedJudgeExample(reviewSource: .init(reviewID: annotation.id,
+            runID: annotation.runID, sampleID: annotation.sampleID, sourceDigest: annotation.sourceDigest),
+            id: UUID(), sourceRunID: fixture.run.id, sourceAssessmentID: assessment.id, sampleID: annotation.sampleID,
+            expectedStatus: .failed, reason: annotation.note, createdAt: Date())
+        try EvaluationReviewWorkflow.validateJudgeSource(example, run: fixture.run)
+        switch kind {
+        case "foreignRun": assessment.runID = UUID()
+        case "duplicateSample":
+            var duplicate = assessment.samples[0]
+            duplicate.id = UUID()
+            assessment.samples.append(duplicate)
+        default: break
+        }
+        fixture.run.assessments = kind == "duplicateAssessment" ? [assessment, assessment] : [assessment]
+        #expect(EvaluationReviewWorkflow.isCurrent(annotation, sample: fixture.sample))
+        #expect(throws: EvaluationReviewError.self) {
+            try EvaluationReviewWorkflow.validateJudgeSource(example, run: fixture.run)
+        }
+        store.runs = [fixture.run]
+        try store.saveReview(annotation)
+        #expect(throws: EvaluationReviewError.self) { try store.addReviewToJudgeChecks(reviewID: annotation.id, partition: .test) }
+        #expect(store.suiteLocalState.reviewedJudgeExamples.isEmpty)
     }
 
     @Test func localSearchContextRequiresHistoricalIdentity() throws {
@@ -339,6 +552,45 @@ struct EvaluationReviewWorkflowTests {
         #expect(reloaded.draft(for: EvaluationReviewDraftStore.key(for: fixture.sample)) == nil)
         try reloaded.clear(key)
         #expect(EvaluationReviewDraftStore(directory: directory).draft(for: key) == nil)
+    }
+
+    @MainActor @Test func beginningShutdownSavesReviewDraftsBeforeTheirDebounceRuns() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let fixture = try ReviewFixture(suite: store.suite)
+        let key = EvaluationReviewDraftStore.key(for: fixture.sample)
+        let draft = EvaluationReviewDraftStore.Draft(reviewID: UUID(), verdict: .failed, note: "Last edit before quitting", tags: "date")
+        store.reviewDrafts.update(draft, for: key)
+        store.reviewDrafts.update(draft, for: "cleared")
+        try store.reviewDrafts.clear("cleared")
+        // No suspension: the 400 ms debounce task cannot run before shutdown.
+        store.beginClosing()
+        let reloaded = EvaluationReviewDraftStore(directory: directory.appending(path: "ReviewDrafts"))
+        #expect(reloaded.draft(for: key) == draft)
+        #expect(reloaded.draft(for: "cleared") == nil)
+        #expect(store.suiteLocalState.review.annotations.isEmpty)
+    }
+
+    @MainActor @Test func flushingReviewDraftsRetriesFailedWritesAndKeepsFailuresVisible() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let drafts = EvaluationReviewDraftStore(directory: directory)
+        let draft = EvaluationReviewDraftStore.Draft(reviewID: UUID(), verdict: .failed, note: "Keep this note", tags: "date")
+        try FileManager.default.createDirectory(at: directory.appending(path: "a.json"), withIntermediateDirectories: true)
+        drafts.update(draft, for: "a")
+        drafts.flush("a")
+        #expect(drafts.error != nil)
+        drafts.update(draft, for: "z")
+        drafts.flushPendingDrafts()
+        #expect(drafts.error != nil)
+        #expect(drafts.draft(for: "a") == draft)
+        #expect(EvaluationReviewDraftStore(directory: directory).draft(for: "z") == draft)
+
+        try FileManager.default.removeItem(at: directory.appending(path: "a.json"))
+        drafts.flushPendingDrafts()
+        #expect(drafts.error == nil)
+        #expect(EvaluationReviewDraftStore(directory: directory).draft(for: "a") == draft)
     }
 
     @MainActor @Test func failedDraftWriteKeepsTheUnfinishedReviewInMemory() throws {

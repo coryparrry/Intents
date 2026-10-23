@@ -2,18 +2,30 @@ import CryptoKit
 import Foundation
 
 enum EvaluationWorkspaceStatePersistence {
-    static func loadSuite(from directory: URL) -> (suite: EvaluationSuite?, notice: String?) {
+    static func loadSuite(from directory: URL, expectedSuiteID: UUID? = nil)
+        -> (suite: EvaluationSuite?, notice: String?, persistenceBlocker: String?) {
         let url = directory.appending(path: "suite.json")
-        guard FileManager.default.fileExists(atPath: url.path) else { return (nil, nil) }
+        guard FileManager.default.fileExists(atPath: url.path) else { return (nil, nil, nil) }
         do {
             let data = try Data(contentsOf: url)
-            return (try CanonicalJSON.decode(EvaluationSuite.self, from: data), nil)
+            let suite = try CanonicalJSON.decode(EvaluationSuite.self, from: data)
+            if let expectedSuiteID, suite.id != expectedSuiteID {
+                let preservation = preserveUnreadableFile(at: url, prefix: "suite-mismatched")
+                let suffix = preservation.map { " It was preserved as \($0)." } ?? ""
+                return (nil, "The saved suite belongs to a different workspace suite.\(suffix)",
+                        preservation == nil ? suitePreservationBlocker : nil)
+            }
+            return (suite, nil, nil)
         } catch {
             let preservation = preserveUnreadableFile(at: url, prefix: "suite-unreadable")
             let suffix = preservation.map { " It was preserved as \($0)." } ?? ""
-            return (nil, "The saved suite could not be read.\(suffix)")
+            return (nil, "The saved suite could not be read.\(suffix)",
+                    preservation == nil ? suitePreservationBlocker : nil)
         }
     }
+
+    private static let suitePreservationBlocker =
+        "The saved suite could not be preserved. Resolve the storage conflict and reopen the app before saving workspace changes."
 
     static func loadSuiteLocalState(
         from url: URL,
@@ -61,6 +73,25 @@ enum EvaluationWorkspaceStatePersistence {
             )
             let suffix = preservation.map { " It was preserved as \($0)." } ?? ""
             return ([], "The saved judge connections could not be read.\(suffix)")
+        }
+    }
+
+    /// A failed startup archive must not turn the next save into deletion of
+    /// the only recoverable copy. Recheck at the write boundary so a repaired
+    /// archive/storage conflict can be retried without replacing the workspace.
+    static func preserveUnreadableBeforeReplacing<Value: Decodable>(
+        at url: URL,
+        as type: Value.Type,
+        prefix: String
+    ) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        let data = try Data(contentsOf: url)
+        do {
+            _ = try CanonicalJSON.decode(type, from: data)
+        } catch {
+            try EvaluationWorkspacePersistence.preserveUnreadableFile(
+                data, in: url.deletingLastPathComponent(), prefix: prefix
+            )
         }
     }
 

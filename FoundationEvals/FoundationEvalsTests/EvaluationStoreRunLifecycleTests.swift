@@ -6,6 +6,34 @@ import Testing
 struct EvaluationStoreRunLifecycleTests {
     @MainActor
     @Test(.timeLimit(.minutes(1)))
+    func cancellationDuringFinalFeatureCheckpointIsPersisted() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [EvaluationCase(name: "Completed", prompt: "request", expected: "RESULT")]
+        try #require(store.saveSuite())
+        let run = try await store.runFeatureAdapter(
+            expectedRevision: store.currentSuiteRevision(),
+            adapter: ClosureFeatureAdapter(displayName: "Final checkpoint") { _ in "RESULT" }
+        ) { completed, total in
+            if completed == total { withUnsafeCurrentTask { $0?.cancel() } }
+        }
+        #expect(run.cancelled)
+        #expect(run.terminationReason == "cancelled")
+        #expect(run.results.map(\.response) == ["RESULT"])
+        #expect(run.results.first?.status == .passed)
+        let restored = try #require(EvaluationStore(supportDirectory: directory).run(with: run.id))
+        #expect(restored.cancelled)
+        #expect(restored.terminationReason == "cancelled")
+        #expect(restored.results.map(\.id) == run.results.map(\.id))
+        #expect(restored.results.map(\.response) == ["RESULT"])
+        #expect(restored.results.first?.status == .passed)
+        await store.closeAndWait()
+    }
+
+    @MainActor
+    @Test(.timeLimit(.minutes(1)))
     func standaloneFeatureCloseJoinsAdapterCleanupAndTerminalSave() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

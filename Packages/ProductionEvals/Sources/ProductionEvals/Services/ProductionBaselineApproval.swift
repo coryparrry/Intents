@@ -1,5 +1,7 @@
 import Foundation
 
+private let maximumBaselineApprovalHistoryBytes = 8_000_000
+
 public struct ProductionBaselineApproval: Codable, Sendable {
     public var id: UUID
     public var jobID: UUID
@@ -14,7 +16,7 @@ extension ProductionStorage {
     func readBaselineApproval(_ job: ProductionJob) throws -> ProductionBaselineApproval? {
         let file = jobDirectory(job.id).appendingPathComponent("baseline-approvals.jsonl")
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-        guard try ProductionCodec.fileSize(file) <= 8_000_000 else {
+        guard try ProductionCodec.fileSize(file) <= maximumBaselineApprovalHistoryBytes else {
             throw ProductionFailure.integrity("Baseline approval history exceeds its bound.")
         }
         var last: ProductionBaselineApproval?, count = 0
@@ -44,14 +46,21 @@ extension ProductionStorage {
             let approval = ProductionBaselineApproval(id: UUID(), jobID: jobID, jobRevision: expectedJobRevision,
                 evidenceRevision: expectedEvidenceRevision, approvedAt: Date(), note: note)
             let file = jobDirectory(jobID).appendingPathComponent("baseline-approvals.jsonl")
-            if FileManager.default.fileExists(atPath: file.path) {
+            let exists = FileManager.default.fileExists(atPath: file.path)
+            if exists {
                 var count = 0
                 try ProductionLineReader.forEach(file) { _ in count += 1 }
                 guard count < 1_000 else { throw ProductionFailure.invalid("Baseline approval history is full; export it before continuing.") }
-            } else { FileManager.default.createFile(atPath: file.path, contents: nil) }
+            }
+            var bytes = try ProductionCodec.encode(approval); bytes.append(10)
+            let currentBytes = exists ? try ProductionCodec.fileSize(file) : 0
+            guard bytes.count <= maximumBaselineApprovalHistoryBytes,
+                  currentBytes <= maximumBaselineApprovalHistoryBytes - bytes.count else {
+                throw ProductionFailure.invalid("Baseline approval history is full; export it before continuing.")
+            }
+            if !exists { FileManager.default.createFile(atPath: file.path, contents: nil) }
             let handle = try FileHandle(forWritingTo: file); defer { try? handle.close() }
             try handle.seekToEnd()
-            var bytes = try ProductionCodec.encode(approval); bytes.append(10)
             try handle.write(contentsOf: bytes); try handle.synchronize()
             return approval
         }

@@ -63,8 +63,36 @@ export function renderExperiment(ctx,parent) {
   if(record.status==='completed'){const decisions=ctx.node('div',null,'actions');for(const [decision,label] of [['keepCurrent','Keep current'],['adoptCandidate','Adopt candidate'],['collectMoreEvidence','More evidence'],['inconclusive','Inconclusive']])decisions.append(ctx.button(label,async()=>{const request=ctx.scope.capture('experiment-selection');if(!current(request))return;const result=await ctx.mutateSuite(()=>ctx.call('eval_decide_experiment',{experimentId:record.id,decision,expectedRevision:record.revision}),owner);if(!result || !current(request))return;ctx.trackExperiment(result.experiment);ctx.state.experiment=result.experiment;await ctx.refresh();if(current(request))ctx.render();},decision==='adoptCandidate'?'primary':'secondary'));body.append(decisions);}panel.append(body);parent.append(panel);
 }
 export function nativeCorrectJudgment(ctx,run,result) {
-  const sample=result.appSample || result.trace?.appSample;if(!sample?.id)throw Error('This older result has no application sample identity.');
-  ctx.dialog('Human correction',el=>{const status=ctx.node('select');status.setAttribute('aria-label','Corrected outcome');for(const value of ['passed','failed','unscored'])status.append(new Option(value,value));status.value=sample.status==='passed'?'passed':sample.status==='failed'?'failed':'unscored';const score=ctx.node('input');score.type='number';score.min='1';score.max='4';score.value=sample.score || '';score.setAttribute('aria-label','Corrected score');const reason=ctx.node('textarea');reason.setAttribute('aria-label','Reason for correction');const reviewer=ctx.node('input');reviewer.setAttribute('aria-label','Reviewer');reviewer.placeholder='Reviewer (optional)';el.append(ctx.node('p','The original model judgment remains in the run. This correction is recorded separately with its reason and time.','hint'),status,score,reason,reviewer,ctx.button('Record correction',async()=>{const request=ctx.scope.capture('run-assessment');const response=await ctx.call('eval_correct_judgment',{runId:run.id,sampleId:sample.id,correctedStatus:status.value,...score.value?{correctedScore:Number(score.value)}:{},reason:reason.value,...reviewer.value?{reviewer:reviewer.value}:{}});el.close();if(!ctx.scope.current(request) || ctx.state.run?.id!==run.id)return;ctx.state.run=response.run;await ctx.refresh();if(ctx.scope.current(request))ctx.renderMain();},'primary'));});
+  const sample=result.appSample || result.trace?.appSample;
+  if(!sample?.id)throw Error('This older result has no application sample identity.');
+  const selectedID=result.assessmentId || run.appRun?.selectedAssessmentID;
+  const assessment=selectedID
+    ? run.appRun?.assessments?.find(item=>item.id?.toLowerCase()===selectedID.toLowerCase())
+    : run.appRun?.assessments?.at(-1);
+  const assessed=assessment?.samples?.find(item=>item.sampleID?.toLowerCase()===sample.id.toLowerCase());
+  if(!assessment?.id || !assessed)throw Error('The selected assessment judgment is unavailable. Reload the run before correcting it.');
+  if(typeof run.revision!=='string' || !run.revision)throw Error('The run revision is unavailable. Reload the run before correcting it.');
+  const statuses=['passed','failed','unscored','error'];
+  if(!statuses.includes(assessed.status))throw Error('The selected assessment outcome is unavailable. Reload the run before correcting it.');
+  const target={runId:run.id,sampleId:sample.id,assessmentId:assessment.id,expectedRevision:run.revision};
+  const owner=ctx.scope.capture();
+  const current=()=>ctx.scope.current(owner) && ctx.state.run?.id===target.runId && ctx.state.run?.revision===target.expectedRevision;
+  ctx.dialog('Human correction',el=>{
+    const status=ctx.node('select');status.setAttribute('aria-label','Corrected outcome');
+    for(const value of statuses)status.append(new Option(value,value));status.value=assessed.status;
+    const score=ctx.node('input');score.type='number';score.min='1';score.max='4';score.value=assessed.score ?? '';score.setAttribute('aria-label','Corrected score');
+    const reason=ctx.node('textarea');reason.setAttribute('aria-label','Reason for correction');
+    const reviewer=ctx.node('input');reviewer.setAttribute('aria-label','Reviewer');reviewer.placeholder='Reviewer (optional)';
+    el.append(ctx.node('p','The original model judgment remains in the run. This correction is recorded separately with its reason and time.','hint'),status,score,reason,reviewer,ctx.button('Record correction',async()=>{
+      if(!current())throw Error('The selected run changed. Reload it and reopen Human correction.');
+      const request=ctx.scope.capture('run-assessment');
+      const response=await ctx.call('eval_correct_judgment',{...target,correctedStatus:status.value,...score.value?{correctedScore:Number(score.value)}:{},reason:reason.value,...reviewer.value?{reviewer:reviewer.value}:{}});
+      el.close();
+      if(!ctx.scope.current(request) || !current())return;
+      ctx.state.run=response.run;
+      await ctx.refresh();if(ctx.scope.current(request))ctx.renderMain();
+    },'primary'));
+  });
 }
 export async function nativeApproveBaseline(ctx,run) {
   ctx.dialog('Approve baseline',el=>{const note=ctx.node('textarea');note.setAttribute('aria-label','Baseline note');el.append(ctx.node('p','Approval is tied to this completed run, its selected assessment, saved suite revision and scoring contract.','hint'),note,ctx.button('Approve baseline',async()=>{const request=ctx.scope.capture();await ctx.flush();if(!ctx.scope.current(request))return;await ctx.call('eval_approve_baseline',{runId:run.id,...run.appRun?.selectedAssessmentID?{assessmentId:run.appRun.selectedAssessmentID}:{},note:note.value});el.close();if(!ctx.scope.current(request))return;ctx.notice('Baseline approved for this suite.');ctx.renderMain();},'primary'));});

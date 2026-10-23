@@ -103,6 +103,7 @@ async function importRun(app, args, { persist = true } = {}) {
       if (value.status === 'completed' && importedAppRunStatus(value.appRun) !== 'completed') throw new Error('Completed run status does not match its app evidence');
     }
     const snapshot = suite(value.suite, randomUUID);
+    if (value.appRun && id(value.appRun.id, 'app run id') !== id(value.id, 'run id')) throw new Error('App run identity does not match its imported envelope');
     nativeResult({ ...value, status: value.status === 'completed' ? 'completed' : 'failed' }, snapshot, { allowAssessmentProjection: true });
     if (!['completed', 'failed', 'cancelled'].includes(value.status)) throw new Error('Only terminal runs can be imported');
     const startedAt = importedTimestamp(value.startedAt);
@@ -113,7 +114,8 @@ async function importRun(app, args, { persist = true } = {}) {
   } else {
     if (value.developerExecution || value.execution?.configuration?.provider && value.execution.configuration.provider !== 'onDevice' || value.results?.some((sample) => sample.judgeIdentity?.mode === 'connection') || value.assessments?.some((assessment) => assessment.judge?.mode === 'connection')) throw new Error('Only local on-device evaluation evidence is supported');
     validateAppEvidence(value);
-    const suiteId = id(args.suiteId || value.suiteID, 'suiteId');
+    const suiteId = id(value.suiteID, 'suiteId');
+    if (args.suiteId !== undefined && id(args.suiteId, 'suiteId') !== suiteId) throw new Error('App run suite identity does not match the requested suite');
     let snapshot = await existing(app, 'suites', suiteId);
     const definition = value.suiteDefinition;
     if (definition) snapshot = suite(Object.fromEntries(Object.entries({ ...definition, attachments: definition.attachments || snapshot?.attachments?.filter((item) => value.attachments?.some((evidence) => evidence.name === item.name && evidence.sha256 === item.sha256 && evidence.kind === item.kind)) || value.attachments?.filter((item) => typeof item.text === 'string') || [] }).filter(([key]) => key !== 'formatVersion')), randomUUID);

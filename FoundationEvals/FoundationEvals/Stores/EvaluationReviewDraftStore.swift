@@ -64,5 +64,15 @@ final class EvaluationReviewDraftStore {
         error = nil
     }
 
+    func flushPendingDrafts() {
+        var firstError: String?
+        // Include drafts whose earlier write failed after its timer was removed.
+        for key in Array(values.keys).sorted() {
+            flush(key)
+            firstError = firstError ?? error
+        }
+        error = firstError
+    }
+
     private func url(for key: String) -> URL { directory.appending(path: key + ".json") }
 }

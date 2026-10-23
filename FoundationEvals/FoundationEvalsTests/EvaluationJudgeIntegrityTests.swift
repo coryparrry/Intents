@@ -21,11 +21,13 @@ private actor JudgeIntegrityTransport {
 // exercises its new cross-boundary regressions.
 extension EvaluationCompatibleJudgeClientTests {
     @MainActor
-    @Test func providerFailureAfterCompleteVerdictCannotScoreOrRetry() async throws {
+    @Test(arguments: ["\n", "\r\n", "\r"])
+    func providerFailureAfterCompleteVerdictCannotScoreOrRetry(newline: String) async throws {
         let text = Self.integrityVerdict
         let start = try Self.integrityEvent(["choices": [["index": 0, "delta": ["content": text]]]])
         let error = try Self.integrityEvent(["error": ["code": 503, "message": "provider unavailable"]])
-        let fixture = JudgeIntegrityTransport([Data((start + error + "data: [DONE]\n\n").utf8)])
+        let stream = (start + error + "data: [DONE]\n\n").replacingOccurrences(of: "\n", with: newline)
+        let fixture = JudgeIntegrityTransport([Data(stream.utf8)])
         let client = EvaluationCompatibleJudgeClient(transport: { try await fixture.send($0) })
         let (suite, connection) = Self.integritySuite(policy: .streaming)
         do {
@@ -42,6 +44,19 @@ extension EvaluationCompatibleJudgeClientTests {
             #expect(trace.validationError != nil)
         }
         #expect(await fixture.bodies().count == 1)
+    }
+
+    @Test(arguments: ["\n", "\r\n", "\r"])
+    func streamedCompletionPreservesContentAndUsageAcrossLineEndings(newline: String) throws {
+        let first = try Self.integrityEvent(["choices": [["index": 0, "delta": ["content": "first\n"]]]])
+        let second = try Self.integrityEvent(["choices": [["index": 0, "delta": ["content": "second"], "finish_reason": "stop"]]])
+        let usage = try Self.integrityEvent(["choices": [], "usage": ["prompt_tokens": 10, "completion_tokens": 5]])
+        let stream = (first + second + usage + "data: [DONE]\n\n")
+            .replacingOccurrences(of: "\n", with: newline)
+        let completion = try EvaluationCompatibleJudgeResponseDecoder.decode(Data(stream.utf8))
+        #expect(completion.choices.first?.message.content == "first\nsecond")
+        #expect(completion.usage?.promptTokens == 10)
+        #expect(completion.usage?.completionTokens == 5)
     }
 
     @MainActor

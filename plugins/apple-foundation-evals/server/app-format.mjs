@@ -18,8 +18,8 @@ function schemaCheck(items, definitions = []) {
     for (const field of list) {
       if (++count > 32 || depth > 4) throw new Error('Schema exceeds 32 nodes or four levels');
       identifier(field.name, 'Schema field name');
-      if (ids.has(field.id) || siblingNames.has(field.name)) throw new Error('Schema field IDs and sibling names must be unique');
-      ids.add(field.id); siblingNames.add(field.name);
+      if (ids.has(field.id.toLowerCase()) || siblingNames.has(field.name)) throw new Error('Schema field IDs and sibling names must be unique');
+      ids.add(field.id.toLowerCase()); siblingNames.add(field.name);
       if (field.isOptional && !optional) throw new Error('Only object properties can be optional');
       if (field.children.length && !['object', 'array', 'union'].includes(field.type)) throw new Error('Only object, array and union fields can have children');
       if (field.type === 'array' && field.children.length !== 1) throw new Error('Array fields require one element schema');
@@ -69,8 +69,8 @@ export function appSuite(value, generateId = randomUUID, { draft = false } = {})
   features.tools = features.tools.map((item) => {
     const result = { id: generateId(), description: '', parameters: [], schemaDefinitions: [], representNilExplicitlyInGeneratedContent: false, mode: 'fixture', fixtureResponse: '', endpoint: '', ...clean(item) };
     if (!draft) identifier(result.name, 'Tool name');
-    if (toolIds.has(result.id) || (!draft && toolNames.has(result.name))) throw new Error('Tool IDs and names must be unique');
-    toolIds.add(result.id); toolNames.add(result.name);
+    if (toolIds.has(result.id.toLowerCase()) || (!draft && toolNames.has(result.name))) throw new Error('Tool IDs and names must be unique');
+    toolIds.add(result.id.toLowerCase()); toolNames.add(result.name);
     result.parameters = fields(result.parameters, generateId); result.schemaDefinitions = fields(result.schemaDefinitions, generateId); if (!draft) schemaCheck(result.parameters, result.schemaDefinitions);
     if (!draft && result.mode === 'localHTTP') {
       let url; try { url = new URL(result.endpoint); } catch { throw new Error('Tool endpoint must be a local HTTP URL'); }
@@ -91,7 +91,7 @@ export function appSuite(value, generateId = randomUUID, { draft = false } = {})
     const conversation = { setupTurns: [], historyPolicy: 'keepAll', retainedTurnCount: 2, ...clean(item.conversation || {}) };
     if (conversation.modelHistoryProjection) conversation.modelHistoryProjection = { policy: 'keepAll', retainedTurnCount: 2, ...clean(conversation.modelHistoryProjection) };
     conversation.setupTurns = conversation.setupTurns.map((turn) => ({ id: generateId(), ...turn }));
-    if (new Set(conversation.setupTurns.map((turn) => turn.id)).size !== conversation.setupTurns.length) throw new Error('Setup turn IDs must be unique');
+    if (new Set(conversation.setupTurns.map((turn) => turn.id.toLowerCase())).size !== conversation.setupTurns.length) throw new Error('Setup turn IDs must be unique');
     if (!draft && conversation.restoredTranscriptJSON?.trim()) { try { JSON.parse(conversation.restoredTranscriptJSON); } catch { throw new Error('Restored transcript must be valid JSON'); } }
     const result = { id: caseId, name: item.name ?? `Case ${index + 1}`, prompt: item.prompt, expected: item.expected || '', conversation, ...(item.fieldAssertions ? { fieldAssertions: item.fieldAssertions.map((entry) => ({ id: generateId(), expectedValue: '', ...entry })) } : {}) };
     if (!draft && ['exactMatch', 'containsExpected'].includes(scoringMode) && !result.expected.length) throw new Error('scored cases require non-empty expected text');
@@ -116,7 +116,7 @@ export function appSuite(value, generateId = randomUUID, { draft = false } = {})
   });
   if (!draft && modelConfiguration.referenceMode === 'lookupTool' && !attachments.some((item) => item.kind === 'text')) throw new Error('Reference lookup requires at least one text reference');
   if (attachments.filter((item) => item.kind === 'image').length > 4) throw new Error('A suite can have at most four image references');
-  if (new Set(attachments.map((item) => item.id)).size !== attachments.length) throw new Error('Attachment IDs must be unique');
+  if (new Set(attachments.map((item) => item.id.toLowerCase())).size !== attachments.length) throw new Error('Attachment IDs must be unique');
   const result = { id: value.id?.toLowerCase() || generateId(), name: value.name, version: value.version || 'v1', instructions: value.instructions ?? '', criteria: value.criteria ?? '', scoringMode, repetitions: value.repetitions ?? 1, modelConfiguration, features, cases, attachments, judgeConfiguration: { mode: 'sameModel', includeReferenceAttachments: true, ...clean(value.judgeConfiguration || {}) }, releasePolicy: { required: false, criticalCaseIDs: [], maximumErrorCount: 0, requireApprovedBaseline: false, maximumPassRateRegression: 0, ...clean(value.releasePolicy || {}) }, ...(value.projectId ? { projectId: value.projectId.toLowerCase() } : {}), ...(value.revision ? { revision: value.revision } : {}), ...(value.updatedAt ? { updatedAt: value.updatedAt } : {}) };
   result.temperature = modelConfiguration.temperatureEnabled ? modelConfiguration.temperature : 0;
   result.maxTokens = modelConfiguration.maximumResponseTokens;

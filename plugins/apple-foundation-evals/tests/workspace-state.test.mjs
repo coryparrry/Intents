@@ -28,6 +28,94 @@ function context(state, overrides = {}) {
     dialog(_title, body) { this.body = element('dialog'); body(this.body); }, ...overrides };
 }
 
+function correctionFixture(status = 'failed', score = 1) {
+  globalThis.Option = function(text, value) { this.text = text; this.value = value; };
+  const sample = { id: 'sample-A', status: 'passed', score: 4 };
+  const assessed = { sampleID: sample.id, status, ...(score == null ? {} : { score }) };
+  const assessment = { id: 'assessment-A', samples: [assessed] };
+  const run = { id: 'run-A', revision: 'revision-A', appRun: { selectedAssessmentID: assessment.id, assessments: [assessment] } };
+  const result = { appSample: sample, assessmentId: assessment.id, assessmentSample: assessed };
+  return { run, result, assessed };
+}
+const correctionField = (ctx, label) => walk(ctx.body).find(item => item.attributes?.['aria-label'] === label);
+const submitCorrection = ctx => walk(ctx.body).find(item => item.text === 'Record correction').action();
+
+test('human correction defaults and score-only edits use the selected assessment', async () => {
+  const { run, result } = correctionFixture(), calls = [];
+  const ctx = context({ run }, { call: async (name, args) => { calls.push({ name, args }); return { run }; } });
+  nativeCorrectJudgment(ctx, run, result);
+  assert.equal(correctionField(ctx, 'Corrected outcome').value, 'failed');
+  assert.equal(String(correctionField(ctx, 'Corrected score').value), '1');
+  correctionField(ctx, 'Corrected score').value = '2';
+  correctionField(ctx, 'Reason for correction').value = 'Partial credit';
+  await submitCorrection(ctx);
+  assert.deepEqual(calls, [{ name: 'eval_correct_judgment', args: { runId: 'run-A', sampleId: 'sample-A',
+    assessmentId: 'assessment-A', expectedRevision: 'revision-A', correctedStatus: 'failed', correctedScore: 2, reason: 'Partial credit' } }]);
+});
+
+for (const status of ['passed', 'failed', 'unscored', 'error']) test(`human correction preserves selected ${status} defaults`, async () => {
+  const { run, result } = correctionFixture(status, status === 'passed' ? 4 : null);
+  const ctx = context({ run }); nativeCorrectJudgment(ctx, run, result);
+  const outcome = correctionField(ctx, 'Corrected outcome');
+  assert.equal(outcome.value, status); assert.ok(outcome.children.some(item => item.value === status));
+  assert.equal(String(correctionField(ctx, 'Corrected score').value), status === 'passed' ? '4' : '');
+});
+
+test('human correction binds the dialog target when another client selects an assessment', async () => {
+  const { run, result } = correctionFixture();
+  let sent;
+  const ctx = context({ run }, { call: async (_name, args) => {
+    sent = args;
+    if (args.expectedRevision === 'revision-A') throw Error('Run revision conflict');
+    return { run: { ...run, revision: 'revision-B' } };
+  } });
+  nativeCorrectJudgment(ctx, run, result);
+  result.appSample.id = 'sample-B'; result.assessmentId = 'assessment-B';
+  correctionField(ctx, 'Reason for correction').value = 'Reviewed before selection changed';
+  await assert.rejects(submitCorrection(ctx), /revision conflict/);
+  assert.equal(sent.sampleId, 'sample-A'); assert.equal(sent.assessmentId, 'assessment-A');
+  assert.equal(sent.expectedRevision, 'revision-A'); assert.equal(ctx.body.closed, undefined);
+  assert.equal(ctx.state.run.revision, 'revision-A');
+});
+
+test('human correction rejects missing selected assessment evidence or run revision', () => {
+  for (const missing of ['assessment', 'sample', 'revision']) {
+    const { run, result } = correctionFixture();
+    if (missing === 'assessment') run.appRun.assessments = [];
+    if (missing === 'sample') run.appRun.assessments[0].samples = [];
+    if (missing === 'revision') delete run.revision;
+    const ctx = context({ run });
+    assert.throws(() => nativeCorrectJudgment(ctx, run, result), /assessment|revision|reload/i);
+    assert.equal(ctx.body, undefined);
+  }
+});
+
+test('human correction resolves the latest assessment when no explicit selection exists', () => {
+  const { run, result } = correctionFixture(); delete run.appRun.selectedAssessmentID; delete result.assessmentId;
+  const ctx = context({ run }); nativeCorrectJudgment(ctx, run, result);
+  assert.equal(correctionField(ctx, 'Corrected outcome').value, 'failed');
+  assert.equal(String(correctionField(ctx, 'Corrected score').value), '1');
+});
+
+test('human correction rejects a locally changed run before submitting the old dialog', async () => {
+  const { run, result } = correctionFixture(); let calls = 0;
+  const ctx = context({ run }, { call: async () => { calls++; return { run }; } });
+  nativeCorrectJudgment(ctx, run, result);
+  run.revision = 'revision-B'; run.appRun.selectedAssessmentID = 'assessment-B';
+  await assert.rejects(submitCorrection(ctx), /changed|reload/i);
+  assert.equal(calls, 0); assert.equal(ctx.body.closed, undefined);
+});
+
+test('late human correction response cannot overwrite a newer assessment of the same run', async () => {
+  const { run, result } = correctionFixture(), response = deferred();
+  const ctx = context({ run }, { call: async () => response.promise });
+  nativeCorrectJudgment(ctx, run, result);
+  const pending = submitCorrection(ctx);
+  ctx.state.run = { ...run, revision: 'revision-B', appRun: { ...run.appRun, selectedAssessmentID: 'assessment-B' } };
+  response.resolve({ run }); await pending;
+  assert.equal(ctx.state.run.revision, 'revision-B'); assert.equal(ctx.state.run.appRun.selectedAssessmentID, 'assessment-B');
+});
+
 test('reference mutation retains concurrent prompt edits and saves them using the advanced revision', async t => {
   const { state, saved, autosave, mutate } = fixture(t), response = deferred(), started = deferred();
   const operation = mutate(async base => { started.resolve(base); return response.promise; });
@@ -104,9 +192,8 @@ test('experiment creation completion respects a project switch after its dialog 
 });
 
 test('human correction completion cannot replace another selected run', async () => {
-  globalThis.Option = function(text, value) { this.text = text; this.value = value; };
-  const run = { id: 'run-A' }, state = { run }, response = deferred();
-  const ctx = context(state, { call: async () => response.promise }); nativeCorrectJudgment(ctx, run, { appSample: { id: 'sample-A' } });
+  const { run, result } = correctionFixture(), state = { run }, response = deferred();
+  const ctx = context(state, { call: async () => response.promise }); nativeCorrectJudgment(ctx, run, result);
   const pending = walk(ctx.body).find(item => item.text === 'Record correction').action();
   ctx.scope.navigate(); state.run = { id: 'run-B' }; response.resolve({ run: { id: 'run-A', corrected: true } }); await pending;
   assert.equal(state.run.id, 'run-B');

@@ -44,6 +44,7 @@ extension EvaluationStore {
               sample.run.subjectEvidence?.hasValidDigest == true else {
             throw EvaluationReviewError.invalid("Choose a current AI rubric assessment in the run report before adding this judge check.")
         }
+        try EvaluationReviewWorkflow.validateJudgeAssessment(assessment, run: sample.run)
         try validateReviewImageEvidence(sample.run)
         var state = suiteLocalState
         state.reviewedJudgeExamples.removeAll { $0.sourceRunID == annotation.runID && $0.sampleID == annotation.sampleID }

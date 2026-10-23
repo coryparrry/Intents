@@ -64,7 +64,8 @@ enum AppEngineValidation {
         if configuration.provider == .customHTTP, let issue = configuration.customProviderSettings.validationIssue {
             return issue
         }
-        if configuration.customizationSettings.toolCalling == .required,
+        if !candidate.features.profile.enabled,
+           configuration.customizationSettings.toolCalling == .required,
            !candidate.hasConfiguredTools {
             return "Required tool calling needs at least one enabled tool."
         }

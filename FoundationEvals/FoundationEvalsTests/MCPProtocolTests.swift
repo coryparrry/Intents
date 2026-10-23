@@ -107,6 +107,55 @@ struct MCPProtocolTests {
         #expect(String(decoding: encoded, as: UTF8.self) == "18446744073709551615")
     }
 
+    @Test(arguments: [MCPJSONValue.null, .bool(true), .number(1.5), .array([]), .object([:])])
+    func invalidRequestIDsAreRejectedWithoutEchoingInvalidCorrelationValues(id: MCPJSONValue) async throws {
+        let recorder = MCPCallRecorder()
+        let handler = MCPProtocolHandler(authority: MCPAuthority(
+            call: { call in
+                await recorder.record(call)
+                return MCPToolPayload(structuredContent: .object([:]))
+            },
+            readResource: { _ in .failure(uri: "", code: "missing", message: "Missing") }
+        ), credential: testMCPCredential)
+        var request = try standardRequest(method: "tools/call")
+        request.body = try JSONEncoder.sorted.encode(MCPJSONValue.object([
+            "jsonrpc": .string("2.0"), "id": id, "method": .string("tools/call"),
+            "params": .object(["name": .string("eval_get_state"), "arguments": .object([:])])
+        ]))
+
+        let response = await handler.handle(request)
+
+        #expect(response.status == 400)
+        #expect(try responseJSON(response)["id"] == .null)
+        #expect(try responseJSON(response)["error"]?["code"] == .integer(-32_600))
+        #expect(await recorder.count == 0)
+    }
+
+    @Test func absentIDRemainsANotificationButExplicitNullParamsAreRejected() async throws {
+        var request = try standardRequest(method: "notifications/initialized")
+        request.body = Data(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.utf8)
+        let notification = await makeHandler().handle(request)
+        #expect(notification.status == 202)
+        #expect(notification.body == nil)
+
+        request.body = Data(#"{"jsonrpc":"2.0","id":"correlation","method":"ping","params":null}"#.utf8)
+        let invalid = await makeHandler().handle(request)
+        #expect(invalid.status == 400)
+        #expect(try responseJSON(invalid)["id"] == .string("correlation"))
+        #expect(try responseJSON(invalid)["error"]?["code"] == .integer(-32_600))
+    }
+
+    @Test(arguments: [MCPJSONValue.string("request"), .integer(-1), .unsigned(UInt64.max)])
+    func validRequestIDsRemainExactlyCorrelated(id: MCPJSONValue) async throws {
+        var request = try standardRequest(method: "ping")
+        request.body = try JSONEncoder.sorted.encode(MCPJSONValue.object([
+            "jsonrpc": .string("2.0"), "id": id, "method": .string("ping")
+        ]))
+        let response = await makeHandler().handle(request)
+        #expect(response.status == 200)
+        #expect(try responseJSON(response)["id"] == id)
+    }
+
     @Test func suiteParserPreservesFullSeedAndEnforcesDomainControlBounds() throws {
         var configuration = MCPModelConfiguration(
             samplingMode: .probability,
@@ -428,6 +477,72 @@ struct MCPProtocolTests {
 
         #expect(response.status == 200)
         #expect(try responseJSON(response)["result"]?["contents"]?.arrayValue?.first?["uri"] == .string(uri))
+    }
+
+    @Test(arguments: ["runs", "attachments"], [
+        "ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB",
+        "abcdefab-cdef-abcd-efab-cdefabcdefab",
+        "AbCdEfAb-cDeF-aBcD-eFaB-cDeFaBcDeFaB"
+    ])
+    func resourceReadAcceptsEquivalentUUIDSpellings(kind: String, spelling: String) async throws {
+        let id = try #require(UUID(uuidString: spelling))
+        let uri = "foundation-evals://\(kind)/\(spelling)"
+        let expectedResource = try #require(MCPResourceRequest(uri: uri))
+        let canonicalURI = "foundation-evals://\(kind)/\(id.uuidString)"
+        let bytes = Data("fixture".utf8)
+        let authority = MCPAuthority(
+            call: { _ in .failure(code: "unexpected", message: "Unexpected") },
+            readResource: { request in
+                #expect(request == expectedResource)
+                return kind == "runs"
+                    ? .text(uri: canonicalURI, mimeType: "application/json", text: "{}")
+                    : .blob(uri: canonicalURI, mimeType: "application/octet-stream", data: bytes)
+            }
+        )
+        let response = await MCPProtocolHandler(authority: authority, credential: testMCPCredential).handle(
+            try standardRequest(method: "resources/read", parameters: ["uri": .string(uri)])
+        )
+        let json = try responseJSON(response)
+        let content = try #require(json["result"]?["contents"]?.arrayValue?.first)
+        #expect(response.status == 200)
+        #expect(json["id"] == .integer(1))
+        #expect(content["uri"] == .string(uri))
+        if kind == "runs" {
+            #expect(content["text"] == .string("{}"))
+            #expect(content["blob"] == nil)
+        } else {
+            #expect(content["blob"] == .string(bytes.base64EncodedString()))
+            #expect(content["text"] == nil)
+        }
+    }
+
+    @Test(arguments: ["runs", "attachments"], ["malformedURI", "wrongUUID", "wrongKind", "bothPayloads", "neitherPayload"])
+    func resourceReadRejectsMismatchedIdentityAndInvalidPayloadShape(kind: String, invalidCase: String) async throws {
+        let id = try #require(UUID(uuidString: "ABCDEFAB-CDEF-ABCD-EFAB-CDEFABCDEFAB"))
+        let uri = "foundation-evals://\(kind)/\(id.uuidString.lowercased())"
+        let canonicalURI = "foundation-evals://\(kind)/\(id.uuidString)"
+        var payload = MCPResourcePayload.text(uri: canonicalURI, mimeType: "text/plain", text: "fixture")
+        switch invalidCase {
+        case "malformedURI": payload.uri = canonicalURI + "?unexpected=true"
+        case "wrongUUID": payload.uri = "foundation-evals://\(kind)/00000000-0000-0000-0000-000000000000"
+        case "wrongKind": payload.uri = "foundation-evals://\(kind == "runs" ? "attachments" : "runs")/\(id.uuidString)"
+        case "bothPayloads": payload.blob = Data("fixture".utf8)
+        case "neitherPayload": payload.text = nil
+        default: Issue.record("Unexpected invalid resource payload case.")
+        }
+        let responsePayload = payload
+        let authority = MCPAuthority(
+            call: { _ in .failure(code: "unexpected", message: "Unexpected") },
+            readResource: { _ in responsePayload }
+        )
+        let response = await MCPProtocolHandler(authority: authority, credential: testMCPCredential).handle(
+            try standardRequest(method: "resources/read", parameters: ["uri": .string(uri)])
+        )
+        let json = try responseJSON(response)
+        #expect(response.status == 200)
+        #expect(json["id"] == .integer(1))
+        #expect(json["result"] == nil)
+        #expect(json["error"]?["code"] == .integer(-32_603))
     }
 
     @Test func unsupportedProtocolAdvertisesImplementedVersion() async throws {

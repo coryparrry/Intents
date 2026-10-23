@@ -229,10 +229,6 @@ import Foundation
     case "eval_review_save":
       try MCPControlService.confirm(call, key: "confirmHumanReview")
       let annotation = try call.value("annotationJSON", as: EvaluationReviewAnnotation.self)
-      guard !annotation.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-        annotation.note.utf8.count <= 4000,
-        annotation.tags.count <= 6, annotation.tags.allSatisfy({ $0.count <= 60 })
-      else { throw MCPToolInputError.invalidArguments }
       try store.saveReview(annotation)
     case "eval_review_decide_proposal":
       try MCPControlService.confirm(call)

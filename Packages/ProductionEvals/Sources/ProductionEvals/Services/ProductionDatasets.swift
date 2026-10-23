@@ -41,15 +41,21 @@ extension ProductionStorage {
         guard count > 0 else { throw ProductionFailure.invalid("Dataset has no examples.") }
         try output.synchronize(); try index.synchronize()
         let dataDigest = try ProductionCodec.fileDigest(dataURL), indexDigest = try ProductionCodec.fileDigest(indexURL)
-        let identity = "\(name)\n\(version)\n\(sampling.rawValue)\n\(productionData)\n\(dataDigest)\n\(indexDigest)\n\(count)\n\(try ProductionCodec.digest(ProductionCodec.encode(partitions)))"
-        let revision = ProductionCodec.digest(Data(identity.utf8))
-        let dataset = ProductionDataset(name: name, version: version, revision: revision, count: count, createdAt: Date(),
+        var dataset = ProductionDataset(name: name, version: version, revision: "", count: count, createdAt: Date(),
                                         sampling: sampling, productionData: productionData, dataDigest: dataDigest,
                                         indexDigest: indexDigest, partitionCounts: partitions)
-        try ProductionCodec.write(dataset, to: directory.appendingPathComponent("manifest.json"))
+        let revisions = try Self.datasetRevisions(dataset)
+        dataset.revision = revisions.current
+        try ProductionCodec.write(dataset, to: directory.appendingPathComponent("manifest.json"), maximumBytes: 100_000)
         return try transaction {
-            let destination = try datasetDirectory(revision)
-            if FileManager.default.fileExists(atPath: destination.path) { return try loadDataset(revision) }
+            let destination = try datasetDirectory(dataset.revision)
+            if FileManager.default.fileExists(atPath: destination.path) { return try loadDataset(dataset.revision) }
+            // Preserve existing references and import idempotency, but never reuse a
+            // legacy newline-delimited hash for different name/version boundaries.
+            if FileManager.default.fileExists(atPath: try datasetDirectory(revisions.legacy).path) {
+                let existing = try loadDataset(revisions.legacy)
+                if try Self.datasetRevisions(existing).current == revisions.current { return existing }
+            }
             try FileManager.default.moveItem(at: directory, to: destination)
             return dataset
         }
@@ -62,8 +68,8 @@ extension ProductionStorage {
     public func loadDataset(_ revision: String, verifyFiles: Bool = false) throws -> ProductionDataset {
         let folder = try datasetDirectory(revision)
         let value = try ProductionCodec.read(ProductionDataset.self, from: folder.appendingPathComponent("manifest.json"), maximumBytes: 100_000)
-        let identity = "\(value.name)\n\(value.version)\n\(value.sampling.rawValue)\n\(value.productionData)\n\(value.dataDigest)\n\(value.indexDigest)\n\(value.count)\n\(try ProductionCodec.digest(ProductionCodec.encode(value.partitionCounts)))"
-        guard value.revision == revision, ProductionCodec.digest(Data(identity.utf8)) == revision,
+        let revisions = try Self.datasetRevisions(value)
+        guard value.revision == revision, revision == revisions.current || revision == revisions.legacy,
               (1...1_000_000).contains(value.count), value.partitionCounts.values.reduce(0,+) == value.count,
               (try folder.appendingPathComponent("offsets.bin").resourceValues(forKeys: [.fileSizeKey])).fileSize == value.count * 8 else {
             throw ProductionFailure.integrity("Dataset manifest/index integrity failed.")
@@ -75,6 +81,13 @@ extension ProductionStorage {
             }
         }
         return value
+    }
+    private static func datasetRevisions(_ value: ProductionDataset) throws -> (current: String, legacy: String) {
+        let fields = [value.name, value.version, value.sampling.rawValue, String(value.productionData),
+                      value.dataDigest, value.indexDigest, String(value.count),
+                      try ProductionCodec.digest(ProductionCodec.encode(value.partitionCounts))]
+        return (try ProductionCodec.digest(ProductionCodec.encode(["production-dataset-v2"] + fields)),
+                ProductionCodec.digest(Data(fields.joined(separator: "\n").utf8)))
     }
     static func validate(_ example: ProductionExample) throws {
         guard !example.id.isEmpty, example.id.utf8.count <= 200, !example.sourceID.isEmpty, example.sourceID.utf8.count <= 200,
@@ -116,17 +129,17 @@ public final class ProductionDatasetReader {
 }
 
 enum ProductionLineReader {
-    static func forEach(_ url: URL, consume: (Data) throws -> Void) throws {
+    static func forEach(_ url: URL, maximumLineBytes: Int = 262_144, consume: (Data) throws -> Void) throws {
         let input = try FileHandle(forReadingFrom: url); defer { try? input.close() }
         var pending = Data()
         while let data = try input.read(upToCount: 65_536), !data.isEmpty {
             pending.append(data)
             while let newline = pending.firstIndex(of: 10) {
                 let line = Data(pending.prefix(upTo: newline)); pending.removeSubrange(...newline)
-                guard line.count <= ProductionStorageLimits.encodedExampleBytes else { throw ProductionFailure.invalid("JSONL record exceeds 256 KB.") }
+                guard line.count <= maximumLineBytes else { throw ProductionFailure.invalid("JSONL record exceeds its byte limit.") }
                 if !line.allSatisfy({ $0 == 13 || $0 == 32 || $0 == 9 }) { try consume(line) }
             }
-            guard pending.count <= ProductionStorageLimits.encodedExampleBytes else { throw ProductionFailure.invalid("JSONL record exceeds 256 KB.") }
+            guard pending.count <= maximumLineBytes else { throw ProductionFailure.invalid("JSONL record exceeds its byte limit.") }
         }
         if !pending.isEmpty { try consume(pending) }
     }

@@ -174,6 +174,13 @@ actor EvaluationFeatureAdapterRunner {
                 }
                 results.append(result)
                 await progress(result, results.count, total)
+                // Checkpoint/progress callbacks can suspend while the owner cancels.
+                // The final sample has no next iteration to observe that cancellation.
+                if Task.isCancelled {
+                    cancelled = true
+                    terminationReason = "cancelled"
+                    break outer
+                }
             }
         }
 

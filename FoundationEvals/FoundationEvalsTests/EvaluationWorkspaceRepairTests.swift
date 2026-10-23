@@ -6,8 +6,101 @@ import Testing
 
 @MainActor
 struct EvaluationWorkspaceRepairTests {
+    @Test(arguments: ["mismatched", "unreadable"])
+    func failedSuitePreservationBlocksSaveAndShutdownUntilReopenedAfterRepair(damage: String) async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = EvaluationStore(supportDirectory: directory)
+        let expectedID = original.selectedSuiteID
+        let target = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: original.selectedProjectID, suiteID: expectedID
+        )
+        let bytes = damage == "mismatched"
+            ? try CanonicalJSON.data(for: EvaluationSuite()) : Data("{ unreadable suite".utf8)
+        let suiteURL = target.appending(path: "suite.json")
+        try bytes.write(to: suiteURL, options: .atomic)
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let archive = target.appending(path: "suite-\(damage)-\(digest).json")
+        let conflicting = Data("Unrelated archive that must survive".utf8)
+        try conflicting.write(to: archive)
+
+        let loaded = EvaluationWorkspaceStatePersistence.loadSuite(from: target, expectedSuiteID: expectedID)
+        #expect(loaded.suite == nil)
+        #expect(loaded.persistenceBlocker != nil)
+        let restored = EvaluationStore(supportDirectory: directory)
+        #expect(restored.suite.id == expectedID)
+        restored.draftSuite.instructions = "Attempted replacement"
+        #expect(!restored.saveSuite())
+        #expect(restored.notice?.contains("could not be preserved") == true)
+        await restored.closeAndWait()
+        #expect(try Data(contentsOf: suiteURL) == bytes)
+        #expect(try Data(contentsOf: archive) == conflicting)
+
+        try FileManager.default.removeItem(at: archive)
+        let repaired = EvaluationStore(supportDirectory: directory)
+        #expect(try Data(contentsOf: archive) == bytes)
+        #expect(EvaluationWorkspaceStatePersistence.loadSuite(from: target, expectedSuiteID: expectedID).persistenceBlocker == nil)
+        #expect(repaired.saveSuite())
+        #expect(try CanonicalJSON.decode(EvaluationSuite.self, from: Data(contentsOf: suiteURL)).id == expectedID)
+        #expect(try Data(contentsOf: archive) == bytes)
+        await repaired.closeAndWait()
+    }
+
+    @Test func startupRejectsForeignSuiteIdentityAndPreservesItsBytes() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = EvaluationStore(supportDirectory: directory)
+        let expectedID = original.selectedSuiteID
+        let target = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: directory, projectID: original.selectedProjectID, suiteID: expectedID
+        )
+        var foreign = EvaluationSuite()
+        foreign.name = "Foreign suite"
+        foreign.instructions = "Foreign instructions must not become selected"
+        let bytes = try CanonicalJSON.data(for: foreign)
+        let suiteURL = target.appending(path: "suite.json")
+        try bytes.write(to: suiteURL, options: .atomic)
+
+        let restored = EvaluationStore(supportDirectory: directory)
+        #expect(restored.selectedSuiteID == expectedID)
+        #expect(restored.suite.id == expectedID)
+        #expect(restored.draftSuite.id == expectedID)
+        #expect(restored.suite.instructions != foreign.instructions)
+        #expect(restored.notice?.contains("different workspace suite") == true)
+        #expect(try Data(contentsOf: suiteURL) == bytes)
+        let archives = try FileManager.default.contentsOfDirectory(at: target, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("suite-mismatched-") }
+        #expect(archives.count == 1)
+        #expect(try Data(contentsOf: #require(archives.first)) == bytes)
+
+        var repaired = foreign
+        repaired.id = expectedID
+        try CanonicalJSON.data(for: repaired).write(to: suiteURL, options: .atomic)
+        let reloaded = EvaluationStore(supportDirectory: directory)
+        #expect(reloaded.suite.id == expectedID)
+        #expect(reloaded.suite.instructions == foreign.instructions)
+    }
+
+    @Test func conflictingUnreadableStateArchiveIsNotReportedAsPreserved() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bytes = Data("{ broken state".utf8)
+        let stateURL = directory.appending(path: "state.json")
+        try bytes.write(to: stateURL)
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let backup = directory.appending(path: "state-unreadable-\(digest).json")
+        let unrelated = Data("different archived content".utf8)
+        try unrelated.write(to: backup)
+
+        let loaded = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(from: stateURL)
+        #expect(loaded.notice?.contains("could not be preserved") == true)
+        #expect(loaded.notice?.contains("was preserved") == false)
+        #expect(try Data(contentsOf: stateURL) == bytes)
+        #expect(try Data(contentsOf: backup) == unrelated)
+    }
+
     @Test(arguments: [false, true])
-    func duplicationFlushesVisiblePromptEdits(duplicatesProject: Bool) throws {
+    func duplicationPreservesVisiblePromptDraft(duplicatesProject: Bool) throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = EvaluationStore(supportDirectory: directory)
@@ -18,32 +111,9 @@ struct EvaluationWorkspaceRepairTests {
 
         let copied = try duplicatedSuite(in: store, duplicatesProject: duplicatesProject)
 
-        #expect(copied.name == "Visible name copy")
-        #expect(copied.cases.first { $0.id == caseID }?.prompt == "Visible prompt before the autosave fires")
-        #expect(!store.isDraftSavePending)
-        #expect(store.suite.cases.first { $0.id == caseID }?.prompt == copied.cases.first { $0.id == caseID }?.prompt)
-    }
-
-    @Test(arguments: [false, true])
-    func duplicationRejectsAnInvalidVisibleDraftAndAllowsCorrection(duplicatesProject: Bool) throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
-        let caseID = store.draftSuite.cases[0].id
-        let originalPrompt = store.suite.cases[0].prompt
-        store.editPrompt("", for: caseID)
-
-        #expect(throws: EvaluationStoreError.self) {
-            _ = try duplicatedSuite(in: store, duplicatesProject: duplicatesProject)
-        }
-        #expect(store.projects.count == 1)
-        #expect(store.suiteRecords.count == 1)
-        #expect(store.suite.cases[0].prompt == originalPrompt)
-        #expect(store.promptText(for: caseID).isEmpty)
-
-        store.editPrompt("Corrected visible prompt", for: caseID)
-        let copied = try duplicatedSuite(in: store, duplicatesProject: duplicatesProject)
-        #expect(copied.cases.first { $0.id == caseID }?.prompt == "Corrected visible prompt")
+        #expect(copied.cases.first { $0.id == caseID }?.prompt == store.suite.cases.first { $0.id == caseID }?.prompt)
+        #expect(store.isDraftSavePending)
+        #expect(store.promptText(for: caseID) == "Visible prompt before the autosave fires")
     }
 
     @Test(arguments: [false, true])
@@ -70,7 +140,8 @@ struct EvaluationWorkspaceRepairTests {
 
         rejectsWrites = false
         let copied = try duplicatedSuite(in: store, duplicatesProject: duplicatesProject)
-        #expect(copied.cases.first { $0.id == caseID }?.prompt == "Retain this draft across a failed save")
+        #expect(copied.cases.first { $0.id == caseID }?.prompt == originalPrompt)
+        #expect(store.promptText(for: caseID) == "Retain this draft across a failed save")
     }
 
     @Test func failedLocalStatePreservationBlocksReplacementAndRetriesAfterConflictRemoval() throws {

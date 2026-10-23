@@ -77,6 +77,14 @@ for provider in ['privateCloudCompute','customHTTP','coreAI']:
     check(result['status']=='failed' and result['error']['kind']=='invalidInput',result)
 suite=base();suite['judgeConfiguration']['mode']='connection'
 check(not invoke({'operation':'validate-suite','suite':suite})['valid'])
+# An enabled profile supplies its own tool policy; inactive legacy policy must not block it.
+for enabled, require_tool, valid in [(True, False, True), (True, True, False), (False, False, False)]:
+    suite=base()
+    suite['modelConfiguration']['customization']['toolCalling']='required'
+    suite['features']['tools']=[]
+    suite['features']['profile'].update(enabled=enabled, requireToolFirst=require_tool)
+    result=invoke({'operation':'validate-suite','suite':suite})
+    check(result['valid'] is valid,result)
 suite=base();suite['repetitions']=6
 check(not invoke({'operation':'validate-suite','suite':suite})['valid'])
 suite=base();suite['features']['tools']=[tool('localHTTP','https://example.com/tool')]

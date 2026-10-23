@@ -36,13 +36,15 @@ public actor DeveloperProductionCapture {
         for (key,value) in metadata where metadataKeys.contains(key) { permitted[key] = try sanitizer(value) }
         guard !eventID.isEmpty, !sourceID.isEmpty, !sanitizedPrompt.isEmpty, sanitizedPrompt.utf8.count <= 64_000,
               sanitizedOutput.utf8.count <= 64_000, (sanitizedFeedback?.utf8.count ?? 0) <= 4_000,
-              permitted.allSatisfy({ $0.key.count <= 80 && $0.value.count <= 200 }) else { throw CaptureError.oversizedRecord }
+              permitted.allSatisfy({ !$0.key.isEmpty && $0.key.count <= 80 && $0.value.count <= 200 }) else { throw CaptureError.oversizedRecord }
         func pseudonym(_ value: String) -> String {
             HMAC<SHA256>.authenticationCode(for: Data(value.utf8), using: sourceKey).map { String(format: "%02x", $0) }.joined()
         }
         let value = Record(id: pseudonym(eventID), sourceID: pseudonym(sourceID), prompt: sanitizedPrompt,
                            capturedOutput: sanitizedOutput, feedback: sanitizedFeedback, metadata: permitted)
-        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; var data = try encoder.encode(value); data.append(10)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; var data = try encoder.encode(value)
+        guard data.count <= 262_144 else { throw CaptureError.oversizedRecord }
+        data.append(10)
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let descriptor = Darwin.open(file.path, O_WRONLY | O_CREAT | O_CLOEXEC, 0o600)
         guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }

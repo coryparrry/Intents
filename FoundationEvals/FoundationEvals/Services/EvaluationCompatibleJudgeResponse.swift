@@ -158,8 +158,11 @@ enum EvaluationCompatibleJudgeResponseDecoder {
             }
         }
 
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = rawLine.last == "\r" ? rawLine.dropLast() : rawLine[...]
+        // SSE accepts LF, CRLF, and bare CR. Swift represents CRLF as a
+        // single Character, so splitting on LF alone misses those records.
+        for line in text.split(omittingEmptySubsequences: false, whereSeparator: {
+            $0 == "\n" || $0 == "\r\n" || $0 == "\r"
+        }) {
             if line.isEmpty {
                 try consumeEvent()
             } else if line.hasPrefix("data:") {

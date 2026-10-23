@@ -191,8 +191,7 @@ struct ProductionWorkspaceView: View {
                         Text("Every \(Int(schedule.intervalSeconds/60)) min · \(schedule.remainingRuns) remaining").font(.callout)
                         Spacer()
                         Button(schedule.paused ? "Resume schedule" : "Pause schedule") {
-                            var updated = schedule; updated.paused.toggle(); let value = updated
-                            model.perform { try $0.saveSchedule(value) }
+                            model.setSchedulePaused(schedule, paused: !schedule.paused)
                         }.buttonStyle(.bordered)
                     }
                 }

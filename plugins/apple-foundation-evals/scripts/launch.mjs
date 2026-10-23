@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { runBuildCommand } from '../server/native-build-process.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { access, lstat, mkdir, readFile, readdir, rename, unlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
@@ -36,21 +36,7 @@ async function compile(target, cache, signal) {
   const temporary = join(cache, `native-${randomUUID()}`);
   try {
     const architecture = process.arch === 'arm64' ? 'arm64' : 'x86_64';
-    await new Promise((accept, reject) => {
-      const child = spawn('/usr/bin/xcrun', ['swiftc', '-O', '-parse-as-library', '-target', `${architecture}-apple-macos26.0`, ...sources, '-o', temporary], { stdio: ['ignore', 'ignore', 'pipe'], signal });
-      let diagnostics = '';
-      child.stderr.on('data', (chunk) => { if (diagnostics.length < 16384) diagnostics += chunk.toString(); });
-      const timer = setTimeout(() => child.kill('SIGKILL'), 180000);
-      child.once('error', (error) => { clearTimeout(timer); reject(error); });
-      child.once('close', (code) => {
-        clearTimeout(timer);
-        if (code === 0) accept();
-        else {
-          if (diagnostics) process.stderr.write(diagnostics);
-          reject(new Error('Native runner could not compile. Install Xcode 27 or newer and select its command line tools.'));
-        }
-      });
-    });
+    await runBuildCommand('/usr/bin/xcrun', ['swiftc', '-O', '-parse-as-library', '-target', `${architecture}-apple-macos26.0`, ...sources, '-o', temporary], { signal });
     await executable(temporary);
     await rename(temporary, target);
     return target;

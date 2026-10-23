@@ -38,7 +38,7 @@ struct FoundationEvalsApp: App {
             ),
             userDefaults: Self.launchDefaults,
             credentialStore: Self.launchCredentialStore,
-            existingCredentialOnly: Self.launchesProductionWorker || Self.readOnlyMCPCredentialRequest || Self.launchIsolation.isHostedTest,
+            existingCredentialOnly: Self.launchesProductionWorker || Self.readOnlyMCPAccess || Self.launchIsolation.isHostedTest,
             configurationDirectory: Self.launchIsolation.isHostedTest ? storeDirectory?.appending(path: "Codex") : nil,
             telemetry: telemetry
         )
@@ -75,9 +75,12 @@ struct FoundationEvalsApp: App {
         #endif
     }
 
-    private static var readOnlyMCPCredentialRequest: Bool {
+    private static var readOnlyMCPAccess: Bool {
         #if DEBUG
-        return MCPDebugLaunchConfiguration.requestsExistingCredential(arguments: ProcessInfo.processInfo.arguments)
+        return MCPDebugLaunchConfiguration.requiresReadOnlyAccess(
+            arguments: ProcessInfo.processInfo.arguments, environment: ProcessInfo.processInfo.environment,
+            isolatedStorage: acceptanceStorageDirectory
+        )
         #else
         return false
         #endif

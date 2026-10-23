@@ -207,6 +207,33 @@ struct CustomToolTests {
         #expect(await recorder.snapshot().first?.outcome == .cancelled)
     }
 
+    @Test func cancellationDuringOutputCountingDoesNotRecordSuccess() async throws {
+        let workflow = EvaluationWorkflowRecorder()
+        let recorder = EvaluationCustomToolRecorder(maximumCalls: 1, workflowRecorder: workflow)
+        let tool = try EvaluationCustomTool(
+            definition: fixture(name: "cancelled_output_tool"),
+            recorder: recorder,
+            httpClient: FailingHTTPClient(),
+            tokenCounter: FixtureOutputCancellationTokenCounter()
+        )
+        let task = Task {
+            try await tool.call(
+                arguments: GeneratedContent(kind: .structure(properties: [:], orderedKeys: []))
+            )
+        }
+        do {
+            _ = try await task.value
+            Issue.record("Expected output-counting cancellation to propagate.")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        let trace = try #require(await recorder.snapshot().first)
+        #expect(trace.outcome == .cancelled)
+        #expect(trace.output == "ok")
+        #expect(workflow.snapshot().spans.first?.status == .cancelled)
+    }
+
     @Test func endpointFailuresAreRecorded() async throws {
         let recorder = EvaluationCustomToolRecorder(maximumCalls: 1)
         let tool = try EvaluationCustomTool(
@@ -384,4 +411,13 @@ private enum StubError: LocalizedError {
     case bridgeUnavailable
 
     var errorDescription: String? { "Bridge unavailable" }
+}
+
+private struct FixtureOutputCancellationTokenCounter: EvaluationCustomToolTokenCounting {
+    func tokenCount(for text: String) async throws -> Int {
+        if text == "ok" {
+            withUnsafeCurrentTask { $0?.cancel() }
+        }
+        return 1
+    }
 }

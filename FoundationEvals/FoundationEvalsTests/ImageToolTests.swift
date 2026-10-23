@@ -162,6 +162,26 @@ struct ImageToolTests {
         #expect(photo["path"] == nil)
     }
 
+    @Test(arguments: [false, true])
+    func explicitNullImageReferenceHonorsOptionality(optional: Bool) throws {
+        let fields = [EvaluationSchemaField(name: "image", type: .imageReference, isOptional: optional)]
+        do {
+            let json = try EvaluationCustomTool.resolvedArgumentsJSON(
+                argumentsJSON: #"{"image":null}"#,
+                fields: fields, definitions: [], history: [Transcript.Entry]()
+            )
+            #expect(optional)
+            let object = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+            #expect(object["image"] is NSNull)
+        } catch let error as EvaluationCustomToolError {
+            #expect(!optional)
+            guard case .invalidImageReference(field: "image") = error else {
+                Issue.record("Unexpected image reference error: \(error)")
+                return
+            }
+        }
+    }
+
     @Test func imageReferenceOutsideTranscriptIsRejected() throws {
         let reference = try ImageReference(
             GeneratedContent(properties: ["attachmentLabel": "missing-image"])

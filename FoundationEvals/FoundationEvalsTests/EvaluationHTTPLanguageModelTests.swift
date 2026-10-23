@@ -259,6 +259,31 @@ struct EvaluationHTTPLanguageModelTests {
         }
     }
 
+    @Test func liveResponseReplacementScopesSegmentIDsToTheirEntry() {
+        var accumulator = EvaluationHTTPResponseAccumulator()
+        #expect(accumulator.apply(.init(action: .append, entryID: "first", segmentID: "text", content: "A")) == "A")
+        #expect(accumulator.apply(.init(action: .append, entryID: "second", segmentID: "text", content: "B")) == "AB")
+        #expect(accumulator.apply(.init(action: .replace, entryID: "second", segmentID: "text", content: "C")) == "AC")
+        #expect(accumulator.apply(.init(action: .replace, entryID: "first", segmentID: "text", content: "D")) == "DC")
+        #expect(accumulator.apply(.init(action: .append, entryID: "first", segmentID: "tail", content: "!")) == "D!C")
+    }
+
+    @Test func liveResponseWithoutSegmentIDCannotReplaceAnotherEntry() {
+        var accumulator = EvaluationHTTPResponseAccumulator()
+        #expect(accumulator.apply(.init(action: .append, entryID: "first", segmentID: nil, content: "A")) == "A")
+        #expect(accumulator.apply(.init(action: .replace, entryID: "second", segmentID: nil, content: "B")) == "AB")
+        #expect(accumulator.apply(.init(action: .replace, entryID: "first", segmentID: nil, content: "C")) == "CB")
+        // An omitted entry ID continues the latest response entry.
+        #expect(accumulator.apply(.init(action: .append, entryID: nil, segmentID: nil, content: "!")) == "CB!")
+    }
+
+    @Test func liveResponseAnonymousSegmentsStillAppendAndReplace() {
+        var accumulator = EvaluationHTTPResponseAccumulator()
+        #expect(accumulator.apply(.init(action: .append, entryID: nil, segmentID: nil, content: "A")) == "A")
+        #expect(accumulator.apply(.init(action: .append, entryID: nil, segmentID: nil, content: "B")) == "AB")
+        #expect(accumulator.apply(.init(action: .replace, entryID: nil, segmentID: nil, content: "C")) == "C")
+    }
+
     @Test(.timeLimit(.minutes(1)))
     func gatedLoopbackFixturePublishesBeforeSDKStreamCompletion() async throws {
         let fixture = try RunningCustomModelFixture(streamDelay: 0.05, gateTextStream: true)

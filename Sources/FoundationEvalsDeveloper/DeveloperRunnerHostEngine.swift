@@ -414,10 +414,22 @@ public actor DeveloperRunnerHostEngine {
 
         switch message {
         case .execute(let request):
+            // The client correlates terminal results by request ID. A second
+            // result here would consume the original request's continuation.
+            guard requestIDsByConnection[connectionID]?.contains(request.id) != true else { return .respond([]) }
+            guard !requestIDsByConnection.values.contains(where: { $0.contains(request.id) }) else {
+                let result = DeveloperFeatureExecutionResult(
+                    requestID: request.id, runID: request.runID, featureID: request.featureID,
+                    startedAt: Date(), completedAt: Date(),
+                    failure: .init(code: .invalidInput, message: "An execution with this request ID is already active.")
+                )
+                return .respond(secureEnvelope(.result(result), connectionID: connectionID).map { [$0] } ?? [])
+            }
             requestIDsByConnection[connectionID, default: []].insert(request.id)
             let task = await registry.start(request)
             return .execute(request: request, task: task)
         case .cancel(let requestID):
+            guard requestIDsByConnection[connectionID]?.contains(requestID) == true else { return .respond([]) }
             await registry.cancel(requestID: requestID)
             return .respond([])
         case .disconnect:

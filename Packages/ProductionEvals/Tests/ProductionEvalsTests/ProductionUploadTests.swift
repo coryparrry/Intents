@@ -18,6 +18,114 @@ struct ProductionUploadTests {
     }
     return data
   }
+  @Test(arguments: [false, true])
+  func rejectsUnreadableManifestBeforeAdmittingUpload(completionOnly: Bool) throws {
+    let storage = try storage()
+    defer { try? FileManager.default.removeItem(at: storage.root) }
+    let bytes = try source()
+    var upload = ProductionUpload(
+      id: UUID(), name: "a", version: "1", expectedChunks: 1,
+      expectedBytes: bytes.count, expectedDigest: ProductionCodec.digest(bytes))
+    let target = completionOnly ? 4050 : 4200
+    while try ProductionCodec.encode(upload).count < target { upload.name += "\u{0301}" }
+    #expect(upload.name.count == 1)
+    if completionOnly {
+      #expect(try ProductionCodec.encode(upload).count <= 4096)
+      var completed = upload
+      completed.previewed = true; completed.datasetRevision = String(repeating: "0", count: 64)
+      #expect(try ProductionCodec.encode(completed).count > 4096)
+    }
+    #expect(throws: ProductionFailure.self) { try storage.beginUpload(upload) }
+    #expect(!FileManager.default.fileExists(atPath: storage.root.appendingPathComponent("Uploads/\(upload.id)").path))
+    // Rejection must not reserve this ID or consume a pending-upload slot.
+    upload.name = "Valid"
+    #expect(try storage.beginUpload(upload) == upload)
+  }
+
+  @Test func boundedUnicodeManifestRemainsReadableThroughCompletion() throws {
+    let storage = try storage()
+    defer { try? FileManager.default.removeItem(at: storage.root) }
+    let bytes = try source()
+    let upload = ProductionUpload(
+      id: UUID(), name: "a" + String(repeating: "\u{0301}", count: 1600), version: "1", expectedChunks: 1,
+      expectedBytes: bytes.count, expectedDigest: ProductionCodec.digest(bytes))
+    _ = try storage.beginUpload(upload)
+    try storage.appendUpload(upload.id, index: 0, data: bytes)
+    _ = try storage.previewUpload(upload.id)
+    let dataset = try storage.finishUpload(upload.id, previewDigest: upload.expectedDigest, redactionConfirmed: false)
+    #expect(try storage.upload(upload.id).datasetRevision == dataset.revision)
+    #expect(try storage.beginUpload(upload).datasetRevision == dataset.revision)
+  }
+
+  @Test(arguments: [false, true])
+  func interruptedDiscardRejectsFurtherUseAndCanFinishCleanup(previewed: Bool) throws {
+    let storage = try storage()
+    defer { try? FileManager.default.removeItem(at: storage.root) }
+    let bytes = try source()
+    let upload = ProductionUpload(
+      id: UUID(), name: "Discarded", version: "1", expectedChunks: 1,
+      expectedBytes: bytes.count, expectedDigest: ProductionCodec.digest(bytes))
+    _ = try storage.beginUpload(upload)
+    try storage.appendUpload(upload.id, index: 0, data: bytes)
+    if previewed { _ = try storage.previewUpload(upload.id) }
+    let folder = storage.root.appendingPathComponent("Uploads/\(upload.id)")
+    let manifest = try Data(contentsOf: folder.appendingPathComponent("upload.json"))
+    // Reproduce a crash after the durable tombstone but before directory removal.
+    try Data(upload.id.uuidString.utf8).write(to: storage.root.appendingPathComponent("Uploads/.discarded-\(upload.id)"))
+    #expect(throws: ProductionFailure.self) { try storage.beginUpload(upload) }
+    #expect(throws: ProductionFailure.self) { try storage.uploadStatus(upload.id) }
+    #expect(throws: ProductionFailure.self) { try storage.appendUpload(upload.id, index: 0, data: bytes) }
+    #expect(throws: ProductionFailure.self) { try storage.previewUpload(upload.id) }
+    #expect(throws: ProductionFailure.self) {
+      try storage.finishUpload(upload.id, previewDigest: upload.expectedDigest, redactionConfirmed: false)
+    }
+    #expect(try Data(contentsOf: folder.appendingPathComponent("upload.json")) == manifest)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: storage.root.appendingPathComponent("Datasets").path).isEmpty)
+    try storage.discardUpload(upload.id)
+    #expect(!FileManager.default.fileExists(atPath: folder.path))
+    try storage.discardUpload(upload.id)
+    #expect(throws: ProductionFailure.self) { try storage.beginUpload(upload) }
+  }
+
+  @Test(arguments: [false, true])
+  func explicitDiscardRecoversUnreadableLegacyManifest(oversized: Bool) throws {
+    let storage = try storage()
+    defer { try? FileManager.default.removeItem(at: storage.root) }
+    let bytes = try source()
+    let sibling = ProductionUpload(
+      id: UUID(), name: "Keep", version: "1", expectedChunks: 1,
+      expectedBytes: bytes.count, expectedDigest: ProductionCodec.digest(bytes))
+    _ = try storage.beginUpload(sibling)
+    let id = UUID(), folder = storage.root.appendingPathComponent("Uploads/\(id)")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    var legacy = sibling
+    legacy.id = id
+    legacy.name = "a" + String(repeating: "\u{0301}", count: 2500)
+    let manifest = oversized ? try ProductionCodec.encode(legacy) : Data("{interrupted".utf8)
+    try manifest.write(to: folder.appendingPathComponent("upload.json"))
+    try bytes.write(to: folder.appendingPathComponent("0.chunk"))
+    #expect(throws: Error.self) { try storage.upload(id) }
+    try storage.discardUpload(id)
+    #expect(!FileManager.default.fileExists(atPath: folder.path))
+    #expect(try storage.upload(sibling.id) == sibling)
+    legacy.name = "Valid"
+    #expect(throws: ProductionFailure.self) { try storage.beginUpload(legacy) }
+    try storage.discardUpload(id)
+  }
+
+  @Test func discardRejectsUnknownIDsAndDirectoriesWithoutManifest() throws {
+    let storage = try storage()
+    defer { try? FileManager.default.removeItem(at: storage.root) }
+    let id = UUID(), folder = storage.root.appendingPathComponent("Uploads/\(id)")
+    #expect(throws: ProductionFailure.self) { try storage.discardUpload(id) }
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let sentinel = folder.appendingPathComponent("unrelated.txt"), bytes = Data("keep".utf8)
+    try bytes.write(to: sentinel)
+    #expect(throws: ProductionFailure.self) { try storage.discardUpload(id) }
+    #expect(try Data(contentsOf: sentinel) == bytes)
+    #expect(!FileManager.default.fileExists(atPath: storage.root.appendingPathComponent("Uploads/.discarded-\(id)").path))
+  }
+
   @Test func splitByteChunksSealPreviewAndIdempotentImport() throws {
     let storage = try storage()
     defer { try? FileManager.default.removeItem(at: storage.root) }

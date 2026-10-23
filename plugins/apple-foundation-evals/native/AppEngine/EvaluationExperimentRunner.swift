@@ -45,6 +45,7 @@ actor EvaluationExperimentRunner {
         candidateRunID requestedCandidateID: UUID? = nil,
         progress: @Sendable (EvaluationSampleResult, Int, Int) async -> Void
     ) async throws -> EvaluationExperimentRunResult {
+        try validatePlan(suite: suite, experiment: experiment)
         let currentRunID = requestedCurrentID ?? UUID()
         let candidateRunID = requestedCandidateID ?? UUID()
         let startedAt = Date()
@@ -74,7 +75,7 @@ actor EvaluationExperimentRunner {
                 adjusted.repetition = repetition
                 await progress(adjusted, completedPosition, experiment.executionOrder.count)
             }
-            if part.cancelled { throw CancellationError() }
+            if Task.isCancelled || part.cancelled { throw CancellationError() }
             part.results = part.results.map { result in
                 var adjusted = result
                 adjusted.repetition = repetition
@@ -108,6 +109,24 @@ actor EvaluationExperimentRunner {
                 interruptionReason: terminationReason
             )
         )
+    }
+
+    private func validatePlan(suite: EvaluationSuite, experiment: EvaluationExperiment) throws {
+        let samples = suite.cases.count.multipliedReportingOverflow(by: suite.repetitions)
+        let positions = samples.partialValue.multipliedReportingOverflow(by: 2)
+        guard !suite.cases.isEmpty, suite.repetitions > 0,
+              !samples.overflow, !positions.overflow,
+              Set(suite.cases.map(\.id)).count == suite.cases.count,
+              experiment.current.id != experiment.candidate.id,
+              experiment.executionOrder.count == positions.partialValue else {
+            throw RunnerFailure.validation("The experiment execution plan is invalid. Create a new experiment.")
+        }
+        let variants = Set([experiment.current.id, experiment.candidate.id])
+        for index in stride(from: 0, to: experiment.executionOrder.count, by: 2) {
+            guard Set(experiment.executionOrder[index...(index + 1)]) == variants else {
+                throw RunnerFailure.validation("Each experiment trial must execute both variants exactly once. Create a new experiment.")
+            }
+        }
     }
 
     private func combined(
