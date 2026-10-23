@@ -98,6 +98,19 @@ else:
         self.assertFalse(any(call[:2] == ["workflow", "run"] for call in self.calls()))
 
 
+    def test_missing_150_recovery_starts_after_its_recorded_release(self):
+        repository = self.script.parents[1]
+        config = json.loads((repository / "release-please-config.json").read_text())
+        boundary = config["bootstrap-sha"]
+        self.assertRegex(boundary, r"^[0-9a-f]{40}$")
+        # Inspect the historical manifest, so this remains valid after future releases.
+        # Using the old v1.4.0 anchor would replay the already-recorded 1.5.0 features.
+        historical = subprocess.check_output(
+            ["git", "show", f"{boundary}:.release-please-manifest.json"],
+            cwd=repository, text=True,
+        )
+        self.assertEqual(json.loads(historical)["."], "1.5.0")
+
     def test_missing_release_and_tag_allows_a_new_proposal(self):
         result = self.run_script("check-baseline", RELEASE_STATUS="404")
         self.assertEqual(result.returncode, 0, result.stderr)

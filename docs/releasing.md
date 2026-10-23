@@ -26,7 +26,9 @@ The top-level `always-update` option refreshes an existing release PR from the
 latest `main` on every eligible run, including merges whose release notes are
 unchanged. Release Me dispatches CI again on the updated release branch.
 
-Draft staging and release PR generation run in separate Release Please steps. Before generating a PR, the workflow requires the version in the current `main` manifest to have a published GitHub release. A draft pauses PR generation until packaging succeeds; a missing release or API error stops the workflow instead of treating old commits as unreleased. A run with no releasable changes skips PR CI without parsing an absent PR output.
+Draft staging and release PR generation run in separate Release Please steps. A published release for the current `main` manifest permits the next proposal; an existing draft pauses generation until packaging succeeds. If the release is missing but its tag survives, the workflow stops so that potentially distributed version is not bypassed. API, authentication, and transport failures also stop the workflow.
+
+When both the manifest release and its tag return HTTP 404, Release Me can generate the next proposal without restoring or publishing the removed candidate. The configured `bootstrap-sha` is the merged 1.5.0 release PR commit: it bounds this recovery to changes after that already-recorded version and avoids repeating its feature entries. Normal runs with an available baseline ignore the bootstrap boundary. Installer preflight has the contents permission needed to read drafts, while signing and publication remain in the protected release job. A run with no releasable changes skips PR CI without parsing an absent PR output.
 
 No separate packaging action is required. A missing signing secret, failed CI/build/notarization, source mismatch, failed upload, or failed download verification leaves the release unpublished. The installer is built from the release PR's source, never a previously generated local DMG. Hosted build numbers are fixed to that source's Git commit count, which increases as commits land on `main`.
 
