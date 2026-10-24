@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.2](https://github.com/coryparrry/Intents/compare/v1.5.1...v1.5.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* **charts:** keep pass rate hover details readable and within the chart ([00ca8fe](https://github.com/coryparrry/Intents/commit/00ca8fe80be6451c20602dc3aa7703ba1ede42ad))
+
 ## [1.5.1](https://github.com/coryparrry/Intents/compare/v1.5.0...v1.5.1) (2026-10-23)
 
 
