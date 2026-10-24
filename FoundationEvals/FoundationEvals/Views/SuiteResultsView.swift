@@ -115,7 +115,7 @@ private struct RunTrendPanel: View {
                 RuleMark(x: .value("Run", point.label))
                     .foregroundStyle(Color.primary.opacity(0.18))
                     .lineStyle(StrokeStyle(lineWidth: 1))
-                    .annotation(position: .top, spacing: 6, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                    .annotation(position: .top, spacing: 6, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(Int(point.rate.rounded()))% passed").font(.callout.weight(.semibold)).monospacedDigit()
                             Text("\(point.run.passedCount) passed · \(point.run.failedCount) failed")
@@ -124,7 +124,8 @@ private struct RunTrendPanel: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 12).padding(.vertical, 8)
-                        .workspaceGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .workspaceSurface(radius: 12)
+                        .allowsHitTesting(false)
                     }
             }
         }
