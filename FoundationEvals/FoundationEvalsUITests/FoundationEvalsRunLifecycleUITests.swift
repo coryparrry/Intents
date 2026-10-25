@@ -88,6 +88,133 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
     }
 
     @MainActor
+    func testPromptImprovementKeepsCancellationEnabled() throws {
+        app.terminate()
+        app.launchArguments.append("--prompt-improvement-test-suggestions")
+        app.launch()
+        try openSuiteEditor()
+        configureSuite(name: "Instruction cancellation fixture", endpointPath: "/success")
+        app.radioButtons["Cases"].click()
+        app.buttons["Add Case"].click()
+        replaceText(in: app.textViews["Case prompt"], with: "Return the fixture response.")
+        replaceText(in: app.textViews["Scoring expected text"], with: "Deterministic fixture stream.")
+        selectSetup("Instructions")
+        app.buttons["Improve instructions"].click()
+        let sheet = app.sheets.firstMatch
+        let generate = sheet.buttons["Generate and compare instructions"]
+        XCTAssertTrue(generate.waitForExistence(timeout: 3))
+        generate.click()
+        XCTAssertTrue(fixture.waitForRequest(timeout: 5), app.debugDescription)
+        let cancel = sheet.buttons["Cancel run"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 3))
+        XCTAssertTrue(cancel.isEnabled, "The disabled Setup editor must not disable its presented sheet")
+        XCTAssertTrue(sheet.buttons["Done"].isEnabled)
+        sheet.buttons["Done"].click()
+        let reopen = app.buttons["Improve instructions"]
+        XCTAssertTrue(reopen.isEnabled)
+        reopen.click()
+        XCTAssertTrue(cancel.waitForExistence(timeout: 3))
+        XCTAssertTrue(sheet.descendants(matching: .any)["Instruction comparison progress"].exists)
+        cancel.click()
+        fixture.finishResponse()
+        let cancelled = textContaining("Comparison cancelled", in: sheet)
+        XCTAssertTrue(cancelled.waitForExistence(timeout: 8), app.debugDescription)
+        XCTAssertFalse(sheet.buttons["Apply validated instructions"].exists)
+        capture("prompt-improvement-cancelled")
+        sheet.buttons["New comparison"].click()
+        XCTAssertTrue(generate.isEnabled)
+        sheet.buttons["History"].click()
+        XCTAssertTrue(sheet.descendants(matching: .any)["Instruction comparison history"].exists)
+        capture("prompt-improvement-history")
+    }
+
+    @MainActor
+    func testPromptImprovementRoutesToMissingSetup() throws {
+        try openSuiteEditor()
+        selectSetup("Instructions")
+        app.buttons["Improve instructions"].click()
+        let sheet = app.sheets.firstMatch
+        let configure = sheet.buttons["Configure instruction comparison"]
+        XCTAssertTrue(configure.waitForExistence(timeout: 3))
+        XCTAssertFalse(sheet.buttons["Generate and compare instructions"].exists)
+        capture("prompt-improvement-add-cases")
+        configure.click()
+        XCTAssertTrue(app.buttons["Add Case"].waitForExistence(timeout: 3))
+        app.buttons["Add Case"].click()
+        selectSetup("Scoring")
+        app.radioButtons["Collect only"].click()
+        selectSetup("Instructions")
+        app.buttons["Improve instructions"].click()
+        XCTAssertTrue(configure.waitForExistence(timeout: 3))
+        XCTAssertTrue(textContaining("Choose a scoring method", in: sheet).exists)
+        capture("prompt-improvement-choose-scoring")
+        configure.click()
+        XCTAssertTrue(app.radioButtons["Collect only"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testPromptImprovementGuidesSetupReviewAndApply() throws {
+        app.terminate()
+        app.launchArguments += ["--prompt-improvement-test-suggestions", "-AppleInterfaceStyle", "Dark"]
+        app.launch()
+        try openSuiteEditor()
+        configureSuite(name: "Instruction comparison fixture", endpointPath: "/improve")
+        app.radioButtons["Cases"].click()
+        app.buttons["Add Case"].click()
+        replaceText(in: app.textViews["Case prompt"], with: "Return the fixture response.")
+        replaceText(in: app.textViews["Scoring expected text"], with: "Deterministic fixture stream.")
+        selectSetup("Instructions")
+        app.buttons["Improve instructions"].click()
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.descendants(matching: .any)["Instruction comparison setup"].waitForExistence(timeout: 3))
+        capture("prompt-improvement-setup")
+        sheet.disclosureTriangles["Choose examples"].click()
+        XCTAssertTrue(sheet.checkBoxes.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertEqual(sheet.checkBoxes.count, 2)
+        let reserved = sheet.checkBoxes.element(boundBy: 1)
+        XCTAssertTrue(reserved.exists)
+        // The final-check row starts below the fixed footer in a compact window.
+        let examples = sheet.scrollViews.firstMatch
+        examples.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+            .scroll(byDeltaX: 0, deltaY: -800)
+        XCTAssertTrue(reserved.isHittable && examples.frame.contains(reserved.frame), app.debugDescription)
+        reserved.click()
+        let generate = sheet.buttons["Generate and compare instructions"]
+        let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == false"), object: generate)
+        XCTAssertEqual(XCTWaiter.wait(for: [disabled], timeout: 3), .completed)
+        let practice = sheet.checkBoxes.firstMatch
+        practice.click()
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: generate)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 3), .completed)
+        generate.click()
+        XCTAssertTrue(textContaining("A better suggestion is ready", in: sheet).waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(sheet.buttons["Apply validated instructions"].isEnabled)
+        XCTAssertTrue(sheet.descendants(matching: .any)["Instruction comparison outcome"].exists)
+        capture("prompt-improvement-result")
+        sheet.buttons["Apply validated instructions"].click()
+        XCTAssertTrue(textContaining("Suggestion applied", in: sheet).waitForExistence(timeout: 3))
+        XCTAssertFalse(sheet.buttons["Apply validated instructions"].exists)
+        capture("prompt-improvement-applied")
+        sheet.buttons["Done"].click()
+        XCTAssertTrue(app.textViews["Model instructions"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["OK"].exists, "The result screen already confirms application; closing it must not show a stale success alert")
+        XCTAssertTrue((app.textViews["Model instructions"].value as? String)?.contains("Return only the answer.") == true)
+    }
+
+    @MainActor
+    private func textContaining(_ value: String, in element: XCUIElement) -> XCUIElement {
+        element.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", value, value)).firstMatch
+    }
+
+    @MainActor
+    private func capture(_ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
     func testProviderFailureProducesAnIssueRun() throws {
         try openSuiteEditor()
         configureSuite(name: "UI provider failure fixture", endpointPath: "/failure")
@@ -256,7 +383,12 @@ private final class LocalHTTPModelFixture: @unchecked Sendable {
                 connection.cancel()
                 return
             }
-            guard request.range(of: Data("\r\n\r\n".utf8)) != nil else {
+            let headerBoundary = request.range(of: Data("\r\n\r\n".utf8))
+            let header = headerBoundary.map { String(decoding: request[..<$0.lowerBound], as: UTF8.self) } ?? ""
+            let contentLength = header.components(separatedBy: "\r\n").first {
+                $0.lowercased().hasPrefix("content-length:")
+            }.flatMap { Int($0.split(separator: ":", maxSplits: 1)[1].trimmingCharacters(in: .whitespaces)) } ?? 0
+            guard let headerBoundary, request.count - headerBoundary.upperBound >= contentLength else {
                 if isComplete {
                     connection.cancel()
                 } else {
@@ -282,6 +414,13 @@ private final class LocalHTTPModelFixture: @unchecked Sendable {
             return
         }
 
+        if requestLine.contains(" /improve ") {
+            let body = String(decoding: request, as: UTF8.self)
+            let response = body.contains("Return only the answer.") ? "Deterministic fixture stream." : "Wrong answer."
+            let event = "{\"kind\":\"response\",\"action\":\"append\",\"content\":\"\(response)\",\"tokenCount\":4}\n"
+            send("HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n" + event, on: connection, complete: true)
+            return
+        }
         let firstEvent = #"{"kind":"response","action":"append","content":"Deterministic fixture stream.","tokenCount":4}"# + "\n"
         send(
             "HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n" + firstEvent,

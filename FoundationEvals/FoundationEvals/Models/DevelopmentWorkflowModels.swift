@@ -508,10 +508,11 @@ struct EvaluationSuiteLocalState: Codable, Sendable {
     var humanCorrections: [EvaluationHumanCorrection] = []
     var reviewedJudgeExamples: [EvaluationReviewedJudgeExample] = []
     var experiments: [EvaluationExperiment] = []
+    var promptImprovements: [EvaluationPromptImprovement] = []
     var review = EvaluationReviewState()
 
     private enum CodingKeys: String, CodingKey {
-        case baselineApprovals, humanCorrections, reviewedJudgeExamples, experiments, review
+        case baselineApprovals, humanCorrections, reviewedJudgeExamples, experiments, review, promptImprovements
     }
     init() {}
     init(from decoder: Decoder) throws {
@@ -520,6 +521,7 @@ struct EvaluationSuiteLocalState: Codable, Sendable {
         humanCorrections = try values.decode([EvaluationHumanCorrection].self, forKey: .humanCorrections)
         reviewedJudgeExamples = try values.decode([EvaluationReviewedJudgeExample].self, forKey: .reviewedJudgeExamples)
         experiments = try values.decode([EvaluationExperiment].self, forKey: .experiments)
+        promptImprovements = try values.decodeIfPresent([EvaluationPromptImprovement].self, forKey: .promptImprovements) ?? []
         review = try values.decodeIfPresent(EvaluationReviewState.self, forKey: .review) ?? .init()
     }
 }

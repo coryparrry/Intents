@@ -36,6 +36,7 @@ final class EvaluationStore {
     private(set) var isReassessing = false
     var selection = SidebarSelection.overview
     var isRunning = false
+    private(set) var activePromptImprovementID: UUID?
     var completedSamples = 0
     var totalSamples = 0
     private(set) var liveResponse: EvaluationLiveResponse?
@@ -335,7 +336,7 @@ final class EvaluationStore {
                     from: directory.appending(path: "Runs", directoryHint: .isDirectory),
                     projectID: project.id,
                     suiteID: record.id
-                ).runs
+                ).runs.filter { $0.promptImprovementID == nil }
                 let pendingURL = directory.appending(path: "pending-completed-runs.json")
                 let runs: [EvaluationRun]
                 if FileManager.default.fileExists(atPath: pendingURL.path) {
@@ -1459,6 +1460,149 @@ final class EvaluationStore {
         }
     }
 
+    func startPromptImprovement(heldOutCaseIDs: Set<UUID>) throws {
+        try requireIdle()
+        guard saveSuite() else {
+            throw EvaluationStoreError.invalidSuite(notice ?? "Save a valid suite before improving instructions.")
+        }
+        if let issue = EvaluationPromptImprovementRules.validationIssue(suite: suite, heldOutCaseIDs: heldOutCaseIDs) {
+            throw EvaluationStoreError.invalidSuite(issue)
+        }
+        if let issue = EvaluationPromptImprovementGenerator.availabilityIssue {
+            throw EvaluationStoreError.invalidSuite(issue)
+        }
+        let frozen = suite
+        let externalJudge = try resolvedJudge(for: frozen)
+        let images = try imageInputs(for: frozen)
+        let imageDigests = try Dictionary(uniqueKeysWithValues: images.map {
+            ($0.label, Self.sha256(try Data(contentsOf: $0.url)))
+        })
+        let report = EvaluationPromptImprovement(source: frozen, heldOutCaseIDs: heldOutCaseIDs)
+        let previousState = suiteLocalState
+        suiteLocalState.promptImprovements.append(report)
+        do { try persistSuiteLocalState() }
+        catch { suiteLocalState = previousState; throw error }
+        activePromptImprovementID = report.id
+        isRunning = true
+        completedSamples = 0
+        totalSamples = report.maximumSamples
+        let improvementRunner = EvaluationPromptImprovementRunner(
+            generate: { try await EvaluationPromptImprovementGenerator.generate(development: $0, baseline: $1) },
+            evaluate: { [weak self] variant in
+                guard let self else { throw CancellationError() }
+                return try await self.evaluatePromptImprovementVariant(variant, imageDigests: imageDigests, externalJudge: externalJudge)
+            }
+        )
+        runTask = Task { [weak self] in
+            guard let self else { return }
+            defer { isRunning = false; activePromptImprovementID = nil; runTask = nil }
+            do {
+                _ = try await improvementRunner.run(report) { [weak self] checkpoint in
+                    guard let self else { throw CancellationError() }
+                    try await self.savePromptImprovementCheckpoint(checkpoint)
+                }
+            } catch {
+                if let index = suiteLocalState.promptImprovements.firstIndex(where: { $0.id == report.id }) {
+                    var interrupted = suiteLocalState.promptImprovements[index]
+                    interrupted.status = error is CancellationError ? .cancelled : .failed
+                    interrupted.message = error is CancellationError
+                        ? "Instruction improvement was cancelled. Saved partial evidence cannot recommend a change."
+                        : "Instruction improvement stopped: \(error.localizedDescription)"
+                    do { try savePromptImprovementCheckpoint(interrupted) }
+                    catch {
+                        suiteLocalState.promptImprovements[index] = interrupted
+                        notice = "Comparison evidence could not be saved: \(error.localizedDescription). Keep the app open and restore storage access."
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    func evaluatePromptImprovementVariant(
+        _ variant: EvaluationSuite, imageDigests: [String: String], externalJudge: EvaluationResolvedJudgeConnection?
+    ) async throws -> EvaluationRun {
+        try Task.checkCancellation()
+        if let issue = validationIssue(for: variant) { throw EvaluationStoreError.invalidSuite(issue) }
+        let runID = UUID()
+        let ownerProjectID = selectedProjectID
+        let ownerSuiteID = selectedSuiteID
+        var producedRun = false
+        defer {
+            if !producedRun {
+                cleanupIncompleteRuns(ids: [runID], projectID: ownerProjectID, suiteID: ownerSuiteID)
+            }
+        }
+        let evidence = try snapshotSubjectEvidence(
+            runID: runID, suite: variant, projectID: ownerProjectID, suiteID: ownerSuiteID
+        )
+        let capturedDigests = Dictionary(uniqueKeysWithValues: evidence.attachments.filter { $0.kind == .image }.enumerated().map {
+            ("file-\($0.offset + 1)", $0.element.sha256)
+        })
+        guard capturedDigests == imageDigests else {
+            throw EvaluationStoreError.resourceConflict("A reference image changed during this comparison. No instruction change can be recommended.")
+        }
+        let capturedImages = try imageInputs(for: evidence, projectID: ownerProjectID, suiteID: ownerSuiteID, runID: runID)
+        let offset = completedSamples
+        let total = totalSamples
+        var run = await runner.run(
+            id: runID, suiteRevision: try Self.revision(for: variant), startedAt: Date(),
+            suite: variant, images: capturedImages, externalJudge: externalJudge
+        ) { [weak self] _, completed, _ in
+            await self?.updateExperimentProgress(completed: offset + completed, total: total)
+        }
+        run.suiteDefinition = EvaluationSuiteDefinition(suite: variant)
+        run.projectID = ownerProjectID
+        run.subjectEvidence = evidence
+        if let index = run.assessments?.indices.first { run.assessments?[index].subjectEvidenceDigest = evidence.digest }
+        producedRun = true
+        return runPreparedForHistory(run)
+    }
+
+    func savePromptImprovementCheckpoint(_ report: EvaluationPromptImprovement) throws {
+        if report.status == .completed || report.status == .noImprovement { try Task.checkCancellation() }
+        guard let index = suiteLocalState.promptImprovements.firstIndex(where: { $0.id == report.id }) else {
+            throw EvaluationStoreError.resourceNotFound("Instruction improvement")
+        }
+        let newRuns = report.runs.filter { candidate in !runs.contains { $0.id == candidate.id } }
+        if !newRuns.isEmpty {
+            let previousSelection = selection
+            defer { selection = previousSelection }
+            try saveCompletedRuns(newRuns)
+        }
+        let previous = suiteLocalState.promptImprovements[index]
+        suiteLocalState.promptImprovements[index] = report
+        do { try persistSuiteLocalState() }
+        catch { suiteLocalState.promptImprovements[index] = previous; throw error }
+    }
+
+    func applyPromptImprovement(id: UUID) throws {
+        try requireIdle()
+        applyPendingPromptEdits()
+        guard let index = suiteLocalState.promptImprovements.firstIndex(where: { $0.id == id }) else {
+            throw EvaluationStoreError.resourceNotFound("Instruction improvement")
+        }
+        let report = suiteLocalState.promptImprovements[index]
+        guard report.canApply, report.appliedAt == nil, let candidate = report.selectedCandidate else {
+            throw EvaluationStoreError.resourceConflict("This comparison does not support applying an instruction change.")
+        }
+        guard suite == report.source, draftSuite == report.source else {
+            throw EvaluationStoreError.resourceConflict("The suite changed after this comparison. Keep your edits and create a new comparison.")
+        }
+        let snapshot = try candidateAdoptionSnapshot()
+        let previousState = suiteLocalState
+        draftSuite.instructions = candidate.instructions
+        do {
+            guard saveSuite() else { throw EvaluationStoreError.persistence(notice ?? "The instructions could not be saved.") }
+            suiteLocalState.promptImprovements[index].appliedAt = Date()
+            try persistSuiteLocalState()
+        } catch {
+            suiteLocalState = previousState
+            try restoreCandidateAdoption(snapshot, failureMessage: error.localizedDescription)
+            throw error
+        }
+    }
+
     func runExperiment(id: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
         do {
             try requireIdle()
@@ -1563,7 +1707,7 @@ final class EvaluationStore {
         if let runID {
             run = runs.first { $0.id == runID }
         } else {
-            run = runs.first
+            run = runs.first { $0.promptImprovementID == nil }
         }
         let approval = activeBaselineApproval
         let baseline = approval.flatMap { approval in runs.first { $0.id == approval.runID } }
@@ -1685,7 +1829,7 @@ final class EvaluationStore {
                 projectID: project.id,
                 suite: storedSuite,
                 currentSuiteRevision: revision,
-                run: storedRuns.first,
+                run: storedRuns.first { $0.promptImprovementID == nil },
                 baseline: baseline,
                 approvedBaseline: approval
             )
@@ -2546,6 +2690,12 @@ final class EvaluationStore {
     func deleteRunDurably(id: UUID) throws -> Bool {
         try requireWorkspaceWritable()
         if activeRun?.id == id { throw EvaluationStoreError.runBusy }
+        if let activePromptImprovementID,
+           suiteLocalState.promptImprovements.contains(where: {
+               $0.id == activePromptImprovementID && $0.runs.contains(where: { $0.id == id })
+           }) {
+            throw EvaluationStoreError.runBusy
+        }
         if pendingCompletedRuns?.runs.contains(where: { $0.id == id }) == true {
             throw EvaluationStoreError.resourceConflict("Save the pending completed runs before deleting this run.")
         }
@@ -2586,10 +2736,23 @@ final class EvaluationStore {
             .appending(path: "RunDeletions", directoryHint: .isDirectory)
         let deletionURL = deletionDirectory.appending(path: "\(id.uuidString).json")
         let isPending = location.runURL == deletionURL
+        var isStaged = isPending
         do {
             if !isPending {
                 try FileManager.default.createDirectory(at: deletionDirectory, withIntermediateDirectories: true)
                 try FileManager.default.moveItem(at: location.runURL, to: deletionURL)
+                isStaged = true
+            }
+            do {
+                try removePromptImprovementEvidence(id: id, projectID: location.projectID, suiteID: location.suiteID)
+            } catch {
+                // No copied evidence has been removed yet. Restore a newly staged
+                // run if its comparison cannot be updated, keeping the failed action a no-op.
+                if !isPending {
+                    try FileManager.default.moveItem(at: deletionURL, to: location.runURL)
+                    isStaged = false
+                }
+                throw error
             }
             let evidenceURL = runEvidenceDirectory(
                 projectID: location.projectID,
@@ -2604,7 +2767,7 @@ final class EvaluationStore {
             // Once deletion starts, keep the run tombstoned. Cleanup can then
             // be retried by ID without re-exposing a run whose evidence may
             // already have been partly or completely removed.
-            if FileManager.default.fileExists(atPath: deletionURL.path) {
+            if isStaged && FileManager.default.fileExists(atPath: deletionURL.path) {
                 if location.projectID == selectedProjectID, location.suiteID == selectedSuiteID {
                     runs.removeAll { $0.id == id }
                 }
@@ -2618,6 +2781,32 @@ final class EvaluationStore {
         }
         if selection == .run(id) { selection = .suite }
         return true
+    }
+
+    private func removePromptImprovementEvidence(id: UUID, projectID: UUID, suiteID: UUID) throws {
+        let isSelected = projectID == selectedProjectID && suiteID == selectedSuiteID
+        let url = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: supportDirectory, projectID: projectID, suiteID: suiteID
+        ).appending(path: "state.json")
+        var state: EvaluationSuiteLocalState
+        if isSelected {
+            state = suiteLocalState
+        } else {
+            do { state = try CanonicalJSON.decode(EvaluationSuiteLocalState.self, from: Data(contentsOf: url)) }
+            catch CocoaError.fileReadNoSuchFile { return }
+        }
+        guard state.promptImprovements.contains(where: { $0.runs.contains(where: { $0.id == id }) }) else { return }
+        for index in state.promptImprovements.indices {
+            state.promptImprovements[index].removeRun(id: id)
+        }
+        if isSelected {
+            let previous = suiteLocalState
+            suiteLocalState = state
+            do { try persistSuiteLocalState() }
+            catch { suiteLocalState = previous; throw error }
+        } else {
+            try suiteLocalStateWriter(CanonicalJSON.data(for: state), url)
+        }
     }
 
     var canResetWorkspace: Bool {
@@ -2790,6 +2979,12 @@ final class EvaluationStore {
         try FileManager.default.createDirectory(at: deletions, withIntermediateDirectories: true)
         for file in files {
             try FileManager.default.moveItem(at: file, to: deletions.appending(path: file.lastPathComponent))
+        }
+        if !suiteLocalState.promptImprovements.isEmpty {
+            let previous = suiteLocalState
+            suiteLocalState.promptImprovements = []
+            do { try persistSuiteLocalState() }
+            catch { suiteLocalState = previous; throw error }
         }
         let evidence = suiteDirectory.appending(path: "RunEvidence", directoryHint: .isDirectory)
         if FileManager.default.fileExists(atPath: evidence.path) {

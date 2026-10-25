@@ -130,6 +130,15 @@ struct FoundationEvalsApp: App {
                   let value = Double(arguments[index + 1]), range.contains(value) else { return nil }
             return value
         }
+        // Keep isolated previews and UI-test captures independent of the desktop appearance.
+        if acceptanceStorageDirectory != nil, let index = arguments.firstIndex(of: "-AppleInterfaceStyle"),
+           arguments.indices.contains(index + 1) {
+            switch arguments[index + 1].lowercased() {
+            case "dark": NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+            case "light": NSApplication.shared.appearance = NSAppearance(named: .aqua)
+            default: break
+            }
+        }
         guard let width = dimension("--evaluation-window-width", within: 1_000...1_600) else { return }
         let height = dimension("--evaluation-window-height", within: 700...900) ?? 780
         await Task.yield()

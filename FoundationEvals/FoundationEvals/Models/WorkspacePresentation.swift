@@ -91,6 +91,7 @@ struct SuiteOverviewSummary: Identifiable, Sendable {
 
     init(record: EvaluationSuiteRecord, suite: EvaluationSuite, currentRevision: String,
          draft: EvaluationSuite?, runs: [EvaluationRun], localState: EvaluationSuiteLocalState) {
+        let runs = runs.filter { $0.promptImprovementID == nil }
         id = record.id
         name = (draft ?? suite).name
         caseCount = (draft ?? suite).cases.count
