@@ -173,12 +173,20 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertEqual(sheet.checkBoxes.count, 2)
         let reserved = sheet.checkBoxes.element(boundBy: 1)
         XCTAssertTrue(reserved.exists)
+        // The final-check row starts below the fixed footer in a compact window.
+        let examples = sheet.scrollViews.firstMatch
+        examples.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+            .scroll(byDeltaX: 0, deltaY: -800)
+        XCTAssertTrue(reserved.isHittable && examples.frame.contains(reserved.frame), app.debugDescription)
         reserved.click()
-        XCTAssertFalse(sheet.buttons["Generate and compare instructions"].isEnabled)
+        let generate = sheet.buttons["Generate and compare instructions"]
+        let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == false"), object: generate)
+        XCTAssertEqual(XCTWaiter.wait(for: [disabled], timeout: 3), .completed)
         let practice = sheet.checkBoxes.firstMatch
         practice.click()
-        XCTAssertTrue(sheet.buttons["Generate and compare instructions"].isEnabled)
-        sheet.buttons["Generate and compare instructions"].click()
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: generate)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 3), .completed)
+        generate.click()
         XCTAssertTrue(textContaining("A better suggestion is ready", in: sheet).waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertTrue(sheet.buttons["Apply validated instructions"].isEnabled)
         XCTAssertTrue(sheet.descendants(matching: .any)["Instruction comparison outcome"].exists)
