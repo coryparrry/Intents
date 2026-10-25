@@ -58,8 +58,7 @@ struct PromptImprovementView: View {
                             }.id(report.id)
                         }
                     } else {
-                        PromptImprovementSetupView(suite: store.draftSuite, heldOutCaseIDs: $heldOutCaseIDs, issue: issue,
-                            configure: configureAction)
+                        PromptImprovementSetupView(suite: store.draftSuite, heldOutCaseIDs: $heldOutCaseIDs, issue: issue)
                     }
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }.background(WorkspaceStyle.canvas)
@@ -67,6 +66,7 @@ struct PromptImprovementView: View {
             footer
         }
         .frame(width: 800, height: 680)
+        .disclosureGroupStyle(PromptImprovementDisclosureStyle())
         .onAppear {
             guard !hasInitialized else { return }
             hasInitialized = true
@@ -114,14 +114,20 @@ struct PromptImprovementView: View {
                     }
                 } else {
                     if isBusy { Text("Wait for the current task to finish.").font(.caption).foregroundStyle(.secondary) }
-                    Button("Compare suggestions", systemImage: "sparkles") {
-                        do {
-                            errorMessage = nil
-                            try store.startPromptImprovement(heldOutCaseIDs: heldOutCaseIDs)
-                        } catch { errorMessage = error.localizedDescription }
+                    if let configureAction {
+                        Button(store.draftSuite.cases.count < 2 ? "Add cases" : "Choose scoring", action: configureAction)
+                            .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                            .disabled(isBusy).accessibilityIdentifier("Configure instruction comparison")
+                    } else {
+                        Button("Compare suggestions", systemImage: "sparkles") {
+                            do {
+                                errorMessage = nil
+                                try store.startPromptImprovement(heldOutCaseIDs: heldOutCaseIDs)
+                            } catch { errorMessage = error.localizedDescription }
+                        }
+                        .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                        .disabled(issue != nil || isBusy).accessibilityIdentifier("Generate and compare instructions")
                     }
-                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
-                    .disabled(issue != nil || isBusy).accessibilityIdentifier("Generate and compare instructions")
                 }
             }
         }.padding(.horizontal, 24).padding(.vertical, 16)

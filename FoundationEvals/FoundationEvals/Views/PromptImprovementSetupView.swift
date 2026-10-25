@@ -4,7 +4,6 @@ struct PromptImprovementSetupView: View {
     let suite: EvaluationSuite
     @Binding var heldOutCaseIDs: Set<UUID>
     let issue: String?
-    let configure: (() -> Void)?
     @State private var choosesExamples = false
     @State private var showsInstructions = false
 
@@ -49,12 +48,7 @@ struct PromptImprovementSetupView: View {
                     }
                 }
                 if let issue {
-                    WorkspaceNotice(.warning, message: issue) {
-                        if let configure {
-                            Button(suite.cases.count < 2 ? "Add cases" : "Edit scoring", action: configure)
-                                .accessibilityIdentifier("Configure instruction comparison")
-                        }
-                    }
+                    WorkspaceNotice(.warning, message: issue)
                 }
             }
             DisclosureGroup("Current instructions", isExpanded: $showsInstructions) {

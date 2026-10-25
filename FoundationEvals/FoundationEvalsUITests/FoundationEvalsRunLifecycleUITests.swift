@@ -136,7 +136,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         let sheet = app.sheets.firstMatch
         let configure = sheet.buttons["Configure instruction comparison"]
         XCTAssertTrue(configure.waitForExistence(timeout: 3))
-        XCTAssertFalse(sheet.buttons["Generate and compare instructions"].isEnabled)
+        XCTAssertFalse(sheet.buttons["Generate and compare instructions"].exists)
         capture("prompt-improvement-add-cases")
         configure.click()
         XCTAssertTrue(app.buttons["Add Case"].waitForExistence(timeout: 3))
@@ -169,6 +169,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertTrue(sheet.descendants(matching: .any)["Instruction comparison setup"].waitForExistence(timeout: 3))
         capture("prompt-improvement-setup")
         sheet.disclosureTriangles["Choose examples"].click()
+        XCTAssertTrue(sheet.checkBoxes.firstMatch.waitForExistence(timeout: 3))
         XCTAssertEqual(sheet.checkBoxes.count, 2)
         let reserved = sheet.checkBoxes.element(boundBy: 1)
         XCTAssertTrue(reserved.exists)
