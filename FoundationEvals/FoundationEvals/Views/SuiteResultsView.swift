@@ -231,6 +231,7 @@ private struct WorkspaceRunRow: View {
 
 struct SuiteCompareView: View {
     @Bindable var store: EvaluationStore
+    var showPromptImprovement: (() -> Void)?
     @State private var selectedRunID: UUID?
 
     private var currentRun: EvaluationRun? {
@@ -269,7 +270,7 @@ struct SuiteCompareView: View {
                 )
                 .workspaceSurface()
             }
-            SuiteExperimentsView(store: store)
+            SuiteExperimentsView(store: store, showPromptImprovement: showPromptImprovement)
         }
     }
 }

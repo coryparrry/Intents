@@ -13,163 +13,161 @@ struct PromptImprovementButton: View {
 
 struct PromptImprovementView: View {
     @Bindable var store: EvaluationStore
+    var configure: ((Bool) -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var heldOutCaseIDs: Set<UUID> = []
+    @State private var selectedReportID: UUID?
+    @State private var showsHistory = false
     @State private var errorMessage: String?
     @State private var hasInitialized = false
 
-    private var issue: String? {
-        EvaluationPromptImprovementRules.validationIssue(suite: store.draftSuite, heldOutCaseIDs: heldOutCaseIDs)
-    }
-
-    private var budget: Int {
-        guard issue == nil else { return 0 }
-        return EvaluationPromptImprovement(source: store.draftSuite, heldOutCaseIDs: heldOutCaseIDs).maximumSamples
-    }
+    private var reports: [EvaluationPromptImprovement] { store.suiteLocalState.promptImprovements }
+    private var report: EvaluationPromptImprovement? { reports.first { $0.id == selectedReportID } }
+    private var isActive: Bool { report != nil && store.activePromptImprovementID == selectedReportID }
+    private var isBusy: Bool { store.isRunning || store.isReassessing || store.isProcessingFiles }
+    private var isStale: Bool { report.map { store.draftSuite != $0.source || store.suite != $0.source } ?? false }
+    private var issue: String? { PromptImprovementPresentation.setupIssue(suite: store.draftSuite, heldOutCaseIDs: heldOutCaseIDs) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                WorkspaceIcon(symbol: "sparkles", size: 32).foregroundStyle(Color.accentColor)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Improve model instructions").font(.title2.weight(.semibold))
-                    Text("Generate two alternatives, compare their results, then review a change.")
-                        .foregroundStyle(.secondary)
+                    Text("Improve instructions").font(.title2.weight(.semibold))
+                    Text(showsHistory ? "Past comparisons for this suite" : store.draftSuite.name)
+                        .font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    setup
-                    if let errorMessage { Text(errorMessage).foregroundStyle(.red).textSelection(.enabled) }
-                    if store.isRunning {
-                        HStack {
-                            ProgressView().controlSize(.small)
-                            Text(store.suiteLocalState.promptImprovements.last?.message ?? "An evaluation is running")
-                            Spacer()
-                            Button("Cancel run", role: .cancel) { store.cancelRun() }
-                        }
-                        Text("\(store.completedSamples) of at most \(store.totalSamples) samples completed")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    ForEach(store.suiteLocalState.promptImprovements.reversed()) { report in
-                        PromptImprovementReportView(store: store, report: report)
-                    }
+                if !reports.isEmpty && !showsHistory && !isActive {
+                    Button("History", systemImage: "clock") { showsHistory = true; errorMessage = nil }
                 }
-                .padding(.trailing, 8)
-            }
+            }.padding(24)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if let errorMessage {
+                        WorkspaceNotice(.failure, title: "Couldn’t complete that action", message: errorMessage)
+                    }
+                    if showsHistory { history }
+                    else if let report {
+                        if isActive { progress(report) }
+                        else {
+                            PromptImprovementReportView(report: report, isStale: isStale) { run in
+                                dismiss()
+                                store.selection = .run(run.id)
+                            }.id(report.id)
+                        }
+                    } else {
+                        PromptImprovementSetupView(suite: store.draftSuite, heldOutCaseIDs: $heldOutCaseIDs, issue: issue,
+                            configure: configureAction)
+                    }
+                }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+            }.background(WorkspaceStyle.canvas)
+            Divider()
+            footer
         }
-        .padding(24)
-        .frame(minWidth: 740, idealWidth: 820, minHeight: 580, idealHeight: 760)
+        .frame(width: 800, height: 680)
         .onAppear {
             guard !hasInitialized else { return }
             hasInitialized = true
             heldOutCaseIDs = Set(store.draftSuite.cases.suffix(max(1, store.draftSuite.cases.count / 5)).map(\.id))
+            selectedReportID = store.activePromptImprovementID ?? reports.last?.id
+        }
+        .onChange(of: store.activePromptImprovementID) { _, id in
+            if let id { selectedReportID = id; showsHistory = false }
         }
     }
 
-    private var setup: some View {
+    private var configureAction: (() -> Void)? {
+        guard let configure, store.draftSuite.cases.count < 2 || store.draftSuite.scoringMode == .review else { return nil }
+        return { dismiss(); configure(store.draftSuite.cases.count < 2) }
+    }
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if report == nil && !showsHistory {
+                if let budget = PromptImprovementPresentation.maximumSamples(suite: store.draftSuite, heldOutCaseIDs: heldOutCaseIDs) {
+                    Text("Up to \(budget) responses · Suggestions written on this Mac")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if let issue {
+                    Text(issue).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            HStack(spacing: 12) {
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                Spacer()
+                if showsHistory {
+                    Button("Back") { showsHistory = false }
+                } else if isActive {
+                    Button("Cancel comparison", role: .cancel) { store.cancelRun() }
+                        .accessibilityIdentifier("Cancel run")
+                } else if let report {
+                    Button("New comparison") { selectedReportID = nil; errorMessage = nil }
+                        .disabled(isBusy)
+                    if report.canApply && report.appliedAt == nil {
+                        Button("Use suggestion", systemImage: "checkmark") {
+                            do { try store.applyPromptImprovement(id: report.id) }
+                            catch { errorMessage = error.localizedDescription }
+                        }
+                        .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                        .disabled(isStale || isBusy).accessibilityIdentifier("Apply validated instructions")
+                    }
+                } else {
+                    if isBusy { Text("Wait for the current task to finish.").font(.caption).foregroundStyle(.secondary) }
+                    Button("Compare suggestions", systemImage: "sparkles") {
+                        do {
+                            errorMessage = nil
+                            try store.startPromptImprovement(heldOutCaseIDs: heldOutCaseIDs)
+                        } catch { errorMessage = error.localizedDescription }
+                    }
+                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                    .disabled(issue != nil || isBusy).accessibilityIdentifier("Generate and compare instructions")
+                }
+            }
+        }.padding(.horizontal, 24).padding(.vertical, 16)
+    }
+
+    private func progress(_ report: EvaluationPromptImprovement) -> some View {
+        let presentation = PromptImprovementPresentation(report: report, isActive: true)
+        return VStack(alignment: .leading, spacing: 20) {
+            EditorSection("\(presentation.title)", description: "\(presentation.progressDetail)") {
+                ProgressView(value: Double(store.completedSamples), total: Double(max(1, store.totalSamples)))
+                    .accessibilityLabel("Comparison progress")
+                Text("\(store.completedSamples) of up to \(store.totalSamples) responses completed")
+                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                Divider()
+                ForEach(Array(["Check current instructions", "Write two suggestions", "Compare practice results", "Run the final check"].enumerated()), id: \.offset) { index, title in
+                    HStack(spacing: 10) {
+                        if index == presentation.step { ProgressView().controlSize(.small).frame(width: 18) }
+                        else { Image(systemName: index < presentation.step ? "checkmark.circle.fill" : "circle").foregroundStyle(index < presentation.step ? WorkspaceStyle.success : Color.secondary).frame(width: 18) }
+                        Text(title).font(.callout).foregroundStyle(index > presentation.step ? .secondary : .primary)
+                    }
+                }
+            }
+            WorkspaceNotice(.info, message: presentation.detail)
+        }
+    }
+
+    private var history: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Reserve Held-out cases").font(.headline)
-            Text("Unchecked cases are Development examples used to write and select alternatives. Checked cases are used only to validate the selected alternative. Use fresh Held-out cases for each new comparison.")
-                .font(.callout).foregroundStyle(.secondary)
-            ForEach(store.draftSuite.cases) { test in
-                Toggle(isOn: Binding(
-                    get: { heldOutCaseIDs.contains(test.id) },
-                    set: { if $0 { heldOutCaseIDs.insert(test.id) } else { heldOutCaseIDs.remove(test.id) } }
-                )) {
-                    HStack {
-                        Text(test.name.isEmpty ? "Untitled case" : test.name)
+            Text("Comparison history").font(.headline)
+            ForEach(reports.reversed()) { report in
+                Button {
+                    selectedReportID = report.id; showsHistory = false; errorMessage = nil
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: report.appliedAt != nil ? "checkmark.circle" : "clock").foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(PromptImprovementPresentation(report: report, isActive: store.activePromptImprovementID == report.id,
+                                isStale: store.draftSuite != report.source || store.suite != report.source).title).font(.callout.weight(.semibold))
+                            Text(report.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         Spacer()
-                        Text(heldOutCaseIDs.contains(test.id) ? "Held-out" : "Development")
-                            .foregroundStyle(.secondary).font(.caption)
-                    }
-                }
-                .toggleStyle(.checkbox)
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }.padding(16).contentShape(Rectangle())
+                }.buttonStyle(.plain).workspaceSurface()
             }
-            Text("Suggestions are generated on this Mac. Comparison runs use your suite’s model, tools, references and scoring, including any approved external judge. Model and tool calls may run up to \(budget) evaluation samples plus two instruction suggestions.")
-                .font(.caption).foregroundStyle(.secondary)
-            if let issue { Text(issue).font(.callout).foregroundStyle(.secondary) }
-            Button("Generate and compare", systemImage: "sparkles") {
-                do {
-                    errorMessage = nil
-                    try store.startPromptImprovement(heldOutCaseIDs: heldOutCaseIDs)
-                } catch { errorMessage = error.localizedDescription }
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(issue != nil || store.isRunning || store.isReassessing || store.isProcessingFiles)
-            .accessibilityIdentifier("Generate and compare instructions")
         }
-        .disabled(store.isRunning)
-        .padding(16)
-        .workspaceInset(radius: 10)
-    }
-}
-
-private struct PromptImprovementReportView: View {
-    @Bindable var store: EvaluationStore
-    let report: EvaluationPromptImprovement
-    @State private var isExpanded = true
-    @State private var errorMessage: String?
-
-    private var isStale: Bool { store.draftSuite != report.source || store.suite != report.source }
-
-    var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(report.message).font(.callout).textSelection(.enabled)
-                Text("\(report.developmentSuite.cases.count) Development · \(report.heldOutCaseIDs.count) Held-out · \(report.source.repetitions) repetitions")
-                    .font(.caption).foregroundStyle(.secondary)
-                if report.status == .running && !store.isRunning {
-                    Text("This comparison was interrupted. Its partial evidence cannot recommend a change.")
-                        .foregroundStyle(.secondary)
-                }
-                if let baseline = report.developmentBaseline {
-                    evidence("Current · Development", run: baseline)
-                }
-                ForEach(Array(report.candidates.enumerated()), id: \.element.id) { index, candidate in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Alternative \(index + 1)\(candidate.id == report.selectedCandidateID ? " · Selected on Development" : "")")
-                            .font(.headline)
-                        Text(candidate.instructions).textSelection(.enabled)
-                        if let run = candidate.developmentRun { evidence("Development", run: run) }
-                    }
-                }
-                if let baseline = report.heldOutBaseline { evidence("Current · Held-out", run: baseline) }
-                if let candidate = report.heldOutCandidate { evidence("Selected alternative · Held-out", run: candidate) }
-                DisclosureGroup("Original instructions") { Text(report.source.instructions).textSelection(.enabled) }
-                if report.appliedAt != nil {
-                    Label("Instructions applied", systemImage: "checkmark.circle")
-                } else if report.canApply {
-                    if isStale { Text("The suite has changed. This saved candidate cannot overwrite your edits.").foregroundStyle(.secondary) }
-                    Button("Apply validated instructions") {
-                        do { try store.applyPromptImprovement(id: report.id) }
-                        catch { errorMessage = error.localizedDescription }
-                    }
-                    .disabled(isStale || store.isRunning || store.isReassessing || store.isProcessingFiles)
-                    .accessibilityIdentifier("Apply validated instructions")
-                }
-                if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
-            }
-            .padding(.top, 10)
-        } label: {
-            Text("Comparison · \(report.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                .font(.headline)
-        }
-        .padding(16)
-        .workspaceInset(radius: 10)
-    }
-
-    private func evidence(_ title: String, run: EvaluationRun) -> some View {
-        HStack {
-            let rate = run.passRate.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "Unscored"
-            Text("\(title): \(run.passedCount)/\(run.plannedResultCount) passed (\(rate))")
-            Spacer()
-            Button("Inspect run") {
-                store.selection = .run(run.id)
-            }
-            .disabled(store.isRunning)
-        }
-        .font(.caption)
     }
 }

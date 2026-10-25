@@ -10,7 +10,7 @@ From Setup → Instructions or Compare → Instruction experiments, choose **Imp
 - Require at least two distinct cases, scored results, and a nonempty Development/Held-out split. Preserve repetitions and existing external-judge disclosure requirements.
 - Run the Development baseline, then ask the on-device Swift FoundationModels API for two distinct alternatives. The generator receives only Development cases and their baseline outputs. Treat these as data. Never send Held-out cases or outputs to the generator.
 - Evaluate both alternatives on the same Development cases. Select a strict pass-rate improvement using Development evidence alone; ties keep the first candidate. If none improves, stop.
-- Evaluate only that candidate and the original instructions on Held-out cases. Recommend application only with complete, error-free evidence, an improved Development pass rate, and no Held-out case pass-rate regression. Show counts and rates without statistical-significance claims.
+- Evaluate only that candidate and the original instructions on Held-out cases. Recommend application only with complete, error-free evidence, an improved Development pass rate, and no Held-out case pass-rate regression. Show pass counts without statistical-significance claims.
 - Bound execution to two candidates and one selection round. Display the maximum sample budget before starting. Cancel through the existing run lifecycle, prevent concurrent workspace execution, and preserve phase checkpoints. Interrupted runs cannot be applied or resumed against reused holdouts as if they were fresh.
 - Persist the frozen suite, split, candidates, and run evidence. Completed runs also enter ordinary history for trace inspection. Legacy suite state defaults to an empty improvement history.
 - Mark comparison records durably so default suite/project release checks keep selecting ordinary full-suite runs. Explicit run-ID checks still evaluate exactly the requested record. Scope critical release-case IDs to each comparison partition while preserving the full source policy. Clean up unpublished snapshots when preparation fails.
@@ -36,3 +36,16 @@ Use the app's existing Swift framework integration. FM CLI adds no necessary cap
 ## Pull request qualification
 
 The feature was ported into an isolated branch from current main, preserving newer unrelated fixes. Prior local test results above describe the original implementation workspace; GitHub Actions qualifies this PR's actual source. UI checks run only on GitHub. The cancellation UI regression now uses deterministic suggestions in an explicitly isolated Debug launch, so it does not skip when the hosted runner lacks Apple Intelligence. The fixture flag has no effect in Release builds or normal non-isolated launches.
+
+
+## UI iteration
+
+Use the existing workspace surfaces, inset text wells, notices, typography and 24-point sheet chrome. Keep the sheet footer visible while its body scrolls. Present one screen at a time: setup, active comparison, selected result, or compact history.
+
+- Explain Development as **Practice** and Held-out as **Final check**. Preselect the split, keep individual choices in a disclosure, and state that saving is always explicit.
+- Keep the maximum response budget visible before starting. Missing cases or scoring explain the next action and route directly to the relevant editor.
+- Track the active comparison by ID so an ordinary evaluation never appears as an active instruction comparison. Allow closing and reopening it while editors remain locked.
+- Lead results with a plain-language outcome, then compare pass counts and both instruction texts. Distinguish incomplete runs, unused final checks and suggestions with no selected winner. Keep full evidence and alternative suggestions in disclosures.
+- Preserve stale-suite protection and per-case final-check checks. History reflects stale and applied results; reopening returns to the latest result or active comparison.
+- Check light/dark appearance, compact/normal windows, long labels and instructions, selection errors, progress/cancellation, successful application, no improvement, final-check regression, failure, interruption, stale results, history and evidence navigation using isolated fixtures. Fixture outcomes verify presentation and interaction; they do not measure real model quality.
+- Run automated UI regression coverage on GitHub, including setup recovery, close/reopen/cancel and deterministic comparison/review/apply flows. Retain screenshots in test attachments. Native presentation regressions cover setup guidance, lifecycle summaries and incomplete scores.

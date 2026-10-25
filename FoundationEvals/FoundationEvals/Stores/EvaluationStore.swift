@@ -36,6 +36,7 @@ final class EvaluationStore {
     private(set) var isReassessing = false
     var selection = SidebarSelection.overview
     var isRunning = false
+    private(set) var activePromptImprovementID: UUID?
     var completedSamples = 0
     var totalSamples = 0
     private(set) var liveResponse: EvaluationLiveResponse?
@@ -1481,6 +1482,7 @@ final class EvaluationStore {
         suiteLocalState.promptImprovements.append(report)
         do { try persistSuiteLocalState() }
         catch { suiteLocalState = previousState; throw error }
+        activePromptImprovementID = report.id
         isRunning = true
         completedSamples = 0
         totalSamples = report.maximumSamples
@@ -1493,7 +1495,7 @@ final class EvaluationStore {
         )
         runTask = Task { [weak self] in
             guard let self else { return }
-            defer { isRunning = false; runTask = nil }
+            defer { isRunning = false; activePromptImprovementID = nil; runTask = nil }
             do {
                 _ = try await improvementRunner.run(report) { [weak self] checkpoint in
                     guard let self else { throw CancellationError() }

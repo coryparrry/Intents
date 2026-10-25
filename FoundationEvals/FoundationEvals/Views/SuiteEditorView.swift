@@ -159,7 +159,12 @@ struct SuiteEditorView: View {
             )
         }
         .sheet(isPresented: $showsDevices) { DeveloperDevicesView(runners: runners) }
-        .sheet(isPresented: $showsPromptImprovement) { PromptImprovementView(store: store) }
+        .sheet(isPresented: $showsPromptImprovement) {
+            PromptImprovementView(store: store) { needsCases in
+                if needsCases { selectedPage = .cases }
+                else { configurationPage = .scoring; selectedPage = .configure }
+            }
+        }
         .alert("Could not start run", isPresented: Binding(get: { runError != nil }, set: { if !$0 { runError = nil } })) {
             Button("OK") { runError = nil }
         } message: {
@@ -202,11 +207,11 @@ struct SuiteEditorView: View {
             }, showCompare: { selectedPage = .compare })
                 .id(store.selectedSuiteID)
         case .compare:
-            SuiteCompareView(store: store)
+            SuiteCompareView(store: store, showPromptImprovement: { showsPromptImprovement = true })
         case .configure:
             WorkspacePaneLayout(heading: "Suite setup", selection: $configurationPage) {
-                configurationContent
-                    .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
+                if configurationPage == .instructions { configurationContent }
+                else { configurationContent.disabled(store.isRunning || store.isReassessing || store.isProcessingFiles) }
             }
         }
     }
@@ -217,6 +222,7 @@ struct SuiteEditorView: View {
         case .instructions:
             ModelInstructionsSection(store: store, showPromptImprovement: { showsPromptImprovement = true })
             SharedReferenceFilesSection(store: store)
+                .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
         case .scoring:
             ScoringSection(store: store)
             if store.draftSuite.scoringMode == .modelJudge {
@@ -495,7 +501,7 @@ private struct ModelInstructionsSection: View {
                 .font(.body)
                 .workspaceTextWell(minHeight: 140)
                 .disabled(store.isRunning || store.isProcessingFiles || store.isReassessing)
-            Button("Improve instructions", systemImage: "sparkles", action: showPromptImprovement)
+            Button(store.activePromptImprovementID == nil ? "Improve instructions" : "View comparison", systemImage: "sparkles", action: showPromptImprovement)
                 .accessibilityIdentifier("Improve instructions")
         }
     }

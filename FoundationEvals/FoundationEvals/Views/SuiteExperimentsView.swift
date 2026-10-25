@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SuiteExperimentsView: View {
     @Bindable var store: EvaluationStore
+    var showPromptImprovement: (() -> Void)?
     @State private var isCreatingExperiment = false
 
     var body: some View {
@@ -14,7 +15,10 @@ struct SuiteExperimentsView: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
-                PromptImprovementButton(store: store)
+                if let showPromptImprovement {
+                    Button("Improve instructions", systemImage: "sparkles", action: showPromptImprovement)
+                        .accessibilityIdentifier("Improve instructions")
+                } else { PromptImprovementButton(store: store) }
                 Button("New Experiment", systemImage: "plus") { isCreatingExperiment = true }
                     .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
             }

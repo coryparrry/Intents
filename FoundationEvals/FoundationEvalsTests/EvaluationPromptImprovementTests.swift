@@ -4,6 +4,47 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationPromptImprovementTests {
+    @Test func presentationExplainsSetupAndInterruptedResults() {
+        var plan = makeImprovement()
+        #expect(PromptImprovementPresentation.setupIssue(suite: plan.source, heldOutCaseIDs: plan.heldOutCaseIDs) == nil)
+        #expect(PromptImprovementPresentation.setupIssue(suite: plan.source, heldOutCaseIDs: [])?.contains("practice") == true)
+        let validSource = plan.source
+        plan.source.repetitions = Int.max
+        #expect(PromptImprovementPresentation.maximumSamples(suite: plan.source, heldOutCaseIDs: plan.heldOutCaseIDs) == nil)
+        plan.source = validSource
+        #expect(PromptImprovementPresentation.maximumSamples(suite: plan.source, heldOutCaseIDs: plan.heldOutCaseIDs) == 16)
+        plan.source.cases = []
+        #expect(PromptImprovementPresentation.setupIssue(suite: plan.source, heldOutCaseIDs: [])?.contains("at least two") == true)
+        plan = makeImprovement()
+        plan.source.scoringMode = .review
+        #expect(PromptImprovementPresentation.setupIssue(suite: plan.source, heldOutCaseIDs: plan.heldOutCaseIDs)?.contains("scoring") == true)
+        #expect(PromptImprovementPresentation(report: plan).title == "Comparison interrupted")
+        #expect(PromptImprovementPresentation(report: plan, isActive: true).title == "Comparing instructions")
+        plan.status = .cancelled
+        #expect(PromptImprovementPresentation(report: plan).title == "Comparison cancelled")
+        plan.status = .failed
+        #expect(PromptImprovementPresentation(report: plan).detail.contains("haven’t changed"))
+    }
+
+    @Test func presentationTracksTheSelectedSuggestionAndProtectsNewEdits() async throws {
+        let plan = makeImprovement()
+        let harness = ImprovementHarness(heldOutID: plan.source.cases.last!.id)
+        var result = try await makeRunner(harness).run(plan) { try await harness.save($0) }
+        #expect(PromptImprovementPresentation(report: result).title == "A better suggestion is ready")
+        #expect(PromptImprovementPresentation(report: result, isStale: true).title == "Your suite has changed")
+        #expect(PromptImprovementPresentation(report: result).step == 3)
+        #expect(PromptImprovementPresentation.scoreSummary(nil) == "Not run")
+        #expect(PromptImprovementPresentation.scoreSummary(result.heldOutCandidate) == "2 / 2")
+        var partial = try #require(result.heldOutCandidate)
+        partial.cancelled = true
+        #expect(PromptImprovementPresentation.scoreSummary(partial) == "Incomplete")
+        result.appliedAt = Date()
+        #expect(PromptImprovementPresentation(report: result, isStale: true).title == "Suggestion applied")
+        let checkpoints = await harness.checkpoints
+        #expect(Set(checkpoints.map { PromptImprovementPresentation(report: $0).step }) == Set([1, 2, 3]))
+        #expect(PromptImprovementPresentation(report: plan).step == 0)
+    }
+
     @Test(arguments: ["empty", "all", "unknown", "duplicate", "unscored", "repetitions"])
     func invalidPlansNeverCallTheModel(mutation: String) async throws {
         var plan = makeImprovement()
