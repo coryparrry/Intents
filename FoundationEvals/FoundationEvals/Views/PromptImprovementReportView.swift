@@ -19,7 +19,7 @@ struct PromptImprovementReportView: View {
             if report.developmentBaseline != nil {
                 EditorSection("Results", description: "Passed responses out of all planned responses. Each example may be repeated by your suite’s settings.") {
                     Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 12) {
-                        GridRow { Text(""); Text("Current"); Text("Suggested") }.font(.callout.weight(.semibold))
+                        GridRow { Text(""); Text("Original"); Text("Suggested") }.font(.callout.weight(.semibold))
                         GridRow {
                             Text("Practice").foregroundStyle(.secondary)
                             score(report.developmentBaseline)
@@ -44,9 +44,9 @@ struct PromptImprovementReportView: View {
                 }
             }
             if let candidate = report.selectedCandidate {
-                EditorSection("Review the instructions", description: "Only these shared instructions will change. Your cases and settings stay the same.") {
+                EditorSection("Review the instructions", description: "Each column shows the instructions used for its comparison runs.") {
                     HStack(alignment: .top, spacing: 16) {
-                        instructions("Current", text: report.source.instructions)
+                        instructions("Original", text: report.source.instructions)
                         instructions("Suggested", text: candidate.instructions)
                     }.fixedSize(horizontal: false, vertical: true)
                 }
@@ -76,11 +76,11 @@ struct PromptImprovementReportView: View {
                     Text("\(report.developmentSuite.cases.count) practice · \(report.heldOutCaseIDs.count) final check · \(report.source.repetitions) \(report.source.repetitions == 1 ? "response per example" : "responses per example")")
                     Text(report.message).textSelection(.enabled)
                     if report.selectedCandidate == nil { instructions("Original instructions", text: report.source.instructions) }
-                    if let run = report.developmentBaseline { evidence("Current · Practice", run: run) }
+                    if let run = report.developmentBaseline { evidence("Original · Practice", run: run) }
                     ForEach(Array(report.candidates.enumerated()), id: \.element.id) { index, candidate in
                         if let run = candidate.developmentRun { evidence("Suggestion \(index + 1) · Practice", run: run) }
                     }
-                    if let run = report.heldOutBaseline { evidence("Current · Final check", run: run) }
+                    if let run = report.heldOutBaseline { evidence("Original · Final check", run: run) }
                     if let run = report.heldOutCandidate { evidence("Suggested · Final check", run: run) }
                 }.font(.callout).padding(.top, 12)
             }.padding(22).workspaceSurface()
