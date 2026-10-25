@@ -2736,11 +2736,23 @@ final class EvaluationStore {
             .appending(path: "RunDeletions", directoryHint: .isDirectory)
         let deletionURL = deletionDirectory.appending(path: "\(id.uuidString).json")
         let isPending = location.runURL == deletionURL
-        try removePromptImprovementEvidence(id: id, projectID: location.projectID, suiteID: location.suiteID)
+        var isStaged = isPending
         do {
             if !isPending {
                 try FileManager.default.createDirectory(at: deletionDirectory, withIntermediateDirectories: true)
                 try FileManager.default.moveItem(at: location.runURL, to: deletionURL)
+                isStaged = true
+            }
+            do {
+                try removePromptImprovementEvidence(id: id, projectID: location.projectID, suiteID: location.suiteID)
+            } catch {
+                // No copied evidence has been removed yet. Restore a newly staged
+                // run if its comparison cannot be updated, keeping the failed action a no-op.
+                if !isPending {
+                    try FileManager.default.moveItem(at: deletionURL, to: location.runURL)
+                    isStaged = false
+                }
+                throw error
             }
             let evidenceURL = runEvidenceDirectory(
                 projectID: location.projectID,
@@ -2755,7 +2767,7 @@ final class EvaluationStore {
             // Once deletion starts, keep the run tombstoned. Cleanup can then
             // be retried by ID without re-exposing a run whose evidence may
             // already have been partly or completely removed.
-            if FileManager.default.fileExists(atPath: deletionURL.path) {
+            if isStaged && FileManager.default.fileExists(atPath: deletionURL.path) {
                 if location.projectID == selectedProjectID, location.suiteID == selectedSuiteID {
                     runs.removeAll { $0.id == id }
                 }
@@ -2967,6 +2979,12 @@ final class EvaluationStore {
         try FileManager.default.createDirectory(at: deletions, withIntermediateDirectories: true)
         for file in files {
             try FileManager.default.moveItem(at: file, to: deletions.appending(path: file.lastPathComponent))
+        }
+        if !suiteLocalState.promptImprovements.isEmpty {
+            let previous = suiteLocalState
+            suiteLocalState.promptImprovements = []
+            do { try persistSuiteLocalState() }
+            catch { suiteLocalState = previous; throw error }
         }
         let evidence = suiteDirectory.appending(path: "RunEvidence", directoryHint: .isDirectory)
         if FileManager.default.fileExists(atPath: evidence.path) {

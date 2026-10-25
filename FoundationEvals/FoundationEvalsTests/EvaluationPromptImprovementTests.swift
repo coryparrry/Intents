@@ -457,10 +457,74 @@ struct EvaluationPromptImprovementTests {
         #expect(throws: (any Error).self) { try failing.deleteRunDurably(id: run.id) }
         #expect(try Data(contentsOf: stateURL) == original)
         #expect(FileManager.default.fileExists(atPath: directory.appending(path: "Runs/\(run.id).json").path))
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "RunDeletions/\(run.id).json").path))
         if !foreignSuite {
             #expect(failing.suiteLocalState.promptImprovements.first?.canApply == true)
             #expect(failing.runs.contains { $0.id == run.id })
         }
+    }
+
+    @Test(arguments: ["directory", "move"]) @MainActor
+    func failedRunStagingPreservesTheComparison(failure: String) async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (store, report) = try await makeStoreWithComparison(root: root)
+        let directory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: root, projectID: store.selectedProjectID, suiteID: store.selectedSuiteID)
+        let run = try #require(report.heldOutCandidate)
+        let stateURL = directory.appending(path: "state.json")
+        let original = try Data(contentsOf: stateURL)
+        let deletions = directory.appending(path: "RunDeletions")
+        store.selection = .run(run.id)
+        if failure == "directory" {
+            try Data("Blocked directory".utf8).write(to: deletions)
+        } else {
+            try FileManager.default.createDirectory(at: deletions, withIntermediateDirectories: true)
+            try Data("Existing destination".utf8).write(to: deletions.appending(path: "\(run.id).json"))
+        }
+        #expect(throws: (any Error).self) { try store.deleteRunDurably(id: run.id) }
+        #expect(try Data(contentsOf: stateURL) == original)
+        #expect(store.suiteLocalState.promptImprovements.first?.canApply == true)
+        #expect(store.run(with: run.id) != nil)
+        #expect(store.runs.contains { $0.id == run.id })
+        #expect(store.selection == .run(run.id))
+        #expect(FileManager.default.fileExists(atPath: directory.appending(path: "Runs/\(run.id).json").path))
+    }
+
+    @Test @MainActor
+    func clearingHistoryRemovesComparisonsAndRetriesFailedStateWrites() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (store, report) = try await makeStoreWithComparison(root: root)
+        let directory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: root, projectID: store.selectedProjectID, suiteID: store.selectedSuiteID)
+        let run = try #require(report.heldOutCandidate)
+        let evidence = directory.appending(path: "RunEvidence/\(run.id)")
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        let image = evidence.appending(path: "image.png")
+        try Data("Private image".utf8).write(to: image)
+        let stateURL = directory.appending(path: "state.json")
+        let original = try Data(contentsOf: stateURL)
+        var fails = true
+        let failing = EvaluationStore(supportDirectory: root, suiteLocalStateWriter: { data, url in
+            if fails { throw CocoaError(.fileWriteNoPermission) }
+            try data.write(to: url, options: .atomic)
+        })
+        #expect(throws: (any Error).self) { try failing.clearRunHistory() }
+        #expect(try Data(contentsOf: stateURL) == original)
+        #expect(FileManager.default.fileExists(atPath: image.path))
+        #expect(failing.suiteLocalState.promptImprovements.count == 2)
+        fails = false
+        try failing.clearRunHistory()
+        #expect(failing.runs.isEmpty)
+        #expect(failing.suiteLocalState.promptImprovements.isEmpty)
+        #expect(failing.suite == store.suite)
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "RunEvidence").path))
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "RunDeletions").path))
+        let reopened = EvaluationStore(supportDirectory: root)
+        #expect(reopened.runs.isEmpty)
+        #expect(reopened.suiteLocalState.promptImprovements.isEmpty)
+        #expect(reopened.suite == store.suite)
     }
 }
 
