@@ -326,6 +326,23 @@ struct EvaluationPromptImprovementTests {
         #expect(reopened.runs.first?.promptImprovementID == report.id)
         #expect(reopened.releaseCheckReport(runID: nil).runID == full.id)
         #expect(try reopened.projectReleaseCheckReport(projectID: reopened.selectedProjectID).suites.first?.report.runID == full.id)
+        let summary = SuiteOverviewSummary(record: reopened.selectedSuiteRecord, suite: reopened.suite,
+            currentRevision: reopened.suiteRevision, draft: nil, runs: reopened.runs, localState: reopened.suiteLocalState)
+        #expect(summary.state == .passed)
+        #expect(summary.latestRunID == full.id)
+        #expect(summary.latestScoredRunID == full.id)
+        #expect(summary.history.map(\.id) == [full.id])
+        #expect(reopened.projectOverviews.first?.suitesNeedingChecks == 0)
+        let persistedFull = try #require(reopened.runs.first { $0.id == full.id })
+        #expect(reopened.projectOverviews.first?.latestRunAt == persistedFull.startedAt)
+        let loaded = await WorkspaceOverviewLoader().load(project: reopened.selectedProject, directory: root)
+        #expect(loaded.first?.state == .passed)
+        #expect(loaded.first?.latestRunID == full.id)
+        let comparisonOnly = SuiteOverviewSummary(record: reopened.selectedSuiteRecord, suite: reopened.suite,
+            currentRevision: reopened.suiteRevision, draft: nil, runs: comparisons, localState: reopened.suiteLocalState)
+        #expect(comparisonOnly.state == .notRun)
+        #expect(comparisonOnly.history.isEmpty)
+        #expect(comparisonOnly.latestRunID == nil)
     }
 
     @Test @MainActor func rejectedSnapshotCleansOnlyItsUnpublishedEvidence() async throws {
@@ -372,6 +389,105 @@ struct EvaluationPromptImprovementTests {
         }
     }
 
+    @Test(arguments: 0..<5)
+    func deletingAnyComparisonRunInvalidatesTheRecommendation(index: Int) async throws {
+        let plan = makeImprovement()
+        let harness = ImprovementHarness(heldOutID: plan.source.cases.last!.id)
+        var report = try await makeRunner(harness).run(plan) { try await harness.save($0) }
+        let id = report.runs[index].id
+        report.removeRun(id: id)
+        #expect(report.status == .failed)
+        #expect(!report.canApply)
+        #expect(report.runs.count == 4)
+        #expect(!report.runs.contains { $0.id == id })
+        let reopened = try CanonicalJSON.decode(EvaluationPromptImprovement.self, from: CanonicalJSON.data(for: report))
+        #expect(!reopened.canApply)
+        #expect(!reopened.runs.contains { $0.id == id })
+    }
+
+    @Test(arguments: [false, true]) @MainActor
+    func deletingComparisonEvidenceUpdatesItsOwningSuite(foreignSuite: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (store, report) = try await makeStoreWithComparison(root: root)
+        let ownerID = store.selectedSuiteID
+        let directory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: root, projectID: store.selectedProjectID, suiteID: ownerID)
+        let run = try #require(report.heldOutCandidate)
+        let evidence = directory.appending(path: "RunEvidence/\(run.id)")
+        try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+        try Data("Private image".utf8).write(to: evidence.appending(path: "image.png"))
+        if foreignSuite { _ = try store.createSuite(name: "Other suite") }
+        #expect(try store.deleteRunDurably(id: run.id))
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "Runs/\(run.id).json").path))
+        #expect(!FileManager.default.fileExists(atPath: evidence.path))
+        let bytes = try Data(contentsOf: directory.appending(path: "state.json"))
+        #expect(!String(decoding: bytes, as: UTF8.self).contains(run.id.uuidString))
+        let state = try CanonicalJSON.decode(EvaluationSuiteLocalState.self, from: bytes)
+        let saved = try #require(state.promptImprovements.first)
+        #expect(saved.heldOutCandidate == nil)
+        #expect(saved.runs.count == 4)
+        #expect(!saved.canApply)
+        #expect(state.promptImprovements.last?.canApply == true)
+        if foreignSuite {
+            #expect(store.suiteLocalState.promptImprovements.isEmpty)
+            try store.switchSuite(id: ownerID)
+        }
+        #expect(store.suiteLocalState.promptImprovements.first?.heldOutCandidate == nil)
+        #expect(throws: (any Error).self) { try store.applyPromptImprovement(id: report.id) }
+        let reopened = EvaluationStore(supportDirectory: root)
+        #expect(reopened.suiteLocalState.promptImprovements.first?.heldOutCandidate == nil)
+        #expect(reopened.runs.count == 9)
+    }
+
+    @Test(arguments: [false, true]) @MainActor
+    func failedComparisonStateWritePreservesTheRun(foreignSuite: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (store, report) = try await makeStoreWithComparison(root: root)
+        let directory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: root, projectID: store.selectedProjectID, suiteID: store.selectedSuiteID)
+        let stateURL = directory.appending(path: "state.json")
+        let original = try Data(contentsOf: stateURL)
+        if foreignSuite { _ = try store.createSuite(name: "Other suite") }
+        let failing = EvaluationStore(supportDirectory: root, suiteLocalStateWriter: { _, _ in
+            throw CocoaError(.fileWriteNoPermission)
+        })
+        let run = try #require(report.heldOutCandidate)
+        #expect(throws: (any Error).self) { try failing.deleteRunDurably(id: run.id) }
+        #expect(try Data(contentsOf: stateURL) == original)
+        #expect(FileManager.default.fileExists(atPath: directory.appending(path: "Runs/\(run.id).json").path))
+        if !foreignSuite {
+            #expect(failing.suiteLocalState.promptImprovements.first?.canApply == true)
+            #expect(failing.runs.contains { $0.id == run.id })
+        }
+    }
+}
+
+@MainActor
+private func makeStoreWithComparison(root: URL) async throws -> (EvaluationStore, EvaluationPromptImprovement) {
+    let store = EvaluationStore(supportDirectory: root)
+    var plan = makeImprovement()
+    plan.source.id = store.suite.id
+    store.draftSuite = plan.source
+    #expect(store.saveSuite())
+    plan.source = store.suite
+    let harness = ImprovementHarness(heldOutID: plan.source.cases.last!.id)
+    let report = try await makeRunner(harness).run(plan) { try await harness.save($0) }
+    // An unrelated comparison must retain its evidence and recommendation.
+    var otherPlan = plan
+    otherPlan.id = UUID()
+    let otherHarness = ImprovementHarness(heldOutID: plan.source.cases.last!.id)
+    let other = try await makeRunner(otherHarness).run(otherPlan) { try await otherHarness.save($0) }
+    var state = EvaluationSuiteLocalState()
+    state.promptImprovements = [report, other]
+    let directory = EvaluationWorkspacePersistence.suiteDirectory(
+        supportDirectory: root, projectID: store.selectedProjectID, suiteID: store.selectedSuiteID)
+    try CanonicalJSON.data(for: state).write(to: directory.appending(path: "state.json"))
+    let reopened = EvaluationStore(supportDirectory: root)
+    try reopened.savePromptImprovementCheckpoint(report)
+    try reopened.savePromptImprovementCheckpoint(other)
+    return (reopened, report)
 }
 
 private func makeImprovement() -> EvaluationPromptImprovement {

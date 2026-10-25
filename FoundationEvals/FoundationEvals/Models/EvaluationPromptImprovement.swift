@@ -33,6 +33,18 @@ struct EvaluationPromptImprovement: Identifiable, Codable, Sendable {
             + [heldOutBaseline, heldOutCandidate].compactMap { $0 }
     }
 
+    mutating func removeRun(id: UUID) {
+        guard runs.contains(where: { $0.id == id }) else { return }
+        if developmentBaseline?.id == id { developmentBaseline = nil }
+        if heldOutBaseline?.id == id { heldOutBaseline = nil }
+        if heldOutCandidate?.id == id { heldOutCandidate = nil }
+        for index in candidates.indices where candidates[index].developmentRun?.id == id {
+            candidates[index].developmentRun = nil
+        }
+        status = .failed
+        message = "Saved comparison evidence was deleted. Start a new comparison before applying instructions."
+    }
+
     var canApply: Bool {
         guard EvaluationPromptImprovementRules.validationIssue(suite: source, heldOutCaseIDs: heldOutCaseIDs) == nil,
               status == .completed, let selectedCandidate else { return false }

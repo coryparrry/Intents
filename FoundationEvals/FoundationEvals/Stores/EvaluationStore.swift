@@ -336,7 +336,7 @@ final class EvaluationStore {
                     from: directory.appending(path: "Runs", directoryHint: .isDirectory),
                     projectID: project.id,
                     suiteID: record.id
-                ).runs
+                ).runs.filter { $0.promptImprovementID == nil }
                 let pendingURL = directory.appending(path: "pending-completed-runs.json")
                 let runs: [EvaluationRun]
                 if FileManager.default.fileExists(atPath: pendingURL.path) {
@@ -2690,6 +2690,12 @@ final class EvaluationStore {
     func deleteRunDurably(id: UUID) throws -> Bool {
         try requireWorkspaceWritable()
         if activeRun?.id == id { throw EvaluationStoreError.runBusy }
+        if let activePromptImprovementID,
+           suiteLocalState.promptImprovements.contains(where: {
+               $0.id == activePromptImprovementID && $0.runs.contains(where: { $0.id == id })
+           }) {
+            throw EvaluationStoreError.runBusy
+        }
         if pendingCompletedRuns?.runs.contains(where: { $0.id == id }) == true {
             throw EvaluationStoreError.resourceConflict("Save the pending completed runs before deleting this run.")
         }
@@ -2730,6 +2736,7 @@ final class EvaluationStore {
             .appending(path: "RunDeletions", directoryHint: .isDirectory)
         let deletionURL = deletionDirectory.appending(path: "\(id.uuidString).json")
         let isPending = location.runURL == deletionURL
+        try removePromptImprovementEvidence(id: id, projectID: location.projectID, suiteID: location.suiteID)
         do {
             if !isPending {
                 try FileManager.default.createDirectory(at: deletionDirectory, withIntermediateDirectories: true)
@@ -2762,6 +2769,32 @@ final class EvaluationStore {
         }
         if selection == .run(id) { selection = .suite }
         return true
+    }
+
+    private func removePromptImprovementEvidence(id: UUID, projectID: UUID, suiteID: UUID) throws {
+        let isSelected = projectID == selectedProjectID && suiteID == selectedSuiteID
+        let url = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: supportDirectory, projectID: projectID, suiteID: suiteID
+        ).appending(path: "state.json")
+        var state: EvaluationSuiteLocalState
+        if isSelected {
+            state = suiteLocalState
+        } else {
+            do { state = try CanonicalJSON.decode(EvaluationSuiteLocalState.self, from: Data(contentsOf: url)) }
+            catch CocoaError.fileReadNoSuchFile { return }
+        }
+        guard state.promptImprovements.contains(where: { $0.runs.contains(where: { $0.id == id }) }) else { return }
+        for index in state.promptImprovements.indices {
+            state.promptImprovements[index].removeRun(id: id)
+        }
+        if isSelected {
+            let previous = suiteLocalState
+            suiteLocalState = state
+            do { try persistSuiteLocalState() }
+            catch { suiteLocalState = previous; throw error }
+        } else {
+            try suiteLocalStateWriter(CanonicalJSON.data(for: state), url)
+        }
     }
 
     var canResetWorkspace: Bool {
