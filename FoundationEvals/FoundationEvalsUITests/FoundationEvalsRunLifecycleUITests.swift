@@ -88,6 +88,35 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
     }
 
     @MainActor
+    func testPromptImprovementKeepsCancellationEnabled() throws {
+        app.terminate()
+        app.launchArguments.append("--prompt-improvement-test-suggestions")
+        app.launch()
+        try openSuiteEditor()
+        configureSuite(name: "Instruction cancellation fixture", endpointPath: "/success")
+        app.radioButtons["Cases"].click()
+        app.buttons["Add Case"].click()
+        replaceText(in: app.textViews["Case prompt"], with: "Return the fixture response.")
+        replaceText(in: app.textViews["Scoring expected text"], with: "Deterministic fixture stream.")
+        selectSetup("Instructions")
+        app.buttons["Improve instructions"].click()
+        let generate = app.buttons["Generate and compare instructions"]
+        XCTAssertTrue(generate.waitForExistence(timeout: 3))
+        generate.click()
+        XCTAssertTrue(fixture.waitForRequest(timeout: 5), app.debugDescription)
+        let cancel = app.buttons["Cancel run"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 3))
+        XCTAssertTrue(cancel.isEnabled, "The disabled Setup editor must not disable its presented sheet")
+        XCTAssertTrue(app.buttons["Done"].isEnabled)
+        cancel.click()
+        fixture.finishResponse()
+        let cancelled = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Instruction improvement was cancelled")).firstMatch
+        XCTAssertTrue(cancelled.waitForExistence(timeout: 8), app.debugDescription)
+        XCTAssertTrue(generate.isEnabled)
+        XCTAssertFalse(app.buttons["Apply validated instructions"].exists)
+    }
+
+    @MainActor
     func testProviderFailureProducesAnIssueRun() throws {
         try openSuiteEditor()
         configureSuite(name: "UI provider failure fixture", endpointPath: "/failure")

@@ -77,6 +77,7 @@ struct SuiteEditorView: View {
     @State private var selectedCaseID: UUID?
     @State private var showsRunDetails = false
     @State private var showsDevices = false
+    @State private var showsPromptImprovement = false
     @State private var runError: String?
     @FocusState private var isEditorFocused: Bool
 
@@ -158,6 +159,7 @@ struct SuiteEditorView: View {
             )
         }
         .sheet(isPresented: $showsDevices) { DeveloperDevicesView(runners: runners) }
+        .sheet(isPresented: $showsPromptImprovement) { PromptImprovementView(store: store) }
         .alert("Could not start run", isPresented: Binding(get: { runError != nil }, set: { if !$0 { runError = nil } })) {
             Button("OK") { runError = nil }
         } message: {
@@ -213,7 +215,7 @@ struct SuiteEditorView: View {
     private var configurationContent: some View {
         switch configurationPage {
         case .instructions:
-            ModelInstructionsSection(store: store)
+            ModelInstructionsSection(store: store, showPromptImprovement: { showsPromptImprovement = true })
             SharedReferenceFilesSection(store: store)
         case .scoring:
             ScoringSection(store: store)
@@ -481,6 +483,7 @@ struct RunReadinessPanel: View {
 
 private struct ModelInstructionsSection: View {
     @Bindable var store: EvaluationStore
+    let showPromptImprovement: () -> Void
 
     var body: some View {
         EditorSection(
@@ -491,9 +494,10 @@ private struct ModelInstructionsSection: View {
                 .accessibilityLabel("Model instructions")
                 .font(.body)
                 .workspaceTextWell(minHeight: 140)
-
+                .disabled(store.isRunning || store.isProcessingFiles || store.isReassessing)
+            Button("Improve instructions", systemImage: "sparkles", action: showPromptImprovement)
+                .accessibilityIdentifier("Improve instructions")
         }
-        .disabled(store.isRunning || store.isProcessingFiles)
     }
 }
 

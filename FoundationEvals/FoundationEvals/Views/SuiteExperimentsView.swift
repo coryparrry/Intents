@@ -14,6 +14,7 @@ struct SuiteExperimentsView: View {
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
+                PromptImprovementButton(store: store)
                 Button("New Experiment", systemImage: "plus") { isCreatingExperiment = true }
                     .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
             }

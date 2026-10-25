@@ -31,6 +31,7 @@ Intents is a native macOS workbench for testing Apple's Foundation Models. Creat
 | **Judge checks** | Separate Development and Held-out examples; inspect false acceptance, false rejection, and unavailable evidence. |
 | **Production batches** | Immutable datasets, resumable jobs, unattended workers, captured-output review, cohort gates and audited evidence. [Production guide](docs/PRODUCTION_EVALS_GUIDE.md). |
 | **Saved comparisons** | Run history, baseline comparisons, and JSON reports. |
+| **Instruction improvement** | Generate two instruction alternatives from Development cases, validate the best on reserved Held-out cases, and review before applying. [Workflow](docs/PROMPT_IMPROVEMENT_PLAN.md). |
 | **Models and tools** | Apple's on-device model, compatible Core AI models, custom HTTP providers, and configurable tools. |
 | **Agent integration** | Authenticated controls for the shared workspace, evaluations, batches, review, and developer runners. [MCP guide](docs/MCP_CONTROL_GUIDE.md). |
 | **App feature runners** | A public Swift package for evaluating real app closures on a paired iPhone, iPad, or Mac. [Integration guide](docs/DEVELOPER_SWIFT_INTEGRATION.md). |

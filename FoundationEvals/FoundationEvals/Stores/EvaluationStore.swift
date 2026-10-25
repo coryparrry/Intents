@@ -1459,6 +1459,142 @@ final class EvaluationStore {
         }
     }
 
+    func startPromptImprovement(heldOutCaseIDs: Set<UUID>) throws {
+        try requireIdle()
+        guard saveSuite() else {
+            throw EvaluationStoreError.invalidSuite(notice ?? "Save a valid suite before improving instructions.")
+        }
+        if let issue = EvaluationPromptImprovementRules.validationIssue(suite: suite, heldOutCaseIDs: heldOutCaseIDs) {
+            throw EvaluationStoreError.invalidSuite(issue)
+        }
+        if let issue = EvaluationPromptImprovementGenerator.availabilityIssue {
+            throw EvaluationStoreError.invalidSuite(issue)
+        }
+        let frozen = suite
+        let externalJudge = try resolvedJudge(for: frozen)
+        let images = try imageInputs(for: frozen)
+        let imageDigests = try Dictionary(uniqueKeysWithValues: images.map {
+            ($0.label, Self.sha256(try Data(contentsOf: $0.url)))
+        })
+        let report = EvaluationPromptImprovement(source: frozen, heldOutCaseIDs: heldOutCaseIDs)
+        let previousState = suiteLocalState
+        suiteLocalState.promptImprovements.append(report)
+        do { try persistSuiteLocalState() }
+        catch { suiteLocalState = previousState; throw error }
+        isRunning = true
+        completedSamples = 0
+        totalSamples = report.maximumSamples
+        let improvementRunner = EvaluationPromptImprovementRunner(
+            generate: { try await EvaluationPromptImprovementGenerator.generate(development: $0, baseline: $1) },
+            evaluate: { [weak self] variant in
+                guard let self else { throw CancellationError() }
+                return try await self.evaluatePromptImprovementVariant(variant, imageDigests: imageDigests, externalJudge: externalJudge)
+            }
+        )
+        runTask = Task { [weak self] in
+            guard let self else { return }
+            defer { isRunning = false; runTask = nil }
+            do {
+                _ = try await improvementRunner.run(report) { [weak self] checkpoint in
+                    guard let self else { throw CancellationError() }
+                    try await self.savePromptImprovementCheckpoint(checkpoint)
+                }
+                notice = "Instruction comparison saved. Review the results before applying a change."
+            } catch {
+                if let index = suiteLocalState.promptImprovements.firstIndex(where: { $0.id == report.id }) {
+                    var interrupted = suiteLocalState.promptImprovements[index]
+                    interrupted.status = error is CancellationError ? .cancelled : .failed
+                    interrupted.message = error is CancellationError
+                        ? "Instruction improvement was cancelled. Saved partial evidence cannot recommend a change."
+                        : "Instruction improvement stopped: \(error.localizedDescription)"
+                    do { try savePromptImprovementCheckpoint(interrupted) }
+                    catch {
+                        suiteLocalState.promptImprovements[index] = interrupted
+                        notice = "Comparison evidence could not be saved: \(error.localizedDescription). Keep the app open and restore storage access."
+                        return
+                    }
+                    notice = interrupted.message
+                }
+            }
+        }
+    }
+
+    private func evaluatePromptImprovementVariant(
+        _ variant: EvaluationSuite, imageDigests: [String: String], externalJudge: EvaluationResolvedJudgeConnection?
+    ) async throws -> EvaluationRun {
+        try Task.checkCancellation()
+        if let issue = validationIssue(for: variant) { throw EvaluationStoreError.invalidSuite(issue) }
+        let runID = UUID()
+        let evidence = try snapshotSubjectEvidence(
+            runID: runID, suite: variant, projectID: selectedProjectID, suiteID: selectedSuiteID
+        )
+        let capturedDigests = Dictionary(uniqueKeysWithValues: evidence.attachments.filter { $0.kind == .image }.enumerated().map {
+            ("file-\($0.offset + 1)", $0.element.sha256)
+        })
+        guard capturedDigests == imageDigests else {
+            throw EvaluationStoreError.resourceConflict("A reference image changed during this comparison. No instruction change can be recommended.")
+        }
+        let capturedImages = try imageInputs(for: evidence, projectID: selectedProjectID, suiteID: selectedSuiteID, runID: runID)
+        let offset = completedSamples
+        let total = totalSamples
+        var run = await runner.run(
+            id: runID, suiteRevision: try Self.revision(for: variant), startedAt: Date(),
+            suite: variant, images: capturedImages, externalJudge: externalJudge
+        ) { [weak self] _, completed, _ in
+            await self?.updateExperimentProgress(completed: offset + completed, total: total)
+        }
+        run.suiteDefinition = EvaluationSuiteDefinition(suite: variant)
+        run.projectID = selectedProjectID
+        run.subjectEvidence = evidence
+        if let index = run.assessments?.indices.first { run.assessments?[index].subjectEvidenceDigest = evidence.digest }
+        return runPreparedForHistory(run)
+    }
+
+    func savePromptImprovementCheckpoint(_ report: EvaluationPromptImprovement) throws {
+        if report.status == .completed || report.status == .noImprovement { try Task.checkCancellation() }
+        guard let index = suiteLocalState.promptImprovements.firstIndex(where: { $0.id == report.id }) else {
+            throw EvaluationStoreError.resourceNotFound("Instruction improvement")
+        }
+        let newRuns = report.runs.filter { candidate in !runs.contains { $0.id == candidate.id } }
+        if !newRuns.isEmpty {
+            let previousSelection = selection
+            defer { selection = previousSelection }
+            try saveCompletedRuns(newRuns)
+        }
+        let previous = suiteLocalState.promptImprovements[index]
+        suiteLocalState.promptImprovements[index] = report
+        do { try persistSuiteLocalState() }
+        catch { suiteLocalState.promptImprovements[index] = previous; throw error }
+    }
+
+    func applyPromptImprovement(id: UUID) throws {
+        try requireIdle()
+        applyPendingPromptEdits()
+        guard let index = suiteLocalState.promptImprovements.firstIndex(where: { $0.id == id }) else {
+            throw EvaluationStoreError.resourceNotFound("Instruction improvement")
+        }
+        let report = suiteLocalState.promptImprovements[index]
+        guard report.canApply, report.appliedAt == nil, let candidate = report.selectedCandidate else {
+            throw EvaluationStoreError.resourceConflict("This comparison does not support applying an instruction change.")
+        }
+        guard suite == report.source, draftSuite == report.source else {
+            throw EvaluationStoreError.resourceConflict("The suite changed after this comparison. Keep your edits and create a new comparison.")
+        }
+        let snapshot = try candidateAdoptionSnapshot()
+        let previousState = suiteLocalState
+        draftSuite.instructions = candidate.instructions
+        do {
+            guard saveSuite() else { throw EvaluationStoreError.persistence(notice ?? "The instructions could not be saved.") }
+            suiteLocalState.promptImprovements[index].appliedAt = Date()
+            try persistSuiteLocalState()
+        } catch {
+            suiteLocalState = previousState
+            try restoreCandidateAdoption(snapshot, failureMessage: error.localizedDescription)
+            throw error
+        }
+        notice = "Validated instructions applied. The previous instructions and comparison remain in the saved report."
+    }
+
     func runExperiment(id: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
         do {
             try requireIdle()
