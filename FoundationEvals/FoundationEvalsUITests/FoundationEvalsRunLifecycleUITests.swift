@@ -192,7 +192,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
 
     @MainActor
     private func textContaining(_ value: String, in element: XCUIElement) -> XCUIElement {
-        element.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", value)).firstMatch
+        element.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", value, value)).firstMatch
     }
 
     @MainActor
