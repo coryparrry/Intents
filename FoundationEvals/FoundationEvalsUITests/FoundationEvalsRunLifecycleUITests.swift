@@ -111,7 +111,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertTrue(sheet.buttons["Done"].isEnabled)
         cancel.click()
         fixture.finishResponse()
-        let cancelled = sheet.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Instruction improvement was cancelled")).firstMatch
+        let cancelled = sheet.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Instruction improvement was cancelled", "Instruction improvement was cancelled")).firstMatch
         XCTAssertTrue(cancelled.waitForExistence(timeout: 8), app.debugDescription)
         XCTAssertTrue(generate.isEnabled)
         XCTAssertFalse(sheet.buttons["Apply validated instructions"].exists)
