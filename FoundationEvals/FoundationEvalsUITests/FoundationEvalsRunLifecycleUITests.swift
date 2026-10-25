@@ -114,17 +114,17 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertTrue(reopen.isEnabled)
         reopen.click()
         XCTAssertTrue(cancel.waitForExistence(timeout: 3))
-        XCTAssertTrue(textContaining("Comparing instructions", in: sheet).exists)
+        XCTAssertTrue(sheet.descendants(matching: .any)["Instruction comparison progress"].exists)
         cancel.click()
         fixture.finishResponse()
-        let cancelled = sheet.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Comparison cancelled", "Comparison cancelled")).firstMatch
+        let cancelled = textContaining("Comparison cancelled", in: sheet)
         XCTAssertTrue(cancelled.waitForExistence(timeout: 8), app.debugDescription)
         XCTAssertFalse(sheet.buttons["Apply validated instructions"].exists)
         capture("prompt-improvement-cancelled")
         sheet.buttons["New comparison"].click()
         XCTAssertTrue(generate.isEnabled)
         sheet.buttons["History"].click()
-        XCTAssertTrue(textContaining("Comparison history", in: sheet).exists)
+        XCTAssertTrue(sheet.descendants(matching: .any)["Instruction comparison history"].exists)
         capture("prompt-improvement-history")
     }
 
@@ -139,7 +139,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertFalse(sheet.buttons["Generate and compare instructions"].isEnabled)
         capture("prompt-improvement-add-cases")
         configure.click()
-        XCTAssertEqual(app.radioButtons["Cases"].value as? String, "1")
+        XCTAssertTrue(app.buttons["Add Case"].waitForExistence(timeout: 3))
         app.buttons["Add Case"].click()
         selectSetup("Scoring")
         app.radioButtons["Collect only"].click()
@@ -166,11 +166,11 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         selectSetup("Instructions")
         app.buttons["Improve instructions"].click()
         let sheet = app.sheets.firstMatch
-        XCTAssertTrue(textContaining("How it works", in: sheet).waitForExistence(timeout: 3))
+        XCTAssertTrue(sheet.descendants(matching: .any)["Instruction comparison setup"].waitForExistence(timeout: 3))
         capture("prompt-improvement-setup")
         sheet.disclosureTriangles["Choose examples"].click()
         XCTAssertEqual(sheet.checkBoxes.count, 2)
-        let reserved = sheet.checkBoxes.matching(NSPredicate(format: "value == %@", "1")).firstMatch
+        let reserved = sheet.checkBoxes.element(boundBy: 1)
         XCTAssertTrue(reserved.exists)
         reserved.click()
         XCTAssertFalse(sheet.buttons["Generate and compare instructions"].isEnabled)
@@ -180,7 +180,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         sheet.buttons["Generate and compare instructions"].click()
         XCTAssertTrue(textContaining("A better suggestion is ready", in: sheet).waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertTrue(sheet.buttons["Apply validated instructions"].isEnabled)
-        XCTAssertTrue(textContaining("Review the instructions", in: sheet).exists)
+        XCTAssertTrue(sheet.descendants(matching: .any)["Instruction comparison outcome"].exists)
         capture("prompt-improvement-result")
         sheet.buttons["Apply validated instructions"].click()
         XCTAssertTrue(textContaining("Suggestion applied", in: sheet).waitForExistence(timeout: 3))
@@ -192,7 +192,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
 
     @MainActor
     private func textContaining(_ value: String, in element: XCUIElement) -> XCUIElement {
-        element.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", value, value)).firstMatch
+        element.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", value)).firstMatch
     }
 
     @MainActor

@@ -146,6 +146,8 @@ struct PromptImprovementView: View {
             }
             WorkspaceNotice(.info, message: presentation.detail)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("Instruction comparison progress")
     }
 
     private var history: some View {
@@ -169,5 +171,7 @@ struct PromptImprovementView: View {
                 }.buttonStyle(.plain).workspaceSurface()
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("Instruction comparison history")
     }
 }

@@ -68,6 +68,8 @@ struct PromptImprovementSetupView: View {
             } icon: { Image(systemName: "info.circle") }
             .font(.caption).foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("Instruction comparison setup")
     }
 
     private func step(_ number: String, title: String, detail: String) -> some View {

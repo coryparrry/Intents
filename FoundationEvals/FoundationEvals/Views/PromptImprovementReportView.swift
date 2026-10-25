@@ -13,6 +13,9 @@ struct PromptImprovementReportView: View {
         VStack(alignment: .leading, spacing: 20) {
             WorkspaceNotice(noticeKind,
                             title: presentation.title, message: presentation.detail)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(presentation.title). \(presentation.detail)")
+                .accessibilityIdentifier("Instruction comparison outcome")
             if report.developmentBaseline != nil {
                 EditorSection("Results", description: "Passed responses out of all planned responses. Each example may be repeated by your suite’s settings.") {
                     Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 12) {
