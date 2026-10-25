@@ -188,6 +188,8 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertFalse(sheet.buttons["Apply validated instructions"].exists)
         capture("prompt-improvement-applied")
         sheet.buttons["Done"].click()
+        XCTAssertTrue(app.textViews["Model instructions"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["OK"].exists, "The result screen already confirms application; closing it must not show a stale success alert")
         XCTAssertTrue((app.textViews["Model instructions"].value as? String)?.contains("Return only the answer.") == true)
     }
 

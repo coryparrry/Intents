@@ -44,7 +44,7 @@ Use the existing workspace surfaces, inset text wells, notices, typography and 2
 
 - Explain Development as **Practice** and Held-out as **Final check**. Preselect the split, keep individual choices in a disclosure, and state that saving is always explicit.
 - Keep the maximum response budget visible before starting. Missing cases or scoring explain the next action and replace the footer’s primary action with direct recovery to the relevant editor. Keep that action outside combined notice accessibility elements.
-- Make every disclosure’s full label row clickable with a native button while retaining its disclosure role and announced expansion state.
+- Make every disclosure’s full label row clickable with a native button while retaining its disclosure role and announced expansion state. Make example rows clickable across their full width while exposing native checkbox semantics. Present saved success, cancellation and model-error outcomes in the result screen without queuing stale global alerts behind it. Preserve global storage-failure warnings that protect recoverable work.
 - Track the active comparison by ID so an ordinary evaluation never appears as an active instruction comparison. Allow closing and reopening it while editors remain locked.
 - Lead results with a plain-language outcome, then compare pass counts and both instruction texts. Distinguish incomplete runs, unused final checks and suggestions with no selected winner. Keep full evidence and alternative suggestions in disclosures.
 - Preserve stale-suite protection and per-case final-check checks. History reflects stale and applied results; reopening returns to the latest result or active comparison.

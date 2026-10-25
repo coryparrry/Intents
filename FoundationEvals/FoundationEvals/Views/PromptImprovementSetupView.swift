@@ -41,7 +41,7 @@ struct PromptImprovementSetupView: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 7)
                             }
-                            .toggleStyle(.checkbox)
+                            .toggleStyle(PromptImprovementCheckboxStyle())
                             .accessibilityLabel("Save \(test.name.isEmpty ? "untitled case" : test.name) for final check")
                             if test.id != suite.cases.last?.id { Divider() }
                         }

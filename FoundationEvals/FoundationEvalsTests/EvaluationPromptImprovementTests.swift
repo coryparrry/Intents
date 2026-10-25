@@ -250,7 +250,9 @@ struct EvaluationPromptImprovementTests {
         #expect(throws: (any Error).self) { try reopened.applyPromptImprovement(id: report.id) }
         #expect(reopened.draftSuite.instructions == "My pending edit")
         reopened.draftSuite = reopened.suite
+        let noticeBeforeApplication = reopened.notice
         try reopened.applyPromptImprovement(id: report.id)
+        #expect(reopened.notice == noticeBeforeApplication)
         #expect(reopened.suite.instructions == "Clear instructions")
         #expect(reopened.suiteLocalState.promptImprovements[0].appliedAt != nil)
         #expect(throws: (any Error).self) { try reopened.applyPromptImprovement(id: report.id) }

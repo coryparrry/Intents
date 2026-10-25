@@ -1501,7 +1501,6 @@ final class EvaluationStore {
                     guard let self else { throw CancellationError() }
                     try await self.savePromptImprovementCheckpoint(checkpoint)
                 }
-                notice = "Instruction comparison saved. Review the results before applying a change."
             } catch {
                 if let index = suiteLocalState.promptImprovements.firstIndex(where: { $0.id == report.id }) {
                     var interrupted = suiteLocalState.promptImprovements[index]
@@ -1515,7 +1514,6 @@ final class EvaluationStore {
                         notice = "Comparison evidence could not be saved: \(error.localizedDescription). Keep the app open and restore storage access."
                         return
                     }
-                    notice = interrupted.message
                 }
             }
         }
@@ -1603,7 +1601,6 @@ final class EvaluationStore {
             try restoreCandidateAdoption(snapshot, failureMessage: error.localizedDescription)
             throw error
         }
-        notice = "Validated instructions applied. The previous instructions and comparison remain in the saved report."
     }
 
     func runExperiment(id: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
