@@ -1519,14 +1519,22 @@ final class EvaluationStore {
         }
     }
 
-    private func evaluatePromptImprovementVariant(
+    func evaluatePromptImprovementVariant(
         _ variant: EvaluationSuite, imageDigests: [String: String], externalJudge: EvaluationResolvedJudgeConnection?
     ) async throws -> EvaluationRun {
         try Task.checkCancellation()
         if let issue = validationIssue(for: variant) { throw EvaluationStoreError.invalidSuite(issue) }
         let runID = UUID()
+        let ownerProjectID = selectedProjectID
+        let ownerSuiteID = selectedSuiteID
+        var producedRun = false
+        defer {
+            if !producedRun {
+                cleanupIncompleteRuns(ids: [runID], projectID: ownerProjectID, suiteID: ownerSuiteID)
+            }
+        }
         let evidence = try snapshotSubjectEvidence(
-            runID: runID, suite: variant, projectID: selectedProjectID, suiteID: selectedSuiteID
+            runID: runID, suite: variant, projectID: ownerProjectID, suiteID: ownerSuiteID
         )
         let capturedDigests = Dictionary(uniqueKeysWithValues: evidence.attachments.filter { $0.kind == .image }.enumerated().map {
             ("file-\($0.offset + 1)", $0.element.sha256)
@@ -1534,7 +1542,7 @@ final class EvaluationStore {
         guard capturedDigests == imageDigests else {
             throw EvaluationStoreError.resourceConflict("A reference image changed during this comparison. No instruction change can be recommended.")
         }
-        let capturedImages = try imageInputs(for: evidence, projectID: selectedProjectID, suiteID: selectedSuiteID, runID: runID)
+        let capturedImages = try imageInputs(for: evidence, projectID: ownerProjectID, suiteID: ownerSuiteID, runID: runID)
         let offset = completedSamples
         let total = totalSamples
         var run = await runner.run(
@@ -1544,9 +1552,10 @@ final class EvaluationStore {
             await self?.updateExperimentProgress(completed: offset + completed, total: total)
         }
         run.suiteDefinition = EvaluationSuiteDefinition(suite: variant)
-        run.projectID = selectedProjectID
+        run.projectID = ownerProjectID
         run.subjectEvidence = evidence
         if let index = run.assessments?.indices.first { run.assessments?[index].subjectEvidenceDigest = evidence.digest }
+        producedRun = true
         return runPreparedForHistory(run)
     }
 
@@ -1699,7 +1708,7 @@ final class EvaluationStore {
         if let runID {
             run = runs.first { $0.id == runID }
         } else {
-            run = runs.first
+            run = runs.first { $0.promptImprovementID == nil }
         }
         let approval = activeBaselineApproval
         let baseline = approval.flatMap { approval in runs.first { $0.id == approval.runID } }
@@ -1821,7 +1830,7 @@ final class EvaluationStore {
                 projectID: project.id,
                 suite: storedSuite,
                 currentSuiteRevision: revision,
-                run: storedRuns.first,
+                run: storedRuns.first { $0.promptImprovementID == nil },
                 baseline: baseline,
                 approvedBaseline: approval
             )

@@ -455,6 +455,7 @@ struct EvaluationRun: Identifiable, Codable, Sendable {
     var assessments: [EvaluationAssessment]? = nil
     var selectedAssessmentID: UUID? = nil
     var subjectEvidence: EvaluationSubjectEvidenceSnapshot? = nil
+    var promptImprovementID: UUID? = nil
     var developerExecution: EvaluationDeveloperExecution? = nil
 
     var effectiveResults: [EvaluationSampleResult] {

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Testing
 @testable import FoundationEvals
 
@@ -29,6 +30,7 @@ struct EvaluationPromptImprovementTests {
         #expect(result.canApply)
         #expect(result.selectedCandidate?.instructions == "Clear instructions")
         #expect(result.runs.count == 5)
+        #expect(result.runs.allSatisfy { $0.promptImprovementID == result.id })
         #expect(result.source == plan.source)
         #expect(result.maximumSamples == 16)
         let generationInput = try #require(await harness.generatorInput)
@@ -230,6 +232,103 @@ struct EvaluationPromptImprovementTests {
         #expect(failing.draftSuite.instructions == report.source.instructions)
         #expect(failing.suiteLocalState.promptImprovements[0].appliedAt == nil)
     }
+
+    @Test func criticalReleaseCasesAreScopedToEachPartition() async throws {
+        var plan = makeImprovement()
+        let developmentID = plan.source.cases[0].id
+        let heldOutID = plan.source.cases.last!.id
+        plan.source.releasePolicy.criticalCaseIDs = [developmentID, heldOutID]
+        #expect(plan.developmentSuite.releasePolicy.criticalCaseIDs == [developmentID])
+        #expect(plan.heldOutSuite.releasePolicy.criticalCaseIDs == [heldOutID])
+        #expect(plan.source.releasePolicy.criticalCaseIDs == [developmentID, heldOutID])
+        let harness = ImprovementHarness(heldOutID: heldOutID)
+        let report = try await makeRunner(harness).run(plan) { try await harness.save($0) }
+        #expect(report.canApply)
+        #expect(report.source.releasePolicy == plan.source.releasePolicy)
+    }
+
+    @Test @MainActor func comparisonHistoryDoesNotReplaceDefaultReleaseEvidence() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        var source = makeImprovement().source
+        source.id = store.suite.id
+        source.releasePolicy.required = true
+        store.draftSuite = source
+        #expect(store.saveSuite())
+        let expectedByPrompt = Dictionary(uniqueKeysWithValues: source.cases.map { ($0.prompt, $0.expected) })
+        let full = try await store.runFeatureAdapter(
+            expectedRevision: store.suiteRevision,
+            adapter: ClosureFeatureAdapter(displayName: "Release fixture") { expectedByPrompt[$0.prompt] ?? "" }
+        )
+        #expect(store.releaseCheckReport(runID: nil).outcome == .passed)
+        let plan = EvaluationPromptImprovement(source: store.suite, heldOutCaseIDs: [source.cases.last!.id])
+        let harness = ImprovementHarness(heldOutID: source.cases.last!.id)
+        let report = try await makeRunner(harness).run(plan) { try await harness.save($0) }
+        let comparisons = report.runs.enumerated().map { index, original in
+            var run = original
+            run.historySequence = (full.historySequence ?? 0) + UInt64(index) + 1
+            return run
+        }
+        try store.saveCompletedRuns(comparisons)
+        let partial = try #require(store.runs.first)
+        #expect(partial.promptImprovementID == report.id)
+        #expect(store.releaseCheckReport(runID: nil).runID == full.id)
+        #expect(store.releaseCheckReport(runID: nil).outcome == .passed)
+        #expect(store.releaseCheckReport(runID: partial.id).outcome == .incompleteOrIncompatibleEvidence)
+        let project = try store.projectReleaseCheckReport(projectID: store.selectedProjectID)
+        #expect(project.outcome == .passed)
+        #expect(project.suites.first?.report.runID == full.id)
+        let reopened = EvaluationStore(supportDirectory: root)
+        #expect(reopened.runs.first?.promptImprovementID == report.id)
+        #expect(reopened.releaseCheckReport(runID: nil).runID == full.id)
+        #expect(try reopened.projectReleaseCheckReport(projectID: reopened.selectedProjectID).suites.first?.report.runID == full.id)
+    }
+
+    @Test @MainActor func rejectedSnapshotCleansOnlyItsUnpublishedEvidence() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        var source = makeImprovement().source
+        source.id = store.suite.id
+        source.modelConfiguration.provider = .customHTTP
+        var provider = EvaluationCustomProviderConfiguration()
+        provider.supportsVision = true
+        source.modelConfiguration.customProvider = provider
+        let directory = EvaluationWorkspacePersistence.suiteDirectory(
+            supportDirectory: root, projectID: store.selectedProjectID, suiteID: store.selectedSuiteID
+        )
+        let imageID = UUID()
+        let filename = imageID.uuidString + ".png"
+        let image = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+        let digest = SHA256.hash(data: image).map { String(format: "%02x", $0) }.joined()
+        let attachments = directory.appending(path: "Attachments")
+        try FileManager.default.createDirectory(at: attachments, withIntermediateDirectories: true)
+        try image.write(to: attachments.appending(path: filename))
+        source.attachments = [.init(id: imageID, name: "Fixture", kind: .image, text: nil,
+                                    storedFilename: filename, byteCount: image.count, sha256: digest)]
+        store.draftSuite = source
+        #expect(store.saveSuite())
+        let evidence = directory.appending(path: "RunEvidence")
+        let protected = evidence.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: protected, withIntermediateDirectories: true)
+        let protectedFile = protected.appending(path: "saved-evidence")
+        try Data("Keep existing evidence".utf8).write(to: protectedFile)
+        for _ in 0..<2 {
+            do {
+                _ = try await store.evaluatePromptImprovementVariant(
+                    source, imageDigests: ["file-1": String(repeating: "0", count: 64)], externalJudge: nil
+                )
+                Issue.record("A mismatched snapshot must be rejected before model execution")
+            } catch {
+                #expect(error.localizedDescription.contains("reference image changed"))
+            }
+            #expect(try FileManager.default.contentsOfDirectory(atPath: evidence.path) == [protected.lastPathComponent])
+            #expect(try Data(contentsOf: protectedFile) == Data("Keep existing evidence".utf8))
+            #expect(try Data(contentsOf: attachments.appending(path: filename)) == image)
+        }
+    }
+
 }
 
 private func makeImprovement() -> EvaluationPromptImprovement {

@@ -60,6 +60,8 @@ struct EvaluationPromptImprovement: Identifiable, Codable, Sendable {
     private func partition(heldOut: Bool) -> EvaluationSuite {
         var suite = source
         suite.cases = source.cases.filter { heldOutCaseIDs.contains($0.id) == heldOut }
+        let caseIDs = Set(suite.cases.map(\.id))
+        suite.releasePolicy.criticalCaseIDs = source.releasePolicy.criticalCaseIDs.filter { caseIDs.contains($0) }
         return suite
     }
 }

@@ -20,7 +20,7 @@ actor EvaluationPromptImprovementRunner {
         var report = initial
         let development = report.developmentSuite
         try Task.checkCancellation()
-        report.developmentBaseline = try await evaluate(development)
+        report.developmentBaseline = try await evaluateVariant(development, improvementID: report.id)
         try await checkpoint(report)
         try requireComplete(report.developmentBaseline!, suite: development)
         report.message = "Generating two alternatives using Development evidence"
@@ -39,7 +39,7 @@ actor EvaluationPromptImprovementRunner {
             try await checkpoint(report)
             var variant = development
             variant.instructions = report.candidates[index].instructions
-            report.candidates[index].developmentRun = try await evaluate(variant)
+            report.candidates[index].developmentRun = try await evaluateVariant(variant, improvementID: report.id)
             try await checkpoint(report)
             try requireComplete(report.candidates[index].developmentRun!, suite: variant)
         }
@@ -56,14 +56,14 @@ actor EvaluationPromptImprovementRunner {
         report.message = "Validating current instructions on Held-out cases"
         try await checkpoint(report)
         let heldOut = report.heldOutSuite
-        report.heldOutBaseline = try await evaluate(heldOut)
+        report.heldOutBaseline = try await evaluateVariant(heldOut, improvementID: report.id)
         try await checkpoint(report)
         try requireComplete(report.heldOutBaseline!, suite: heldOut)
         report.message = "Validating the selected alternative on Held-out cases"
         try await checkpoint(report)
         var candidate = heldOut
         candidate.instructions = best.instructions
-        report.heldOutCandidate = try await evaluate(candidate)
+        report.heldOutCandidate = try await evaluateVariant(candidate, improvementID: report.id)
         try await checkpoint(report)
         try requireComplete(report.heldOutCandidate!, suite: candidate)
         try Task.checkCancellation()
@@ -73,6 +73,12 @@ actor EvaluationPromptImprovementRunner {
             : "The candidate improved Development results but regressed on Held-out cases. Keep the current instructions."
         try await checkpoint(report)
         return report
+    }
+
+    private func evaluateVariant(_ suite: EvaluationSuite, improvementID: UUID) async throws -> EvaluationRun {
+        var run = try await evaluate(suite)
+        run.promptImprovementID = improvementID
+        return run
     }
 
     private func requireComplete(_ run: EvaluationRun, suite: EvaluationSuite) throws {

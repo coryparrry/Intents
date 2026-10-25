@@ -13,6 +13,7 @@ From Setup → Instructions or Compare → Instruction experiments, choose **Imp
 - Evaluate only that candidate and the original instructions on Held-out cases. Recommend application only with complete, error-free evidence, an improved Development pass rate, and no Held-out case pass-rate regression. Show counts and rates without statistical-significance claims.
 - Bound execution to two candidates and one selection round. Display the maximum sample budget before starting. Cancel through the existing run lifecycle, prevent concurrent workspace execution, and preserve phase checkpoints. Interrupted runs cannot be applied or resumed against reused holdouts as if they were fresh.
 - Persist the frozen suite, split, candidates, and run evidence. Completed runs also enter ordinary history for trace inspection. Legacy suite state defaults to an empty improvement history.
+- Mark comparison records durably so default suite/project release checks keep selecting ordinary full-suite runs. Explicit run-ID checks still evaluate exactly the requested record. Scope critical release-case IDs to each comparison partition while preserving the full source policy. Clean up unpublished snapshots when preparation fails.
 - Apply only on an unchanged source suite and draft, through the existing save/rollback machinery. No automatic adoption. Report save failures and preserve recoverable evidence.
 
 ## Verification
