@@ -2,6 +2,14 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse } from '@babel/parser';
+import { parseFragment } from 'parse5';
+
+/** Visit authored script elements, including scripts inside inert template fragments. */
+function* inlineScripts(node) {
+  if (node.tagName === 'script') yield node;
+  for (const child of node.childNodes ?? []) yield* inlineScripts(child);
+  if (node.content) yield* inlineScripts(node.content);
+}
 
 /** Recognize nonempty JSDoc, excluding ordinary block comments and blank markers. */
 function hasDoc(node) {
@@ -105,12 +113,14 @@ function declarations(path, source, sourceLines = null, embedded = false) {
       const html = quasi.value.cooked;
       if (html === null && /<script\b/i.test(quasi.value.raw)) throw new Error('Static HTML template has invalid cooked escapes');
       if (html !== null && /<script\b/i.test(html)) {
-      const lines = templateSourceLines(quasi.value.raw, quasi.loc.start.line, html.length);
-      const pattern = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
-      for (const match of html.matchAll(pattern)) {
-        const bodyStart = match.index + match[0].indexOf('>') + 1;
-        found.push(...declarations(path, match[1], lines.slice(bodyStart, bodyStart + match[1].length + 1), true));
-      }
+        const lines = templateSourceLines(quasi.value.raw, quasi.loc.start.line, html.length);
+        const fragment = parseFragment(html, { sourceCodeLocationInfo: true });
+        for (const script of inlineScripts(fragment)) {
+          const location = script.sourceCodeLocation;
+          const bodyStart = location.startTag.endOffset;
+          const bodyEnd = location.endTag?.startOffset ?? html.length;
+          found.push(...declarations(path, html.slice(bodyStart, bodyEnd), lines.slice(bodyStart, bodyEnd + 1), true));
+        }
       }
     }
     const next = [...ancestors, node];

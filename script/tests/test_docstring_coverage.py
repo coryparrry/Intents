@@ -307,6 +307,28 @@ const callback = () => {};
         declarations = self.parse(source)
         self.assertEqual([(item.name, item.line) for item in declarations], [('continued', 2), ('later', 3)])
 
+    def test_html_script_end_tags_follow_html_tokenization(self):
+        """Count each script across whitespace, slash, and attributed end tags without losing source lines."""
+        for closing in ['</script\t\n bar>', '</script/>', '</SCRIPT ignored=">">']:
+            with self.subTest(closing=closing):
+                source = ('const host = `<script>\n/** First. */ function first() {}\n'
+                          + closing + '\n<script>function second() {}</script>`;')
+                declarations = self.parse(source)
+                self.assertEqual([(item.name, item.line, item.documented) for item in declarations],
+                                 [('first', 2, True), ('second', 4 + closing.count('\n'), False)])
+
+    def test_html_comments_and_quoted_tags_preserve_script_boundaries(self):
+        """Ignore commented scripts and respect quoted greater-than signs and lookalike end tags."""
+        declarations = self.parse('''const host = `<!-- <script>function hidden() {}</script> -->
+<script data-note=">">function real() { const text = "</scripture>"; }</script data-note=">">`;''')
+        self.assertEqual([(item.name, item.line) for item in declarations], [('real', 2)])
+
+    def test_html_template_content_and_unclosed_scripts_are_included(self):
+        """Keep authored template scripts and valid JavaScript ending at the HTML fragment's EOF."""
+        declarations = self.parse('''const host = `<template><script>function deferred() {}</script></template>
+<script>function finalScript() {}`;''')
+        self.assertEqual([(item.name, item.line) for item in declarations], [('deferred', 1), ('finalScript', 2)])
+
     def test_consecutive_typescript_wrappers_keep_assigned_functions(self):
         """Walk all assertion and satisfies wrappers to recover bindings and wrapper JSDoc."""
         declarations = self.parse('''

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@babel/parser": "7.28.5"
+    "@babel/parser": "7.28.5",
+    "parse5": "8.0.1"
   }
 }

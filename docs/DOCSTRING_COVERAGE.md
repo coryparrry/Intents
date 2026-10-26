@@ -8,7 +8,7 @@ python3 -m unittest script.tests.test_docstring_coverage
 python3 script/docstring_coverage.py --minimum 81
 ```
 
-The dedicated `Function documentation (81%)` GitHub Actions job runs these checks on every pull request and push to `main`. A percentage below 81 fails using the unrounded value. An empty declaration inventory fails a requested threshold, including `--minimum 0`. Inventory, file decoding, Python parsing, Babel parsing, and Swift lexical errors fail the command; files with errors are never silently dropped.
+The dedicated `Function documentation (81%)` GitHub Actions job runs these checks on every pull request and push to `main`. The general workflow-check job also installs the pinned parsers before running its selected Python tests. A percentage below 81 fails using the unrounded value. An empty declaration inventory fails a requested threshold, including `--minimum 0`. Inventory, file decoding, Python parsing, Babel parsing, and Swift lexical errors fail the command; files with errors are never silently dropped.
 
 For an actionable list or machine-readable report:
 
@@ -30,7 +30,7 @@ Counted declarations are:
 
 - **Swift:** named functions and operators, explicit initializers, deinitializers, and subscripts, including nested declarations and protocol requirements. A lexer skips nested comments, normal/raw/multiline strings (including interpolation), and extended or expression-position bare-slash regex literals. Initializer calls such as `Type.init()` are omitted. This inventory does not require an Apple SDK or compile application code.
 - **Python:** every AST function or async function definition, including methods and nested definitions.
-- **JavaScript and TypeScript:** named function declarations/expressions, named object/class methods and constructors, assigned arrow/function expressions (variables, properties, and assignments), and declared function/method contracts. Anonymous callbacks passed directly to another function and function type annotations are excluded. Static `<script>` contents in HTML template literals, including the preview host, are parsed and counted with their original source line numbers. Dynamic template interpolation is excluded from this embedded-script rule. Babel's parser is pinned in `Tools/DocstringCoverage/package-lock.json`; no global parser installation is used.
+- **JavaScript and TypeScript:** named function declarations/expressions, named object/class methods and constructors, assigned arrow/function expressions (variables, properties, and assignments), and declared function/method contracts. Anonymous callbacks passed directly to another function and function type annotations are excluded. Static `<script>` contents in HTML template literals, including the preview host, are parsed and counted with their original source line numbers. HTML parsing preserves tag boundaries, quoted attributes, and comments. Dynamic template interpolation is excluded from this embedded-script rule. Babel and parse5 are pinned in `Tools/DocstringCoverage/package-lock.json`; no global parser installation is used.
 - **Shell:** named function definitions. Function examples within heredocs or quoted strings are skipped; quoted heredoc-like text does not suppress subsequent functions.
 
 Implicit constructors, Swift computed properties/accessors, and anonymous closures are outside the denominator. All functions count equally; the percentage measures presence, not semantic quality or importance.
