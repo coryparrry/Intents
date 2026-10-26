@@ -7,6 +7,8 @@ struct EvaluationInputTokenEstimate: Sendable {
 }
 
 protocol EvaluationPromptInputTokenCounting: Sendable {
+    func tokenCount(for prompt: Prompt, cacheKey: String) async throws -> Int
+    func tokenCount(for instructions: Instructions, cacheKey: String) async throws -> Int
     func tokenCount(for prompt: Prompt) async throws -> Int
     func tokenCount(for instructions: Instructions) async throws -> Int
     func tokenCount(for schema: GenerationSchema) async throws -> Int
@@ -123,7 +125,7 @@ enum EvaluationInputTokenCounter {
             )
         }
         return EvaluationInputTokenEstimate(
-            count: try await tokenCounter.tokenCount(for: prompt),
+            count: try await tokenCounter.tokenCount(for: prompt, cacheKey: text),
             imageTokenCountAvailable: true
         )
     }
@@ -229,7 +231,7 @@ extension EvaluationRunner {
             && (profileHasTransitioned || !tools.isEmpty)
         let instructionTokens = suite.instructions.isEmpty
             ? 0
-            : try await tokenCounter.tokenCount(for: Instructions(suite.instructions))
+            : try await tokenCounter.tokenCount(for: Instructions(suite.instructions), cacheKey: suite.instructions)
         let toolTokens = tools.isEmpty ? 0 : try await tokenCounter.tokenCount(for: tools)
         let schemaTokens = suite.features.outputFields.isEmpty ? 0 : try await tokenCounter.tokenCount(
             for: EvaluationSchemaBuilder.schema(
@@ -240,7 +242,7 @@ extension EvaluationRunner {
                     suite.features.outputRepresentNilExplicitlyInGeneratedContent
             ))
         let profileTokens = afterToolProfileIsReachable ? try await tokenCounter.tokenCount(
-            for: Instructions(suite.features.profile.afterToolInstructions)) : 0
+            for: Instructions(suite.features.profile.afterToolInstructions), cacheKey: suite.features.profile.afterToolInstructions) : 0
         let allocation = suite.modelConfiguration.contextAllocation(
             contextSize: contextSize,
             includesModelJudge: suite.usesSubjectModelForJudging,

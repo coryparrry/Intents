@@ -12,6 +12,8 @@ final class ProductionWorkspaceStore {
     var schedules: [ProductionSchedule] = []
     var selectedJobID: UUID?
     var report: ProductionReport?
+    var progress: ProductionProgress?
+    var runningProgress: ProductionProgress?
     var records: [ProductionRecord] = []
     var selectedRecord: ProductionRecord?
     var selectedExample: ProductionExample?
@@ -40,18 +42,21 @@ final class ProductionWorkspaceStore {
     func refresh() async {
         guard !isClosing, let storage else { return }
         let token = UUID(); refreshID = token
-        let selectedID = selectedJobID, page = offset
+        let selectedID = selectedJobID, page = offset, activeID = runningJobID
+        let polling = runningJobID == selectedID && runningJobID != nil && pane == .jobs
         isLoading = true
         defer { if refreshID == token { isLoading = false } }
         do {
             let snapshot = try await Task.detached(priority: .utility) {
                 let datasets = try storage.datasets(), jobs = try storage.jobs(), workers = try storage.workers(), schedules = try storage.schedules()
-                let report = try selectedID.map { try storage.report(jobID: $0) }
-                let records = try selectedID.map { try storage.records(jobID: $0, offset: page, limit: 50) } ?? []
-                return (datasets,jobs,workers,schedules,report,records)
+                let report: ProductionReport? = try selectedID.flatMap { polling ? nil : try storage.report(jobID: $0) }
+                let runningProgress = try activeID.map { try storage.progress(jobID: $0) }
+                let progress: ProductionProgress? = polling ? runningProgress : nil
+                let records = try selectedID.map { polling ? [] : try storage.records(jobID: $0, offset: page, limit: 50) } ?? []
+                return (datasets,jobs,workers,schedules,report,progress,runningProgress,records)
             }.value
-            guard !isClosing, refreshID == token, selectedJobID == selectedID, offset == page else { return }
-            (datasets,jobs,workers,schedules,report,records) = snapshot
+            guard !isClosing, refreshID == token, selectedJobID == selectedID, offset == page, runningJobID == activeID else { return }
+            (datasets,jobs,workers,schedules,report,progress,runningProgress,records) = snapshot
             if let record = selectedRecord, let id = selectedJobID { review = try storage.review(jobID: id, requestID: record.response.requestID) }
         } catch {
             if !isClosing, refreshID == token, selectedJobID == selectedID, offset == page {
@@ -63,7 +68,24 @@ final class ProductionWorkspaceStore {
         guard !isClosing else { return }
         refreshID = UUID()
         selectedJobID = id; offset = 0; records = []; selectedRecord = nil; selectedExample = nil; review = nil; report = nil
+        progress = nil
         Task { await refresh() }
+    }
+    func showResults(for id: UUID) {
+        pane = .review
+        select(id)
+    }
+    func dismissResult() {
+        selectedRecord = nil; selectedExample = nil; review = nil
+    }
+    func refreshRunningProgress() async {
+        guard !isClosing, let id = runningJobID, let storage else { return }
+        do {
+            let value = try await Task.detached(priority: .utility) { try storage.progress(jobID: id) }.value
+            guard !isClosing, runningJobID == id else { return }
+            runningProgress = value
+            if selectedJobID == id && pane == .jobs { progress = value }
+        } catch { if !isClosing, runningJobID == id { self.error = error.localizedDescription } }
     }
     @discardableResult
     func selectRecord(_ record: ProductionRecord) -> Task<Void, Never>? {
@@ -177,16 +199,16 @@ final class ProductionWorkspaceStore {
             return try storage.createJob(name: name, datasetRevision: dataset, configuration: frozen, resolveCriticalCaseIDs: true)
         }, completed: { self.select($0.id) })
     }
-    func duplicateJob() {
-        guard let job = selectedJob else { return }
+    func duplicateJob(jobID: UUID? = nil) {
+        guard let id = jobID ?? selectedJobID, let job = jobs.first(where: { $0.id == id }) else { return }
         perform({ try $0.createJob(name: job.name + " · repeat", datasetRevision: job.datasetRevision, configuration: job.configuration) }, completed: { self.select($0.id) })
     }
     func createCaptured(_ dataset: ProductionDataset) {
         perform({ try $0.createCapturedJob(name: dataset.name + " · captured review", datasetRevision: dataset.revision) }, completed: { self.select($0.id) })
     }
     @discardableResult
-    func setControl(paused: Bool? = nil, cancelled: Bool? = nil, completed: @escaping @MainActor () -> Void = {}) -> Task<Void, Never>? {
-        guard let id = selectedJobID else { return nil }
+    func setControl(jobID: UUID? = nil, paused: Bool? = nil, cancelled: Bool? = nil, completed: @escaping @MainActor () -> Void = {}) -> Task<Void, Never>? {
+        guard let id = jobID ?? selectedJobID else { return nil }
         return perform({ try $0.setControl(jobID: id, paused: paused, cancelled: cancelled) }, completed: { _ in
             if paused == true || cancelled == true { self.interrupt(jobID: id) }
             completed()
@@ -253,10 +275,10 @@ final class ProductionWorkspaceStore {
             }
             // Admission must succeed before reopening a paused job to local or polling workers.
             executionErrors[job.id] = nil
+            runningProgress = nil
             runningJobID = job.id
             let executionOwner = owner
             runTask = Task {
-                defer { if let executionOwner { store.endProductionExecution(executionOwner) }; runningJobID = nil; runTask = nil }
                 do {
                     let task = Task.detached(priority: .utility) {
                         // Admission must succeed before another worker can claim this job.
@@ -268,6 +290,9 @@ final class ProductionWorkspaceStore {
                     }
                     _ = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
                 } catch is CancellationError { } catch { self.error = error.localizedDescription; executionErrors[job.id] = error.localizedDescription }
+                if let executionOwner { store.endProductionExecution(executionOwner) }
+                runningJobID = nil
+                runTask = nil
                 await refresh()
             }
         } catch {
@@ -286,8 +311,8 @@ final class ProductionWorkspaceStore {
             tags: tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }, reconciledResponse: response)
         perform { try $0.appendReview(jobID: jobID, slot: record.slot, event: event) }
     }
-    func export() {
-        guard let id = selectedJobID else { return }
+    func export(jobID: UUID? = nil) {
+        guard let id = jobID ?? selectedJobID else { return }
         let panel = NSSavePanel(); panel.nameFieldStringValue = "eval-evidence-\(id.uuidString.prefix(8))"
         panel.title = "Export dataset, results and review history"
         guard panel.runModal() == .OK, let url = panel.url else { return }

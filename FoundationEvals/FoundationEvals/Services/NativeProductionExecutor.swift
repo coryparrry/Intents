@@ -23,7 +23,7 @@ actor NativeProductionExecutor {
     let context: NativeProductionContext
     let executionRevision: String
     let judge: EvaluationResolvedJudgeConnection?
-    let runner = EvaluationRunner()
+    let runner = EvaluationRunner(batchTokenCounter: EvaluationCachedPromptInputTokenCounter())
     let imageDirectory: URL
     let images: [ImageEvaluationInput]
     init(context: NativeProductionContext, executionRevision: String, judge: EvaluationResolvedJudgeConnection?) throws {

@@ -4,12 +4,12 @@ import AppKit
 enum ProductionPane: String, WorkspacePane {
     case datasets, jobs, review, reports, workers
     var id: Self { self }
-    var title: String { rawValue.capitalized }
+    var title: String { self == .review ? "Results" : rawValue.capitalized }
     var subtitle: String {
         switch self {
         case .datasets: "Freeze examples and original production outputs for repeatable evaluation."
         case .jobs: "Run bounded batches and resume remaining examples."
-        case .review: "Assign results, record failure patterns and resolve disagreement."
+        case .review: "Read each response, outcome and saved trace."
         case .reports: "Check release gates, cohorts and confidence across distinct sources."
         case .workers: "See worker provenance and scheduled runs in this store."
         }
@@ -32,35 +32,63 @@ struct ProductionWorkspaceView: View {
     @State private var search = ""
     @State private var approvedDisclosure = false
     @State private var cancelling = false
+    @State private var cancellingJobID: UUID?
     @State private var scheduleHours = 24.0
     @State private var scheduleRuns = 1
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                HStack {
-                    Text("Batch runs").font(.title2.weight(.bold))
-                    Spacer()
-                    if model.isLoading { ProgressView().controlSize(.small) }
-                    Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }.buttonStyle(.bordered)
-                }
-                WorkspacePaneLayout(heading: "Batch workspace", selection: $model.pane) {
-                    switch pane {
-                    case .datasets: datasetPane
-                    case .jobs: jobsPane
-                    case .review: ProductionReviewPane(model: model)
-                    case .reports: ProductionReportPane(model: model)
-                    case .workers: workersPane
+                if pane != .review {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Batch runs").font(.largeTitle.weight(.bold))
+                        Text(pane.subtitle).font(.callout).foregroundStyle(.secondary)
                     }
+                }
+                switch pane {
+                case .datasets: datasetPane
+                case .jobs: jobsPane
+                case .review: ProductionReviewPane(model: model)
+                case .reports: ProductionReportPane(model: model)
+                case .workers: workersPane
                 }
             }.workspacePage()
         }
         .id(pane)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Batch workspace", selection: $model.pane) {
+                    ForEach(ProductionPane.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .accessibilityIdentifier("Batch workspace")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                if let id = model.runningJobID, let job = model.jobs.first(where: { $0.id == id }) {
+                    ProductionActiveBatchBanner(job: job, progress: model.runningProgress,
+                        showResults: { model.showResults(for: id) },
+                        pause: { model.setControl(jobID: id, paused: true) },
+                        cancel: { cancellingJobID = id; cancelling = true },
+                        repeatBatch: { model.duplicateJob(jobID: id) },
+                        export: { model.export(jobID: id) })
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }
+                    .labelStyle(.iconOnly).disabled(model.isLoading)
+            }
+        }
         .background(WorkspaceStyle.canvas).navigationTitle("Batch runs")
         .task {
             await model.refresh()
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
-                if model.runningJobID != nil { await model.refresh() }
+                if model.runningJobID != nil {
+                    if model.selectedJobID == model.runningJobID && (pane == .review || pane == .reports) {
+                        await model.refresh()
+                    } else {
+                        await model.refreshRunningProgress()
+                    }
+                }
             }
         }
         .sheet(isPresented: Binding(get: { importURL != nil }, set: { if !$0 { importURL = nil } })) {
@@ -72,10 +100,12 @@ struct ProductionWorkspaceView: View {
         .alert("Batch runs", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
-        .alert("Cancel this batch?", isPresented: $cancelling) {
+        .alert("Cancel this batch?", isPresented: $cancelling, presenting: cancellingJobID) { id in
             Button("Keep running", role: .cancel) {}
-            Button("Cancel batch", role: .destructive) { model.setControl(cancelled: true) }
-        } message: { Text("Completed evidence is retained. Cancellation is permanent for this job; create a new job to run again.") }
+            Button("Cancel batch", role: .destructive) { model.setControl(jobID: id, cancelled: true) }
+        } message: { id in
+            Text("Cancel \(model.jobs.first(where: { $0.id == id })?.name ?? "this batch")? Saved results remain available. Create a new batch to run it again.")
+        }
         .onChange(of: model.selectedJobID) { _,_ in approvedDisclosure = false }
     }
     private var datasetPane: some View {
@@ -120,29 +150,12 @@ struct ProductionWorkspaceView: View {
                     jobDatasetRevision = nil
                     creatingJob = true
                 }.buttonStyle(.borderedProminent).disabled(model.datasets.isEmpty)
-                if let id = model.selectedJobID {
-                    Button("Review") { pane = .review }.buttonStyle(.bordered)
-                    Button("Report") { pane = .reports }.buttonStyle(.bordered)
-                    Text(String(id.uuidString.prefix(8))).font(.caption.monospaced()).foregroundStyle(.secondary)
-                }
+
             }
-            VStack(alignment: .leading, spacing: 0) {
-                WorkspacePanelHeader("Saved batches", count: model.jobs.count)
-                if model.jobs.isEmpty { WorkspaceEmptyState(symbol: "play.rectangle", title: "No batches yet", detail: "Create a batch from a frozen dataset. Completed results survive pauses and worker restarts.") }
-                ForEach(model.jobs) { job in
-                    Button { model.select(job.id) } label: {
-                        HStack(spacing: 12) {
-                            WorkspaceIcon(symbol: job.id == model.selectedJobID ? "checkmark.circle.fill" : "play.rectangle", size: 22)
-                            VStack(alignment: .leading, spacing: 3) { Text(job.name).font(.callout.weight(.semibold)); Text("\(job.plannedCount) responses · \(job.configuration.targets.count) targets · \(job.configuration.repetitions) trials").font(.caption).foregroundStyle(.secondary) }
-                            Spacer(); Text(job.createdAt, style: .date).font(.caption).foregroundStyle(.secondary)
-                        }.padding(18).contentShape(.rect)
-                    }.buttonStyle(.plain)
-                    Divider()
-                }
-            }.workspaceSurface()
-            if let job = model.selectedJob {
+            if let job = model.selectedJob, job.id != model.runningJobID {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(job.name).font(.headline)
+                    if let progress = model.progress { ProgressView(value: Double(progress.completed), total: Double(progress.planned)); Text("\(progress.completed) of \(progress.planned) saved · \(model.runningJobID == job.id ? "running on this Mac" : progress.phase)").font(.callout).foregroundStyle(.secondary) }
                     if let report = model.report { ProgressView(value: Double(report.completed), total: Double(report.planned)); Text("\(report.completed) of \(report.planned) saved · \(model.runningJobID == job.id ? "running on this Mac" : report.phase)").font(.callout).foregroundStyle(.secondary) }
                     Text("Execution and scoring are frozen for this batch. Changes to the suite apply to new batches.").font(.callout).foregroundStyle(.secondary)
                     if let context = try? ProductionCodec.decode(NativeProductionContext.self, job.configuration.executionContext), context.suite.judgeConfiguration.usesExternalConnection {
@@ -154,12 +167,27 @@ struct ProductionWorkspaceView: View {
                             model.resume(job: job, store: store, externalDisclosureApproved: approvedDisclosure)
                         }.buttonStyle(.borderedProminent).disabled(model.runningJobID != nil || model.report?.phase == "cancelled" || model.report?.phase == "completed")
                         Button("Pause", systemImage: "pause") { model.setControl(paused: true) }.buttonStyle(.bordered).disabled(model.report?.phase == "completed" || model.report?.phase == "cancelled")
-                        Button("Cancel…", role: .destructive) { cancelling = true }.buttonStyle(.bordered).disabled(model.report?.phase == "cancelled")
+                        Button("Cancel…", role: .destructive) { cancellingJobID = job.id; cancelling = true }.buttonStyle(.bordered).disabled(model.report?.phase == "cancelled")
                         Button("Repeat batch") { model.duplicateJob() }.buttonStyle(.bordered)
                         Button("Export evidence…") { model.export() }.buttonStyle(.bordered)
                     }
                 }.padding(18).workspaceSurface()
             }
+            VStack(alignment: .leading, spacing: 0) {
+                WorkspacePanelHeader("Saved batches", count: model.jobs.count)
+                if model.jobs.isEmpty { WorkspaceEmptyState(symbol: "play.rectangle", title: "No batches yet", detail: "Create a batch from a frozen dataset. Completed results survive pauses and worker restarts.") }
+                ForEach(model.jobs) { job in
+                    Button { model.showResults(for: job.id) } label: {
+                        HStack(spacing: 12) {
+                            WorkspaceIcon(symbol: job.id == model.selectedJobID ? "checkmark.circle.fill" : "play.rectangle", size: 22)
+                            VStack(alignment: .leading, spacing: 3) { Text(job.name).font(.callout.weight(.semibold)); Text("\(job.plannedCount) responses · \(job.configuration.targets.count) targets · \(job.configuration.repetitions) trials").font(.caption).foregroundStyle(.secondary) }
+                            Spacer(); Text(job.createdAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                        }.padding(18).contentShape(.rect)
+                    }.buttonStyle(WorkspaceRowButtonStyle())
+                    Divider().padding(.leading, 56)
+                }
+            }.workspaceSurface()
+
         }
     }
     private var workersPane: some View {

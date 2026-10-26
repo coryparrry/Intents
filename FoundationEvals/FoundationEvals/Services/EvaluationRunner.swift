@@ -8,6 +8,12 @@ struct ImageEvaluationInput: Sendable {
 }
 
 actor EvaluationRunner {
+    private let batchTokenCounter: (any EvaluationPromptInputTokenCounting)?
+
+    init(batchTokenCounter: (any EvaluationPromptInputTokenCounting)? = nil) {
+        self.batchTokenCounter = batchTokenCounter
+    }
+
     let signposter = OSSignposter(
         subsystem: "com.coryparry.FoundationEvals",
         category: "Evaluation"
@@ -184,7 +190,7 @@ actor EvaluationRunner {
         case .customHTTP:
             EvaluationPortablePromptInputTokenCounter()
         default:
-            EvaluationSystemPromptInputTokenCounter()
+            batchTokenCounter ?? EvaluationSystemPromptInputTokenCounter()
         }
 
         let environment = EvaluationEnvironment(
