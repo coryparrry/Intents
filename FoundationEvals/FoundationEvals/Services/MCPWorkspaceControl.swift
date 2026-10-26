@@ -6,11 +6,15 @@ import Foundation
   private let capture: @MainActor (String?) -> MCPToolPayload
   private var completed = false
 
+  /// Creates a one-result completion stream and a closure that captures final workspace evidence or an
+  /// execution error.
   init(capture: @escaping @MainActor (String?) -> MCPToolPayload) {
     (stream, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
     self.capture = capture
   }
 
+  /// Captures and publishes the first completion payload, then finishes the stream. Later completion
+  /// callbacks have no effect.
   func complete(error: String?) {
     guard !completed else { return }
     completed = true
@@ -18,6 +22,8 @@ import Foundation
     continuation.finish()
   }
 
+  /// Waits for captured workflow completion. A finished/empty stream or task cancellation returns a
+  /// shutdown failure that asks callers to inspect saved evidence.
   func wait() async -> MCPToolPayload {
     var iterator = stream.makeAsyncIterator()
     guard let payload = await iterator.next(), !Task.isCancelled else {
@@ -28,6 +34,9 @@ import Foundation
 }
 
 @MainActor enum MCPWorkspaceControl {
+  /// Captures the selected project/suite identity for a dispatched workflow and converts completion
+  /// into saved local-state or calibration evidence. A changed selection, execution error, or missing
+  /// calibration report returns a failure payload.
   static func workflowCompletion(for call: MCPControlCall, store: EvaluationStore) -> MCPWorkspaceCompletion {
     let projectID = store.selectedProjectID
     let suiteID = store.selectedSuiteID
@@ -48,6 +57,8 @@ import Foundation
     }
   }
 
+  /// Hashes projects, selection, current suite revision, local state, and judge connections into the
+  /// optimistic workspace revision. Serialization and store revision failures propagate.
   static func revision(_ store: EvaluationStore) throws -> String {
     let value = MCPJSONValue.object([
       "projects": try .encode(store.projects),
@@ -59,6 +70,8 @@ import Foundation
     ])
     return ProductionCodec.digest(Data(try value.jsonText().utf8))
   }
+  /// Requires any supplied project/suite IDs and expected suite revision to match the current
+  /// selection. Conflicts instruct the caller to select or reread the intended target.
   static func requireTarget(_ call: MCPControlCall, store: EvaluationStore) throws {
     if let project = try call.optionalID("projectID"), project != store.selectedProjectID {
       throw EvaluationStoreError.resourceConflict(
@@ -73,6 +86,8 @@ import Foundation
         "Suite revision changed. Reread state and reconcile the intended action.")
     }
   }
+  /// Adds current workspace/suite revisions and selected IDs to a committed mutation response. Revision
+  /// or serialization failures propagate.
   static func result(_ store: EvaluationStore, _ values: [String: MCPJSONValue] = [:]) throws
     -> MCPToolPayload
   {
@@ -83,6 +98,8 @@ import Foundation
     values["suiteID"] = .string(store.selectedSuiteID.uuidString)
     return MCPControlService.committed(values)
   }
+  /// Rejects configuration changes to server-owned disclosure approval fields, requiring the dedicated
+  /// confirmed approval action instead.
   static func requireServerApproval(
     _ configuration: EvaluationJudgeConfiguration, store: EvaluationStore
   ) throws {
@@ -99,6 +116,9 @@ import Foundation
       )
     }
   }
+  /// Executes workspace reads or revision-checked mutations with action-specific identity, consent, and
+  /// suite bounds. Long-running experiments, calibration, and reassessment return dispatched receipts
+  /// and track completion evidence; thrown domain errors are handled by the control service.
   static func execute(_ call: MCPControlCall, control: EvaluationAppControl) async throws
     -> MCPToolPayload
   {

@@ -69,6 +69,7 @@ def evaluate(needs, selection, stability_requested):
 
 
 def main(environ=None):
+    """Decode size-bounded CI environment JSON, print every routing contract error, and return a failing exit status for invalid or incomplete work."""
     env = os.environ if environ is None else environ
     documents = {}
     errors = []

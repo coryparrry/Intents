@@ -3,6 +3,7 @@ const SITE_HOST = 'intents-workbench.coryparry.chatgpt.site';
 const OPT_OUT_KEY = 'intents-website-analytics-disabled';
 const CAMPAIGN_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
 
+/** Remove credentials, fragments, and all query data except campaign fields capped at 200 characters; return an empty string for invalid URLs. */
 export function safeURL(value, base) {
   try {
     const url = new URL(value, base);
@@ -18,6 +19,7 @@ export function safeURL(value, base) {
   } catch { return ''; }
 }
 
+/** Describe marked Intents GitHub release links with a sanitized URL; return null for unmarked, unrelated, or invalid links. */
 export function downloadProperties(link, base) {
   if (!link?.dataset?.downloadLocation) return null;
   try {
@@ -34,6 +36,7 @@ export function downloadProperties(link, base) {
   } catch { return null; }
 }
 
+/** Wire opt-out controls and initialize cookieless analytics only on the production host when browser and stored privacy choices allow it. */
 export function startAnalytics(win) {
   const { document: doc, navigator: nav, location } = win;
   const isTest = new URL(location.href).searchParams.get('analytics_test') === '1';
@@ -94,6 +97,7 @@ export function startAnalytics(win) {
     capture_performance: false,
     advanced_disable_feature_flags: true,
     respect_dnt: true,
+    /** Drop disabled events, label website/test traffic, and sanitize URL or referrer properties before transmission. */
     before_send(event) {
       if (!event || disabled) return null;
       const props = event.properties;
@@ -107,6 +111,7 @@ export function startAnalytics(win) {
       }
       return event;
     },
+    /** Capture one explicit pageview with the sanitized current URL after the SDK loads. */
     loaded(posthog) {
       posthog.capture('$pageview', { $current_url: safeURL(location.href) });
     },
@@ -117,6 +122,7 @@ export function startAnalytics(win) {
   const posthog = win.posthog = [];
   posthog._i = [[PROJECT_TOKEN, config, 'posthog']];
   posthog.__SV = 1;
+  /** Queue capture arguments for replay by the asynchronously loaded PostHog SDK. */
   posthog.capture = (...args) => posthog.push(['capture', ...args]);
   const script = doc.createElement('script');
   script.async = true;
@@ -124,6 +130,7 @@ export function startAnalytics(win) {
   script.src = 'https://eu-assets.i.posthog.com/static/array.js';
   doc.head.appendChild(script);
 
+  /** Capture marked release-link clicks through an immediate beacon, ignoring disabled tracking and nonmiddle auxiliary clicks. */
   const trackDownload = event => {
     if (disabled || (event.type === 'auxclick' && event.button !== 1)) return;
     const properties = downloadProperties(event.target.closest?.('a[data-download-location]'), location.href);

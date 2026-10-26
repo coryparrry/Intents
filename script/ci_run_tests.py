@@ -14,6 +14,7 @@ except ModuleNotFoundError:
 
 
 def run_tests(kind, selection, scratch_path=None):
+    """Validate and run selected Python modules or discovered Swift suites, limiting Swift parallelism and omitting explicit manual-only methods; propagate runner failures."""
     if not isinstance(selection, list) or any(
         not isinstance(name, str) or not name for name in selection
     ):
@@ -81,6 +82,7 @@ def run_tests(kind, selection, scratch_path=None):
 
 
 def main():
+    """Parse the test kind and optional Swift scratch path, then dispatch the JSON selection from CI_TEST_SELECTION."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("kind", choices=("python", "swift"))
     parser.add_argument("--scratch-path")

@@ -48,6 +48,9 @@ struct CodexMCPInstallerTests {
             "mcp_servers.foundation-evals.url = \"http://example\"\n",
             "mcp_servers = { foundation-evals = { url = \"http://example\" } }\n",
             "[\"mcp_servers\".\"foundation-evals\"]\nurl = \"http://example\"\n",
+            "[mcp_servers.'foundation-evals'.http_headers]\nAuthorization = 'example'\n",
+            "'mcp_servers'.\"foundation-evals\".url = 'http://example'\n",
+            "[[mcp_servers.foundation-evals]]\nurl = 'http://example'\n",
         ]
 
         for conflict in conflicts {
@@ -59,6 +62,81 @@ struct CodexMCPInstallerTests {
         let commented = "# [mcp_servers.foundation-evals]\nmodel = \"foundation-evals in a value\"\n"
         let installed = try CodexMCPInstaller.installing(configuration: configuration, into: commented)
         #expect(installed.hasPrefix(commented))
+    }
+
+    /// Verifies structural failures precede deferred conflicts, while valid input retains the first
+    /// installation error. Every rejected filesystem update must preserve its exact original bytes.
+    @Test(arguments: [
+        ("model = 'one'\nmodel = 'two'\n[mcp_servers.foundation-evals]\n", CodexMCPInstallerError.malformedConfiguration),
+        ("[mcp_servers.foundation-evals]\nurl = 'one'\nurl = 'two'\n", .malformedConfiguration),
+        ("[skills]\n[skills]\n[mcp_servers.foundation-evals]\n", .malformedConfiguration),
+        ("[mcp_servers.foundation-evals]\n[skills]\n[skills]\n", .malformedConfiguration),
+        ("[skills.]\n[mcp_servers.foundation-evals]\n", .malformedConfiguration),
+        ("[mcp_servers.foundation-evals]\n[skills.]\n", .malformedConfiguration),
+        ("[mcp_servers.foundation-evals]\n[skills]\n[[skills]]\n", .malformedConfiguration),
+        ("[[mcp_servers.foundation-evals]]\n[skills]\nvalue = nope nope\n", .malformedConfiguration),
+        ("'mcp_servers'.\"foundation-evals\".url = 'example'\nmodel = 'one'\nmodel = 'two'\n", .malformedConfiguration),
+        ("mcp_servers = { other = {} }\n[skills]\n[skills]\n", .malformedConfiguration),
+        ("[skills]\n[skills]\n[mcp_servers]\nfoundation-evals = {}\n", .malformedConfiguration),
+        ("[mcp_servers.foundation-evals]\n[\"escaped\\u002Dkey\"]\n", .unsupportedConfiguration),
+        ("[\"escaped\\u002Dkey\"]\n[mcp_servers.foundation-evals]\n", .unsupportedConfiguration),
+        ("mcp_servers.foundation-evals.url = 'example'\nmcp_servers = { other = {} }\n", .conflictingConfiguration),
+        ("mcp_servers = { other = {} }\nmcp_servers.foundation-evals.url = 'example'\n", .unsupportedConfiguration),
+    ])
+    func installationInspectionPreservesFailurePrecedenceAndBytes(
+        original: String,
+        expectedError: CodexMCPInstallerError
+    ) throws {
+        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        #expect(throws: expectedError) {
+            try CodexMCPInstaller.installing(configuration: configuration, into: original)
+        }
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configURL = directory.appending(path: "config.toml")
+        let originalBytes = Data(original.utf8)
+        try originalBytes.write(to: configURL)
+
+        #expect(throws: expectedError) {
+            try CodexMCPInstaller().installOrUpdate(in: directory, configuration: configuration)
+        }
+        #expect(try Data(contentsOf: configURL) == originalBytes)
+        #expect(!FileManager.default.fileExists(
+            atPath: directory.appending(path: "config.toml.foundation-evals.backup").path
+        ))
+    }
+
+    /// Checks install, replacement, and removal preserve supported unmanaged bytes, including marker
+    /// text in multiline values and quoted or repeated table layouts.
+    @Test(arguments: [
+        "# retained café setting  \nmodel  =  'custom' # retained comment\n",
+        "[\"mcp_servers\".'other.server']\nurl = 'http://example.invalid/mcp'\n",
+        "[[skills.config]]\npath = 'first'\n[[skills.config]]\npath = 'second'\n",
+        "notes = \"\"\"\n# BEGIN FOUNDATION EVALS MANAGED MCP\n[mcp_servers.foundation-evals]\n# END FOUNDATION EVALS MANAGED MCP\n\"\"\"\n",
+        "notes = '''\n# BEGIN FOUNDATION EVALS MANAGED MCP\n[mcp_servers.foundation-evals]\n# END FOUNDATION EVALS MANAGED MCP\n'''\n",
+    ])
+    func installationInspectionPreservesSupportedUnmanagedBytes(original: String) throws {
+        let firstConfiguration = try CodexMCPConfiguration(port: 19_001, credential: testMCPCredential)
+        let updatedConfiguration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let installed = try CodexMCPInstaller.installing(configuration: firstConfiguration, into: original)
+        let updated = try CodexMCPInstaller.installing(configuration: updatedConfiguration, into: installed)
+
+        #expect(Data(installed.utf8).starts(with: Data(original.utf8)))
+        #expect(Data(updated.utf8).starts(with: Data(original.utf8)))
+        #expect(try Data(CodexMCPInstaller.removingManagedBlock(from: updated).utf8) == Data(original.utf8))
+    }
+
+    /// Ensures removal validates structure without rejecting unmanaged entries that prevent installs.
+    @Test(arguments: [
+        "mcp_servers = { other = {} }\n",
+        "mcp_servers = { 'foundation-evals' = {} }\n",
+        "[mcp_servers.foundation-evals]\nurl = 'example'\n",
+    ])
+    func removalIgnoresDeferredInstallationErrors(unmanaged: String) throws {
+        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let original = unmanaged + "\n" + configuration.tomlBlock + "\n"
+
+        #expect(try CodexMCPInstaller.removingManagedBlock(from: original) == unmanaged)
     }
 
     @Test func multilineStringsArePreservedDuringInstallation() throws {

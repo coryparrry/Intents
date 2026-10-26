@@ -10,6 +10,8 @@ struct NativeProductionContext: Codable, Sendable {
             ? "On-device · \(suite.modelConfiguration.systemModel.variant.displayName)"
             : suite.modelConfiguration.provider.title
     }
+    /// Reports total attempt cost only when subject-model charges are known; custom HTTP subject costs remain unavailable.
+    /// An external judge also requires a reported judge cost, while other supported native attempts report zero.
     func reportedCost(judgeCost: EvaluationCost?) -> Double? {
         // Custom subject-model charges are not captured by the native runner.
         // A known judge charge alone cannot establish the total attempt cost.
@@ -40,8 +42,10 @@ actor NativeProductionExecutor {
         } catch { try? FileManager.default.removeItem(at: imageDirectory); throw error }
         images = values
     }
+    /// Removes this executor's temporary image directory, ignoring cleanup failures.
     deinit { try? FileManager.default.removeItem(at: imageDirectory) }
-    /// Executes one frozen native slot and captures its response, verdict, timing and trace.
+    /// Executes one frozen native slot and returns its output, verdict, timing, bounded trace and available cost.
+    /// Throws on revision mismatch, invalid scored input, absent evidence or oversized trace.
     func execute(_ request: ProductionRequest) async throws -> ProductionResponse {
         guard request.configuration.executionRevision == executionRevision else {
             throw ProductionFailure.integrity("Native worker setup differs from this frozen job.")

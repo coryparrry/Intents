@@ -8,6 +8,7 @@ import { MAX_OUTPUT_BYTES } from './validation.mjs';
 
 // These lock files are permanent: unlinking one could create two independent locks.
 // The kernel releases the lock on process death; no PID/mtime stale-lock guessing.
+/** Executes a record mutation in a bounded worker holding a permanent kernel lock. expectedRevision guards logical content; expectedRecordRevision guards exact saved bytes. Returns the saved or removed record and rejects lock, revision, I/O, or timeout failures. */
 export async function saveSuiteTransaction(store, saved, expectedRevision, { operation = 'save', projectId, expectedRecordRevision, kind = 'suites' } = {}) {
   store.path(kind, saved.id);
   // Preserve existing suite lock inodes; all writes/deletes of another record
@@ -27,6 +28,7 @@ export async function saveSuiteTransaction(store, saved, expectedRevision, { ope
   return new Promise((accept, reject) => {
     const outputChunks = [];
     let outputBytes = 0, diagnostic = '', failed;
+    /** Retains the transaction failure and kills its entire process group so an expired writer cannot commit later. */
     const stop = (message) => {
       failed ||= new Error(message);
       try { process.kill(-child.pid, 'SIGKILL'); } catch { /* Already exited. */ }

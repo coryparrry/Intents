@@ -7,30 +7,21 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
+/** Provides Radix dialog state, accepting controlled open props or an internal default state. */
 function Dialog({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
-function DialogTrigger({
-  ...props
-}: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
-  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
-}
-
+/** Ports dialog children into the Radix portal target. */
 function DialogPortal({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
 }
 
-function DialogClose({
-  ...props
-}: React.ComponentProps<typeof DialogPrimitive.Close>) {
-  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
-}
-
+/** Renders the animated fixed backdrop behind a dialog. */
 function DialogOverlay({
   className,
   ...props
@@ -47,6 +38,7 @@ function DialogOverlay({
   )
 }
 
+/** Ports the dialog panel and backdrop, with an accessible close button enabled by default. */
 function DialogContent({
   className,
   children,
@@ -85,6 +77,7 @@ function DialogContent({
   )
 }
 
+/** Stacks the dialog title and supporting description with shared spacing. */
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -95,33 +88,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function DialogFooter({
-  className,
-  showCloseButton = false,
-  children,
-  ...props
-}: React.ComponentProps<"div"> & {
-  showCloseButton?: boolean
-}) {
-  return (
-    <div
-      data-slot="dialog-footer"
-      className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
-        className
-      )}
-      {...props}
-    >
-      {children}
-      {showCloseButton && (
-        <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
-        </DialogPrimitive.Close>
-      )}
-    </div>
-  )
-}
-
+/** Styles the Radix title that supplies the dialog accessible name. */
 function DialogTitle({
   className,
   ...props
@@ -138,6 +105,7 @@ function DialogTitle({
   )
 }
 
+/** Styles the Radix description associated with the dialog, including links in its text. */
 function DialogDescription({
   className,
   ...props
@@ -156,13 +124,10 @@ function DialogDescription({
 
 export {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogOverlay,
   DialogPortal,
   DialogTitle,
-  DialogTrigger,
 }

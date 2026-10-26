@@ -14,6 +14,7 @@ final class EvaluationWorkflowRecorder: Sendable {
     private let origin: ContinuousClock.Instant
     private let state = Mutex(State())
 
+    /// Sets the monotonic origin used to express every recorded span's relative start time.
     init(origin: ContinuousClock.Instant = .now) {
         self.origin = origin
     }
@@ -23,6 +24,7 @@ final class EvaluationWorkflowRecorder: Sendable {
         set { state.withLock { $0.activeParentID = newValue } }
     }
 
+    /// Creates an ordered span and retains its monotonic start instant for later completion, returning its new ID.
     @discardableResult
     func begin(
         kind: EvaluationWorkflowSpanKind,
@@ -34,7 +36,7 @@ final class EvaluationWorkflowRecorder: Sendable {
         let id = UUID()
         let span = EvaluationWorkflowSpan(
             id: id, parentID: parentID, kind: kind, title: title,
-            startOffsetMilliseconds: Self.milliseconds(from: origin, to: instant),
+            startOffsetMilliseconds: max(0, origin.evaluationMilliseconds(to: instant)),
             durationMilliseconds: 0, status: .succeeded, metadata: metadata
         )
         state.withLock {
@@ -44,6 +46,7 @@ final class EvaluationWorkflowRecorder: Sendable {
         return id
     }
 
+    /// Merges metadata into a known span, preferring new values; nil or unknown IDs are ignored.
     func update(_ id: UUID?, metadata: [String: String]) {
         guard let id else { return }
         state.withLock { state in
@@ -52,6 +55,7 @@ final class EvaluationWorkflowRecorder: Sendable {
         }
     }
 
+    /// Completes an open span once with elapsed time, status, error, and merged metadata; repeated or unknown completions are ignored.
     func finish(
         _ id: UUID?,
         status: EvaluationWorkflowSpanStatus = .succeeded,
@@ -63,7 +67,7 @@ final class EvaluationWorkflowRecorder: Sendable {
         state.withLock { state in
             guard let start = state.starts.removeValue(forKey: id),
                   let index = state.spans.firstIndex(where: { $0.id == id }) else { return }
-            state.spans[index].durationMilliseconds = Self.milliseconds(from: start, to: instant)
+            state.spans[index].durationMilliseconds = max(0, start.evaluationMilliseconds(to: instant))
             state.spans[index].status = status
             state.spans[index].errorMessage = errorMessage
             state.spans[index].metadata.merge(metadata) { _, new in new }
@@ -77,23 +81,21 @@ final class EvaluationWorkflowRecorder: Sendable {
         for id in ids { finish(id, status: status, errorMessage: errorMessage, at: instant) }
     }
 
+    /// Returns a lock-protected snapshot of all recorded spans, including spans that have not finished.
     func snapshot() -> EvaluationWorkflowTrace {
         state.withLock { EvaluationWorkflowTrace(spans: $0.spans) }
     }
 
+    /// Classifies task cancellation and cancelled URL requests as cancelled spans; other errors produce failed spans.
     static func status(for error: Error) -> EvaluationWorkflowSpanStatus {
         error is CancellationError || Task.isCancelled || (error as? URLError)?.code == .cancelled ? .cancelled : .failed
     }
 
+    /// Labels token counts as framework-reported when attaching usage to workflow evidence.
     static func usageMetadata(_ usage: EvaluationUsage) -> [String: String] {
         ["usageSource": "Framework-reported", "inputTokens": String(usage.inputTokens),
          "cachedInputTokens": String(usage.cachedInputTokens), "outputTokens": String(usage.outputTokens),
          "reasoningTokens": String(usage.reasoningTokens)]
-    }
-
-    private static func milliseconds(from start: ContinuousClock.Instant, to end: ContinuousClock.Instant) -> Double {
-        let value = start.duration(to: end).components
-        return max(0, Double(value.seconds) * 1_000 + Double(value.attoseconds) / 1_000_000_000_000_000)
     }
 }
 
@@ -102,4 +104,14 @@ struct EvaluationWorkflowHTTPContext: Sendable {
     var recorder: EvaluationWorkflowRecorder
     var parentID: UUID
     @TaskLocal static var current: EvaluationWorkflowHTTPContext?
+}
+
+@available(macOS 27.0, *)
+extension ContinuousClock.Instant {
+    /// Converts elapsed monotonic time into signed milliseconds for evaluation timing and evidence.
+    func evaluationMilliseconds(to end: ContinuousClock.Instant) -> Double {
+        let components = duration(to: end).components
+        return Double(components.seconds) * 1_000
+            + Double(components.attoseconds) / 1_000_000_000_000_000
+    }
 }

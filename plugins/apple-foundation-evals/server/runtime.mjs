@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { MAX_NATIVE_OUTPUT_BYTES } from './validation.mjs';
 import { StringDecoder } from 'node:string_decoder';
 
+/** Invokes native JSON input directly or through a lease, bounds output and execution time, forwards events, and settles only after child streams close. App cancellation allows three seconds for terminal evidence before forcing exit. */
 export function invokeNative(binary, input, { signal, timeoutMs = 1800000, lease, onSpawn, onEvent } = {}) {
   if (lease) return lease.invoke(binary, input, { signal, timeoutMs, onEvent });
   return new Promise((accept, reject) => {
@@ -12,12 +13,15 @@ export function invokeNative(binary, input, { signal, timeoutMs = 1800000, lease
     const appEvaluation = ['evaluate', 'run-experiment'].includes(input.operation) && !!input.suite;
     const decoder = new StringDecoder('utf8');
     const eventDecoder = new StringDecoder('utf8'); let eventBuffer = '';
+    /** Forwards bounded sample/live-response JSON events and retains a short diagnostic fallback for other stderr lines. */
     const eventLine = (line) => {
       if (Buffer.byteLength(line) > MAX_NATIVE_OUTPUT_BYTES) { stop('Native event exceeded its size limit'); return; }
       try { const value = JSON.parse(line); if (value && ['sample', 'liveResponse'].includes(value.event)) { onEvent?.(value); return; } } catch {}
       if (stderr.length < 4096) stderr += line.slice(0, 4096 - stderr.length);
     };
+    /** Retains the first failure and forcibly stops the native child; close handles promise settlement. */
     const stop = (message) => { failure ??= new Error(message); child.kill('SIGKILL'); };
+    /** Stops non-evaluation requests immediately or gives app evaluations a short SIGTERM window to publish cancellation evidence. */
     const abort = () => {
       if (!appEvaluation) { stop('Evaluation cancelled'); return; }
       cancelled = true; child.kill('SIGTERM');

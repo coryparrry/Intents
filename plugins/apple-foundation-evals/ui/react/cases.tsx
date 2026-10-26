@@ -56,6 +56,7 @@ import {
 } from "../suite-form-state.js";
 type Context = any;
 import { Action, invoke, Choice, TextField } from "./shared";
+/** Renders the React case editor with filtered selection, draft mutations and application-format conversation and field checks. */
 export function Cases({ ctx }: { ctx: Context }) {
   const { state, actions } = ctx;
   const draft = state.draft;
@@ -66,12 +67,14 @@ export function Cases({ ctx }: { ctx: Context }) {
   const appFormat = isAppSuiteFormat(draft);
   const details = caseEditorDetails(selected);
   if (selected) state.caseId = selected.id;
+  /** Applies one field edit, commits detached application case details, marks autosave pending and redraws the editor. */
   const edit = (object: any, key: string, value: any) => {
     object[key] = value;
     commitCaseEditorDetails(draft, selected, details);
     ctx.changed();
     redraw();
   };
+  /** Applies a structural case edit, commits application details and rebuilds the main view after marking the draft changed. */
   const mutate = (action: () => void) => {
     action();
     commitCaseEditorDetails(draft, selected, details);

@@ -40,7 +40,7 @@ struct ResultCardHeaderLayoutTests {
             judgeDurationMilliseconds: 1, judgeUsage: nil, errorCategory: nil, errorMessage: nil,
             judgeErrorCategory: nil, judgeErrorMessage: nil, toolCalls: nil)
         let host = NSHostingView(rootView: ResultCardHeader(result: result, repetitions: 1,
-            passingScore: 3, scorerSummary: scorer, judgedByModel: true)
+            scorerSummary: scorer, judgedByModel: true)
             .textSelection(.enabled)
             .frame(width: width, height: 120, alignment: .topLeading)
             .environment(\.colorScheme, .light))

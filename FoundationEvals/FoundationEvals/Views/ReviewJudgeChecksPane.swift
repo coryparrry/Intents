@@ -111,6 +111,7 @@ private struct ReviewCalibrationSummary: View {
                 .font(.caption).foregroundStyle(.secondary)
         }.padding(18).workspaceSurface()
     }
+    /// Formats an optional fractional score as a percentage, identifying missing evidence as unavailable.
     private func rate(_ value: Double?) -> String {
         value.map { $0.formatted(.percent.precision(.fractionLength(1))) } ?? "Unavailable"
     }

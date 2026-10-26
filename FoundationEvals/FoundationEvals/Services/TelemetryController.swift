@@ -24,16 +24,22 @@ struct TelemetryConfiguration {
 
 @MainActor
 protocol TelemetryClient: AnyObject {
+    /// Accepts an app-defined event for the client's capture and delivery path.
     func capture(_ event: TelemetryEvent)
     var analyticsSessionID: String? { get }
+    /// Requests delivery of queued events without implying that a server has accepted them.
     func flush()
+    /// Stops delivery and discards pending client events when consent changes.
     func stopAndDiscard()
+    /// Installs a callback for changes in the client's delivery state.
     func setDeliveryHandler(_ handler: @escaping @Sendable (TelemetryDelivery) -> Void)
 }
 
 extension TelemetryClient {
     var analyticsSessionID: String? { nil }
+    /// Provides a no-op flush for clients that do not maintain a delivery queue.
     func flush() { }
+    /// Provides a no-op delivery callback registration for clients without delivery reporting.
     func setDeliveryHandler(_ handler: @escaping @Sendable (TelemetryDelivery) -> Void) { }
 }
 
@@ -83,6 +89,8 @@ final class TelemetryController {
     @ObservationIgnored private var client: (any TelemetryClient)?
     @ObservationIgnored private let discardPendingCrashes: @MainActor @Sendable () -> Void
 
+    /// Loads persisted usage and diagnostics consent, creates a consent-bound client when configured and discards unapproved crash reports.
+    /// Injected defaults, client creation and crash cleanup support isolated storage and controlled delivery.
     init(defaults: UserDefaults = .standard, configuration: TelemetryConfiguration? = .bundled,
          makeClient: @escaping @MainActor @Sendable (TelemetryConfiguration) -> any TelemetryClient = { PostHogTelemetryClient(configuration: $0) },
          discardPendingCrashes: @escaping @MainActor @Sendable () -> Void = { TelemetryPendingCrashReports.current?.discard() }) {
@@ -99,6 +107,8 @@ final class TelemetryController {
         refreshClient()
     }
 
+    /// Persists usage consent after rotating its epoch and recreates the client to revoke previously queued events.
+    /// Enabling without valid configuration and unchanged preferences are ignored.
     func setEnabled(_ enabled: Bool) {
         guard !enabled || isConfigured, enabled != isEnabled else { return }
         rotateConsentEpoch()
@@ -107,6 +117,7 @@ final class TelemetryController {
         resetClientForConsentChange()
     }
 
+    /// Persists diagnostics consent and recreates the consent-bound client, preserving recent usage-session deduplication when possible.
     func setDiagnosticsEnabled(_ enabled: Bool) {
         guard !enabled || isConfigured, enabled != diagnosticsEnabled else { return }
         rotateConsentEpoch()
@@ -115,6 +126,7 @@ final class TelemetryController {
         resetClientForConsentChange(preservingUsageSession: true)
     }
 
+    /// Persists a fresh consent epoch before preferences change so stale queues cannot become authorized again.
     private func rotateConsentEpoch() {
         // Write the new epoch before the preference. A retained queue from before
         // revocation cannot become authorized again if deleting it fails.
@@ -122,6 +134,8 @@ final class TelemetryController {
         defaults.set(consentEpoch.uuidString, forKey: Self.consentEpochKey)
     }
 
+    /// Stops and discards the old client and crash reports, invalidates callback and span generations, then rebuilds delivery.
+    /// Optional usage preservation rebinds recent open and screen deduplication across a diagnostics-only restart.
     private func resetClientForConsentChange(preservingUsageSession: Bool = false) {
         let preserveUsage = preservingUsageSession && isEnabled && lastOpenSession != nil
             && lastOpenSession == (client?.analyticsSessionID ?? sessionID.uuidString)
@@ -145,6 +159,7 @@ final class TelemetryController {
         }
     }
 
+    /// Creates a client only for enabled sharing with valid configuration and binds delivery callbacks to the current consent generation.
     private func refreshClient() {
         guard isEnabled || diagnosticsEnabled, let configuration else { return }
         let generation = consentGeneration
@@ -163,6 +178,8 @@ final class TelemetryController {
         delivery = .idle
     }
 
+    /// Keeps diagnostic events locally and forwards events only under their corresponding consent setting.
+    /// Feature and screen capture update app-session bookkeeping; queued status does not imply confirmed upload.
     func capture(_ event: TelemetryEvent) {
         recordLocally(event)
         guard event.isDiagnostic ? diagnosticsEnabled : isEnabled else { return }
@@ -188,6 +205,7 @@ final class TelemetryController {
         }
     }
 
+    /// Records a screen once per active SDK session unless the screen changes or thirty minutes have elapsed.
     func screen(_ screen: TelemetryScreen) {
         guard isEnabled else { return }
         appBecameActive()
@@ -202,6 +220,8 @@ final class TelemetryController {
 
 
 
+    /// Creates an operation span and records its start when fewer than 100 spans are active.
+    /// The returned span carries the current consent generation even when the active-span bound prevents recording.
     func begin(_ operation: TelemetryOperation) -> TelemetrySpan {
         let span = TelemetrySpan(id: UUID(), operation: operation, started: .now, consentGeneration: consentGeneration)
         // A fixed bound also prevents abandoned operations retaining unbounded memory.
@@ -212,6 +232,8 @@ final class TelemetryController {
         return span
     }
 
+    /// Finishes a tracked span once with bounded elapsed time and records feature use after success.
+    /// Spans from an earlier consent generation produce local diagnostics only.
     func end(_ span: TelemetrySpan?, failure: TelemetryFailure? = nil) {
         guard let span, activeSpans.remove(span.id) != nil else { return }
         let elapsed = span.started.duration(to: .now).components
@@ -229,6 +251,7 @@ final class TelemetryController {
         }
     }
 
+    /// Records an operation issue, retaining it locally when its related span belongs to an earlier consent generation.
     func issue(_ operation: TelemetryOperation, _ failure: TelemetryFailure, relatedTo span: TelemetrySpan? = nil) {
         let event = TelemetryEvent.issue(operation, failure, span?.id)
         if let span, span.consentGeneration != consentGeneration {
@@ -238,6 +261,7 @@ final class TelemetryController {
         }
     }
 
+    /// Keeps at most 100 diagnostic records and logs bounded operation and error identifiers independently of remote sharing.
     private func recordLocally(_ event: TelemetryEvent) {
         guard event.isDiagnostic else { return }
         var properties = diagnosticContext
@@ -258,6 +282,7 @@ final class TelemetryController {
         Self.diagnosticContext(sessionID: sessionID)
     }
 
+    /// Builds app, OS, architecture and diagnostic-session metadata without user content.
     static func diagnosticContext(sessionID: UUID) -> [String: Any] {
         #if arch(arm64)
         let architecture = "arm64"
@@ -271,8 +296,10 @@ final class TelemetryController {
             "architecture": architecture, "diagnostic_session_id": sessionID.uuidString]
     }
 
+    /// Asks the current client to flush pending events without treating the request as delivery confirmation.
     func flushPendingEvents() { client?.flush() }
 
+    /// Exports sharing preferences, delivery status and recent local diagnostics as JSON; returns an empty object on encoding failure.
     func diagnosticReport() -> String {
         struct Report: Encodable {
             let schemaVersion = 1
@@ -299,6 +326,8 @@ final class PostHogTelemetryClient: TelemetryClient {
     private let consentEpoch: UUID
     private let pendingCrashes: TelemetryPendingCrashReports?
 
+    /// Configures a bounded PostHog queue and consent-filtered transport with automatic lifecycle and screen capture disabled.
+    /// Native crash capture starts only when approved diagnostic storage prepares successfully; the consent epoch also governs replayed events.
     init(configuration: TelemetryConfiguration, sessionConfiguration: URLSessionConfiguration = .ephemeral,
          makeSDK: (PostHogConfig) -> PostHogSDK = { PostHogSDK.with($0) }) {
         consentEpoch = configuration.consentEpoch
@@ -354,6 +383,8 @@ final class PostHogTelemetryClient: TelemetryClient {
         }
     }
 
+    /// Adds bounded app context and the current consent epoch before passing an event to PostHog.
+    /// Usage events omit the diagnostic-session identifier.
     func capture(_ event: TelemetryEvent) {
         var properties = TelemetryController.diagnosticContext(sessionID: sessionID)
         if !event.isDiagnostic { properties.removeValue(forKey: "diagnostic_session_id") }
@@ -365,12 +396,16 @@ final class PostHogTelemetryClient: TelemetryClient {
 
     var analyticsSessionID: String? { sdk.getSessionId() }
 
+    /// Requests a PostHog flush without asserting upload success.
     func flush() { sdk.flush() }
 
+    /// Forwards delivery-state callback registration to the consent-bound transport.
     func setDeliveryHandler(_ handler: @escaping @Sendable (TelemetryDelivery) -> Void) {
         transport.setDeliveryHandler(handler)
     }
 
+    /// Stops transport and SDK delivery, discards pending crashes and removes project queue files.
+    /// Retains anonymous identity; consent epochs revoke stale queued events even when best-effort deletion fails.
     func stopAndDiscard() {
         transport.stop()
         sdk.optOut()

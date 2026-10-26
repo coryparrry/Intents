@@ -38,11 +38,14 @@ enum EvaluationReviewMCP {
               annotations: .init(readOnlyHint: false, destructiveHint: false, idempotentHint: true))
     ]
 
+    /// Rejects negative offsets and review pages outside one through twenty samples.
     static func validate(_ arguments: MCPReviewSamplesArguments) throws {
         guard (arguments.offset ?? 0) >= 0, (1...20).contains(arguments.limit ?? 10) else {
             throw MCPToolInputError.invalidArguments
         }
     }
+    /// Requires a lowercase SHA256 source digest, a nonblank bounded note, and at most six bounded
+    /// tags.
     static func validate(_ arguments: MCPReviewProposalArguments) throws {
         guard arguments.sourceDigest.count == 64,
               arguments.sourceDigest.allSatisfy({ "0123456789abcdef".contains($0) }),
@@ -51,6 +54,8 @@ enum EvaluationReviewMCP {
               arguments.tags.allSatisfy({ $0.count <= 60 }) else { throw MCPToolInputError.invalidArguments }
     }
 
+    /// Returns a diverse page of saved samples for the selected suite, with bounded previews and
+    /// current human-review metadata. Throws when the requested suite is not selected.
     @MainActor static func list(_ arguments: MCPReviewSamplesArguments, store: EvaluationStore) throws -> MCPToolPayload {
         guard arguments.suiteID == store.selectedSuiteID else { throw EvaluationReviewError.invalid("Select this suite before reading its review samples.") }
         let samples = EvaluationReviewWorkflow.diverseQueue(store.reviewSamples)
@@ -75,6 +80,8 @@ enum EvaluationReviewMCP {
             "nextOffset": offset + page.count < samples.count ? .integer(Int64(offset + page.count)) : .null]))
     }
 
+    /// Persists a pending review suggestion without applying a human verdict. Identical retries return
+    /// the existing proposal; reuse of its ID with different normalized content throws.
     @MainActor static func propose(_ arguments: MCPReviewProposalArguments, store: EvaluationStore) throws -> MCPToolPayload {
         guard arguments.suiteID == store.selectedSuiteID else { throw EvaluationReviewError.invalid("Select this suite before proposing a review.") }
         if let existing = store.suiteLocalState.review.proposals.first(where: { $0.id == arguments.proposalID }) {
@@ -93,10 +100,13 @@ enum EvaluationReviewMCP {
         return payload(id: arguments.proposalID, status: .pending, outcome: "committed")
     }
 
+    /// Builds the proposal receipt with its ID, review status, and mutation outcome.
     private static func payload(id: UUID, status: EvaluationReviewProposalStatus, outcome: String) -> MCPToolPayload {
         .init(structuredContent: .object(["outcome": .string(outcome), "proposalID": .string(id.uuidString), "status": .string(status.rawValue)]))
     }
+    /// Declares a schema property with the supplied JSON type.
     private static func field(_ type: String) -> MCPJSONValue { .object(["type": .string(type)]) }
+    /// Builds a closed object schema with explicit required properties for review tools.
     private static func schema(_ properties: [String: MCPJSONValue], required: [String]) -> MCPJSONValue {
         .object(["$schema": .string("https://json-schema.org/draft/2020-12/schema"),
                  "type": .string("object"), "properties": .object(properties),

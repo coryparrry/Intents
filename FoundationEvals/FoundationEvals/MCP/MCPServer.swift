@@ -12,6 +12,8 @@ actor MCPServer {
     private var stopping: (id: UUID, task: Task<Void, Never>)?
     private var generation: UUID?
 
+    /// Creates a loopback HTTP server and protocol handler with shared body/concurrency limits,
+    /// credential, and request/lifecycle callbacks. Does not bind a socket until start.
     init(
         port: Int = 17_873,
         authority: MCPAuthority,
@@ -34,6 +36,8 @@ actor MCPServer {
         )
     }
 
+    /// Binds the loopback listener and waits for its ready signal. Rejects overlapping starts or
+    /// teardown, drains a failed startup, and reports later unexpected stops through the callback.
     func start() async throws {
         guard serviceTask == nil, stopping == nil else { throw MCPServerError.alreadyRunning }
 
@@ -102,6 +106,8 @@ actor MCPServer {
         }
     }
 
+    /// Cancels the listener and waits for its service task, sharing one teardown task among concurrent
+    /// callers. Keeps teardown ownership until the listener and requests drain.
     func stop() async {
         let drain: (id: UUID, task: Task<Void, Never>)
         if let stopping {
@@ -120,6 +126,8 @@ actor MCPServer {
         if stopping?.id == drain.id { stopping = nil }
     }
 
+    /// Clears the current listener generation after termination and invokes its unexpected-stop
+    /// callback. Ignores stale generations and intentional stops whose ownership was already cleared.
     private func didStop(
         generation stoppedGeneration: UUID,
         unexpectedError: MCPServerError?
@@ -158,6 +166,9 @@ private struct MCPHummingbirdAdapter: Sendable {
     let handler: MCPProtocolHandler
     let maximumBodyBytes: Int
 
+    /// Adapts HTTP headers and performs preflight before collecting a bounded request body. Releases
+    /// admission on collection failure and returns 413; otherwise delegates protocol handling with the
+    /// reserved admission.
     func response(for request: Request, context: BasicRequestContext) async -> Response {
         var headers: [String: String] = [:]
         for field in request.headers {
@@ -197,6 +208,8 @@ private struct MCPHummingbirdAdapter: Sendable {
         return makeResponse(response)
     }
 
+    /// Converts protocol response headers and optional bytes into a Hummingbird response, omitting
+    /// invalid header names.
     private func makeResponse(_ response: MCPHTTPResponse) -> Response {
         var fields = HTTPFields()
         for (name, value) in response.headers.sorted(by: { $0.key < $1.key }) {
@@ -225,6 +238,8 @@ private actor MCPServerStartupSignal {
         return true
     }
 
+    /// Waits for the one startup outcome or returns its previously resolved result. Designed for a
+    /// single pending startup waiter.
     func wait() async throws {
         if let result {
             return try result.get()
@@ -234,14 +249,17 @@ private actor MCPServerStartupSignal {
         }
     }
 
+    /// Resolves startup successfully; later resolutions are ignored.
     func succeed() {
         resolve(.success(()))
     }
 
+    /// Resolves startup with the supplied listener error; later resolutions are ignored.
     func fail(_ error: MCPServerError) {
         resolve(.failure(error))
     }
 
+    /// Stores the first startup result and resumes its pending continuation exactly once.
     private func resolve(_ result: Result<Void, MCPServerError>) {
         guard self.result == nil else { return }
         self.result = result

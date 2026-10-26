@@ -14,6 +14,7 @@ enum EvaluationFieldAssertionOperation: String, Codable, CaseIterable, Identifia
     }
 }
 
+/// A deterministic check at a JSON pointer; expectedValue is unused for existence checks.
 struct EvaluationFieldAssertion: Identifiable, Codable, Hashable, Sendable {
     var id = UUID()
     var pointer = ""
@@ -21,6 +22,7 @@ struct EvaluationFieldAssertion: Identifiable, Codable, Hashable, Sendable {
     var expectedValue = ""
 }
 
+/// The original assertion and its observed JSON value, verdict, and explanation.
 struct EvaluationFieldAssertionResult: Identifiable, Codable, Hashable, Sendable {
     var id: UUID { assertion.id }
     var assertion: EvaluationFieldAssertion

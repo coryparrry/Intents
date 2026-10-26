@@ -25,9 +25,11 @@ final class TelemetryTransport: @unchecked Sendable {
     private var deliveryHandler: (@Sendable (TelemetryDelivery) -> Void)?
     private let lock = NSLock()
 
+    /// Creates and registers a transport bound to one HTTPS host, port and optional consent epoch.
+    /// The injected session configuration controls the forwarding session; redirects are refused.
     init(host: String, sessionConfiguration: URLSessionConfiguration = .ephemeral,
          allowsUsage: Bool = true, allowsDiagnostics: Bool = false, consentEpoch: UUID? = nil) {
-        session = URLSession(configuration: sessionConfiguration, delegate: TelemetryRedirectBlocker(), delegateQueue: nil)
+        session = URLSession(configuration: sessionConfiguration, delegate: EvaluationNoRedirectDelegate(), delegateQueue: nil)
         self.host = URL(string: host)?.host
         port = URL(string: host)?.port ?? 443
         self.allowsUsage = allowsUsage
@@ -43,15 +45,19 @@ final class TelemetryTransport: @unchecked Sendable {
         return configuration
     }
 
+    /// Resolves the transport named by the private SDK session header, returning nil after it has been unregistered.
     static func lookup(_ request: URLRequest) -> TelemetryTransport? {
         guard let id = request.value(forHTTPHeaderField: "X-Foundation-Telemetry-Session") else { return nil }
         return lock.withLock { transports[id] }
     }
 
+    /// Replaces the delivery callback under the transport lock.
     func setDeliveryHandler(_ handler: @escaping @Sendable (TelemetryDelivery) -> Void) {
         lock.withLock { deliveryHandler = handler }
     }
 
+    /// Forwards only approved HTTPS batch POSTs to the configured host after final payload filtering.
+    /// Returns discarded for fully revoked batches and blocked for invalid requests; completion runs only for forwarded network tasks.
     func send(_ request: URLRequest, completion: @escaping @Sendable (Data?, URLResponse?, (any Error)?) -> Void) -> TelemetryForwardingResult {
         lock.withLock {
             guard !stopped, request.url?.host == host, request.url?.scheme == "https",
@@ -141,6 +147,7 @@ final class TelemetryTransport: @unchecked Sendable {
         return try? JSONSerialization.data(withJSONObject: safePayload, options: [.sortedKeys])
     }
 
+    /// Inflates one complete gzip or zlib payload within 256 KiB, rejecting malformed streams, trailing bytes and expansion beyond the limit.
     private static func decompress(_ data: Data) -> Data? {
         var stream = z_stream()
         guard inflateInit2_(&stream, 15 + 32, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else { return nil }
@@ -165,6 +172,7 @@ final class TelemetryTransport: @unchecked Sendable {
         }
     }
 
+    /// Revokes this transport, cancels its session and removes it from the request-routing registry.
     func stop() {
         lock.withLock {
             stopped = true
@@ -176,8 +184,12 @@ final class TelemetryTransport: @unchecked Sendable {
 
 private final class TelemetryURLProtocol: URLProtocol, @unchecked Sendable {
     private var forwardingTask: URLSessionDataTask?
+    /// Intercepts every request on the SDK session so all destinations pass through the transport gate.
     override class func canInit(with request: URLRequest) -> Bool { true }
+    /// Preserves the original request for consent and endpoint validation by the registered transport.
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    /// Routes a request through its registered transport and reports forwarded responses without caching.
+    /// Locally acknowledges fully revoked batches to drain the SDK queue; that acknowledgment does not report server acceptance.
     override func startLoading() {
         guard let transport = TelemetryTransport.lookup(request) else {
             client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
@@ -202,13 +214,6 @@ private final class TelemetryURLProtocol: URLProtocol, @unchecked Sendable {
         case .blocked: client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
         }
     }
+    /// Cancels the forwarded network task when URL loading stops.
     override func stopLoading() { forwardingTask?.cancel() }
-}
-
-private final class TelemetryRedirectBlocker: NSObject, URLSessionTaskDelegate, Sendable {
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
-                    completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
-        completionHandler(nil)
-    }
 }

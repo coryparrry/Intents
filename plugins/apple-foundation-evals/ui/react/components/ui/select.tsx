@@ -3,12 +3,14 @@ import { cn } from "cn"
 import { Select as SelectPrimitive } from "radix-ui"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
+/** Provides Radix select value state and callbacks through the supplied root props. */
 function Select({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
   return <SelectPrimitive.Root data-slot="select" {...props} />
 }
 
+/** Groups select options with consistent padding inside the scrolling viewport. */
 function SelectGroup({
   className,
   ...props
@@ -22,12 +24,14 @@ function SelectGroup({
   )
 }
 
+/** Displays the selected option text or placeholder through the Radix value primitive. */
 function SelectValue({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Value>) {
   return <SelectPrimitive.Value data-slot="select-value" {...props} />
 }
 
+/** Renders the select control at the requested size with a trailing dropdown icon. */
 function SelectTrigger({
   className,
   size = "default",
@@ -54,6 +58,7 @@ function SelectTrigger({
   )
 }
 
+/** Ports select options into a positioned panel with a scroll viewport and directional scroll controls. */
 function SelectContent({
   className,
   children,
@@ -87,19 +92,7 @@ function SelectContent({
   )
 }
 
-function SelectLabel({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Label>) {
-  return (
-    <SelectPrimitive.Label
-      data-slot="select-label"
-      className={cn("px-1.5 py-1 text-xs text-muted-foreground", className)}
-      {...props}
-    />
-  )
-}
-
+/** Renders a keyboard-selectable option with Radix item text and a selected-state check indicator. */
 function SelectItem({
   className,
   children,
@@ -124,19 +117,7 @@ function SelectItem({
   )
 }
 
-function SelectSeparator({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Separator>) {
-  return (
-    <SelectPrimitive.Separator
-      data-slot="select-separator"
-      className={cn("pointer-events-none -mx-1 my-1 h-px bg-border", className)}
-      {...props}
-    />
-  )
-}
-
+/** Renders the Radix control for scrolling toward options above the visible viewport. */
 function SelectScrollUpButton({
   className,
   ...props
@@ -156,6 +137,7 @@ function SelectScrollUpButton({
   )
 }
 
+/** Renders the Radix control for scrolling toward options below the visible viewport. */
 function SelectScrollDownButton({
   className,
   ...props
@@ -180,10 +162,8 @@ export {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectScrollDownButton,
   SelectScrollUpButton,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 }

@@ -1,0 +1,9 @@
+{
+  "name": "intents-docstring-coverage",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@babel/parser": "7.28.5"
+  }
+}

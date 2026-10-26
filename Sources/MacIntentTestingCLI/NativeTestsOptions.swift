@@ -15,6 +15,7 @@ struct NativeTestsOptions {
     let command: Command
     let values: [String: String]
 
+    /// Parses catalog/run options, rejecting unknown, duplicate, missing, or empty values and out-of-range timeouts.
     init(_ arguments: [String]) throws {
         if arguments == ["--help"] || arguments == ["help"] || arguments == ["catalog", "--help"] || arguments == ["run", "--help"] {
             command = .help; values = [:]; return
@@ -51,6 +52,7 @@ struct NativeTestsOptions {
         values = parsed
     }
 
+    /// Builds a file URL from an option already required by the selected command; callers must request a validated key.
     func url(_ name: String) -> URL { URL(fileURLWithPath: values[name]!) }
     var configuration: MacIntentRunConfiguration {
         .init(developerDirectory: url("developer-dir"), signingIdentity: values["identity"]!,
@@ -60,12 +62,14 @@ struct NativeTestsOptions {
 }
 
 enum NativeTestsManifest {
+    /// Loads a case manifest of at most 16 MiB and decodes its authored cases.
     static func load(_ url: URL) throws -> [MacIntentTestCase] {
         let data = try Data(contentsOf: url)
         guard data.count <= 16 * 1024 * 1024 else { throw MacIntentTestingError("Cases manifest exceeds 16 MB.") }
         return try decode(data)
     }
 
+    /// Parses 1–100 strict case objects, preserving JSON inputs and optional scalar expected values while rejecting unknown fields.
     static func decode(_ data: Data) throws -> [MacIntentTestCase] {
         let raw: Any
         do { raw = try JSONSerialization.jsonObject(with: data) }
@@ -97,6 +101,7 @@ enum NativeTestsManifest {
         }
     }
 
+    /// Encodes a JSON object or scalar fragment with sorted keys for stable authored case text.
     private static func json(_ value: Any) throws -> String {
         String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed]), as: UTF8.self)
     }
@@ -106,6 +111,7 @@ struct NativeTestsIssuedCase: Encodable {
     let id: UUID
     let actionIdentifier: String
     let testMethod: String
+    /// Maps an authored case UUID to the generated XCTest method identifier retained in CLI evidence.
     init(_ test: MacIntentTestCase) {
         id = test.id; actionIdentifier = test.actionIdentifier
         testMethod = "MacIntentTests/test_" + test.id.uuidString.replacingOccurrences(of: "-", with: "_")
@@ -122,6 +128,7 @@ struct NativeTestsRunOutput: Encodable {
     let cases: [NativeTestsIssuedCase]
     /// Frozen authored inputs and expectations from the completed run.
     let authoredCases: [MacIntentTestCase]
+    /// Copies run evidence and frozen authored cases into the CLI response alongside the issued-case manifest location.
     init(result: MacIntentRunResult, caseManifestURL: URL, cases: [NativeTestsIssuedCase]) {
         succeeded = result.succeeded; resultBundleURL = result.resultBundleURL
         logURL = result.logURL; summary = result.summary

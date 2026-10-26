@@ -13,6 +13,9 @@ enum EvaluationWorkspacePersistence {
     /// Keep this outside state.json so losing the state cannot reopen migration.
     static let legacyStateMigrationFilename = "legacy-state-migration-complete-v1"
 
+    /// Loads and validates the catalog, repairing selections or creating a workspace from optional legacy storage.
+    /// Preserves unreadable bytes before rejecting a catalog; one-time state recovery revokes historical authority and returns a notice.
+    /// Required storage failures throw, while recoverable repair failures are reported in the bootstrap notice.
     static func bootstrap(
         in supportDirectory: URL,
         legacySuite: EvaluationSuite?
@@ -157,6 +160,7 @@ enum EvaluationWorkspacePersistence {
     private static let legacyMigrationNotice =
         "Existing legacy files were copied into the matching workspace suite where destinations were missing. The legacy files were left unchanged for recovery."
 
+    /// Creates the support directory and atomically writes the canonical workspace catalog, propagating storage failures.
     static func save(_ catalog: EvaluationWorkspaceCatalog, in supportDirectory: URL) throws {
         try FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
         try CanonicalJSON.data(for: catalog).write(
@@ -165,10 +169,13 @@ enum EvaluationWorkspacePersistence {
         )
     }
 
+    /// Preserves exact unreadable bytes in a digest-named recovery file before callers replace or reject saved data.
     static func preserveUnreadableFile(_ data: Data, in directory: URL, prefix: String) throws {
         try preserveState(data, in: directory, prefix: prefix)
     }
 
+    /// Requires the supported format and unique nonempty project and suite collections.
+    /// Repairs invalid selections to an active entry when possible; malformed catalog structure throws.
     private static func validatedCatalog(_ catalog: EvaluationWorkspaceCatalog) throws -> EvaluationWorkspaceCatalog {
         guard catalog.formatVersion == EvaluationWorkspaceCatalog.currentFormatVersion,
               !catalog.projects.isEmpty else {
@@ -205,6 +212,7 @@ enum EvaluationWorkspacePersistence {
         return repaired
     }
 
+    /// Returns the project-and-suite UUID storage directory without creating it.
     static func suiteDirectory(
         supportDirectory: URL,
         projectID: UUID,
@@ -217,6 +225,7 @@ enum EvaluationWorkspacePersistence {
             .appending(path: suiteID.uuidString, directoryHint: .isDirectory)
     }
 
+    /// Creates the suite directory and its Attachments and Runs subdirectories, propagating filesystem errors.
     static func createSuiteDirectories(at suiteDirectory: URL) throws {
         try FileManager.default.createDirectory(at: suiteDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(
@@ -229,6 +238,7 @@ enum EvaluationWorkspacePersistence {
         )
     }
 
+    /// Resolves a repository definition only when the project has a root and the suite has a lexically safe relative path.
     static func repositoryDefinitionURL(
         project: EvaluationProject,
         suite: EvaluationSuiteRecord
@@ -240,16 +250,21 @@ enum EvaluationWorkspacePersistence {
             .appending(path: relativePath)
     }
 
+    /// Hashes canonical compact definition JSON to identify repository revisions; encoding failures propagate.
     static func definitionRevision(_ definition: EvaluationSuiteDefinition) throws -> String {
         let data = try CanonicalJSON.data(for: definition, prettyPrinted: false)
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Rejects empty or absolute paths, backslashes and parent-traversal components.
+    /// This is a lexical check and does not inspect filesystem symlinks.
     static func safeRelativePath(_ path: String) -> Bool {
         guard !path.isEmpty, !path.hasPrefix("/"), !path.contains("\\") else { return false }
         return !path.split(separator: "/", omittingEmptySubsequences: false).contains("..")
     }
 
+    /// Copies legacy suite files and directory children only when destinations are absent, leaving source bytes untouched.
+    /// Returns whether anything was copied; unreadable directory listings are skipped and copy failures throw.
     static func copyLegacyStorage(from source: URL, to target: URL) throws -> Bool {
         let mappings = [
             (source.appending(path: "suite.json"), target.appending(path: "suite.json")),
@@ -283,10 +298,12 @@ enum EvaluationWorkspacePersistence {
         return copied
     }
 
+    /// Treats the presence of the migration marker as completion, including when its contents cannot be read.
     static func hasCompletedLegacyStateMigration(in directory: URL) -> Bool {
         FileManager.default.fileExists(atPath: directory.appending(path: legacyStateMigrationFilename).path)
     }
 
+    /// Atomically seals legacy-state migration once so missing state cannot reactivate historical approval import.
     private static func completeLegacyStateMigration(in directory: URL) throws {
         let url = directory.appending(path: legacyStateMigrationFilename)
         guard !FileManager.default.fileExists(atPath: url.path) else { return }
@@ -294,6 +311,8 @@ enum EvaluationWorkspacePersistence {
             .write(to: url, options: .atomic)
     }
 
+    /// Recovers valid legacy state only before migration is sealed and when current state is missing or unreadable.
+    /// Preserves original bytes, revokes approvals, clears corrections and judge checks, and resets experiment decisions before atomic replacement.
     private static func recoverUnmigratedLegacyState(from source: URL, to target: URL) throws -> Bool {
         guard !hasCompletedLegacyStateMigration(in: target) else { return false }
         let destination = target.appending(path: "state.json")
@@ -338,6 +357,8 @@ enum EvaluationWorkspacePersistence {
         return true
     }
 
+    /// Writes exact bytes to a SHA-256-named backup, reusing an existing file only when its bytes match.
+    /// Throws on conflicting backup contents or read and write failures.
     private static func preserveState(_ data: Data, in directory: URL, prefix: String) throws {
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let backup = directory.appending(path: "\(prefix)-\(digest).json", directoryHint: .notDirectory)
@@ -370,6 +391,7 @@ enum EvaluationWorkspaceError: LocalizedError, Sendable {
 }
 
 enum EvaluationRepositoryInspector {
+    /// Captures Git HEAD and dirty state with bounded subprocesses; failures return unavailable fields and an error message.
     static func snapshot(
         rootPath: String,
         gitExecutable: URL = URL(filePath: "/usr/bin/git"),
@@ -397,6 +419,8 @@ enum EvaluationRepositoryInspector {
         }
     }
 
+    /// Runs a fixed Git inspection with restricted environment, bounded output and a deadline.
+    /// Throws on cancellation, process failure, timeout or output overflow and stops its owned child before returning failure.
     private static func runGit(
         _ operation: GitOperation, rootPath: String, executable: URL, timeout: Duration
     ) async throws -> String {
@@ -423,6 +447,7 @@ enum EvaluationRepositoryInspector {
         try process.run()
         let deadline = ContinuousClock.now.advanced(by: timeout)
         let outputLimit = 1_048_576
+        /// Requires both subprocess output files to remain within the one-megabyte limit.
         func checkOutputBounds() throws {
             for url in [stdoutURL, stderrURL] {
                 let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
@@ -431,6 +456,7 @@ enum EvaluationRepositoryInspector {
                 }
             }
         }
+        /// Reads at most one byte beyond the output limit to detect overflow before returning file bytes.
         func readBounded(_ url: URL) throws -> Data {
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
@@ -465,6 +491,7 @@ enum EvaluationRepositoryInspector {
         }
     }
 
+    /// Kills only the owned running subprocess and waits up to two seconds in detached cleanup so cancellation cannot interrupt cleanup.
     private static func stopOwnedProcess(_ process: Process) async {
         guard process.isRunning else { return }
         // Process observes and reaps its child itself. waitUntilExit can strand a

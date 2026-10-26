@@ -59,6 +59,8 @@ enum MCPActionDiscovery {
   }()
   static let names = Set(definitions.map(\.name))
 
+  /// Validates discovery arguments and resolves descriptions or typed action calls. Invocation enforces
+  /// the target's read/write annotation and original parser, and excludes recursive discovery actions.
   static func parse(name: String, arguments: MCPJSONValue) throws -> MCPToolCall {
     guard let definition = definitions.first(where: { $0.name == name }) else {
       throw MCPToolInputError.unknownTool
@@ -91,6 +93,7 @@ enum MCPActionDiscovery {
     }
   }
 
+  /// Classifies an action name into the discovery domain using its prefix and workflow keywords.
   static func domain(_ name: String) -> String {
     if name.hasPrefix("eval_production_") { return "production" }
     if name.hasPrefix("eval_runner_") { return "runners" }
@@ -109,6 +112,8 @@ enum MCPActionDiscovery {
     return "evaluations"
   }
 
+  /// Measures default and complete action catalogs as tool counts and encoded UTF-8 schema bytes.
+  /// Encoding failures propagate.
   static func metrics() throws -> MCPJSONValue {
     let actions = availableDefinitions()
     let compact = try MCPJSONValue.encode(MCPToolCatalog.definitions).jsonText().utf8.count
@@ -120,10 +125,15 @@ enum MCPActionDiscovery {
     ])
   }
 
+  /// Returns the full original action definitions used by search, descriptions, and delegated
+  /// invocation.
   static func availableDefinitions() -> [MCPToolDefinition] {
     MCPToolCatalog.allDefinitions
   }
 
+  /// Returns one exact action schema or a ranked, paginated summary search. Search requires every query
+  /// word and an optional domain match; unavailable definitions or encoding failures return a discovery
+  /// error payload.
   static func respond(_ call: MCPActionCatalogCall) -> MCPToolPayload {
     let definitions = availableDefinitions()
     do {
@@ -145,6 +155,8 @@ enum MCPActionDiscovery {
           return (requestedDomain == nil || domain(value.name) == requestedDomain)
             && words.allSatisfy { text.contains($0) }
         }.sorted { a, b in
+          /// Prioritizes an exact action-name match, then counts query words present in its name for
+          /// search ordering.
           func rank(_ value: MCPToolDefinition) -> Int {
             if value.name == query { return Int.max }
             return words.filter { value.name.contains($0) }.count

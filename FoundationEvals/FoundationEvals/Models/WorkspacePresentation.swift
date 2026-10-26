@@ -27,6 +27,7 @@ enum SuiteCheckState: String, Sendable {
         }
     }
 
+    /// Returns not-run without evidence, marks draft or revision changes stale, and otherwise uses the saved run's outcome.
     static func evaluate(run: EvaluationRun?, currentRevision: String, hasDraft: Bool) -> Self {
         guard let run else { return .notRun }
         if hasDraft || run.suiteRevision != currentRevision { return .changed }
@@ -84,11 +85,13 @@ struct SuiteOverviewSummary: Identifiable, Sendable {
         }?.id
     }
 
+    /// Creates an unloaded overview entry using the catalog identity and name.
     init(record: EvaluationSuiteRecord) {
         id = record.id
         name = record.name
     }
 
+    /// Summarizes ordinary suite runs, current draft state, approved baseline, and recent history while excluding prompt-improvement runs.
     init(record: EvaluationSuiteRecord, suite: EvaluationSuite, currentRevision: String,
          draft: EvaluationSuite?, runs: [EvaluationRun], localState: EvaluationSuiteLocalState) {
         let runs = runs.filter { $0.promptImprovementID == nil }
@@ -111,6 +114,7 @@ struct SuiteOverviewSummary: Identifiable, Sendable {
 }
 
 extension SuiteHistoryPoint {
+    /// Selects the most recent runs by durable sequence and start time, then orders the selected chart points chronologically.
     static func recent(_ runs: [EvaluationRun], limit: Int = 24) -> [SuiteHistoryPoint] {
         runs.sorted { ($0.historySequence ?? 0, $0.startedAt) < ($1.historySequence ?? 0, $1.startedAt) }
             .suffix(limit).sorted { $0.startedAt < $1.startedAt }.map {
@@ -122,6 +126,7 @@ extension SuiteHistoryPoint {
 }
 
 enum BaselinePresentation {
+    /// Returns the approved run with its approved assessment selected; legacy approvals restore original scores and missing assessment evidence returns nil.
     static func approvedRun(approval: EvaluationBaselineApproval?, runs: [EvaluationRun]) -> EvaluationRun? {
         guard let approval, var run = runs.first(where: { $0.id == approval.runID }) else { return nil }
         if let assessmentID = approval.assessmentID {

@@ -11,7 +11,7 @@ struct ConversationTraceSection: View {
                         label: "Restored history",
                         value: "\(trace.restoredEntryCount) entr\(trace.restoredEntryCount == 1 ? "y" : "ies")"
                     )
-                    ConversationTraceMetric(label: "History policy", value: historyPolicyTitle)
+                    ConversationTraceMetric(label: "History policy", value: historyPolicyTitle(trace.historyPolicy))
                     ConversationTraceMetric(
                         label: "Model-facing history",
                         value: modelHistoryProjectionTitle
@@ -42,14 +42,6 @@ struct ConversationTraceSection: View {
                 }
             }
             .padding(.top, 8)
-        }
-    }
-
-    private var historyPolicyTitle: String {
-        switch trace.historyPolicy {
-        case .keepAll: "Keep all history"
-        case .resetBeforeFinal: "Reset before scored prompt"
-        case .retainRecentCompleteTurns: "Retain recent complete turns"
         }
     }
 

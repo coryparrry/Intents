@@ -2,11 +2,13 @@ import Foundation
 
 public struct ProductionCapturedContext: Codable, Sendable {
     public let kind: String
+    /// Selects the versioned context marker for reviewing captured outputs without inference.
     public init() { kind = "captured-output-review-v1" }
 }
 
 extension ProductionStorage {
     /// Captured outputs are retained verbatim for review; inference is never re-run.
+    /// - Throws: An invalid-input error if any example lacks its original output, or dataset/job/storage errors.
     public func createCapturedJob(name: String, datasetRevision: String, id: UUID = UUID()) throws -> ProductionJob {
         let context = try ProductionCodec.encode(ProductionCapturedContext())
         let config = ProductionJobConfiguration(scoringRevision: ProductionCodec.digest(Data("human-review-v1".utf8)),
@@ -17,6 +19,8 @@ extension ProductionStorage {
         }
         return try createJob(name: name, datasetRevision: datasetRevision, configuration: config, id: id)
     }
+    /// Returns the original captured output and feedback as unscored evidence with unavailable latency and zero new execution cost.
+    /// - Throws: An invalid-context error when the frozen marker or captured output is missing.
     public static func capturedResponse(_ request: ProductionRequest) throws -> ProductionResponse {
         let context = try ProductionCodec.decode(ProductionCapturedContext.self, request.configuration.executionContext)
         guard context.kind == "captured-output-review-v1", let output = request.example.capturedOutput else {
@@ -26,6 +30,8 @@ extension ProductionStorage {
                      explanation: request.example.feedback, latencyAvailable: false, cost: 0)
     }
     /// A consistent evidence snapshot. Nothing is removed from the active store.
+    /// - Parameter destination: A new absolute directory for the job, dataset, reviews, and computed report.
+    /// - Throws: An invalid-destination error, evidence validation errors, or file-system errors; temporary staging is cleaned up.
     public func exportJob(_ id: UUID, to destination: URL) throws {
         guard destination.isFileURL, destination.path.hasPrefix("/"), !FileManager.default.fileExists(atPath: destination.path) else {
             throw ProductionFailure.invalid("Choose a new absolute export directory.")

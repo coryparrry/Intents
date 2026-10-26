@@ -1,6 +1,7 @@
 import { text, obj, uuid } from './app-schema.mjs';
 
 const expectedRevision = text(64, 1);
+/** Builds a workflow MCP tool with a closed argument schema and read-only or mutation annotations. */
 const tool = (name, title, description, properties, required, readOnly = true) => ({ name, title, description, inputSchema: obj(properties, required), annotations: { readOnlyHint: readOnly, destructiveHint: false, idempotentHint: readOnly, openWorldHint: false } });
 export const WORKFLOW_TOOLS = [
   tool('eval_create_experiment', 'Create instruction experiment', 'Freeze current and candidate instructions with the actual app scoring and case contracts.', { suiteId: uuid, name: text(160, 1), candidateInstructions: text(32000, 1), expectedRevision }, ['suiteId', 'name', 'candidateInstructions'], false),

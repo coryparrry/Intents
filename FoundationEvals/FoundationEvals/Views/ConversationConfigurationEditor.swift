@@ -77,6 +77,7 @@ private struct SetupTurnsEditor: View {
         }
     }
 
+    /// Binds a setup-turn prompt by stable ID, returning empty text and ignoring writes if the turn has been removed.
     private func binding(for id: UUID) -> Binding<String> {
         Binding(
             get: { configuration.setupTurns.first(where: { $0.id == id })?.prompt ?? "" },
@@ -87,6 +88,7 @@ private struct SetupTurnsEditor: View {
         )
     }
 
+    /// Swaps a setup turn with its offset neighbor only when both positions still exist.
     private func move(_ id: UUID, offset: Int) {
         guard let source = configuration.setupTurns.firstIndex(where: { $0.id == id }) else { return }
         let destination = source + offset
@@ -253,7 +255,8 @@ private struct HistoryPolicyEditor: View {
     }
 }
 
-private func historyPolicyTitle(_ policy: EvaluationHistoryPolicy) -> String {
+/// Returns the editor title for a conversation history retention policy.
+func historyPolicyTitle(_ policy: EvaluationHistoryPolicy) -> String {
     switch policy {
     case .keepAll: "Keep all history"
     case .resetBeforeFinal: "Reset before scored prompt"
@@ -261,6 +264,7 @@ private func historyPolicyTitle(_ policy: EvaluationHistoryPolicy) -> String {
     }
 }
 
+/// Explains which setup history the scored prompt receives under the chosen policy.
 private func historyPolicyDetail(_ policy: EvaluationHistoryPolicy) -> String {
     switch policy {
     case .keepAll:
@@ -272,6 +276,7 @@ private func historyPolicyDetail(_ policy: EvaluationHistoryPolicy) -> String {
     }
 }
 
+/// Returns the editor title for projecting stored conversation history into the model.
 private func modelProjectionTitle(_ policy: EvaluationModelHistoryProjectionPolicy) -> String {
     switch policy {
     case .keepAll: "Keep all stored history"

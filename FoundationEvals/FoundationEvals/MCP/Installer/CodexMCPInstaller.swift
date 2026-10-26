@@ -7,6 +7,8 @@ struct CodexMCPConfiguration: Equatable, Sendable {
 
     let port: Int
     let credential: String
+    /// Validates an unprivileged port and a 43-byte URL-safe credential before creating the local
+    /// endpoint configuration. Throws for either invalid value.
     init(port: Int = Self.defaultPort, credential: String) throws {
         guard (1_024...65_535).contains(port) else {
             throw CodexMCPInstallerError.invalidPort
@@ -135,6 +137,9 @@ struct MCPCredentialStore {
         }
     ) }
 
+    /// Returns the stored credential, or securely generates and saves 32 random bytes as URL-safe
+    /// base64. If another writer wins Keychain insertion, reloads its credential; storage and
+    /// random-generation failures propagate.
     func loadOrCreate() throws -> String {
         if let existing = try load() { return existing }
         var bytes = [UInt8](repeating: 0, count: 32)
@@ -183,6 +188,8 @@ struct CodexMCPInstaller {
     private let fileManager: FileManager
     private let beforeFingerprintRecheck: (URL) throws -> Void
 
+    /// Creates an installer with injectable filesystem access and a hook run immediately before the
+    /// coordinated fingerprint recheck.
     init(
         fileManager: FileManager = .default,
         beforeFingerprintRecheck: @escaping (URL) throws -> Void = { _ in }
@@ -191,6 +198,8 @@ struct CodexMCPInstaller {
         self.beforeFingerprintRecheck = beforeFingerprintRecheck
     }
 
+    /// Checks for well-formed managed markers without creating the configuration directory. Unsafe
+    /// files, invalid UTF-8, and malformed managed markers throw.
     func isInstalled(in directory: URL) throws -> Bool {
         guard try prepare(directory, createIfMissing: false) else { return false }
         let snapshot = try readConfig(in: directory)
@@ -200,6 +209,8 @@ struct CodexMCPInstaller {
         return try Self.managedRange(in: text) != nil
     }
 
+    /// Checks that the managed block contains the exact endpoint and credential and that group/other
+    /// permission bits are clear. Does not create missing configuration.
     func isInstalled(in directory: URL, matching configuration: CodexMCPConfiguration) throws -> Bool {
         guard try prepare(directory, createIfMissing: false) else { return false }
         let snapshot = try readConfig(in: directory)
@@ -211,6 +222,10 @@ struct CodexMCPInstaller {
             && snapshot.permissions & 0o077 == 0
     }
 
+    /// Installs or replaces the managed entry and restricts config.toml to mode 0600, preserving
+    /// surrounding text. Changed content receives a restricted backup and verified replacement;
+    /// malformed, conflicting, or concurrently changed configuration throws. The receipt identifies the
+    /// change and backup.
     func installOrUpdate(
         in directory: URL,
         configuration: CodexMCPConfiguration
@@ -243,6 +258,8 @@ struct CodexMCPInstaller {
         )
     }
 
+    /// Removes the managed block, preserving other configuration and backing up changed content.
+    /// Missing configuration is unchanged; validation, replacement, and rollback failures propagate.
     func remove(from directory: URL) throws -> CodexMCPInstallReceipt {
         guard try prepare(directory, createIfMissing: false) else {
             return CodexMCPInstallReceipt(
@@ -274,15 +291,17 @@ struct CodexMCPInstaller {
         )
     }
 
+    /// Returns configuration text with the managed block replaced or appended. Validates the unmanaged
+    /// TOML subset and rejects an existing unmanaged foundation-evals entry; performs no filesystem
+    /// writes.
     static func installing(
         configuration: CodexMCPConfiguration,
         into original: String
     ) throws -> String {
         let managed = try managedRange(in: original)
         let unmanaged = managed.map { original.replacingCharacters(in: $0, with: "") } ?? original
-        try validateTOML(unmanaged)
-        guard !(try containsConflictingEntry(unmanaged)) else {
-            throw CodexMCPInstallerError.conflictingConfiguration
+        if let installationError = try inspectTOML(unmanaged) {
+            throw installationError
         }
 
         if let managed {
@@ -296,6 +315,9 @@ struct CodexMCPInstaller {
         return original + separator + configuration.tomlBlock + "\n"
     }
 
+    /// Returns text with the managed block and an adjacent separator removed, then validates the
+    /// remainder. Missing markers leave text unchanged; malformed markers or malformed remaining TOML
+    /// throw.
     static func removingManagedBlock(from original: String) throws -> String {
         guard let managed = try managedRange(in: original) else { return original }
         var removal = managed
@@ -314,7 +336,7 @@ struct CodexMCPInstaller {
             }
         }
         let updated = original.replacingCharacters(in: removal, with: "")
-        try validateTOML(updated)
+        _ = try inspectTOML(updated)
         return updated
     }
 
@@ -329,6 +351,9 @@ struct CodexMCPInstaller {
         }
     }
 
+    /// Reads a bounded regular config.toml file and captures its bytes and permissions for later
+    /// conflict checks. A missing file yields an empty snapshot; unsafe targets and oversized files
+    /// throw.
     private func readConfig(in directory: URL) throws -> ConfigSnapshot {
         guard try prepare(directory, createIfMissing: false) else {
             throw CodexMCPInstallerError.invalidDirectory
@@ -354,6 +379,8 @@ struct CodexMCPInstaller {
         )
     }
 
+    /// Validates a local nonsymlink configuration directory, optionally creating it with mode 0700.
+    /// Returns false when it is absent and creation is disabled.
     private func prepare(_ directory: URL, createIfMissing: Bool) throws -> Bool {
         guard directory.isFileURL else {
             throw CodexMCPInstallerError.invalidDirectory
@@ -382,6 +409,9 @@ struct CodexMCPInstaller {
         return true
     }
 
+    /// Writes a mode-0600 backup of existing configuration, replaces it after a fingerprint check, and
+    /// verifies bytes and permissions. Verification failures attempt restoration; returns the backup
+    /// URL when one was written. Backups retain any credentials in the prior configuration.
     private func commit(_ data: Data, replacing before: ConfigSnapshot) throws -> URL? {
         let directory = before.url.deletingLastPathComponent()
         let backupURL = before.existed
@@ -425,6 +455,8 @@ struct CodexMCPInstaller {
         return backupURL
     }
 
+    /// Restores a previous file and its permissions, or removes a newly created file when the snapshot
+    /// represented absence. Filesystem failures propagate.
     private func restore(_ before: ConfigSnapshot) throws {
         if before.existed {
             try replaceAtomically(before.data, at: before.url, permissions: before.permissions)
@@ -433,6 +465,8 @@ struct CodexMCPInstaller {
         }
     }
 
+    /// Stages bytes beside the destination with the requested permissions and replaces or moves the
+    /// file into place. Rejects an existing symlink and removes the temporary file on exit.
     private func replaceAtomically(_ data: Data, at url: URL, permissions: Int) throws {
         try rejectSymbolicLinkIfPresent(at: url)
         let temporaryURL = url.deletingLastPathComponent().appending(
@@ -453,6 +487,8 @@ struct CodexMCPInstaller {
         }
     }
 
+    /// Creates a temporary file with the requested permissions, writes all bytes, synchronizes, and
+    /// closes it. Creation and I/O failures throw.
     private func writeTemporary(_ data: Data, at url: URL, permissions: Int) throws {
         guard fileManager.createFile(
             atPath: url.path,
@@ -467,6 +503,9 @@ struct CodexMCPInstaller {
         try handle.close()
     }
 
+    /// Coordinates replacement with other file presenters and rechecks existence and content
+    /// fingerprint before moving staged bytes. Throws on a changed target, coordination failure, or
+    /// filesystem error.
     private func coordinatedReplace(_ temporaryURL: URL, replacing before: ConfigSnapshot) throws {
         var coordinationError: NSError?
         var operationError: Error?
@@ -501,6 +540,8 @@ struct CodexMCPInstaller {
         if coordinationError != nil { throw CodexMCPInstallerError.concurrentModification }
     }
 
+    /// Requires the existing target to be a regular file and not a symbolic link; otherwise throws
+    /// unsafeFile.
     private func rejectNonRegularOrSymbolicLink(at url: URL) throws {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard values.isRegularFile == true, values.isSymbolicLink != true else {
@@ -508,6 +549,7 @@ struct CodexMCPInstaller {
         }
     }
 
+    /// Rejects a symbolic link when the target exists; absent targets pass without creating a file.
     private func rejectSymbolicLinkIfPresent(at url: URL) throws {
         guard fileManager.fileExists(atPath: url.path) else { return }
         let values = try url.resourceValues(forKeys: [.isSymbolicLinkKey])
@@ -523,6 +565,8 @@ struct CodexMCPInstaller {
         enum Kind { case begin, end }
     }
 
+    /// Finds one ordered pair of top-level managed markers, ignoring markers within multiline values.
+    /// Returns nil when absent and throws for incomplete or duplicate marker pairs.
     private static func managedRange(in text: String) throws -> Range<String.Index>? {
         var markers: [ManagedLine] = []
         var squareDepth = 0
@@ -564,13 +608,17 @@ struct CodexMCPInstaller {
         let equalsIndex: String.Index?
     }
 
-    private static func validateTOML(_ text: String) throws {
+    /// Validates the supported TOML structure and returns its first unmanaged MCP conflict or unsafe
+    /// inline namespace. Defers that installation error until all structural checks pass, so malformed
+    /// input still wins; callers that only validate may ignore the result. This is not a full parser.
+    private static func inspectTOML(_ text: String) throws -> CodexMCPInstallerError? {
         let statements = try statements(in: text)
         var section: [String] = []
         var sectionOccurrence = 0
         var tables = Set<String>()
         var arrayTableOccurrences: [String: Int] = [:]
         var values = Set<String>()
+        var installationError: CodexMCPInstallerError?
 
         for statement in statements {
             let trimmed = statement.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -592,6 +640,9 @@ struct CodexMCPInstaller {
                 } else {
                     sectionOccurrence = 0
                 }
+                if installationError == nil, section.starts(with: ["mcp_servers", "foundation-evals"]) {
+                    installationError = .conflictingConfiguration
+                }
                 continue
             }
 
@@ -607,42 +658,25 @@ struct CodexMCPInstaller {
             guard isSupportedTOMLValue(value) else {
                 throw CodexMCPInstallerError.malformedConfiguration
             }
-        }
-    }
-
-    private static func containsConflictingEntry(_ text: String) throws -> Bool {
-        guard let statements = try? statements(in: text) else { return true }
-        var section: [String] = []
-        for statement in statements {
-            let trimmed = statement.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.hasPrefix("[") {
-                let isArray = trimmed.hasPrefix("[[")
-                let leading = isArray ? 2 : 1
-                let trailing = isArray ? 2 : 1
-                let body = String(trimmed.dropFirst(leading).dropLast(trailing))
-                guard let path = try? keyPath(body) else { return true }
-                section = path
-                if path.starts(with: ["mcp_servers", "foundation-evals"]) { return true }
-                continue
-            }
-
-            guard let equals = statement.equalsIndex else { return true }
-            let lhs = String(statement.text[..<equals])
-            guard let path = try? keyPath(lhs) else { return true }
-            let effective = section + path
-            if effective.starts(with: ["mcp_servers", "foundation-evals"]) { return true }
-            if effective == ["mcp_servers"] {
-                let value = statement.text[statement.text.index(after: equals)...]
-                if inlineTableDefinesFoundationEvals(String(value)) { return true }
-                if value.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
-                    // TOML inline tables cannot be extended by an appended server table.
-                    throw CodexMCPInstallerError.unsupportedConfiguration
+            if installationError == nil {
+                if path.starts(with: ["mcp_servers", "foundation-evals"]) {
+                    installationError = .conflictingConfiguration
+                } else if path == ["mcp_servers"] {
+                    if inlineTableDefinesFoundationEvals(value) {
+                        installationError = .conflictingConfiguration
+                    } else if value.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
+                        // TOML inline tables cannot be extended by an appended server table.
+                        installationError = .unsupportedConfiguration
+                    }
                 }
             }
         }
-        return false
+        return installationError
     }
 
+    /// Collects logical TOML statements across multiline strings, arrays, and inline tables, stripping
+    /// comments. Throws for unbalanced delimiters, incomplete strings, or malformed assignments and
+    /// table headers.
     private static func statements(in text: String) throws -> [TOMLStatement] {
         var result: [TOMLStatement] = []
         var pending = ""
@@ -688,6 +722,8 @@ struct CodexMCPInstaller {
         return result
     }
 
+    /// Removes an unquoted trailing comment while updating array, brace, and multiline-string state for
+    /// the next line. Throws for unmatched single-line quotes or invalid delimiter depth.
     private static func uncommented(
         _ line: String,
         squareDepth: inout Int,
@@ -778,6 +814,8 @@ struct CodexMCPInstaller {
         return output
     }
 
+    /// Finds the first equals sign outside quoted text, honoring escapes in double-quoted keys; returns
+    /// nil when absent.
     private static func unquotedEquals(in text: String) -> String.Index? {
         var quote: Character?
         var escaped = false
@@ -800,6 +838,8 @@ struct CodexMCPInstaller {
         return nil
     }
 
+    /// Recognizes the scalar and container value forms accepted by the structural validator without
+    /// fully parsing their contents.
     private static func isSupportedTOMLValue(_ source: String) -> Bool {
         let value = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let first = value.first, let last = value.last else { return false }
@@ -841,12 +881,16 @@ struct CodexMCPInstaller {
             && (value.contains("-") || value.contains(":"))
     }
 
+    /// Splits dotted TOML keys outside quotes and decodes supported quoted or bare components. Throws
+    /// for malformed quoting, empty components, escaped basic keys, or unsupported bare-key characters.
     private static func keyPath(_ text: String) throws -> [String] {
         var components: [String] = []
         var component = ""
         var quote: Character?
         var escaped = false
 
+        /// Validates and appends the accumulated key component, then clears its buffer. Rejects empty
+        /// or unsupported keys instead of guessing their interpretation.
         func appendComponent() throws {
             let value = component.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty else { throw CodexMCPInstallerError.malformedConfiguration }
@@ -894,6 +938,8 @@ struct CodexMCPInstaller {
         return components
     }
 
+    /// Checks whether an inline-table value contains a foundation-evals assignment, including quoted
+    /// key spellings.
     private static func inlineTableDefinesFoundationEvals(_ value: String) -> Bool {
         guard value.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") else {
             return false

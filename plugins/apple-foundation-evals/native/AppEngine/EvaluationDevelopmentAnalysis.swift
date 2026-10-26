@@ -1,7 +1,13 @@
 import Foundation
 
+enum EvaluationDevelopmentLimits {
+    static let maximumPlannedSamples = 100
+}
+
 @available(macOS 27.0, *)
 enum EvaluationExperimentAnalyzer {
+    /// Compares per-case pass rates and requires complete compatible scored coverage before suggesting a winner.
+    /// Confidence uses distinct discordant cases, so extra repetitions do not increase case coverage.
     static func summarize(
         current: EvaluationRun,
         candidate: EvaluationRun
@@ -77,6 +83,8 @@ enum EvaluationExperimentAnalyzer {
         )
     }
 
+    /// Alternates which variant runs first in each case-repetition pair.
+    /// Returns an empty order for duplicate variant IDs, invalid counts, overflow or excessive planned samples.
     static func balancedOrder(
         currentID: UUID,
         candidateID: UUID,
@@ -85,23 +93,26 @@ enum EvaluationExperimentAnalyzer {
     ) -> [UUID] {
         let (sampleCount, overflowed) = caseCount.multipliedReportingOverflow(by: repetitions)
         guard caseCount > 0, repetitions > 0, currentID != candidateID,
-              !overflowed, sampleCount <= AppEngineValidation.maximumPlannedSamples else { return [] }
+              !overflowed, sampleCount <= EvaluationDevelopmentLimits.maximumPlannedSamples else { return [] }
         return (0..<sampleCount).flatMap { index in
             index.isMultiple(of: 2) ? [currentID, candidateID] : [candidateID, currentID]
         }
     }
 
+    /// Returns the fraction of passed results among pass/fail scores, or nil when no result is scored.
     private static func passRate(_ results: [EvaluationSampleResult]) -> Double? {
         let scored = results.filter { $0.status == .passed || $0.status == .failed }
         guard !scored.isEmpty else { return nil }
         return Double(scored.count { $0.status == .passed }) / Double(scored.count)
     }
 
+    /// Detects execution or judge errors even when the stored status alone does not mark an error.
     private static func hasError(_ result: EvaluationSampleResult) -> Bool {
         result.status == .error || result.errorCategory != nil || result.errorMessage != nil
             || result.judgeErrorCategory != nil || result.judgeErrorMessage != nil
     }
 
+    /// Requires one uniquely identified sample for every repetition from one through the planned count.
     private static func hasCompleteRepetitions(
         _ results: [EvaluationSampleResult],
         count: Int
@@ -112,6 +123,7 @@ enum EvaluationExperimentAnalyzer {
             && Set(results.map(\.id)).count == results.count
     }
 
+    /// Returns the middle sorted value or mean of the middle pair, and nil for an empty collection.
     private static func median(_ values: [Double]) -> Double? {
         guard !values.isEmpty else { return nil }
         let sorted = values.sorted()
@@ -136,6 +148,8 @@ enum EvaluationExperimentAnalyzer {
 
 @available(macOS 27.0, *)
 enum EvaluationReleaseCheckEvaluator {
+    /// Evaluates a suite release policy against current saved evidence and any explicitly approved baseline.
+    /// Rejects stale revisions, incomplete coverage, incompatible scoring or judge provenance before treating regressions as acceptable evidence.
     static func report(
         projectID: UUID,
         suite: EvaluationSuite,
@@ -152,7 +166,7 @@ enum EvaluationReleaseCheckEvaluator {
         if currentScoringContract == nil {
             incomplete.append("The current scoring contract could not be captured.")
         }
-        if !(0...(AppEngineValidation.maximumPlannedSamples * 2)).contains(policy.maximumErrorCount)
+        if !(0...(EvaluationDevelopmentLimits.maximumPlannedSamples * 2)).contains(policy.maximumErrorCount)
             || !policy.maximumPassRateRegression.isFinite
             || !(0...1).contains(policy.maximumPassRateRegression)
             || policy.maximumAverageLatencyMilliseconds.map({ !$0.isFinite || $0 < 0 }) == true
@@ -323,6 +337,7 @@ enum EvaluationReleaseCheckEvaluator {
                       incomplete: incomplete, regressions: regressions, execution: execution)
     }
 
+    /// Requires exactly one uniquely identified result for every planned case and repetition, rejecting overflow and duplicate coordinates.
     private static func hasCompleteSampleCoordinates(_ run: EvaluationRun) -> Bool {
         let plannedCases = run.plannedCases ?? run.suiteDefinition?.cases ?? []
         guard run.repetitions > 0, !plannedCases.isEmpty else { return false }
@@ -340,12 +355,14 @@ enum EvaluationReleaseCheckEvaluator {
         }
     }
 
-    static func projectMarkdown(_ report: EvaluationProjectReleaseCheckReport) -> String {
-        let heading = report.outcome == .passed ? "Project release check passed" : "Project release check did not pass"
+    /// Renders project outcome, identity and required-suite summaries as Markdown without recomputing evidence.
+    static func projectMarkdown(_ report: EvaluationProjectReleaseCheckReport, trailingNewline: Bool = false) -> String {
+        let scope = "Project release check"
+        let heading = report.outcome == .passed ? "\(scope) passed" : "\(scope) did not pass"
         let suites = report.suites.map { item in
             "- \(item.suiteName) (`\(item.suiteID.uuidString)`): \(item.report.outcome.rawValue) — \(item.report.summary)"
         }.joined(separator: "\n")
-        return """
+        let markdown = """
         # \(heading)
 
         \(report.summary)
@@ -356,10 +373,14 @@ enum EvaluationReleaseCheckEvaluator {
         ## Required suites
 
         \(suites.isEmpty ? "- None configured" : suites)
-
         """
+        return markdown + (trailingNewline ? "\n" : "")
     }
 
+
+
+    /// Aggregates required suites with execution errors taking precedence over incomplete evidence and regressions.
+    /// Optional suites are excluded from the returned release report.
     static func projectReport(
         projectID: UUID,
         suites: [EvaluationProjectReleaseSuiteReport]
@@ -393,6 +414,7 @@ enum EvaluationReleaseCheckEvaluator {
         )
     }
 
+    /// Derives an assessment's scoring contract from its captured rubric and cases, accepting a stored contract only if it agrees.
     private static func resolvedScoringContract(
         for assessment: EvaluationAssessment,
         run: EvaluationRun
@@ -411,6 +433,7 @@ enum EvaluationReleaseCheckEvaluator {
         return scoringContract == derived ? scoringContract : nil
     }
 
+    /// Renders one suite release-check result and its evidence identities and findings as Markdown.
     static func markdown(_ report: EvaluationReleaseCheckReport) -> String {
         let heading = report.outcome == .passed ? "Release check passed" : "Release check did not pass"
         let failures = report.failures.isEmpty ? "- None" : report.failures.map { "- \($0)" }.joined(separator: "\n")
@@ -431,6 +454,8 @@ enum EvaluationReleaseCheckEvaluator {
         """
     }
 
+    /// Builds a suite report with execution errors taking precedence over incomplete evidence and regressions.
+    /// Preserves all relevant findings in that precedence order.
     private static func result(
         projectID: UUID,
         suite: EvaluationSuite,

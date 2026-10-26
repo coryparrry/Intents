@@ -4,6 +4,51 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationStoreRunLifecycleTests {
+    /// Checks that every feature callback sees the same published sample counts before terminal cleanup.
+    @MainActor
+    @Test(.timeLimit(.minutes(1)))
+    func featureProgressMatchesCallbacksAndResetsAfterTerminalSave() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.repetitions = 2
+        store.draftSuite.cases = [
+            EvaluationCase(name: "First", prompt: "first", expected: "RESULT"),
+            EvaluationCase(name: "Second", prompt: "second", expected: "RESULT")
+        ]
+        try #require(store.saveSuite())
+        let projectID = store.selectedProjectID
+        let suiteID = store.selectedSuiteID
+        let runID = UUID()
+        let callbacks = SnapshotInvocationCount()
+        let run = try await store.runFeatureAdapter(
+            id: runID,
+            expectedRevision: store.currentSuiteRevision(),
+            adapter: ClosureFeatureAdapter(displayName: "Progress fixture") { _ in "RESULT" }
+        ) { completed, total in
+            await callbacks.increment()
+            let callbackCount = await callbacks.count
+            await MainActor.run {
+                #expect(store.isRunning)
+                #expect(store.completedSamples == completed)
+                #expect(store.totalSamples == total)
+                #expect(total == 4)
+                #expect(completed == callbackCount)
+            }
+        }
+        #expect(await callbacks.count == 4)
+        #expect(!store.isRunning)
+        #expect(store.completedSamples == 0)
+        #expect(store.totalSamples == 0)
+        let retained = try #require(EvaluationStore(supportDirectory: directory).run(with: runID))
+        #expect(retained.id == run.id)
+        #expect(retained.projectID == projectID)
+        #expect(retained.suiteID == suiteID)
+        #expect(retained.results.count == 4)
+        await store.closeAndWait()
+    }
+
     @MainActor
     @Test(.timeLimit(.minutes(1)))
     func cancellationDuringFinalFeatureCheckpointIsPersisted() async throws {
@@ -72,6 +117,8 @@ struct EvaluationStoreRunLifecycleTests {
             )
         }
         await entered.wait()
+        #expect(store.completedSamples == 1)
+        #expect(store.totalSamples == 3)
         var closed = false
         let closing = Task { @MainActor in
             await store.closeAndWait()
@@ -98,6 +145,8 @@ struct EvaluationStoreRunLifecycleTests {
         let retained = try #require(EvaluationStore(supportDirectory: directory).run(with: id))
         #expect(closed)
         #expect(!store.isRunning)
+        #expect(store.completedSamples == 0)
+        #expect(store.totalSamples == 0)
         #expect(retained.cancelled)
         #expect(retained.terminationReason == "cancelled")
         #expect(retained.results.map(\.response) == ["FIRST", "LATE"])

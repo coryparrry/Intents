@@ -5,12 +5,20 @@ public struct DeveloperFeatureContext: Sendable {
     public var runID: UUID
     public var deadline: Date
 
+    /// Creates execution correlation and a wall-clock deadline for a feature invocation.
+    /// - Parameters:
+    ///   - requestID: Identity of this invocation, also used to route cancellation.
+    ///   - runID: Host run that owns the invocation.
+    ///   - deadline: Deadline cutoff checked by ``checkCancellation()``.
     public init(requestID: UUID, runID: UUID, deadline: Date) {
         self.requestID = requestID
         self.runID = runID
         self.deadline = deadline
     }
 
+    /// Checks cooperative task cancellation and then the execution deadline.
+    /// - Throws: `CancellationError` if the task is cancelled, or a
+    ///   ``DeveloperExecutionFailure`` with `deadlineExceeded` if the deadline has elapsed.
     public func checkCancellation() throws {
         try Task.checkCancellation()
         guard Date() < deadline else {
@@ -32,12 +40,25 @@ public actor DeveloperFeatureRegistry {
     private var features: [String: AnyDeveloperFeature] = [:]
     private var tasks: [UUID: Task<DeveloperFeatureOutput, Error>] = [:]
 
+    /// Creates an empty registry with no registered features or active executions.
     public init() {}
 
     public var descriptors: [DeveloperFeatureDescriptor] {
         features.values.map(\.descriptor).sorted { $0.displayName < $1.displayName }
     }
 
+    /// Registers or replaces a feature that decodes typed JSON input and encodes typed output.
+    /// The registration uses the legacy input contract and removes any subject-input capability
+    /// and schema from the supplied descriptor. Cancellation and deadlines are checked before
+    /// and after the operation; they do not interrupt an operation that ignores cancellation.
+    /// - Parameters:
+    ///   - descriptor: Feature identity, version and declared input/output names advertised to hosts.
+    ///   - input: Type used to decode the request's JSON input.
+    ///   - output: Type returned by the operation and encoded into the result.
+    ///   - operation: App-owned work invoked after input decoding succeeds.
+    ///   - response: Produces the human-readable response from the operation's output.
+    ///   - usage: Extracts token counts from the output.
+    ///   - metadata: Extracts app-defined result metadata.
     public func register<Input: Decodable & Sendable, Output: Encodable & Sendable>(
         _ descriptor: DeveloperFeatureDescriptor,
         input: Input.Type = Input.self,
@@ -73,6 +94,15 @@ public actor DeveloperFeatureRegistry {
         }
     }
 
+    /// Registers or replaces a legacy text feature using ``DeveloperTextFeatureInput``.
+    /// Invalid JSON becomes an `invalidInput` failure. The operation's output is returned
+    /// unchanged, with cancellation and deadline checks before and after invocation.
+    /// - Parameters:
+    ///   - id: Stable registry key; an existing registration at this key is replaced.
+    ///   - displayName: Label advertised to the desktop.
+    ///   - version: Exact version required by execution requests.
+    ///   - capabilityNames: Additional capabilities advertised with this feature.
+    ///   - operation: App-owned text operation, including its output and usage metadata.
     public func registerTextFeature(
         id: String,
         displayName: String,
@@ -104,6 +134,17 @@ public actor DeveloperFeatureRegistry {
 
     /// Registers an app-owned mapping for the expectation-free combined workflow.
     /// This is separate from the historical typed and text registration paths.
+    ///
+    /// The schema validates business inputs before the operation runs; decoding rejects unknown
+    /// top-level fields. Cancellation and deadlines are checked around the operation.
+    /// - Parameters:
+    ///   - id: Stable registry key; an existing registration at this key is replaced.
+    ///   - displayName: Label advertised to the desktop.
+    ///   - version: Exact version required by execution requests.
+    ///   - outputTypeName: App-declared name of the output represented by the result.
+    ///   - inputSchema: Allowed business fields and types, excluding assessment inputs.
+    ///   - capabilityNames: Additional capabilities; the subject-input capability is added automatically.
+    ///   - operation: App-owned mapping from validated subject input to feature output.
     public func registerSubjectFeature(
         id: String,
         displayName: String,
@@ -137,14 +178,24 @@ public actor DeveloperFeatureRegistry {
         }
     }
 
+    /// Removes a feature registration without cancelling invocations already started.
+    /// - Parameter featureID: Registry key to remove; unknown keys have no effect.
     public func unregister(featureID: String) {
         features[featureID] = nil
     }
 
+    /// Runs a request and returns its terminal output or structured failure.
+    /// Admission validates request identity, feature/version, input contract and deadline.
+    /// Operation errors and cooperative cancellation are represented in the result's `failure`.
+    /// - Parameter request: JSON input and execution identity for a registered feature.
+    /// - Returns: A result preserving the request, run and feature identifiers.
     public func execute(_ request: DeveloperFeatureExecutionRequest) async -> DeveloperFeatureExecutionResult {
         await start(request).value
     }
 
+    /// Validates admission and records the operation task before returning its result task.
+    /// Duplicate active request IDs and incompatible registrations return immediate failures;
+    /// accepted operations retain their registration even if the feature is later replaced.
     func start(_ request: DeveloperFeatureExecutionRequest) -> Task<DeveloperFeatureExecutionResult, Never> {
         let startedAt = Date()
         guard tasks[request.id] == nil else {
@@ -194,6 +245,9 @@ public actor DeveloperFeatureRegistry {
         return Task { await self.complete(request, startedAt: startedAt, task: task) }
     }
 
+    /// Awaits an admitted operation, maps its error to a wire failure and releases its request ID.
+    /// Cancellation becomes `cancelled`; declared execution failures retain their code, while
+    /// other errors become `executionFailed` with their localized description.
     private func complete(
         _ request: DeveloperFeatureExecutionRequest,
         startedAt: Date,
@@ -234,16 +288,21 @@ public actor DeveloperFeatureRegistry {
         }
     }
 
+    /// Requests cooperative cancellation of the active operation with this request ID.
+    /// Unknown or completed IDs have no effect; the operation must observe cancellation to stop.
+    /// - Parameter requestID: Identity from the execution request, rather than its run ID.
     public func cancel(requestID: UUID) {
         tasks[requestID]?.cancel()
     }
 
+    /// Requests cooperative cancellation of every active operation without unregistering features.
     public func cancelAll() {
         for task in tasks.values {
             task.cancel()
         }
     }
 
+    /// Builds a terminal failure with the original execution identifiers and a completion timestamp.
     private func failure(
         _ request: DeveloperFeatureExecutionRequest,
         startedAt: Date,

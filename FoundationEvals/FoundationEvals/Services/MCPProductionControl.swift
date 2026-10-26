@@ -1,19 +1,26 @@
 import Foundation
 
 @MainActor enum MCPProductionControl {
-  static func json<T: Encodable>(_ value: T) throws -> MCPJSONValue {
+  /// Encodes production JSON with Unix millisecond dates and a 4 MiB byte limit on any actor.
+  /// - Parameter oversizeMessage: The calling action's existing guidance when its response is too large.
+  nonisolated static func json<T: Encodable>(
+    _ value: T,
+    oversizeMessage: String = "Response exceeds 4 MiB. Reduce page size or use chunked exports."
+  ) throws -> MCPJSONValue {
     let bytes = try ProductionCodec.encode(value)
-    guard bytes.count <= 4_194_304 else {
-      throw ProductionFailure.invalid(
-        "Response exceeds 4 MiB. Reduce page size or read the evidence export in chunks.")
-    }
+    guard bytes.count <= 4_194_304 else { throw ProductionFailure.invalid(oversizeMessage) }
     return try JSONDecoder().decode(MCPJSONValue.self, from: bytes)
   }
-  static func stripped(_ job: ProductionJob) -> ProductionJob {
+  /// Returns a job copy with frozen execution-context bytes removed for bounded public summaries.
+  nonisolated static func stripped(_ job: ProductionJob) -> ProductionJob {
     var copy = job
     copy.configuration.executionContext = Data()
     return copy
   }
+  /// Routes production reads and persistence work off the main actor, delegating native snapshots, job
+  /// creation, and job starts to app controls. Refreshes mutations and tracks dispatched execution
+  /// through its saved report. Immediate storage, revision, and disclosure errors throw; tracked
+  /// execution failures become completion payloads.
   static func execute(_ call: MCPControlCall, control: EvaluationAppControl) async throws
     -> MCPToolPayload
   {
@@ -47,7 +54,10 @@ import Foundation
           return try storage.importDataset(from: file, name: suite.name, version: suite.version)
         }.value
         await control.production.refresh()
-        return MCPControlService.committed(["dataset": try json(dataset)])
+        return MCPControlService.committed([
+          "dataset": try json(dataset,
+            oversizeMessage: "Response exceeds 4 MiB. Reduce page size or read the evidence export in chunks.")
+        ])
       case "eval_production_job_create":
         try MCPWorkspaceControl.requireTarget(call, store: control.store)
         let id = try call.id("jobID")
@@ -127,11 +137,15 @@ import Foundation
     }
     return mutating ? MCPControlService.committed(output) : MCPControlService.read(output)
   }
+  /// Requires the caller's expected frozen job revision to match the loaded job, throwing when it has
+  /// changed.
   nonisolated private static func expected(_ call: MCPControlCall, job: ProductionJob) throws {
     guard try call.text("expectedJobRevision") == job.revision else {
       throw ProductionFailure.invalid("Frozen job revision changed. Reread its identity.")
     }
   }
+  /// Overlays only the permitted batch options onto a native job configuration and decodes the result
+  /// with the production codec. Rejects nonobject JSON and attempts to replace server-owned fields.
   nonisolated private static func optionsConfiguration(
     _ text: String, base: ProductionJobConfiguration
   ) throws -> ProductionJobConfiguration {
@@ -148,23 +162,13 @@ import Foundation
     return try ProductionCodec.decode(
       ProductionJobConfiguration.self, JSONSerialization.data(withJSONObject: native))
   }
-  /// Executes validated production reads and persisted operations, exposing lightweight progress only when explicitly requested.
+  /// Reads or mutates production storage for validated actions, enforcing job/control revisions,
+  /// confirmations, bounded responses, and safe export paths. Returns a delegate marker for actions
+  /// requiring main-actor app controls; does not execute those actions itself.
   nonisolated private static func readOrPersist(_ call: MCPControlCall, storage: ProductionStorage)
     throws -> [String: MCPJSONValue]
   {
-    func encode<T: Encodable>(_ value: T) throws -> MCPJSONValue {
-      let bytes = try ProductionCodec.encode(value)
-      guard bytes.count <= 4_194_304 else {
-        throw ProductionFailure.invalid(
-          "Response exceeds 4 MiB. Reduce page size or use chunked exports.")
-      }
-      return try JSONDecoder().decode(MCPJSONValue.self, from: bytes)
-    }
-    func stripped(_ job: ProductionJob) -> ProductionJob {
-      var copy = job
-      copy.configuration.executionContext = Data()
-      return copy
-    }
+    /// Loads the requested job and verifies its frozen revision before a storage mutation.
     func job() throws -> ProductionJob {
       let value = try storage.loadJob(call.id("jobID"))
       try expected(call, job: value)
@@ -178,10 +182,11 @@ import Foundation
       let jobs = try storage.jobs()
       let workers = try storage.workers()
       let schedules = try storage.schedules()
+      /// Selects the current offset/limit slice of an in-memory production listing.
       func page<T>(_ values: [T]) -> [T] { Array(values.dropFirst(offset).prefix(limit)) }
       return [
-        "datasets": try encode(page(datasets)), "jobs": try encode(page(jobs).map(stripped)),
-        "workers": try encode(page(workers)), "schedules": try encode(page(schedules)),
+        "datasets": try json(page(datasets)), "jobs": try json(page(jobs).map(stripped)),
+        "workers": try json(page(workers)), "schedules": try json(page(schedules)),
         "scheduleRevisions": .object(
           try Dictionary(
             uniqueKeysWithValues: page(schedules).map {
@@ -201,7 +206,7 @@ import Foundation
         sampling: ProductionSampling(rawValue: call.optionalText("sampling") ?? "curated")!,
         productionData: call.flag("productionData"), expectedChunks: call.integer("chunks"),
         expectedBytes: call.integer("bytes"), expectedDigest: try call.text("sha256"))
-      return ["upload": try encode(storage.beginUpload(upload))]
+      return ["upload": try json(storage.beginUpload(upload))]
     case "eval_production_upload_chunk":
       guard let bytes = Data(base64Encoded: try call.text("dataBase64")) else {
         throw MCPToolInputError.invalidArguments
@@ -212,18 +217,18 @@ import Foundation
     case "eval_production_upload_status":
       let id = try call.id("uploadID")
       return [
-        "upload": try encode(storage.upload(id)),
-        "receivedChunks": try encode(storage.uploadStatus(id)),
+        "upload": try json(storage.upload(id)),
+        "receivedChunks": try json(storage.uploadStatus(id)),
       ]
     case "eval_production_upload_preview":
       let id = try call.id("uploadID")
       return [
-        "examples": try encode(storage.previewUpload(id)),
+        "examples": try json(storage.previewUpload(id)),
         "previewDigest": .string(try storage.upload(id).expectedDigest),
       ]
     case "eval_production_upload_finish":
       return [
-        "dataset": try encode(
+        "dataset": try json(
           storage.finishUpload(
             call.id("uploadID"), previewDigest: call.text("previewDigest"),
             redactionConfirmed: call.flag("redactionConfirmed")))
@@ -239,7 +244,7 @@ import Foundation
         in offset..<min(
           offset + call.integer("limit", default: 3), max(offset, reader.dataset.count))
       { examples.append(try reader.example(at: position)) }
-      return ["dataset": try encode(reader.dataset), "examples": try encode(examples)]
+      return ["dataset": try json(reader.dataset), "examples": try json(examples)]
     case "eval_production_dataset_snapshot", "eval_production_job_create",
       "eval_production_job_start":
       return ["delegate": .bool(true)]
@@ -252,7 +257,7 @@ import Foundation
     case "eval_production_baseline_approve":
       let value = try job()
       try MCPControlService.confirm(call)
-      return ["approval": try encode(storage.approveBaseline(jobID: value.id, expectedJobRevision: value.revision,
+      return ["approval": try json(storage.approveBaseline(jobID: value.id, expectedJobRevision: value.revision,
         expectedEvidenceRevision: call.text("expectedEvidenceRevision"), note: call.text("note")))]
     case "eval_production_job_control":
       let value = try job()
@@ -276,12 +281,12 @@ import Foundation
       }
       let currentControl = try storage.control(value)
       return [
-        "job": try encode(stripped(value)),
+        "job": try json(stripped(value)),
         "contextBytes": .integer(Int64(value.configuration.executionContext.count)),
-        "control": try encode(currentControl),
+        "control": try json(currentControl),
         "controlRevision": .string(ProductionStorage.controlRevision(currentControl)),
-        "report": try encode(report),
-        "progress": includeReport ? .null : try encode(storage.progress(jobID: value.id)),
+        "report": try json(report),
+        "progress": includeReport ? .null : try json(storage.progress(jobID: value.id)),
       ]
     case "eval_production_context_read":
       let value = try storage.loadJob(call.id("jobID"))
@@ -296,7 +301,7 @@ import Foundation
         records[i].response.artifact = nil
       }
       return [
-        "records": try encode(records), "offset": .integer(Int64(offset)),
+        "records": try json(records), "offset": .integer(Int64(offset)),
         "count": .integer(Int64(records.count)), "summaries": .bool(true),
       ]
     case "eval_production_result_get":
@@ -305,11 +310,11 @@ import Foundation
       let record = try storage.record(jobID: value.id, slot: slot)
       let reader = try ProductionDatasetReader(storage: storage, revision: value.datasetRevision)
       return [
-        "record": try encode(record),
-        "example": try encode(
+        "record": try json(record),
+        "example": try json(
           reader.example(
             at: slot / (value.configuration.repetitions * value.configuration.targets.count))),
-        "review": try encode(storage.review(jobID: value.id, requestID: record.response.requestID)),
+        "review": try json(storage.review(jobID: value.id, requestID: record.response.requestID)),
       ]
     case "eval_production_review_append":
       guard call.flag("confirmHumanReview") else { throw MCPToolInputError.confirmationRequired }
@@ -325,7 +330,7 @@ import Foundation
       try storage.saveSchedule(schedule, expectedRevision: call.text("expectedScheduleRevision"))
       return ["scheduleID": .string(schedule.id.uuidString)]
     case "eval_production_schedule_tick":
-      return ["createdJobIDs": try encode(storage.tickSchedules())]
+      return ["createdJobIDs": try json(storage.tickSchedules())]
     case "eval_production_export":
       let value = try job()
       let id = try call.id("operationID")
@@ -365,7 +370,7 @@ import Foundation
       }
       paths.sort()
       return [
-        "files": try encode(Array(paths.dropFirst(offset).prefix(limit))),
+        "files": try json(Array(paths.dropFirst(offset).prefix(limit))),
         "count": .integer(Int64(paths.count)),
       ]
     case "eval_production_export_read":
@@ -395,6 +400,8 @@ import Foundation
     default: throw MCPToolInputError.unknownTool
     }
   }
+  /// Requires real, nonsymlink export directories and returns their canonical path, aligning bounded
+  /// reads with enumerated paths. Missing or unsafe directories throw an integrity error.
   nonisolated private static func exportRoot(storage: ProductionStorage, id: UUID) throws -> URL {
     let directory = storage.root.appendingPathComponent("MCPExports", isDirectory: true)
     let root = directory.appendingPathComponent(id.uuidString, isDirectory: true)
@@ -408,6 +415,8 @@ import Foundation
     // Use the same canonical base for both relative listing and bounded reads.
     return root.resolvingSymlinksInPath().standardizedFileURL
   }
+  /// Returns a bounded base64 byte slice with current/next offsets and total size. Rejects offsets
+  /// beyond the end; validated arguments supply nonnegative offsets and a positive chunk size.
   nonisolated private static func dataChunk(_ bytes: Data, call: MCPControlCall) throws -> [String:
     MCPJSONValue]
   {

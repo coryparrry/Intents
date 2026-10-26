@@ -67,6 +67,7 @@ class FixtureServer(ThreadingHTTPServer):
         request_log: Path | None = None,
         gate_text_stream: bool = False,
     ) -> None:
+        """Configure a threaded fixture server with optional serialized request logging and a text-stream release event."""
         super().__init__(server_address, FixtureHandler)
         self.request_log = request_log
         self.request_log_lock = threading.Lock()
@@ -74,6 +75,7 @@ class FixtureServer(ThreadingHTTPServer):
         self.release_text_stream = threading.Event()
 
     def record_protocol_request(self, request: dict[str, Any]) -> None:
+        """Append canonical UTF-8 NDJSON under a lock when logging is enabled; reject oversized records and propagate file errors."""
         if self.request_log is None:
             return
         encoded = json.dumps(
@@ -91,6 +93,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
     server_version = "FoundationEvalsFixture/2"
 
     def do_GET(self) -> None:
+        """Release a gated text stream with an uncached 204 response, or return 404 when the route or gate is unavailable."""
         if self.path != "/release-text-stream" or not self.server.gate_text_stream:
             self.send_error(404, "Unknown fixture route")
             return
@@ -100,6 +103,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self) -> None:
+        """Validate and dispatch fixture routes, delay timeout responses, and report client disconnects while streaming fixed events."""
         if self.path not in ROUTES:
             self.send_error(404, "Unknown fixture route")
             return
@@ -141,6 +145,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
             print(f"fixture: client disconnected from {self.path}", flush=True)
 
     def read_request(self, require_protocol: bool) -> dict[str, Any] | None:
+        """Read a bounded JSON object, validate protocol version when required, and return None after sending an HTTP validation or logging error."""
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
@@ -173,6 +178,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
     def serve_tokenization(self, request: dict[str, Any]) -> None:
         # The fixture returns a stable count so client tests can verify the
         # tokenizer handshake without depending on a model vocabulary.
+        """Send an uncached JSON response with the fixed seven-token count used to test the tokenizer handshake."""
         body = json.dumps({"inputTokens": 7}, separators=(",", ":")).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -182,6 +188,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def serve_tool_execution(self, request: dict[str, Any]) -> None:
+        """Require lookupOrder and object arguments, then return deterministic shipped status for the requested or default order ID."""
         if request.get("toolName") != "lookupOrder":
             self.send_error(400, "Tool request must target lookupOrder")
             return
@@ -206,6 +213,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def scenario(self, request: dict[str, Any]) -> str:
+        """Use explicit route scenarios, or choose guided, tool, reasoning, then text behavior from generate request metadata."""
         scenario = self.path.removeprefix("/")
         if scenario != "generate":
             return scenario
@@ -220,6 +228,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         return "text"
 
     def begin_event_stream(self) -> None:
+        """Send uncached NDJSON response headers before any fixture events are written."""
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
         self.send_header("Cache-Control", "no-store")
@@ -227,6 +236,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def serve_scenario(self, scenario: str, request: dict[str, Any]) -> None:
+        """Emit the selected EOF, malformed, error, cancellation, guided, tool, reasoning, or text fixture with configured delays."""
         if scenario in {"text-eof", "text-eof-newline"}:
             self.emit_response("First ", token_count=1)
             event = {
@@ -280,6 +290,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.serve_text(gated=scenario == "text-gated")
 
     def serve_text(self, gated: bool = False) -> None:
+        """Flush three fixed text chunks and usage, waiting up to 30 seconds for gated release before the second chunk."""
         chunks = [
             ("Deterministic ", 2),
             ("fixture ", 1),
@@ -295,6 +306,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.emit_usage(output_tokens=4)
 
     def serve_guided(self, scenario: str, request: dict[str, Any]) -> None:
+        """Require guided mode and emit fixed schema-selected JSON plus usage, or delegate to the fragmented guided stream."""
         if request.get("mode") != "guided":
             self.emit(
                 kind="error",
@@ -325,6 +337,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.emit_usage(output_tokens=token_count)
 
     def serve_guided_stream(self) -> None:
+        """Flush a fixed JSON answer in three delayed fragments and finish with its deterministic usage count."""
         chunks = [
             ('{"answer":"', 2),
             ("fixture", 1),
@@ -344,6 +357,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.emit_usage(output_tokens=guided_token_count(SIMPLE_GUIDED_PAYLOAD))
 
     def serve_tool(self, request: dict[str, Any]) -> None:
+        """Acknowledge existing tool output, or emit a configured tool call and usage; emit an error when no tool is enabled."""
         if contains_tool_output(request.get("transcript")):
             self.emit_response(
                 "Tool result received. Order A-104 is shipped.",
@@ -389,6 +403,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         )
 
     def emit_response(self, content: str, token_count: int) -> None:
+        """Wrap one text fragment in stable response and segment identifiers and flush it as an append event."""
         self.emit(
             kind="response",
             action="append",
@@ -399,6 +414,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
         )
 
     def emit_usage(self, output_tokens: int, reasoning_tokens: int = 0) -> None:
+        """Flush response usage with fixed input tokens and the supplied output and reasoning token counts."""
         self.emit(
             kind="usage",
             usageTarget="response",
@@ -411,12 +427,14 @@ class FixtureHandler(BaseHTTPRequestHandler):
         )
 
     def emit(self, **event: Any) -> None:
+        """Serialize one event as compact UTF-8 NDJSON and flush the client socket immediately."""
         self.wfile.write(
             json.dumps(event, separators=(",", ":")).encode("utf-8") + b"\n"
         )
         self.wfile.flush()
 
     def log_message(self, format: str, *args: Any) -> None:
+        """Print the HTTP handler diagnostic to standard output with a fixture prefix and immediate flushing."""
         print(f"fixture: {format % args}", flush=True)
 
 
@@ -447,6 +465,7 @@ def guided_payload_for(schema: Any) -> dict[str, Any]:
 
 
 def guided_token_count(payload: dict[str, Any]) -> int:
+    """Return the order payload token count only for the shared order fixture object; use the simple count otherwise."""
     return 24 if payload is ORDER_GUIDED_PAYLOAD else 4
 
 
@@ -461,6 +480,7 @@ def tool_arguments(tool: dict[str, Any]) -> dict[str, str]:
 
 
 def parse_arguments() -> argparse.Namespace:
+    """Parse fixture port, timing, request-log, and stream-gate options without binding a socket or validating numeric ranges."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--port", type=int, default=PORT, help="Loopback port (default: %(default)s)"

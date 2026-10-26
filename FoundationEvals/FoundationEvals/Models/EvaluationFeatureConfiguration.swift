@@ -1,5 +1,6 @@
 import Foundation
 
+/// Persisted tool, profile, output-schema, and execution options with bounded schema validation.
 struct EvaluationFeatureConfiguration: Codable, Equatable, Sendable {
     static let maximumTools = 4
     static let maximumOutputFields = 8
@@ -15,6 +16,7 @@ struct EvaluationFeatureConfiguration: Codable, Equatable, Sendable {
     var prewarm: Bool
     var streamResponse: Bool
 
+    /// Creates feature settings with tools, Spotlight, schema output, prewarming, and streaming disabled by default.
     init(
         tools: [EvaluationCustomToolDefinition] = [],
         spotlightSearch: EvaluationSpotlightSearchConfiguration = .init(),
@@ -40,6 +42,7 @@ struct EvaluationFeatureConfiguration: Codable, Equatable, Sendable {
         case outputRepresentNilExplicitlyInGeneratedContent, prewarm, streamResponse
     }
 
+    /// Decodes required feature settings while defaulting absent Spotlight, reusable schemas, and explicit-nil options for older documents.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         tools = try container.decode([EvaluationCustomToolDefinition].self, forKey: .tools)
@@ -96,6 +99,7 @@ struct EvaluationFeatureConfiguration: Codable, Equatable, Sendable {
         )
     }
 
+    /// Validates field and definition limits, shared IDs, references, and reference cycles; returns the first issue.
     static func schemaValidationIssue(
         fields: [EvaluationSchemaField],
         definitions: [EvaluationSchemaField] = [],
@@ -140,6 +144,7 @@ struct EvaluationFeatureConfiguration: Codable, Equatable, Sendable {
         return nil
     }
 
+    /// Walks schema children with shared node and ID accounting, enforcing sibling names, optionality, references, and depth.
     private static func schemaValidationIssue(
         fields: [EvaluationSchemaField],
         context: String,
@@ -194,6 +199,7 @@ struct EvaluationFeatureConfiguration: Codable, Equatable, Sendable {
         return nil
     }
 
+    /// Finds a reusable-definition name on a reference cycle, or nil when the graph is acyclic.
     private static func referenceCycle(in definitions: [EvaluationSchemaField]) -> String? {
         let references = Dictionary(uniqueKeysWithValues: definitions.map { definition in
             (definition.name, referencedDefinitionNames(in: definition))
@@ -201,6 +207,7 @@ struct EvaluationFeatureConfiguration: Codable, Equatable, Sendable {
         var visited = Set<String>()
         var active = Set<String>()
 
+        /// Traverses definition references while separating active recursion from already visited nodes.
         func visit(_ name: String) -> String? {
             if active.contains(name) { return name }
             guard visited.insert(name).inserted else { return nil }
@@ -218,6 +225,7 @@ struct EvaluationFeatureConfiguration: Codable, Equatable, Sendable {
         return nil
     }
 
+    /// Collects reference targets from a field and all nested child schemas.
     private static func referencedDefinitionNames(in field: EvaluationSchemaField) -> Set<String> {
         var names = Set<String>()
         if field.type == .reference {
@@ -230,6 +238,7 @@ struct EvaluationFeatureConfiguration: Codable, Equatable, Sendable {
     }
 }
 
+/// After-tool instructions and generation overrides, with active-option validation when the profile is enabled.
 struct EvaluationProfileConfiguration: Codable, Equatable, Sendable {
     static let maximumNameCharacters = 80
     static let maximumInstructionsBytes = 4_096
@@ -251,6 +260,7 @@ struct EvaluationProfileConfiguration: Codable, Equatable, Sendable {
     var afterToolCustomReasoning: String
     var afterToolTranscriptErrorPolicy: EvaluationTranscriptErrorPolicy
 
+    /// Creates a disabled after-tool profile with automatic sampling, reasoning, and transcript-error behavior.
     init(
         enabled: Bool = false,
         name: String = "Tool workflow",
@@ -293,6 +303,7 @@ struct EvaluationProfileConfiguration: Codable, Equatable, Sendable {
         case afterToolTranscriptErrorPolicy
     }
 
+    /// Decodes profile fields independently, using current defaults for absent values without validating or normalizing saved values.
     init(from decoder: any Decoder) throws {
         let defaults = Self()
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -426,6 +437,7 @@ enum EvaluationSchemaFieldType: String, Codable, CaseIterable, Identifiable, Sen
     }
 }
 
+/// Editable schema node whose selected type determines applicable children, choices, references, and constraints.
 struct EvaluationSchemaField: Identifiable, Codable, Equatable, Sendable {
     static let maximumNameCharacters = 64
     static let maximumDescriptionCharacters = 256
@@ -445,6 +457,7 @@ struct EvaluationSchemaField: Identifiable, Codable, Equatable, Sendable {
     var referenceName: String
     var representNilExplicitlyInGeneratedContent: Bool
 
+    /// Creates a schema field; supplied child schemas and constraints are retained until separately validated or normalized.
     init(
         id: UUID = UUID(),
         name: String = "",
@@ -474,6 +487,7 @@ struct EvaluationSchemaField: Identifiable, Codable, Equatable, Sendable {
         case representNilExplicitlyInGeneratedContent
     }
 
+    /// Decodes required field identity and type settings, defaulting absent nested schemas, choices, constraints, references, and explicit-nil behavior.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -606,6 +620,7 @@ struct EvaluationSchemaField: Identifiable, Codable, Equatable, Sendable {
         return nil
     }
 
+    /// Adds starter item, choice, or union schemas when required by the selected type.
     mutating func prepareForSelectedType() {
         if type == .array, children.isEmpty {
             children = [EvaluationSchemaField(name: "item")]
@@ -621,6 +636,7 @@ struct EvaluationSchemaField: Identifiable, Codable, Equatable, Sendable {
         }
     }
 
+    /// Clears type-specific children, choices, constraints, and reference settings, then prepares starter content for the new type.
     mutating func normalizeAfterTypeChange() {
         children = []
         enumValues = []
@@ -635,6 +651,7 @@ struct EvaluationSchemaEnumValue: Identifiable, Codable, Equatable, Sendable {
     var id: UUID
     var value: String
 
+    /// Creates an editable choice value with a stable supplied or newly generated identity.
     init(id: UUID = UUID(), value: String = "") {
         self.id = id
         self.value = value
@@ -650,6 +667,7 @@ struct EvaluationSchemaConstraints: Codable, Equatable, Sendable {
     var arrayMinimumCount: Int?
     var arrayMaximumCount: Int?
 
+    /// Creates independent optional bounds and a string pattern without inferring a field type.
     init(
         stringPattern: String = "",
         integerMinimum: Int? = nil,
@@ -673,6 +691,7 @@ struct EvaluationSchemaConstraints: Codable, Equatable, Sendable {
         case arrayMinimumCount, arrayMaximumCount
     }
 
+    /// Decodes optional bounds and treats a missing string pattern as unconstrained.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         stringPattern = try container.decodeIfPresent(String.self, forKey: .stringPattern) ?? ""
@@ -746,6 +765,7 @@ struct EvaluationSchemaConstraints: Codable, Equatable, Sendable {
 
     private static let defaultMaximumArrayCount = 8
 
+    /// Reports the first stored constraint that does not apply to the selected field type.
     func inapplicableConfigurationIssue(
         for type: EvaluationSchemaFieldType,
         fieldName: String
@@ -784,6 +804,7 @@ enum EvaluationCustomToolMode: String, Codable, CaseIterable, Identifiable, Send
     }
 }
 
+/// Developer-defined tool schema and fixture or loopback HTTP behavior, bounded before runtime use.
 struct EvaluationCustomToolDefinition: Identifiable, Codable, Equatable, Sendable {
     static let maximumNameCharacters = 64
     static let maximumDescriptionCharacters = 512
@@ -804,6 +825,7 @@ struct EvaluationCustomToolDefinition: Identifiable, Codable, Equatable, Sendabl
     var fixtureResponse: String
     var endpoint: String
 
+    /// Creates a fixture tool by default, retaining its parameter schema and optional local endpoint for later validation.
     init(
         id: UUID = UUID(),
         name: String = "",
@@ -831,6 +853,7 @@ struct EvaluationCustomToolDefinition: Identifiable, Codable, Equatable, Sendabl
         case representNilExplicitlyInGeneratedContent, mode, fixtureResponse, endpoint
     }
 
+    /// Decodes required tool settings while defaulting absent reusable definitions and explicit-nil schema behavior.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -888,6 +911,7 @@ struct EvaluationCustomToolDefinition: Identifiable, Codable, Equatable, Sendabl
         return nil
     }
 
+    /// Returns the endpoint URL after enforcing the local bridge restrictions; throws an invalid-configuration error otherwise.
     func validatedEndpointURL() throws -> URL {
         if let issue = Self.endpointValidationIssue(endpoint) {
             throw EvaluationFeatureConfigurationError.invalid(issue)
@@ -898,6 +922,7 @@ struct EvaluationCustomToolDefinition: Identifiable, Codable, Equatable, Sendabl
         return url
     }
 
+    /// Requires credential-free HTTP on literal 127.0.0.1 with an explicit nonreserved port and no query or fragment.
     private static func endpointValidationIssue(_ endpoint: String) -> String? {
         guard !endpoint.isEmpty, let components = URLComponents(string: endpoint) else {
             return "Local tools need an HTTP endpoint."
@@ -932,6 +957,7 @@ enum EvaluationFeatureConfigurationError: LocalizedError, Sendable {
 }
 
 enum EvaluationIdentifier {
+    /// Accepts bounded ASCII identifiers beginning with a letter or underscore and continuing with letters, digits, or underscores.
     static func isValid(_ value: String, maximumCharacters: Int) -> Bool {
         guard !value.isEmpty, value.count <= maximumCharacters else { return false }
 

@@ -56,9 +56,12 @@ enum AppEngineWorkflows {
     }
     struct SelectionRequest: Decodable { var run: EvaluationRun; var assessmentID: UUID }
 
+    /// Returns the SHA-256 digest of compact canonical JSON, propagating encoding failures.
     static func digest<T: Encodable>(_ value: T) throws -> String {
         SHA256.hash(data: try CanonicalJSON.data(for: value, prettyPrinted: false)).map { String(format: "%02x", $0) }.joined()
     }
+    /// Freezes distinct current and candidate instructions, suite revisions, contract digests, and a balanced trial order.
+    /// Throws when candidate instructions are absent, unchanged after trimming, or either suite fails standalone validation.
     static func createExperiment(_ request: ExperimentRequest) throws -> EvaluationExperiment {
         guard let instructions = request.candidateInstructions else { throw RunnerFailure.validation("Provide candidate instructions.") }
         let trimmed = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -81,6 +84,8 @@ enum AppEngineWorkflows {
             executionOrder: EvaluationExperimentAnalyzer.balancedOrder(currentID: current.id, candidateID: candidate.id,
                 caseCount: request.suite.cases.count, repetitions: request.suite.repetitions), runIDs: [], decision: nil)
     }
+    /// Executes both instruction variants in the frozen balanced order and returns their runs and comparison summary.
+    /// Rejects changed revisions, digests, trial order, invalid suites, or duplicate run IDs; cancellation propagates and optional events identify each variant run.
     static func runExperiment(_ request: ExperimentRequest) async throws -> ExperimentOutput {
         var experiment = try request.experiment ?? createExperiment(request)
         let suite = request.suite
@@ -137,6 +142,8 @@ enum AppEngineWorkflows {
         return ExperimentOutput(experiment: experiment, current: result.current, candidate: result.candidate,
             summary: EvaluationExperimentAnalyzer.summarize(current: result.current, candidate: result.candidate))
     }
+    /// Summarizes saved variants only when suite identity, repetitions, scoring contracts, and supported judge identities match.
+    /// Throws when saved case definitions, assessment evidence, or judge identity cannot establish comparable conditions.
     static func summarizeExperiment(_ request: SummaryRequest) throws -> EvaluationExperimentSummary {
         let current = request.current
         let candidate = request.candidate
@@ -151,6 +158,7 @@ enum AppEngineWorkflows {
         return EvaluationExperimentAnalyzer.summarize(current: current, candidate: candidate)
     }
 
+    /// Reconstructs the effective scoring contract from uniquely identified saved cases and rejects missing or inconsistent selected assessments.
     private static func summaryScoringContract(for run: EvaluationRun) throws -> EvaluationScoringContract {
         guard let cases = run.plannedCases ?? run.suiteDefinition?.cases,
               !cases.isEmpty, Set(cases.map(\.id)).count == cases.count else {
@@ -179,6 +187,7 @@ enum AppEngineWorkflows {
         return contract
     }
 
+    /// Resolves one consistent on-device or deterministic judge identity, rejecting unknown, conflicting, or unsupported saved identities.
     private static func summaryJudgeIdentity(for run: EvaluationRun) throws -> EvaluationJudgeIdentity? {
         guard run.scoringMode == .modelJudge || run.selectedAssessment != nil else { return nil }
         let identities: [EvaluationJudgeIdentity]
@@ -223,16 +232,21 @@ enum AppEngineWorkflows {
         return identity
     }
 
+    /// Evaluates suite release policy against the current revision and supplied run and baseline evidence, returning both the report and Markdown.
     static func releaseCheck(_ request: ReleaseRequest) throws -> ReleaseOutput {
         let report = EvaluationReleaseCheckEvaluator.report(projectID: request.projectID, suite: request.suite,
             currentSuiteRevision: try AppEngineBridge.revision(for: request.suite), run: request.run,
             baseline: request.baseline, approvedBaseline: request.approvedBaseline)
         return ReleaseOutput(report: report, markdown: EvaluationReleaseCheckEvaluator.markdown(report))
     }
+    /// Aggregates suite release reports for a project and returns the project report with its Markdown rendering.
     static func projectReleaseCheck(_ request: ProjectReleaseRequest) -> ProjectReleaseOutput {
         let report = EvaluationReleaseCheckEvaluator.projectReport(projectID: request.projectID, suites: request.suites)
-        return ProjectReleaseOutput(report: report, markdown: EvaluationReleaseCheckEvaluator.projectMarkdown(report))
+        return ProjectReleaseOutput(report: report, markdown: EvaluationReleaseCheckEvaluator.projectMarkdown(report, trailingNewline: true))
     }
+    /// Creates baseline approval evidence for a complete, uncancelled run with a valid subject digest when present.
+    /// Model-judged runs require a complete selected assessment with matching sample IDs and subject evidence,
+    /// a single observed judge identity, and a consistent scoring contract.
     static func approveBaseline(_ request: BaselineRequest) throws -> EvaluationBaselineApproval {
         let run = request.run
         let assessmentID = request.assessmentID ?? run.selectedAssessmentID
@@ -280,6 +294,8 @@ enum AppEngineWorkflows {
             suiteRevision: run.suiteRevision ?? "legacy", approvedAt: Date(), note: request.note,
             revokedAt: nil, scoringContract: scoringContract)
     }
+    /// Creates a separate human correction for a saved assessment sample and returns the supplied run alongside it.
+    /// Requires a nonblank reason; optional judge-check examples also require complete subject evidence, a pass/fail correction, and the current judge prompt.
     static func correctJudgment(_ request: CorrectionRequest) throws -> CorrectionOutput {
         let trimmed = request.reason.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw RunnerFailure.validation("Explain why the judgment is incorrect.") }
@@ -309,6 +325,7 @@ enum AppEngineWorkflows {
             subjectEvidenceDigest: assessment.subjectEvidenceDigest ?? run.subjectEvidence?.digest) : nil
         return CorrectionOutput(run: run, correction: correction, reviewedJudgeExample: example)
     }
+    /// Returns a run selecting the requested saved assessment, throwing when that assessment does not exist.
     static func selectAssessment(_ request: SelectionRequest) throws -> EvaluationRun {
         var run = request.run
         guard run.assessments?.contains(where: { $0.id == request.assessmentID }) == true else {

@@ -5,6 +5,10 @@ import SwiftUI
 public struct DeveloperRunnerView: View {
     public let service: DeveloperRunnerService
 
+    /// Creates a companion form for the supplied service's identity, features and pairing state.
+    /// When the view's task runs it starts advertising and refreshes feature and pairing snapshots;
+    /// the containing app remains responsible for stopping the service.
+    /// - Parameter service: App-owned runner service observed and controlled by this view.
     public init(service: DeveloperRunnerService) {
         self.service = service
     }

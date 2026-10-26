@@ -9,6 +9,7 @@ struct ContentView: View {
     @Environment(\.controlActiveState) private var windowActivity
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
+    /// Creates the workspace view with shared app control and production state, constructing control when none is supplied.
     init(store: EvaluationStore, control: EvaluationAppControl? = nil) {
         self.store = store
         let control = control ?? EvaluationAppControl(store: store)
@@ -50,6 +51,7 @@ struct ContentView: View {
         }
     }
 
+    /// Records the selected workspace screen only while this window is key.
     private func recordScreen() {
         guard windowActivity == .key else { return }
         store.telemetry?.screen(TelemetryScreen(selection: store.selection))

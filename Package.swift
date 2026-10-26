@@ -23,6 +23,8 @@ let portableTestSources = [
     "TimelineRenderingTests.swift",
     "RunToolbarProgressTests.swift",
 ]
+/// Lists regular files below the package-relative directory except the explicitly retained source paths.
+/// Returns an empty list when the directory cannot be enumerated.
 func excludedFiles(at path: String, keeping sources: [String]) -> [String] {
     let base = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(path)
     guard let entries = FileManager.default.enumerator(at: base, includingPropertiesForKeys: [.isRegularFileKey]) else { return [] }

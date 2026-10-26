@@ -456,7 +456,7 @@ struct EvaluationCompatibleJudgeClientTests {
             ).validationIssue?.contains("query") == true
         )
 
-        let session = EvaluationCompatibleJudgeClient.sessionConfiguration(timeout: 12)
+        let session = EvaluationHTTPPolicy.isolatedConfiguration(timeout: 12)
         #expect(session.timeoutIntervalForRequest == 12)
         #expect(session.timeoutIntervalForResource == 12)
         #expect(session.httpCookieStorage == nil)

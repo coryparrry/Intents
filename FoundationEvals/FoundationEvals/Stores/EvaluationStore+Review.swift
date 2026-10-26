@@ -6,16 +6,20 @@ extension EvaluationStore {
         EvaluationReviewWorkflow.samples(runs: runs, suiteID: selectedSuiteID)
     }
 
+    /// Validates an annotation against its current saved sample and persists it through suite-local rollback.
     func saveReview(_ annotation: EvaluationReviewAnnotation) throws {
         let sample = try reviewSample(runID: annotation.runID, sampleID: annotation.sampleID)
         try updateReviewState { try EvaluationReviewWorkflow.save(annotation, sample: sample, state: &$0) }
     }
 
+    /// Validates and persists a review proposal against its saved source sample without confirming the annotation.
     func proposeReview(_ proposal: EvaluationReviewProposal) throws {
         let sample = try reviewSample(runID: proposal.annotation.runID, sampleID: proposal.annotation.sampleID)
         try updateReviewState { try EvaluationReviewWorkflow.propose(proposal, sample: sample, state: &$0) }
     }
 
+    /// Accepts or rejects an existing proposal against its current saved source and persists the decision.
+    /// Throws when the proposal or its source is no longer available or workflow validation fails.
     func decideReviewProposal(id: UUID, accept: Bool) throws {
         guard let proposal = suiteLocalState.review.proposals.first(where: { $0.id == id }) else {
             throw EvaluationReviewError.invalid("The proposal is no longer available.")
@@ -24,6 +28,7 @@ extension EvaluationStore {
         try updateReviewState { try EvaluationReviewWorkflow.decideProposal(id: id, accept: accept, sample: sample, state: &$0) }
     }
 
+    /// Finds a saved review sample in the selected suite, throwing when either requested ID is unavailable.
     func reviewSample(runID: UUID, sampleID: UUID) throws -> EvaluationReviewSample {
         guard let sample = reviewSamples.first(where: { $0.run.id == runID && $0.sample.id == sampleID }) else {
             throw EvaluationReviewError.invalid("Choose a saved sample from the current suite.")
@@ -31,6 +36,8 @@ extension EvaluationStore {
         return sample
     }
 
+    /// Adds a current human pass/fail review as a judge-check example for its selected AI rubric assessment.
+    /// Requires current prompt/scoring/evidence integrity, replaces any example for that sample, and assigns the partition to every example of its case.
     func addReviewToJudgeChecks(reviewID: UUID, partition: EvaluationJudgeCheckPartition) throws {
         guard let annotation = suiteLocalState.review.annotations.first(where: { $0.id == reviewID }),
               let status = annotation.verdict.resultStatus else { throw EvaluationReviewError.invalid("A judge check needs a human pass or fail.") }
@@ -58,6 +65,8 @@ extension EvaluationStore {
         try commitReviewLocalState(state)
     }
 
+    /// Assigns the requested partition to all judge-check examples for the selected example's case and persists local state.
+    /// Throws if the example or any required source is missing.
     func setJudgeCheckPartition(exampleID: UUID, partition: EvaluationJudgeCheckPartition) throws {
         guard let example = suiteLocalState.reviewedJudgeExamples.first(where: { $0.id == exampleID }) else {
             throw EvaluationReviewError.invalid("The judge example is no longer available.")
@@ -71,6 +80,8 @@ extension EvaluationStore {
 
 /// Every repetition and every saved run of one case belongs to a single partition.
 enum EvaluationReviewJudgePartitions {
+    /// Returns test when any saved example for this case is held out, otherwise development.
+    /// Legacy corrections inherit an existing held-out partition.
     static func existing(caseID: UUID, state: EvaluationSuiteLocalState, runs: [EvaluationRun]) -> EvaluationJudgeCheckPartition {
         // A legacy correction inherits an existing held-out case, rather than leaking it into development.
         state.reviewedJudgeExamples.contains { example in
@@ -80,6 +91,8 @@ enum EvaluationReviewJudgePartitions {
         } ? .test : .development
     }
 
+    /// Assigns one partition to every example resolving to the case, across runs and repetitions.
+    /// Throws if any example's saved run or sample is missing; callers persist a candidate copy only after success.
     static func assign(_ partition: EvaluationJudgeCheckPartition, caseID: UUID,
                        state: inout EvaluationSuiteLocalState, runs: [EvaluationRun]) throws {
         for index in state.reviewedJudgeExamples.indices {

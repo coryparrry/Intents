@@ -7,12 +7,16 @@ public struct ProductionSchedule: Codable, Identifiable, Sendable {
     public var nextRun: Date
     public var remainingRuns: Int
     public var paused: Bool
+    /// Creates a schedule referencing a frozen template job; storage validates interval and remaining-run bounds on save.
     public init(id: UUID = UUID(), templateJobID: UUID, intervalSeconds: Double, nextRun: Date = Date(), remainingRuns: Int = 1, paused: Bool = false) {
         self.id = id; self.templateJobID = templateJobID; self.intervalSeconds = intervalSeconds
         self.nextRun = nextRun; self.remainingRuns = remainingRuns; self.paused = paused
     }
 }
 extension ProductionStorage {
+    /// Persists a schedule with a valid template, finite interval, and at most 1,000 remaining runs.
+    /// - Parameter expectedRevision: Optional hash of the prior encoded schedule, or `absent` to require a new schedule.
+    /// - Throws: Invalid schedule bounds, stale revision, missing template, or storage errors.
     public func saveSchedule(_ schedule: ProductionSchedule, expectedRevision: String? = nil) throws {
         _ = try loadJob(schedule.templateJobID)
         guard schedule.intervalSeconds.isFinite, (60...31_536_000).contains(schedule.intervalSeconds),
@@ -28,11 +32,15 @@ extension ProductionStorage {
             try ProductionCodec.write(schedule,to:file)
         }
     }
+    /// Reads all persisted schedule descriptors with a 10,000-byte limit per file.
     public func schedules() throws -> [ProductionSchedule] {
         try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("Schedules"), includingPropertiesForKeys: nil)
             .map { try ProductionCodec.read(ProductionSchedule.self, from: $0, maximumBytes: 10_000) }
     }
     /// Deterministic job IDs make retries safe if schedule advancement is interrupted.
+    /// Creates one clone per due schedule in this tick and advances its next run from `now`.
+    /// - Returns: IDs of installed due jobs.
+    /// - Throws: Template validation, job identity conflicts, or schedule/storage errors.
     public func tickSchedules(now: Date = Date()) throws -> [UUID] {
         var launched: [UUID] = []
         for schedule in try schedules() where !schedule.paused && schedule.remainingRuns > 0 && (schedule.nextRun.timeIntervalSince1970*1000).rounded() <= (now.timeIntervalSince1970*1000).rounded() {

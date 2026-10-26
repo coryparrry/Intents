@@ -18,6 +18,7 @@ struct AvailabilityOutput: Encodable {
 
 @available(macOS 26.0, *)
 enum OnDeviceRunner {
+    /// Reports default on-device model readiness with a user-facing reason and OS-appropriate standalone capability details.
     static func availability() -> AvailabilityOutput {
         switch SystemLanguageModel.default.availability {
         case .available: return availabilityOutput(available: true, reason: nil)
@@ -33,6 +34,7 @@ enum OnDeviceRunner {
         }
     }
 
+    /// Builds availability output with full standalone capabilities on macOS 27 or an app-engine OS requirement on earlier supported systems.
     static func availabilityOutput(available: Bool, reason: String?) -> AvailabilityOutput {
         var output = AvailabilityOutput(available: available, reason: reason)
         if #available(macOS 27.0, *) {
@@ -44,6 +46,7 @@ enum OnDeviceRunner {
         return output
     }
 
+    /// Preserves each SDK transcript entry through its Codable container, retaining unfamiliar wrappers or a text fallback with serialization error details.
     static func transcriptEntries(_ transcript: Transcript) -> [JSONValue] {
         transcript.map { entry in
             do {
@@ -68,6 +71,7 @@ enum OnDeviceRunner {
         }
     }
 
+    /// Maps macOS 26 generation errors to stable runner categories, falling back to cancellation or a generic generation error for other failures.
     static func generationFailure(_ error: Error) -> RunnerFailure {
         // Keep type references within the macOS 26 SDK surface. Newer SDK error
         // types still produce failed results through the real localized fallback.
@@ -90,6 +94,8 @@ enum OnDeviceRunner {
         return RunnerFailure.unclassifiedGenerationError(error)
     }
 
+    /// Executes legacy cases serially in fresh on-device sessions and records strict deterministic scores, timing, transcripts, and per-generation failures.
+    /// An unavailable model fails before execution; otherwise all requested generations run and the first failure determines the overall failed status.
     static func evaluate(_ request: EvaluationRequest) async -> EvaluationOutput {
         let started = Date()
         let uptime = ProcessInfo.processInfo.systemUptime
@@ -137,6 +143,8 @@ enum OnDeviceRunner {
 
 @main
 struct FoundationModelsRunner {
+    /// Reads one bounded stdin JSON request, dispatches legacy or macOS 27 app-engine operations, and emits newline-delimited JSON results.
+    /// Request and execution failures become structured failed output, with a fixed serialization fallback if encoding also fails.
     static func main() async {
         let started = Date()
         let uptime = ProcessInfo.processInfo.systemUptime
@@ -234,11 +242,14 @@ struct FoundationModelsRunner {
         }
     }
 
+    /// Evaluates an app-engine request while translating termination and interrupt signals into cooperative task cancellation.
     @available(macOS 27.0, *)
     static func evaluateWithCancellationSignals(_ input: Data) async throws -> AppEngineBridge.Output {
         return try await withCancellationSignals { try await AppEngineBridge.evaluate(input) }
     }
 
+    /// Runs an asynchronous operation with SIGTERM and SIGINT sources that cancel its task, removing the sources when it finishes.
+    /// The host owns the cancellation grace period and eventual force-kill fallback; operation errors propagate.
     @available(macOS 27.0, *)
     static func withCancellationSignals<Value: Sendable>(_ body: @escaping @Sendable () async throws -> Value) async throws -> Value {
         // The host bounds the grace period and owns the eventual SIGKILL fallback.
@@ -256,6 +267,7 @@ struct FoundationModelsRunner {
         return try await operation.value
     }
 
+    /// Writes sorted-key JSON with ISO 8601 dates and a trailing newline to stdout, propagating encoding failures.
     static func emit<T: Encodable>(_ value: T) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]

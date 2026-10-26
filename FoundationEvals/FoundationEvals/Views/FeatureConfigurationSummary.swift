@@ -195,6 +195,7 @@ private struct FeatureSchemaFieldSummary: View {
         }
     }
 
+    /// Formats a two-sided or one-sided range, returning no description when neither bound exists.
     private func boundsDescription(
         minimum: String?,
         maximum: String?,
@@ -259,6 +260,7 @@ private struct FeatureToolConfiguration: View {
         }
     }
 
+    /// Returns the localized label for a fixture or local HTTP tool implementation.
     private func modeTitle(for mode: EvaluationCustomToolMode) -> LocalizedStringResource {
         switch mode {
         case .fixture: "Fixture"
@@ -271,6 +273,7 @@ private struct FeatureConfigurationRow<Value: View>: View {
     let label: LocalizedStringResource
     @ViewBuilder let value: Value
 
+    /// Creates a labeled summary row, evaluating the value builder once.
     init(
         _ label: LocalizedStringResource,
         @ViewBuilder value: () -> Value

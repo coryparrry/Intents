@@ -16,10 +16,12 @@ struct RunnerFailure: Error, Codable {
     let kind: String
     let message: String
 
+    /// Creates an invalid-input failure containing the supplied validation message.
     static func validation(_ message: String) -> RunnerFailure {
         RunnerFailure(kind: "invalidInput", message: message)
     }
 
+    /// Classifies cancellation separately from other generation failures while preserving the localized error message.
     static func unclassifiedGenerationError(_ error: Error) -> RunnerFailure {
         RunnerFailure(kind: error is CancellationError ? "cancelled" : "generationError", message: error.localizedDescription)
     }
@@ -28,6 +30,7 @@ struct RunnerFailure: Error, Codable {
 enum Scoring: String, Codable, Sendable {
     case exact, contains, none
 
+    /// Returns strict whole-string equality or case-sensitive substring scoring, leaving pass and score nil when scoring is disabled or expected text is absent.
     func assess(response: String, expected: String?) -> (passed: Bool?, score: Double?) {
         guard self != .none, let expected else { return (nil, nil) }
         let passed = self == .exact ? response == expected : response.contains(expected)
@@ -50,6 +53,8 @@ struct EvaluationRequest: Decodable {
     let temperature: Double
     let maxTokens: Int
 
+    /// Validates legacy evaluation settings, unique case IDs, scoring requirements, byte limits, generation count, and total token and prompt budgets.
+    /// Throws an invalid-input failure describing the first violated admission rule.
     func validate() throws {
         guard operation == "evaluate" else { throw RunnerFailure.validation("Unsupported operation.") }
         guard (1...10).contains(repetitions) else { throw RunnerFailure.validation("repetitions must be an integer from 1 to 10.") }
@@ -91,6 +96,8 @@ enum RunnerRequest {
     case availability
     case evaluate(EvaluationRequest)
 
+    /// Parses a bounded JSON object into availability or a validated legacy evaluation request.
+    /// Rejects unknown operations, unsupported fields, missing or invalid types, and legacy admission-limit violations.
     static func parse(_ data: Data) throws -> RunnerRequest {
         guard data.count <= RunnerLimits.inputBytes else { throw RunnerFailure.validation("Input exceeds 1048576 bytes.") }
         let object: [String: Any]
@@ -128,6 +135,7 @@ enum RunnerRequest {
 indirect enum JSONValue: Codable, Sendable {
     case object([String: JSONValue]), array([JSONValue]), string(String), integer(Int64), unsigned(UInt64), number(Double), bool(Bool), null
 
+    /// Decodes arbitrary JSON values, preferring booleans and integer representations before floating-point numbers and recursively decoding containers.
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() { self = .null }
@@ -140,6 +148,7 @@ indirect enum JSONValue: Codable, Sendable {
         else { self = .object(try container.decode([String: JSONValue].self)) }
     }
 
+    /// Encodes the stored JSON kind without adding wrapper fields.
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
@@ -174,6 +183,7 @@ struct EvaluationResult: Encodable, Sendable {
 
     enum CodingKeys: String, CodingKey { case caseId, repetition, prompt, expected, response, passed, score, durationMs, trace }
 
+    /// Encodes a compatibility sample, omitting absent expected text while preserving explicit null pass and score values.
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(caseId, forKey: .caseId)
@@ -197,18 +207,21 @@ struct EvaluationOutput: Encodable, Sendable {
     let results: [EvaluationResult]
     let error: RunnerFailure?
 
+    /// Creates a failed run output with no results, wall-clock timestamps, and monotonic elapsed duration.
     static func failed(_ failure: RunnerFailure, started: Date, uptime: TimeInterval) -> EvaluationOutput {
         EvaluationOutput(status: "failed", startedAt: timestamp(started), finishedAt: timestamp(Date()),
                          durationMs: elapsedMilliseconds(since: uptime), results: [], error: failure)
     }
 }
 
+/// Formats a date as an ISO 8601 timestamp including fractional seconds.
 func timestamp(_ date: Date) -> String {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter.string(from: date)
 }
 
+/// Returns nonnegative elapsed milliseconds from a system-uptime reading.
 func elapsedMilliseconds(since start: TimeInterval) -> Double {
     max(0, (ProcessInfo.processInfo.systemUptime - start) * 1000)
 }

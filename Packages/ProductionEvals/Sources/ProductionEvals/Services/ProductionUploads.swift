@@ -12,6 +12,7 @@ public struct ProductionUpload: Codable, Sendable, Equatable {
   public var expectedDigest: String
   public var previewed = false
   public var datasetRevision: String?
+  /// Declares the exact ordered chunk count, total byte count, and SHA-256 digest of an upload before accepting source bytes.
   public init(
     id: UUID, name: String, version: String, sampling: ProductionSampling = .curated,
     productionData: Bool = false, expectedChunks: Int, expectedBytes: Int, expectedDigest: String
@@ -34,6 +35,9 @@ private struct ProductionUploadChunk: Codable {
 }
 
 extension ProductionStorage {
+  /// Validates and stores a resumable upload contract, returning prior state for an identical ID and contract.
+  /// Accepts 1–1,024 chunks and at most one billion declared bytes, with at most ten pending uploads.
+  /// - Throws: Invalid contracts, conflicting/discarded IDs, storage-limit errors, or file errors.
   public func beginUpload(_ upload: ProductionUpload) throws -> ProductionUpload {
     guard !upload.name.isEmpty, upload.name.count <= 200, !upload.version.isEmpty,
       upload.version.count <= 100,
@@ -89,6 +93,7 @@ extension ProductionStorage {
       return upload
     }
   }
+  /// Reads a bounded upload manifest, rejecting IDs with a persisted discard tombstone.
   public func upload(_ id: UUID) throws -> ProductionUpload {
     guard !FileManager.default.fileExists(atPath: discardMarker(id).path) else {
       throw ProductionFailure.invalid("This upload ID was discarded. Use a new ID for new source data.")
@@ -97,6 +102,7 @@ extension ProductionStorage {
       ProductionUpload.self, from: uploadDirectory(id).appendingPathComponent("upload.json"),
       maximumBytes: maximumUploadManifestBytes)
   }
+  /// Returns the declared chunk indices with persisted receipt files; sealing performs byte and digest validation.
   public func uploadStatus(_ id: UUID) throws -> [Int] {
     let value = try upload(id)
     return (0..<value.expectedChunks).filter {
@@ -104,6 +110,8 @@ extension ProductionStorage {
         atPath: uploadDirectory(id).appendingPathComponent("\($0).meta").path)
     }
   }
+  /// Stores a nonempty chunk of at most 1 MiB and its receipt under the upload transaction.
+  /// Repeated identical bytes at an index are accepted; changed bytes, sealed state, and declared-byte overflow are rejected.
   public func appendUpload(_ id: UUID, index: Int, data: Data) throws {
     try transaction {
       let value = try upload(id)
@@ -135,6 +143,8 @@ extension ProductionStorage {
       try ProductionCodec.write(receipt, to: metadata)
     }
   }
+  /// Verifies and assembles the complete source, validates up to three examples, and marks the upload previewed.
+  /// - Throws: Missing/changed chunk evidence, aggregate digest/size mismatches, invalid examples, or storage errors.
   public func previewUpload(_ id: UUID) throws -> [ProductionExample] {
     let source = try sealUpload(id)
     let preview = try Self.previewExamples(from: source, limit: 3)
@@ -146,6 +156,11 @@ extension ProductionStorage {
     }
     return preview
   }
+  /// Imports the exact previewed source as an immutable dataset and records its revision for repeat completion calls.
+  /// - Parameters:
+  ///   - previewDigest: Must equal the declared digest of the previewed complete upload.
+  ///   - redactionConfirmed: Required for uploads declared as production data.
+  /// - Throws: Unpreviewed, changed, invalid, or unconfirmed source evidence, or persistence errors.
   public func finishUpload(_ id: UUID, previewDigest: String, redactionConfirmed: Bool) throws
     -> ProductionDataset
   {
@@ -170,6 +185,8 @@ extension ProductionStorage {
     }
     return dataset
   }
+  /// Persists a discard tombstone before removing upload files, allowing retries to finish interrupted cleanup.
+  /// The ID remains unavailable for reuse; corrupt or oversized manifests can still be discarded.
   public func discardUpload(_ id: UUID) throws {
     try transaction {
       if !FileManager.default.fileExists(atPath: discardMarker(id).path) {
@@ -189,12 +206,16 @@ extension ProductionStorage {
       }
     }
   }
+  /// Locates the tombstone that permanently marks an upload ID as discarded.
   private func discardMarker(_ id: UUID) -> URL {
     root.appendingPathComponent("Uploads/.discarded-\(id)")
   }
+  /// Locates retained manifest, chunks, receipts, and assembled bytes for one upload ID.
   private func uploadDirectory(_ id: UUID) -> URL {
     root.appendingPathComponent("Uploads/\(id.uuidString)")
   }
+  /// Assembles chunks in declared index order after verifying receipt sizes/digests and the complete byte count/digest.
+  /// An optional expected manifest detects state changes; temporary assembly is removed on failure.
   private func sealUpload(_ id: UUID, expected: ProductionUpload? = nil) throws -> URL {
     try transaction {
       let value = try upload(id)

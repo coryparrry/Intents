@@ -18,6 +18,7 @@ struct HomeHero: View {
     private var cases: Int { summaries.reduce(0) { $0 + $1.caseCount } }
     private var latest: Date? { summaries.compactMap(\.lastCheckedAt).max() }
 
+    /// Formats a suite count with singular or plural wording.
     private func suites(_ count: Int) -> String { "\(count) \(count == 1 ? "suite" : "suites")" }
 
     private var mark: WorkspaceStatusMark.State {
@@ -107,6 +108,7 @@ struct HomeTrendChart: View {
         Self.points(for: summaries)
     }
 
+    /// Flattens scored suite history into chart points, converting fractional rates to percentages and preserving failure markers.
     static func points(for summaries: [SuiteOverviewSummary]) -> [Point] {
         summaries.flatMap { summary in
             summary.history.compactMap { point in
@@ -422,6 +424,7 @@ struct RecentRunsTimeline: View {
 
     private var items: [Item] { Self.recentItems(in: summaries) }
 
+    /// Returns up to six history items across suites, newest first by saved sequence and then date.
     static func recentItems(in summaries: [SuiteOverviewSummary]) -> [Item] {
         Array(summaries.flatMap { summary in summary.history.map { Item(id: $0.id, suite: summary, point: $0) } }
             .sorted { ($0.point.historySequence ?? 0, $0.point.date) > ($1.point.historySequence ?? 0, $1.point.date) }

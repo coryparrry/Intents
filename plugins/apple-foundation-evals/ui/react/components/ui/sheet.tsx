@@ -5,28 +5,19 @@ import { Dialog as SheetPrimitive } from "radix-ui"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
+/** Provides Radix dialog state for a sheet, supporting controlled open props or an internal default state. */
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
 }
 
-function SheetTrigger({
-  ...props
-}: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
-  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />
-}
-
-function SheetClose({
-  ...props
-}: React.ComponentProps<typeof SheetPrimitive.Close>) {
-  return <SheetPrimitive.Close data-slot="sheet-close" {...props} />
-}
-
+/** Ports sheet children into the supplied Radix dialog portal target. */
 function SheetPortal({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Portal>) {
   return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />
 }
 
+/** Renders the animated fixed backdrop behind an open sheet. */
 function SheetOverlay({
   className,
   ...props
@@ -43,6 +34,7 @@ function SheetOverlay({
   )
 }
 
+/** Ports a panel from the selected viewport edge with a backdrop and optional accessible close button. */
 function SheetContent({
   className,
   children,
@@ -84,6 +76,7 @@ function SheetContent({
   )
 }
 
+/** Stacks the sheet title and description in a padded header. */
 function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -94,16 +87,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="sheet-footer"
-      className={cn("mt-auto flex flex-col gap-2 p-4", className)}
-      {...props}
-    />
-  )
-}
-
+/** Styles the Radix title that supplies the sheet accessible name. */
 function SheetTitle({
   className,
   ...props
@@ -120,6 +104,7 @@ function SheetTitle({
   )
 }
 
+/** Styles the Radix description associated with the sheet dialog. */
 function SheetDescription({
   className,
   ...props
@@ -135,11 +120,8 @@ function SheetDescription({
 
 export {
   Sheet,
-  SheetTrigger,
-  SheetClose,
   SheetContent,
   SheetHeader,
-  SheetFooter,
   SheetTitle,
   SheetDescription,
 }

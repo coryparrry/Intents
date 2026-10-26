@@ -8,6 +8,7 @@ struct WorkflowTimelineScale {
     let times: [Double]
     let positions: [Double]
 
+    /// Builds a piecewise-linear axis from valid unique boundaries, reserving minimum spacing while retaining proportional time ranges.
     init(boundaries: [Double], extent: Double, width: Double) {
         self.extent = extent.isFinite && extent > 0 ? extent : 0
         self.width = width.isFinite && width > 0 ? width : 0
@@ -44,14 +45,17 @@ struct WorkflowTimelineScale {
         self.positions = positions
     }
 
+    /// Maps a time to its clamped axis position, returning zero for nonfinite input or an empty axis.
     func position(at time: Double) -> Double {
         interpolate(time, from: times, to: positions)
     }
 
+    /// Maps an axis position back to clamped time, returning zero for nonfinite input or an empty axis.
     func time(at position: Double) -> Double {
         interpolate(position, from: positions, to: times)
     }
 
+    /// Finds the enclosing source interval by binary search and linearly interpolates, clamping outside its endpoints.
     private func interpolate(_ value: Double, from source: [Double], to destination: [Double]) -> Double {
         guard value.isFinite, source.count > 1 else { return 0 }
         if value <= source[0] { return destination[0] }
@@ -67,10 +71,12 @@ struct WorkflowTimelineScale {
     }
 }
 
+/// Display coordinates for one validated span on the shared timeline scale.
 struct WorkflowTimelineInterval {
     let displayOffset: Double
     let displayWidth: Double
 
+    /// Projects a valid span onto the shared axis, using a small marker for instants and zero width for invalid intervals.
     init(start: Double, end: Double, scale: WorkflowTimelineScale) {
         guard start.isFinite, end.isFinite, start >= 0, end >= start,
               end <= scale.extent, scale.extent > 0, scale.width > 0 else {

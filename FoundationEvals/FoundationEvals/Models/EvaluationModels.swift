@@ -9,6 +9,7 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
     var fieldAssertions: [EvaluationFieldAssertion]? = nil
     var reviewSource: EvaluationRegressionSource? = nil
 
+    /// Creates a case with optional conversation setup and field assertions; review provenance is assigned separately.
     init(
         id: UUID = UUID(),
         name: String,
@@ -29,6 +30,7 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
         case id, name, prompt, expected, conversation, fieldAssertions, reviewSource
     }
 
+    /// Decodes required case text, generating an absent ID and defaulting absent conversation settings for older suite files.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
@@ -183,6 +185,7 @@ struct EvaluationModelConfiguration: Codable, Equatable, Sendable {
     var coreAI: EvaluationCoreAIConfiguration? = nil
 }
 
+/// Persisted suite inputs and scoring configuration; older documents decode missing fields from the starter suite.
 struct EvaluationSuite: Codable, Equatable, Sendable {
     static let legacyDefaultCriteria = "The response is correct, relevant, and follows the instructions."
     static let judgePassingScore = 3
@@ -227,6 +230,7 @@ struct EvaluationSuite: Codable, Equatable, Sendable {
             .filter { !$0.isEmpty }
     }
 
+    /// Creates the starter suite with its example case, default rubric, and local model settings.
     init() {}
 
     private enum CodingKeys: String, CodingKey {
@@ -234,6 +238,7 @@ struct EvaluationSuite: Codable, Equatable, Sendable {
         case judgeConfiguration, releasePolicy
     }
 
+    /// Decodes each suite field with starter-suite fallbacks for missing keys; malformed present values still fail decoding.
     init(from decoder: Decoder) throws {
         let defaults = EvaluationSuite()
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -256,6 +261,7 @@ struct EvaluationSuite: Codable, Equatable, Sendable {
     }
 }
 
+/// Per-request token categories; totals include input and output while cached and reasoning tokens remain separate breakdowns.
 struct EvaluationUsage: Codable, Sendable {
     var inputTokens = 0
     var cachedInputTokens = 0
@@ -264,6 +270,7 @@ struct EvaluationUsage: Codable, Sendable {
 
     var totalTokens: Int { inputTokens.saturatedAdding(outputTokens) }
 
+    /// Accumulates each token category independently with saturation on integer overflow.
     mutating func add(_ other: Self) {
         inputTokens = inputTokens.saturatedAdding(other.inputTokens)
         cachedInputTokens = cachedInputTokens.saturatedAdding(other.cachedInputTokens)
@@ -273,12 +280,14 @@ struct EvaluationUsage: Codable, Sendable {
 }
 
 extension Int {
+    /// Adds signed integers, clamping overflow to the corresponding representable bound.
     func saturatedAdding(_ other: Int) -> Int {
         let (sum, overflowed) = addingReportingOverflow(other)
         guard overflowed else { return sum }
         return other >= 0 ? .max : .min
     }
 
+    /// Multiplies nonnegative operands with saturation at Int.max, returning zero if either operand is negative.
     func nonnegativeSaturatedMultiplying(_ other: Int) -> Int {
         guard self >= 0, other >= 0 else { return 0 }
         let (product, overflowed) = multipliedReportingOverflow(by: other)
@@ -301,6 +310,7 @@ struct EvaluationStructuredFeatureEvidence: Codable, Sendable {
     var metadata: [String: String]
 }
 
+/// Saved subject output and execution evidence with optional judge, feature, conversation, and reassessment inputs.
 struct EvaluationSampleResult: Identifiable, Codable, Sendable {
     var id = UUID()
     var caseID: UUID
@@ -347,6 +357,7 @@ struct EvaluationSampleResult: Identifiable, Codable, Sendable {
                 || !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
+    /// Describes the recorded judge identity and routing when available, otherwise naming the configured local or model scorer.
     func scorerSummary(scoringMode: ScoringMode) -> String {
         if let identity = judgeIdentity {
             if identity.requestedModelID == "none" { return identity.connectionName }
@@ -425,6 +436,7 @@ struct EvaluationDeveloperExecution: Codable, Equatable, Sendable {
     var protocolMinorVersion: Int
 }
 
+/// Saved run inputs and original samples alongside retained assessment sets used for the current scoring view.
 struct EvaluationRun: Identifiable, Codable, Sendable {
     var id: UUID
     var suiteID: UUID
@@ -458,6 +470,7 @@ struct EvaluationRun: Identifiable, Codable, Sendable {
     var promptImprovementID: UUID? = nil
     var developerExecution: EvaluationDeveloperExecution? = nil
 
+    /// Projects the selected score set onto original subject evidence; invalid or missing assessment entries become unscored rather than borrowing original scores.
     var effectiveResults: [EvaluationSampleResult] {
         let selected = selectedAssessment
         guard selected != nil || selectedAssessmentID != nil else { return results }
@@ -570,6 +583,7 @@ struct EvaluationRun: Identifiable, Codable, Sendable {
         }
     }
 
+    /// Uses an explicit assessment ID when present, otherwise the last retained assessment; an unresolved explicit ID remains unavailable.
     var selectedAssessment: EvaluationAssessment? {
         guard let selectedAssessmentID else { return assessments?.last }
         return assessments?.first { $0.id == selectedAssessmentID }

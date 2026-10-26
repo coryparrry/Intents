@@ -29,6 +29,7 @@ python3 "$BUILD_HELPER" --check-lock "$INTENTS_LOCAL_BUILD_LOCK_FD"
 PROJECT="$ROOT_DIR/FoundationEvals/FoundationEvals.xcodeproj"
 APP_BUNDLE="$ROOT_DIR/dist/$PRODUCT_NAME.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+# Refuse to replace a running app and return contention status before build publication.
 require_stopped_app() {
   if pgrep -x "$APP_NAME" >/dev/null; then
     echo "Intents is already running. Finish or cancel its run, then quit it before rebuilding." >&2
@@ -40,6 +41,7 @@ require_stopped_app
 BUILD_ROOT="$(mktemp -d /tmp/FoundationEvals-build.XXXXXX)"
 STAGE_ROOT=""
 PUBLISHED=false
+# Restore the previous app after interrupted publication, remove owned staging/build paths, and preserve failure status or recovery evidence.
 cleanup() {
   result=$?
   # If publishing was interrupted between the two moves, restore the old app.
@@ -90,6 +92,7 @@ PUBLISHED=true
 # Retain ownership through launch/debug/verification and cleanup, so another
 # invocation cannot replace the verified artifact before this invocation uses it.
 
+# Launch the verified published app as a new instance while this invocation retains its build lock.
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
 }

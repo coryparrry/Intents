@@ -62,6 +62,8 @@ struct EvaluationSuiteDefinition: Codable, Equatable, Sendable {
     var judgeConfiguration: EvaluationJudgeConfiguration
     var releasePolicy: EvaluationReleasePolicy
 
+    /// Captures the repository-portable suite definition, clearing Core AI paths and bookmarks, Spotlight folder scope, and local judge approval state.
+    /// Attachments remain outside the definition.
     init(suite: EvaluationSuite) {
         id = suite.id
         name = suite.name
@@ -92,6 +94,7 @@ struct EvaluationSuiteDefinition: Codable, Equatable, Sendable {
         releasePolicy = suite.releasePolicy
     }
 
+    /// Applies this definition to a local suite while preserving its attachments, local Core AI configuration, Spotlight path, judge connection, and evidence approvals.
     func applyingLocalState(from suite: EvaluationSuite) -> EvaluationSuite {
         var result = suite
         result.id = id
@@ -119,16 +122,6 @@ struct EvaluationSuiteDefinition: Codable, Equatable, Sendable {
     }
 }
 
-@available(macOS 27.0, *)
-struct EvaluationProjectOverview: Identifiable, Sendable {
-    var id: UUID
-    var name: String
-    var suiteCount: Int
-    var suitesNeedingChecks: Int
-    var latestRunAt: Date?
-    var hasStaleResults: Bool
-}
-
 // MARK: - Judge connections and provenance
 
 @available(macOS 27.0, *)
@@ -150,6 +143,7 @@ struct EvaluationJudgeConfiguration: Codable, Equatable, Sendable {
     var approvedEvidencePolicyVersion: String? = nil
     static let currentEvidencePolicyVersion = "observed-conversation-v1"
     var usesExternalConnection: Bool { mode == .connection }
+    /// Checks that approval exists and still matches the selected connection ID, attachment-disclosure setting, connection digest, and evidence-policy version.
     func hasCurrentExternalEvidenceApproval(for connection: EvaluationJudgeConnection) -> Bool {
         externalEvidenceApprovedAt != nil
             && approvedConnectionID == connectionID
@@ -219,6 +213,7 @@ struct EvaluationJudgeConnection: Identifiable, Codable, Equatable, Sendable {
     var lastCheckMessage: String?
     var generationPolicy: EvaluationJudgeGenerationPolicy
 
+    /// Creates a judge connection with explicit routing and request settings, choosing the legacy generation-policy default only when no policy was supplied.
     init(id: UUID, name: String, kind: EvaluationJudgeConnectionKind, baseURL: String, modelID: String,
          capabilities: EvaluationJudgeCapabilities = .init(), requestTimeoutSeconds: Double = 60,
          providerOrder: [String] = [], inputUSDPerMillionTokens: Double? = nil,
@@ -239,6 +234,7 @@ struct EvaluationJudgeConnection: Identifiable, Codable, Equatable, Sendable {
         self.generationPolicy = generationPolicy ?? .legacyDefault(modelID: modelID, baseURL: baseURL)
     }
 
+    /// Decodes saved judge connections with defaults for additive fields and migrates a missing generation policy through the construction-time legacy heuristic.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(id: try c.decode(UUID.self, forKey: .id), name: try c.decode(String.self, forKey: .name),
@@ -365,6 +361,7 @@ struct EvaluationAssessment: Identifiable, Codable, Sendable {
     var scoringContract: EvaluationScoringContract? = nil
     var subjectEvidenceDigest: String? = nil
     var errorCount: Int { samples.count { $0.errorCategory != nil || $0.errorMessage != nil } }
+    /// Sums finite nonnegative per-sample judge durations, ignoring unavailable or invalid values and saturating overflow at the largest finite Double.
     static func summedJudgeDurationMilliseconds(_ samples: [EvaluationSampleAssessment]) -> Double {
         samples.compactMap(\.durationMilliseconds).filter { $0.isFinite && $0 >= 0 }
             .reduce(0) { total, duration in
@@ -424,6 +421,8 @@ struct EvaluationScoringContract: Codable, Equatable, Sendable {
     var judgePromptVersion: String?
     var judgePassingScore: Int?
     var casesDigest: String
+    /// Builds a scoring contract from sorted case projections and a canonical SHA-256 digest.
+    /// Case names and editing IDs inside conversation turns or assertions are omitted; scoring behavior and case IDs remain significant.
     init(scoringMode: ScoringMode, rubricCriteria: [String], judgePromptVersion: String?,
          judgePassingScore: Int?, cases: [EvaluationCase]) throws {
         self.scoringMode = scoringMode
@@ -434,12 +433,14 @@ struct EvaluationScoringContract: Codable, Equatable, Sendable {
         let data = try CanonicalJSON.data(for: normalizedCases, prettyPrinted: false)
         casesDigest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
+    /// Captures a suite's scoring contract with the current judge policy only for model-judge mode, excluding subject instructions and model settings.
     init(suite: EvaluationSuite) throws {
         try self.init(scoringMode: suite.scoringMode,
             rubricCriteria: suite.scoringMode == .modelJudge ? suite.rubricCriteria : [],
             judgePromptVersion: suite.scoringMode == .modelJudge ? EvaluationRunner.judgePromptVersion : nil,
             judgePassingScore: suite.scoringMode == .modelJudge ? EvaluationSuite.judgePassingScore : nil, cases: suite.cases)
     }
+    /// Reconstructs the run's scoring contract from saved judge settings and planned cases, falling back to the saved definition's cases or an empty set.
     init(run: EvaluationRun) throws {
         try self.init(scoringMode: run.scoringMode,
             rubricCriteria: run.scoringMode == .modelJudge
@@ -458,6 +459,7 @@ private struct EvaluationScoringCaseProjection: Codable {
     var expected: String
     var conversation: EvaluationScoringConversationProjection
     var fieldAssertions: [EvaluationScoringAssertionProjection]
+    /// Projects case identity and scoring-relevant inputs, treating absent assertions as an empty set and omitting the display name.
     init(case evaluationCase: EvaluationCase) {
         id = evaluationCase.id
         prompt = evaluationCase.prompt
@@ -474,6 +476,7 @@ private struct EvaluationScoringConversationProjection: Codable {
     var historyPolicy: EvaluationHistoryPolicy
     var retainedTurnCount: Int?
     var modelHistoryProjection: EvaluationModelHistoryProjection
+    /// Projects conversation behavior without setup-turn editing IDs, retaining a turn count only for the recent-complete-turns policy.
     init(configuration: EvaluationConversationConfiguration) {
         setupPrompts = configuration.setupTurns.map(\.prompt)
         restoredTranscriptJSON = configuration.restoredTranscriptJSON
@@ -488,6 +491,7 @@ private struct EvaluationScoringAssertionProjection: Codable {
     var pointer: String
     var operation: EvaluationFieldAssertionOperation
     var expectedValue: String?
+    /// Projects assertion behavior without its editing ID, omitting the unused expected value for existence checks.
     init(assertion: EvaluationFieldAssertion) {
         pointer = assertion.pointer
         operation = assertion.operation
@@ -514,6 +518,7 @@ struct EvaluationSubjectEvidenceSnapshot: Codable, Equatable, Sendable {
     var cases: [EvaluationCase]
     var attachments: [EvaluationSubjectAttachmentSnapshot]
     var digest: String
+    /// Hashes canonical JSON of the exact instructions, ordered cases, and attachment snapshots to bind later assessments to immutable subject evidence.
     static func digest(instructions: String, cases: [EvaluationCase], attachments: [EvaluationSubjectAttachmentSnapshot]) throws -> String {
         struct Payload: Codable {
             var instructions: String

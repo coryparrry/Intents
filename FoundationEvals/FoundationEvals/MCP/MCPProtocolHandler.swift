@@ -11,6 +11,9 @@ actor MCPProtocolHandler {
     private let maximumConcurrentRequests: Int
     private var activeAdmissions: Set<UUID> = []
 
+    /// Creates an authenticated protocol handler with bounded body size and concurrent admissions.
+    /// Requires a valid port, nonempty credential, and positive limits; onRequest observes admitted
+    /// requests.
     init(
         port: Int = 17_873,
         authority: MCPAuthority,
@@ -31,6 +34,8 @@ actor MCPProtocolHandler {
         self.maximumConcurrentRequests = maximumConcurrentRequests
     }
 
+    /// Runs HTTP preflight and processes an admitted buffered request, returning the rejection response
+    /// when admission fails.
     func handle(_ request: MCPHTTPRequest) async -> MCPHTTPResponse {
         switch await preflight(request) {
         case .rejected(let response):
@@ -40,6 +45,9 @@ actor MCPProtocolHandler {
         }
     }
 
+    /// Validates path, method, loopback Host/Origin, bearer credential, and JSON content type before
+    /// reserving a concurrency slot. An admitted token must be passed to handleAdmitted or abandon,
+    /// including when body collection fails; onRequest runs after reservation.
     func preflight(_ request: MCPHTTPRequest) async -> MCPRequestPreflight {
         if request.path != "/mcp" { return .empty(404) }
         guard request.method == "POST" else { return .empty(405, allow: "POST") }
@@ -66,10 +74,15 @@ actor MCPProtocolHandler {
         return .admitted(admission)
     }
 
+    /// Releases a reserved request slot when the transport cannot proceed, such as a body-read failure.
+    /// Unknown or already released admissions have no effect.
     func abandon(_ admission: MCPRequestAdmission) {
         activeAdmissions.remove(admission.id)
     }
 
+    /// Processes a request with an active admission and releases its slot on exit, rejecting an
+    /// oversized body with 413. Does not repeat preflight; transports must retain the admitted request
+    /// head. An inactive token returns an internal RPC error.
     func handleAdmitted(
         _ request: MCPHTTPRequest,
         admission: MCPRequestAdmission
@@ -82,6 +95,9 @@ actor MCPProtocolHandler {
         return await process(request)
     }
 
+    /// Validates JSON syntax, request shape, IDs, and protocol version before routing. Valid
+    /// notifications receive 202 without executing a method; malformed requests produce HTTP-400 RPC
+    /// errors.
     private func process(_ httpRequest: MCPHTTPRequest) async -> MCPHTTPResponse {
         do {
             _ = try JSONDecoder().decode(MCPJSONValue.self, from: httpRequest.body)
@@ -128,6 +144,8 @@ actor MCPProtocolHandler {
         return await route(request)
     }
 
+    /// Routes a validated request with an ID to initialization, ping, tool, or resource handling.
+    /// Rejects unsupported pagination cursors and unknown methods with RPC errors.
     private func route(_ request: MCPRPCRequest) async -> MCPHTTPResponse {
         switch request.method {
         case "initialize":
@@ -175,6 +193,9 @@ actor MCPProtocolHandler {
         }
     }
 
+    /// Parses tool name and object arguments before invoking the authority. Converts input/confirmation
+    /// failures to RPC parameter errors and returns authority content as both JSON text and structured
+    /// content, preserving isError.
     private func callTool(_ request: MCPRPCRequest) async -> MCPHTTPResponse {
         guard let name = request.stringParameter("name") else {
             return rpcError(id: request.id!, code: -32_602, message: "Tool name is required.")
@@ -215,6 +236,9 @@ actor MCPProtocolHandler {
         return rpcResult(id: request.id!, value: .object(result))
     }
 
+    /// Resolves an advertised resource URI, invokes the authority, and requires a matching URI with
+    /// exactly one text or blob body. Encodes blobs as base64 and maps unavailable or invalid authority
+    /// responses to RPC errors.
     private func readResource(_ request: MCPRPCRequest) async -> MCPHTTPResponse {
         guard let uri = request.stringParameter("uri"), let resource = MCPResourceRequest(uri: uri) else {
             return rpcError(id: request.id!, code: -32_602, message: "Resource URI is invalid or unavailable.")
@@ -239,6 +263,8 @@ actor MCPProtocolHandler {
         return rpcResult(id: request.id!, value: .object(["contents": .array([.object(content)])]))
     }
 
+    /// Maps an authority not_found resource payload to the MCP resource-not-found error with the
+    /// requested URI. Malformed or other failure payloads become an internal error.
     private func resourceError(
         _ payload: MCPResourcePayload,
         requestedURI: String,
@@ -264,6 +290,7 @@ actor MCPProtocolHandler {
         return rpcError(id: id, code: -32_603, message: "Internal error.")
     }
 
+    /// Builds an HTTP-400 protocol-version error identifying both requested and supported versions.
     private func unsupportedVersion(requested: String, id: MCPJSONValue) -> MCPHTTPResponse {
         rpcError(
             status: 400,
@@ -277,6 +304,7 @@ actor MCPProtocolHandler {
         )
     }
 
+    /// Wraps a successful JSON-RPC result, placing nonobject values under a value key.
     private func rpcResult(id: MCPJSONValue, value: MCPJSONValue) -> MCPHTTPResponse {
         let result = value.objectValue ?? ["value": value]
         return jsonResponse(
@@ -285,6 +313,7 @@ actor MCPProtocolHandler {
         )
     }
 
+    /// Builds a JSON-RPC error envelope with an optional data member and caller-selected HTTP status.
     private func rpcError(
         status: Int = 200,
         id: MCPJSONValue,
@@ -303,6 +332,8 @@ actor MCPProtocolHandler {
         )
     }
 
+    /// Encodes a JSON response with security headers and JSON content type, falling back to a fixed
+    /// internal-error body if encoding fails.
     private func jsonResponse(status: Int, value: MCPJSONValue) -> MCPHTTPResponse {
         var headers = MCPHTTPResponse.securityHeaders
         headers["Content-Type"] = "application/json; charset=utf-8"
@@ -315,11 +346,14 @@ actor MCPProtocolHandler {
         return MCPHTTPResponse(status: status, headers: headers, body: body)
     }
 
+    /// Allows only localhost or 127.0.0.1 with the configured explicit port in the Host header.
     private func hostIsAllowed(_ host: String?) -> Bool {
         guard let host = host?.lowercased() else { return false }
         return host == "127.0.0.1:\(port)" || host == "localhost:\(port)"
     }
 
+    /// Requires the exact Bearer prefix and credential byte length, then compares all credential bytes
+    /// using an accumulated XOR difference.
     private func authorized(_ header: String?) -> Bool {
         guard let header, header.hasPrefix("Bearer ") else { return false }
         let supplied = Data(header.dropFirst("Bearer ".count).utf8)
@@ -328,6 +362,8 @@ actor MCPProtocolHandler {
         return zip(supplied, expected).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
     }
 
+    /// Allows an absent or empty Origin, or a bare HTTP loopback origin with the configured port.
+    /// Rejects credentials, paths, queries, fragments, and other hosts or schemes.
     private func originIsAllowed(_ origin: String?) -> Bool {
         guard let origin, !origin.isEmpty else { return true }
         guard let components = URLComponents(string: origin),
@@ -343,6 +379,8 @@ actor MCPProtocolHandler {
         return host == "127.0.0.1" || host == "localhost"
     }
 
+    /// Accepts application/json case-insensitively, with optional semicolon parameters whose names and
+    /// values are nonempty.
     private func isJSONContentType(_ header: String?) -> Bool {
         guard let header else { return false }
         let components = header.split(separator: ";", omittingEmptySubsequences: false)
@@ -407,6 +445,7 @@ enum MCPRequestPreflight: Sendable {
     case admitted(MCPRequestAdmission)
     case rejected(MCPHTTPResponse)
 
+    /// Creates a rejected preflight result containing a bodyless response and optional Allow header.
     static func empty(_ status: Int, allow: String? = nil) -> Self {
         .rejected(.empty(status, allow: allow))
     }
@@ -422,6 +461,8 @@ private struct MCPRPCRequest: Decodable {
         case jsonrpc, id, method, params
     }
 
+    /// Decodes required RPC fields while distinguishing an absent ID or params member from an explicit
+    /// JSON null. Decoding failures propagate to request validation.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         jsonrpc = try container.decode(String.self, forKey: .jsonrpc)
@@ -440,10 +481,13 @@ private struct MCPRPCRequest: Decodable {
         }
     }
 
+    /// Returns the named parameter only when its JSON value is a string.
     func stringParameter(_ name: String) -> String? {
         parameter(name)?.stringValue
     }
 
+    /// Looks up a parameter in the request's object-valued params member, returning nil when
+    /// unavailable.
     func parameter(_ name: String) -> MCPJSONValue? {
         params?.objectValue?[name]
     }

@@ -7,6 +7,7 @@ struct PromptTextEditor: View {
     let label: String
     @State private var editingText: String
 
+    /// Connects the external prompt binding and seeds the local editing buffer from its current value.
     init(text: Binding<String>, label: String) {
         _text = text
         self.label = label

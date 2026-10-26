@@ -3,6 +3,7 @@ import Foundation
 
 // MARK: - Workspace catalog
 
+/// Persistent project index and current selection, separate from suite definitions and run evidence.
 struct EvaluationWorkspaceCatalog: Codable, Equatable, Sendable {
     static let currentFormatVersion = 1
     var formatVersion = currentFormatVersion
@@ -23,6 +24,7 @@ struct EvaluationProject: Identifiable, Codable, Equatable, Sendable {
     var isArchived: Bool { archivedAt != nil }
 }
 
+/// Catalog metadata and repository location for a suite; the suite body is stored separately.
 struct EvaluationSuiteRecord: Identifiable, Codable, Equatable, Sendable {
     var id: UUID
     var name: String
@@ -57,6 +59,7 @@ struct EvaluationSuiteDefinition: Codable, Equatable, Sendable {
     var judgeConfiguration: EvaluationJudgeConfiguration
     var releasePolicy: EvaluationReleasePolicy
 
+    /// Copies portable suite settings while clearing machine resource paths and external-judge approvals.
     init(suite: EvaluationSuite) {
         id = suite.id
         name = suite.name
@@ -87,6 +90,7 @@ struct EvaluationSuiteDefinition: Codable, Equatable, Sendable {
         releasePolicy = suite.releasePolicy
     }
 
+    /// Applies this definition while retaining the suite's local resources, attachments, judge connection, and approvals.
     func applyingLocalState(from suite: EvaluationSuite) -> EvaluationSuite {
         var result = suite
         result.id = id
@@ -114,15 +118,6 @@ struct EvaluationSuiteDefinition: Codable, Equatable, Sendable {
     }
 }
 
-struct EvaluationProjectOverview: Identifiable, Sendable {
-    var id: UUID
-    var name: String
-    var suiteCount: Int
-    var suitesNeedingChecks: Int
-    var latestRunAt: Date?
-    var hasStaleResults: Bool
-}
-
 // MARK: - Judge connections and provenance
 
 enum EvaluationJudgeMode: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -142,6 +137,7 @@ struct EvaluationJudgeConfiguration: Codable, Equatable, Sendable {
     var approvedEvidencePolicyVersion: String? = nil
     static let currentEvidencePolicyVersion = "observed-conversation-v1"
     var usesExternalConnection: Bool { mode == .connection }
+    /// Checks that recorded approval still matches the selected connection, disclosure digest, attachment policy, and evidence-policy version.
     func hasCurrentExternalEvidenceApproval(for connection: EvaluationJudgeConnection) -> Bool {
         externalEvidenceApprovedAt != nil
             && approvedConnectionID == connectionID
@@ -190,6 +186,7 @@ enum EvaluationJudgeGenerationPolicy: String, Codable, CaseIterable, Identifiabl
     }
 }
 
+/// Persisted endpoint settings and disclosure identity; API keys are not fields of this model.
 struct EvaluationJudgeConnection: Identifiable, Codable, Equatable, Sendable {
     static let minimumRequestTimeoutSeconds = 1.0
     static let maximumRequestTimeoutSeconds = 900.0
@@ -207,6 +204,7 @@ struct EvaluationJudgeConnection: Identifiable, Codable, Equatable, Sendable {
     var lastCheckMessage: String?
     var generationPolicy: EvaluationJudgeGenerationPolicy
 
+    /// Creates a connection, using the legacy host/model heuristic only when no generation policy is supplied.
     init(id: UUID, name: String, kind: EvaluationJudgeConnectionKind, baseURL: String, modelID: String,
          capabilities: EvaluationJudgeCapabilities = .init(), requestTimeoutSeconds: Double = 60,
          providerOrder: [String] = [], inputUSDPerMillionTokens: Double? = nil,
@@ -227,6 +225,7 @@ struct EvaluationJudgeConnection: Identifiable, Codable, Equatable, Sendable {
         self.generationPolicy = generationPolicy ?? .legacyDefault(modelID: modelID, baseURL: baseURL)
     }
 
+    /// Decodes saved connections with legacy defaults for capabilities, timeout, routing, and generation policy; malformed present values still throw.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(id: try c.decode(UUID.self, forKey: .id), name: try c.decode(String.self, forKey: .name),
@@ -248,6 +247,7 @@ struct EvaluationJudgeConnection: Identifiable, Codable, Equatable, Sendable {
     }
 
     var requiresAPIKey: Bool { kind != .localCompatible }
+    /// Hashes routing and evidence-relevant endpoint settings; display name, pricing, and timeout do not change this disclosure identity.
     var disclosureDigest: String {
         let fields = [kind.rawValue, baseURL, modelID, providerOrder.joined(separator: "\u{1f}"),
             capabilities.structuredOutputs ? "structured" : "unstructured",
@@ -328,6 +328,7 @@ struct EvaluationSampleAssessment: Identifiable, Codable, Sendable {
     var durationMilliseconds: Double?
 }
 
+/// One retained score set for a run, with judge provenance and optional scoring and subject-evidence contracts.
 struct EvaluationAssessment: Identifiable, Codable, Sendable {
     var id: UUID
     var runID: UUID
@@ -347,6 +348,7 @@ struct EvaluationAssessment: Identifiable, Codable, Sendable {
     var scoringContract: EvaluationScoringContract? = nil
     var subjectEvidenceDigest: String? = nil
     var errorCount: Int { samples.count { $0.errorCategory != nil || $0.errorMessage != nil } }
+    /// Sums finite, nonnegative sample durations and saturates an overflowing total at the largest finite Double.
     static func summedJudgeDurationMilliseconds(_ samples: [EvaluationSampleAssessment]) -> Double {
         samples.compactMap(\.durationMilliseconds).filter { $0.isFinite && $0 >= 0 }
             .reduce(0) { total, duration in
@@ -384,6 +386,7 @@ struct EvaluationReviewedJudgeExample: Identifiable, Codable, Sendable {
     var subjectEvidenceDigest: String? = nil
 }
 
+/// Approval of a run and optional assessment at a suite revision; revocation is retained as evidence.
 struct EvaluationBaselineApproval: Identifiable, Codable, Sendable {
     var id: UUID
     var runID: UUID
@@ -404,6 +407,7 @@ struct EvaluationScoringContract: Codable, Equatable, Sendable {
     var judgePromptVersion: String?
     var judgePassingScore: Int?
     var casesDigest: String
+    /// Hashes cases sorted by ID using scoring-relevant projections; case names, assertion IDs, and expected values for existence checks do not affect the digest.
     init(scoringMode: ScoringMode, rubricCriteria: [String], judgePromptVersion: String?,
          judgePassingScore: Int?, cases: [EvaluationCase]) throws {
         self.scoringMode = scoringMode
@@ -414,12 +418,14 @@ struct EvaluationScoringContract: Codable, Equatable, Sendable {
         let data = try CanonicalJSON.data(for: normalizedCases, prettyPrinted: false)
         casesDigest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
+    /// Captures the suite's scoring conditions, including the current judge policy only for model-judged suites.
     init(suite: EvaluationSuite) throws {
         try self.init(scoringMode: suite.scoringMode,
             rubricCriteria: suite.scoringMode == .modelJudge ? suite.rubricCriteria : [],
             judgePromptVersion: suite.scoringMode == .modelJudge ? EvaluationRunner.judgePromptVersion : nil,
             judgePassingScore: suite.scoringMode == .modelJudge ? EvaluationSuite.judgePassingScore : nil, cases: suite.cases)
     }
+    /// Reconstructs scoring conditions from saved run evidence, preferring planned cases and falling back to the saved definition.
     init(run: EvaluationRun) throws {
         try self.init(scoringMode: run.scoringMode,
             rubricCriteria: run.scoringMode == .modelJudge
@@ -437,6 +443,7 @@ private struct EvaluationScoringCaseProjection: Codable {
     var expected: String
     var conversation: EvaluationScoringConversationProjection
     var fieldAssertions: [EvaluationScoringAssertionProjection]
+    /// Projects case content used for scoring without display names or review provenance.
     init(case evaluationCase: EvaluationCase) {
         id = evaluationCase.id
         prompt = evaluationCase.prompt
@@ -452,6 +459,7 @@ private struct EvaluationScoringConversationProjection: Codable {
     var historyPolicy: EvaluationHistoryPolicy
     var retainedTurnCount: Int?
     var modelHistoryProjection: EvaluationModelHistoryProjection
+    /// Normalizes conversation settings for hashing, excluding setup-turn IDs and inactive retained-turn counts.
     init(configuration: EvaluationConversationConfiguration) {
         setupPrompts = configuration.setupTurns.map(\.prompt)
         restoredTranscriptJSON = configuration.restoredTranscriptJSON
@@ -465,6 +473,7 @@ private struct EvaluationScoringAssertionProjection: Codable {
     var pointer: String
     var operation: EvaluationFieldAssertionOperation
     var expectedValue: String?
+    /// Projects assertion semantics, excluding identity and the unused expected value of existence checks.
     init(assertion: EvaluationFieldAssertion) {
         pointer = assertion.pointer
         operation = assertion.operation
@@ -489,6 +498,7 @@ struct EvaluationSubjectEvidenceSnapshot: Codable, Equatable, Sendable {
     var cases: [EvaluationCase]
     var attachments: [EvaluationSubjectAttachmentSnapshot]
     var digest: String
+    /// Hashes the encoded instructions, cases, and attachment snapshots in their supplied order.
     static func digest(instructions: String, cases: [EvaluationCase], attachments: [EvaluationSubjectAttachmentSnapshot]) throws -> String {
         struct Payload: Codable {
             var instructions: String
@@ -503,6 +513,7 @@ struct EvaluationSubjectEvidenceSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+/// Local approvals, human review, experiments, and prompt comparisons excluded from portable suite definitions.
 struct EvaluationSuiteLocalState: Codable, Sendable {
     var baselineApprovals: [EvaluationBaselineApproval] = []
     var humanCorrections: [EvaluationHumanCorrection] = []
@@ -514,7 +525,9 @@ struct EvaluationSuiteLocalState: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case baselineApprovals, humanCorrections, reviewedJudgeExamples, experiments, review, promptImprovements
     }
+    /// Creates empty local review, approval, experiment, and prompt-improvement state.
     init() {}
+    /// Decodes required legacy evidence arrays, defaulting absent prompt improvements and review state for older storage.
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         baselineApprovals = try values.decode([EvaluationBaselineApproval].self, forKey: .baselineApprovals)
@@ -533,12 +546,7 @@ struct EvaluationRepositorySnapshot: Codable, Sendable {
     var isDirty: Bool?
     var capturedAt: Date
     var error: String?
-    var identitySummary: String {
-        guard let commit else { return error ?? "Repository identity unavailable" }
-        if isDirty == true { return "\(commit) with uncommitted changes" }
-        if isDirty == false { return commit }
-        return "\(commit); working-tree state unavailable"
-    }
+
 }
 
 enum EvaluationExperimentDecision: String, Codable, CaseIterable, Sendable {

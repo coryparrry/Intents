@@ -7,10 +7,12 @@ export const REFERENCE_LIMITS = { maxImageBytes: 10000000, maxTextFileBytes: 500
 const storedName = /^[a-f0-9]{64}\.(pdf|txt|md|csv|json|png|jpg|heic|heif|tiff|gif|webp)$/;
 const MAX_FILE_BYTES = REFERENCE_LIMITS.maxImageBytes;
 const MIME = { 'application/pdf': 'pdf', 'text/plain': 'txt', 'text/markdown': 'md', 'text/csv': 'csv', 'application/json': 'json', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/heic': 'heic', 'image/heif': 'heif', 'image/tiff': 'tiff', 'image/gif': 'gif', 'image/webp': 'webp' };
+/** Creates the private reference directory and rejects a symlink or non-directory at that path. */
 async function directory(app) {
   const path = join(app.store.root, 'references'); await mkdir(path, { recursive: true, mode: 0o700 });
   const stat = await lstat(path); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Reference directory must not be a symlink'); return path;
 }
+/** Validates a filename, supported MIME type, canonical base64, and file-size limit; returns bytes and their content-addressed storage name. */
 function binaryFile({ name, mimeType, base64 }) {
   if (typeof name !== 'string' || !name.trim() || name.length > 1024 || /[\\/]/.test(name)) throw new Error('Reference name must be a filename');
   if (!MIME[mimeType]) throw new Error('Reference type must be PDF, UTF-8 text, JSON, CSV, or a supported image');
@@ -19,6 +21,7 @@ function binaryFile({ name, mimeType, base64 }) {
   const bytes = Buffer.from(base64, 'base64'); if (!bytes.length || bytes.length > maxBytes || bytes.toString('base64') !== base64) throw new Error('Reference file exceeds the app file size limit or is empty');
   const sha256 = createHash('sha256').update(bytes).digest('hex'); return { bytes, sha256, filename: `${sha256}.${MIME[mimeType]}` };
 }
+/** Reads a regular stored reference and verifies its hash, byte count, and content-addressed filename against attachment metadata. */
 async function readReference(app, attachment) {
   if (!storedName.test(attachment.storedFilename || '')) throw new Error('Reference bytes are unavailable; import the portable file bundle before running');
   const path = join(await directory(app), attachment.storedFilename); let stat;
@@ -28,6 +31,7 @@ async function readReference(app, attachment) {
   if (hash !== attachment.sha256 || bytes.length !== attachment.byteCount || !attachment.storedFilename.startsWith(hash + '.')) throw new Error('Stored reference failed its integrity check');
   return { path, bytes };
 }
+/** Stores validated content-addressed bytes and performs native extraction under a cancellable lease, returning integrity metadata and truncation status. */
 export async function addReferenceFile(app, args) {
   const { bytes, sha256, filename } = binaryFile(args); const path = join(await directory(app), filename);
   try {
@@ -48,6 +52,7 @@ export async function addReferenceFile(app, args) {
   if (!attachment || !['text', 'image'].includes(attachment.kind) || (attachment.kind === 'text' && typeof attachment.text !== 'string')) throw new Error(value?.error?.message || value?.error || 'Native reference extraction failed');
   return { attachment: { ...attachment, id: randomUUID(), name: args.name, storedFilename: filename, byteCount: bytes.length, sha256 }, truncated: !!value.truncated };
 }
+/** Exports integrity-checked stored attachments as portable base64 files, rejecting bundles above the 16 MiB encoded limit. */
 export async function exportReferences(app, suite) {
   const files = []; let encodedBytes = 0;
   for (const attachment of suite.attachments || []) if (attachment.storedFilename && (attachment.kind === 'image' || storedName.test(attachment.storedFilename))) {
@@ -57,6 +62,7 @@ export async function exportReferences(app, suite) {
   }
   return files;
 }
+/** Resolves distinct attachment identities and verifies supplied integrity metadata before extracting files; preserves existing attachment IDs. */
 export async function importReferences(app, suite, files) {
   if (!Array.isArray(files) || files.length > 20) throw new Error('referenceFiles must be an array of at most 20 files');
   const attachments = [...(suite.attachments || [])];
@@ -97,6 +103,7 @@ export async function importReferences(app, suite, files) {
   }
   return { ...suite, attachments };
 }
+/** Verifies stored attachment bytes and returns file URLs for image references, rejecting unavailable image content. */
 export async function imageInputs(app, suite) {
   const images = [];
   for (const attachment of suite.attachments || []) {

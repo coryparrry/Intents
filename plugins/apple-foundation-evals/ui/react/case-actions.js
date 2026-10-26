@@ -1,3 +1,4 @@
+/** Filters cases by name or prompt and selects the requested visible case or the first visible fallback. */
 export function caseEditingSelection(draft, id, query = "") {
   const visible = draft.cases.filter((item) =>
     `${item.name || ""} ${item.prompt}`
@@ -9,6 +10,7 @@ export function caseEditingSelection(draft, id, query = "") {
     selected: visible.find((item) => item.id === id) || visible[0],
   };
 }
+/** Appends and returns a newly identified empty case, rejecting additions beyond the suite limit of 100. */
 export function addCase(draft) {
   if (draft.cases.length >= 100)
     throw Error("A suite can contain at most 100 cases.");
@@ -22,6 +24,7 @@ export function addCase(draft) {
   draft.cases.push(item);
   return item;
 }
+/** Appends a deep copy with a fresh case identifier, rejecting a missing source or the 100-case limit. */
 export function duplicateCase(draft, id) {
   if (draft.cases.length >= 100)
     throw Error("A suite can contain at most 100 cases.");
@@ -33,6 +36,7 @@ export function duplicateCase(draft, id) {
   draft.cases.push(item);
   return item;
 }
+/** Removes a case and its critical-case references, returning the nearest remaining selection and retaining at least one case. */
 export function removeCase(draft, id) {
   if (draft.cases.length <= 1)
     throw Error("Keep at least one case in the suite.");

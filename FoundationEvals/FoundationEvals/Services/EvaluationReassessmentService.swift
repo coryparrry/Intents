@@ -26,8 +26,12 @@ struct EvaluationJudgeCheckSource: Sendable {
 actor EvaluationReassessmentService {
     private let client: EvaluationCompatibleJudgeClient
 
+    /// Injects the external judge client used to assess saved responses.
     init(client: EvaluationCompatibleJudgeClient = .init()) { self.client = client }
 
+    /// Creates a new assessment from saved subject outputs and frozen cases without rerunning generation.
+    /// Applies deterministic checks locally, requires independent judging for semantic criteria and retains per-sample failures.
+    /// Reassessment cancellation throws; initial-run cancellation records the interrupted judgment and returns partial evidence.
     func reassess(
         run: EvaluationRun,
         suite: EvaluationSuite,
@@ -194,7 +198,7 @@ actor EvaluationReassessmentService {
                         judgedCriterionIndexes: semanticIndexes.map { $0 + 1 }
                     ),
                     errorCategory: errorCategory, errorMessage: error.localizedDescription,
-                    usage: nil, durationMilliseconds: milliseconds(since: judgeStarted)
+                    usage: nil, durationMilliseconds: judgeStarted.evaluationMilliseconds(to: .now)
                 ))
                 costAvailability = .unavailable
                 if EvaluationRunner.stopsBatch(for: errorCategory) { break }
@@ -218,6 +222,7 @@ actor EvaluationReassessmentService {
         )
     }
 
+    /// Records an unscored initial-run sample when its collected response could not finish independent judging.
     private func cancelledInitialAssessment(for sample: EvaluationSampleResult) -> EvaluationSampleAssessment {
         EvaluationSampleAssessment(
             id: UUID(), sampleID: sample.id, status: .unscored, score: nil,
@@ -228,6 +233,8 @@ actor EvaluationReassessmentService {
         )
     }
 
+    /// Replays reviewed saved responses against a connection and compares the verdict with each human expected status.
+    /// Missing or incompatible evidence becomes a failed check; cancellation propagates and subject generation is never rerun.
     func checkJudge(
         sources: [EvaluationJudgeCheckSource],
         resolved: EvaluationResolvedJudgeConnection
@@ -309,6 +316,7 @@ actor EvaluationReassessmentService {
         return EvaluationJudgeCheckReport(connectionID: resolved.connection.id, results: results)
     }
 
+    /// Records the requested external connection identity before any provider-reported identity is available.
     private func requestedIdentity(_ connection: EvaluationJudgeConnection) -> EvaluationJudgeIdentity {
         .init(
             mode: .connection, connectionID: connection.id, connectionName: connection.name,
@@ -318,6 +326,8 @@ actor EvaluationReassessmentService {
         )
     }
 
+    /// Returns validated frozen tool evidence, or nil only when neither configured nor observed tools require it.
+    /// Throws when historical grounding cannot be reproduced from the saved response.
     private func evidence(from sample: EvaluationSampleResult, run: EvaluationRun, suite: EvaluationSuite) throws -> String? {
         if let captured = sample.judgeToolEvidence { return try captured.validatedText() }
         let configuration = run.execution?.configuration ?? run.suiteDefinition?.modelConfiguration ?? suite.modelConfiguration
@@ -337,6 +347,7 @@ actor EvaluationReassessmentService {
         return nil
     }
 
+    /// Converts the rubric score to pass/fail using the requested threshold, then gates it with case field assertions.
     private func gatedStatus(
         judgment: EvaluationValidatedJudgment,
         response: String,
@@ -348,11 +359,5 @@ actor EvaluationReassessmentService {
             response: response, assertions: evaluationCase.fieldAssertions ?? []
         )
         return EvaluationFieldAssertions.gatedStatus(baseStatus: base, results: assertions)
-    }
-
-    private func milliseconds(since instant: ContinuousClock.Instant) -> Double {
-        let duration = ContinuousClock.now - instant
-        return Double(duration.components.seconds) * 1_000
-            + Double(duration.components.attoseconds) / 1_000_000_000_000_000
     }
 }

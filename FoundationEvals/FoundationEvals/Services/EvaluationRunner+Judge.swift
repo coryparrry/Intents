@@ -38,6 +38,12 @@ extension EvaluationRunner {
         literal comparisons, and do not require the wording of the verified reference.
         """
 
+    /// Scores a captured response with deterministic metrics or exact checks plus a validated model judge.
+    ///
+    /// Semantic criteria use the configured independent judge or a fresh session of the subject
+    /// model. The subject-model path budgets each request and permits one repair after rejected
+    /// judgment evidence. Failures return an unscored outcome with available attempts and usage;
+    /// they do not discard the successful subject response.
     func score<Model: LanguageModel>(
         response: String,
         evaluationCase: EvaluationCase,
@@ -244,6 +250,7 @@ extension EvaluationRunner {
         }
     }
 
+    /// Maps independent-judge transport, configuration, credential, evidence, and validation failures to persisted error categories.
     nonisolated static func externalJudgeErrorCategory(_ error: Error) -> String {
         if let attemptFailure = error as? EvaluationCompatibleJudgeAttemptFailure { return attemptFailure.failure.category }
         if let failure = error as? EvaluationCompatibleJudgeResponseFailure { return failure.category }
@@ -278,6 +285,7 @@ extension EvaluationRunner {
         return "judgeFailure"
     }
 
+    /// Reconstructs failure evidence from recorded independent-judge attempts, returning nil when none were retained.
     nonisolated static func externalJudgeFailureTrace(
         _ error: Error,
         completedChecks: [EvaluationJudgeCriterionTrace],
@@ -300,6 +308,7 @@ extension EvaluationRunner {
             attempts: attempts, judgedCriterionIndexes: judgedCriterionIndexes)
     }
 
+    /// Builds the judge prompt with numbered criteria and escaped subject, reference, history, and tool evidence as untrusted data.
     static func judgePrompt(response: String, evaluationCase: EvaluationCase, effectivePrompt: String,
                             suite: EvaluationSuite, toolEvidence: String?,
                             subjectContext: EvaluationJudgeSubjectContext? = nil) -> String {

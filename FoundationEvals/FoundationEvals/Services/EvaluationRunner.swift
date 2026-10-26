@@ -24,6 +24,11 @@ actor EvaluationRunner {
         self.batchTokenCounter = batchTokenCounter
     }
 
+    /// Selects the suite's model provider, resolves availability and context size, then executes the batch.
+    ///
+    /// Provider or Core AI resource admission failures become an error sample through the shared
+    /// runner path. `liveResponse` receives partial content only for streaming suites; `progress`
+    /// is awaited after each recorded sample with completed and planned sample counts.
     func run(
         id: UUID,
         suiteRevision: String,
@@ -164,7 +169,12 @@ actor EvaluationRunner {
     }
 
     // Model injection exercises the production session path without model assets or a network.
-    /// Executes one suite with the supplied model, preserving per-sample sessions and provider-specific token counting.
+    /// Runs cases sequentially for every repetition using the supplied model and provider-appropriate token counter.
+    ///
+    /// An `admissionError` prevents model invocation and records at most one error sample. Cancellation and
+    /// batch-stopping subject or judge failures end dispatch after the current recorded sample.
+    /// `progress` is awaited after each result, and cancellation is rechecked afterward, including
+    /// for the final sample. The returned run preserves completed evidence and any termination reason.
     func run<Model: LanguageModel>(
         id runID: UUID,
         suiteRevision: String,
@@ -319,6 +329,12 @@ actor EvaluationRunner {
         return run
     }
 
+    /// Prepares, generates, and scores one sample while retaining workflow, conversation, and tool evidence.
+    ///
+    /// Restores history, runs setup turns, and admits the final prompt before subject generation.
+    /// Non-HTTP partial responses are forwarded to `liveResponse`; HTTP streaming uses its provider
+    /// observer. Both success and failure paths drain Spotlight recording and capture configured
+    /// transcript evidence. Errors, including cancellation, are converted into sample results.
     private func evaluate<Model: LanguageModel>(
         _ evaluationCase: EvaluationCase,
         repetition: Int,
@@ -901,6 +917,10 @@ actor EvaluationRunner {
         }
     }
 
+    /// Builds the initial assessment from sample judgments, observed judge identities, and available usage and cost.
+    ///
+    /// Aggregate usage is omitted when a judge ran without reporting it; any unavailable judge cost
+    /// makes the total cost unavailable rather than presenting a partial sum as complete.
     private static func initialAssessment(
         runID: UUID,
         suite: EvaluationSuite,

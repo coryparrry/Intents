@@ -17,6 +17,7 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 # Keep only the public guides and CI/release instructions.
 /docs/*
 !/docs/ci.md
+!/docs/DOCSTRING_COVERAGE.md
 !/docs/ci-manual-tests.md
 !/docs/EVAL_REVIEW_GUIDE.md
 !/docs/MCP_CONTROL_GUIDE.md

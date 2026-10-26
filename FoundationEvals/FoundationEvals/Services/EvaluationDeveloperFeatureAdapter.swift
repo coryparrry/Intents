@@ -11,6 +11,7 @@ struct EvaluationDeveloperFeatureAdapter: EvaluationFeatureAdapter {
     let client: DeveloperRunnerClient
     let timeout: Duration
 
+    /// Reports incompatible business-input schemas or registrations, accepting recognized legacy text input names.
     static func validationIssue(for feature: DeveloperFeatureDescriptor) -> String? {
         if feature.subjectInputSchema != nil
             || feature.capabilityNames.contains(DeveloperSubjectInputSchema.capabilityName) {
@@ -32,6 +33,7 @@ struct EvaluationDeveloperFeatureAdapter: EvaluationFeatureAdapter {
         return nil
     }
 
+    /// Throws an unsupported-input-contract failure when the registered feature cannot accept text cases.
     static func validate(_ feature: DeveloperFeatureDescriptor) throws {
         if let issue = validationIssue(for: feature) {
             throw DeveloperExecutionFailure(code: .unsupportedInputContract, message: issue)
@@ -67,6 +69,10 @@ struct EvaluationDeveloperFeatureAdapter: EvaluationFeatureAdapter {
         )
     }
 
+    /// Executes a text case on the selected app runner with the configured deadline.
+    ///
+    /// Propagates runner failures, rejects replies containing neither output nor an error, and
+    /// returns response usage plus bounded structured evidence. Checks cancellation before dispatch.
     func evaluate(_ input: EvaluationFeatureInput) async throws -> EvaluationFeatureOutput {
         try Task.checkCancellation()
         try Self.validate(feature)
@@ -109,6 +115,7 @@ struct EvaluationDeveloperFeatureAdapter: EvaluationFeatureAdapter {
         )
     }
 
+    /// Retains up to 64 sorted metadata entries with bounded key and value lengths, dropping truncated-key collisions.
     private func boundedMetadata(_ metadata: [String: String]) -> [String: String] {
         var bounded: [String: String] = [:]
         for (key, value) in metadata.sorted(by: { $0.key < $1.key }).prefix(64) {

@@ -4,59 +4,12 @@ import Observation
 
 let developerRunnerServiceType = "fnd-evals"
 
-private final class DeveloperRunnerPeerBox: @unchecked Sendable {
-    let peer: MCPeerID
-    init(_ peer: MCPeerID) { self.peer = peer }
-}
-
-private final class DeveloperRunnerSessionDelegate: NSObject, MCSessionDelegate, @unchecked Sendable {
-    weak var owner: DeveloperRunnerService?
-    var session: MCSession?
-
-    // MultipeerConnectivity calls these methods on its own queues. The proxy is
-    // @unchecked Sendable because it only copies Data/String values across to
-    // MainActor, while `session` is assigned once before advertising begins.
-    func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
-        let peer = DeveloperRunnerPeerBox(peerID)
-        Task { @MainActor [weak owner] in
-            owner?.peerChanged(peer, state: state)
-        }
-    }
-
-    func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
-        let peer = DeveloperRunnerPeerBox(peerID)
-        Task { @MainActor [weak owner] in
-            owner?.received(data, from: peer)
-        }
-    }
-
-    func session(
-        _ session: MCSession,
-        didReceive stream: InputStream,
-        withName streamName: String,
-        fromPeer peerID: MCPeerID
-    ) {}
-
-    func session(
-        _ session: MCSession,
-        didStartReceivingResourceWithName resourceName: String,
-        fromPeer peerID: MCPeerID,
-        with progress: Progress
-    ) {}
-
-    func session(
-        _ session: MCSession,
-        didFinishReceivingResourceWithName resourceName: String,
-        fromPeer peerID: MCPeerID,
-        at localURL: URL?,
-        withError error: (any Error)?
-    ) {}
-}
-
 private final class DeveloperRunnerAdvertiserDelegate: NSObject, MCNearbyServiceAdvertiserDelegate, @unchecked Sendable {
     weak var owner: DeveloperRunnerService?
     var session: MCSession?
 
+    /// Accepts the transport invitation when a session is available; host-level code proofs
+    /// and saved trust still gate authentication and execution after transport connection.
     func advertiser(
         _ advertiser: MCNearbyServiceAdvertiser,
         didReceiveInvitationFromPeer peerID: MCPeerID,
@@ -70,6 +23,7 @@ private final class DeveloperRunnerAdvertiserDelegate: NSObject, MCNearbyService
         invitationHandler(true, session)
     }
 
+    /// Copies the advertising failure description into main-actor service state.
     func advertiser(
         _ advertiser: MCNearbyServiceAdvertiser,
         didNotStartAdvertisingPeer error: any Error
@@ -95,13 +49,18 @@ public final class DeveloperRunnerService {
     @ObservationIgnored private let engine: DeveloperRunnerHostEngine
     @ObservationIgnored private let peerID: MCPeerID
     @ObservationIgnored private let session: MCSession
-    @ObservationIgnored private let sessionDelegate: DeveloperRunnerSessionDelegate
+    @ObservationIgnored private let sessionDelegate: DeveloperSessionDelegate
     @ObservationIgnored private let advertiserDelegate: DeveloperRunnerAdvertiserDelegate
     @ObservationIgnored private let advertiser: MCNearbyServiceAdvertiser
     @ObservationIgnored private var connectionIDs: [MCPeerID: String] = [:]
     @ObservationIgnored private var secureEnvelopeBuffersByPeer: [MCPeerID: DeveloperSecureEnvelopeBuffer] = [:]
     @ObservationIgnored private var inboundAcceptanceTasksByPeer: [MCPeerID: Task<Void, Never>] = [:]
 
+    /// Creates an encrypted nearby transport and host engine without starting advertising.
+    /// - Parameters:
+    ///   - identity: Runner identity used for discovery labels and authenticated handshakes.
+    ///   - registry: App-owned features available to authenticated desktops.
+    ///   - trustStoreURL: Optional token file; `nil` retains trust only for this service instance.
     public init(
         identity: DeveloperRunnerIdentity,
         registry: DeveloperFeatureRegistry,
@@ -115,7 +74,7 @@ public final class DeveloperRunnerService {
             trustStore: DeveloperTrustStore(fileURL: trustStoreURL)
         )
         peerID = MCPeerID(displayName: developerPeerDisplayName(identity.displayName, id: identity.id))
-        sessionDelegate = DeveloperRunnerSessionDelegate()
+        sessionDelegate = DeveloperSessionDelegate()
         advertiserDelegate = DeveloperRunnerAdvertiserDelegate()
         session = MCSession(
             peer: peerID,
@@ -128,13 +87,13 @@ public final class DeveloperRunnerService {
             serviceType: developerRunnerServiceType
         )
         sessionDelegate.owner = self
-        sessionDelegate.session = session
         advertiserDelegate.owner = self
         advertiserDelegate.session = session
         session.delegate = sessionDelegate
         advertiser.delegate = advertiserDelegate
     }
 
+    /// Starts nearby advertising once and clears the previous advertising error.
     public func start() {
         guard !isAdvertising else { return }
         advertiser.startAdvertisingPeer()
@@ -142,10 +101,14 @@ public final class DeveloperRunnerService {
         lastError = nil
     }
 
+    /// Refreshes the published feature list from the registry for companion UI presentation.
     public func refreshFeatures() async {
         features = await registry.descriptors
     }
 
+    /// Stops advertising and transport connections, requests cancellation of all active feature
+    /// operations, ends pairing and clears published connection and inbound-queue state.
+    /// Cooperative cancellation is requested without waiting for feature operations to finish.
     public func stop() async {
         advertiser.stopAdvertisingPeer()
         session.disconnect()
@@ -160,6 +123,10 @@ public final class DeveloperRunnerService {
         inboundAcceptanceTasksByPeer = [:]
     }
 
+    /// Starts advertising and replaces pairing with a new code, refreshing challenges
+    /// for connections that are already open and unauthenticated.
+    /// - Parameter duration: Pairing code lifetime passed to the host engine.
+    /// - Returns: The new pairing presentation state also stored in `pairingState`.
     @discardableResult
     public func beginPairing(duration: Duration = .seconds(300)) async -> DeveloperPairingPresentationState {
         start()
@@ -171,7 +138,7 @@ public final class DeveloperRunnerService {
         for (peer, connectionID) in connectionIDs {
             let challenges = await engine.pairingChallenges(for: connectionID)
             guard connectionIDs[peer] == connectionID else { continue }
-            let peerBox = DeveloperRunnerPeerBox(peer)
+            let peerBox = DeveloperPeerBox(peer)
             for challenge in challenges {
                 send(challenge, peer: peerBox)
             }
@@ -179,16 +146,20 @@ public final class DeveloperRunnerService {
         return state
     }
 
+    /// Ends the current pairing session and resets its presentation without stopping advertising.
     public func cancelPairing() async {
         await engine.stopPairing()
         pairingState = .idle
     }
 
+    /// Refreshes published pairing state, allowing the host engine to expire an elapsed code.
     public func refreshPairingState() async {
         pairingState = await engine.pairingState()
     }
 
-    fileprivate func peerChanged(_ peer: DeveloperRunnerPeerBox, state: MCSessionState) {
+    /// Tracks transport connections, starts handshake challenges on connection and informs
+    /// the host engine on closure so owned requests can be cancelled.
+    func peerChanged(_ peer: DeveloperPeerBox, state: MCSessionState) {
         let name = peer.peer.displayName
         switch state {
         case .connected:
@@ -219,7 +190,10 @@ public final class DeveloperRunnerService {
         }
     }
 
-    fileprivate func received(_ data: Data, from peer: DeveloperRunnerPeerBox) {
+    /// Decodes wire data and serializes admission behind earlier messages from the same peer.
+    /// Execution completion runs separately, allowing later cancellation to reach the host engine;
+    /// authentication and pairing presentation are refreshed after admission.
+    func received(_ data: Data, from peer: DeveloperPeerBox) {
         let envelope: DeveloperRunnerEnvelope
         do {
             envelope = try JSONDecoder().decode(DeveloperRunnerEnvelope.self, from: data)
@@ -244,10 +218,12 @@ public final class DeveloperRunnerService {
         }
     }
 
+    /// Sends immediate host responses or resolves accepted executions in a separate task,
+    /// keeping the inbound acceptance queue available for subsequent messages.
     private func perform(
         _ action: DeveloperHostTransportAction,
         connectionID: String,
-        peer: DeveloperRunnerPeerBox
+        peer: DeveloperPeerBox
     ) {
         switch action {
         case .respond(let responses):
@@ -265,11 +241,13 @@ public final class DeveloperRunnerService {
         }
     }
 
+    /// Publishes an advertising failure and clears the active-advertising flag.
     fileprivate func advertisingFailed(_ detail: String) {
         isAdvertising = false
         lastError = detail
     }
 
+    /// Adds or removes a peer's display name according to host-level authentication state.
     private func updateAuthenticatedPeer(name: String, authenticated: Bool) {
         if authenticated {
             if !connectedDesktopNames.contains(name) {
@@ -280,7 +258,9 @@ public final class DeveloperRunnerService {
         }
     }
 
-    private func send(_ envelope: DeveloperRunnerEnvelope, peer: DeveloperRunnerPeerBox) {
+    /// Orders outbound secure envelopes by sequence before sending their contiguous prefix.
+    /// Handshake messages bypass this secure-message buffer.
+    private func send(_ envelope: DeveloperRunnerEnvelope, peer: DeveloperPeerBox) {
         if case .secure = envelope.message {
             var buffer = secureEnvelopeBuffersByPeer[peer.peer, default: .init()]
             let ready = buffer.insert(envelope)
@@ -293,7 +273,9 @@ public final class DeveloperRunnerService {
         sendImmediately(envelope, peer: peer)
     }
 
-    private func sendImmediately(_ envelope: DeveloperRunnerEnvelope, peer: DeveloperRunnerPeerBox) {
+    /// Reliably sends an encoded envelope to a still-connected peer, recording send/encoding
+    /// errors in `lastError` and silently dropping messages after transport disconnect.
+    private func sendImmediately(_ envelope: DeveloperRunnerEnvelope, peer: DeveloperPeerBox) {
         guard session.connectedPeers.contains(peer.peer) else { return }
         do {
             try session.send(JSONEncoder().encode(envelope), toPeers: [peer.peer], with: .reliable)
@@ -302,3 +284,5 @@ public final class DeveloperRunnerService {
         }
     }
 }
+
+extension DeveloperRunnerService: DeveloperSessionOwner {}

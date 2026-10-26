@@ -50,6 +50,8 @@ public struct ProductionReviewEvent: Codable, Identifiable, Sendable {
     public var tags: [String]
     public var reconciledResponse: ProductionResponse?
     public var createdAt: Date = Date()
+    /// Creates an audit event for labeling, assignment, adjudication, or response reconciliation.
+    /// Storage validates the action-specific fields and replaces the timestamp when appending the event.
     public init(requestID: UUID, reviewer: String, action: ProductionReviewAction = .label, assignee: String? = nil,
                 outcome: ProductionOutcome? = nil, note: String, tags: [String] = [], reconciledResponse: ProductionResponse? = nil) {
         self.requestID = requestID; self.reviewer = reviewer; self.action = action; self.assignee = assignee

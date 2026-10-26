@@ -4,6 +4,7 @@ import CryptoKit
 private struct RateAccumulator {
     var rate = ProductionRate()
     var sources: [String: Bool] = [:]
+    /// Adds a sample outcome and keeps a source passing only while every recorded trial for that source passes.
     mutating func add(_ record: ProductionRecord, outcome: ProductionOutcome) {
         rate.samples += 1
         switch outcome { case .passed: rate.passed += 1; case .failed: rate.failed += 1; case .error: rate.errors += 1
@@ -23,6 +24,11 @@ private struct RateAccumulator {
 }
 
 extension ProductionStorage {
+    /// Returns a slot-ordered page of committed records across validated chunks.
+    /// - Parameters:
+    ///   - offset: Nonnegative number of committed records to skip.
+    ///   - limit: Page size from 1 through 100.
+    /// - Throws: Invalid pagination or job/chunk/storage errors.
     public func records(jobID: UUID, offset: Int = 0, limit: Int = 50) throws -> [ProductionRecord] {
         guard offset >= 0, (1...100).contains(limit) else { throw ProductionFailure.invalid("Result page must contain 1–100 rows.") }
         let job = try loadJob(jobID); var result: [ProductionRecord] = [], seen = 0
@@ -34,10 +40,14 @@ extension ProductionStorage {
         }
         return result
     }
+    /// Builds a consistent report under the store lock, validating result provenance, reviews, costs, gates, and optional baseline evidence.
+    /// - Throws: Integrity, configuration, decoding, or storage errors; failed gates are represented by report issues and its exit code.
     public func report(jobID: UUID, includeBaseline: Bool = true) throws -> ProductionReport {
         try transaction { try makeReport(jobID: jobID, includeBaseline: includeBaseline) }
     }
     // Caller holds the transaction for control, results, reviews and baseline evidence.
+    /// Validates stored evidence and computes source/cohort rates, latency buckets, budgets, gate verdicts, and current baseline approval.
+    /// The caller must hold the store transaction for the report and any recursive baseline report.
     func makeReport(jobID: UUID, includeBaseline: Bool) throws -> ProductionReport {
         let job = try loadJob(jobID)
         let reader = try ProductionDatasetReader(storage: self, revision: job.datasetRevision)
@@ -154,6 +164,8 @@ extension ProductionStorage {
 }
 
 extension ProductionStorage {
+    /// Returns the committed record for a valid response slot.
+    /// - Throws: An invalid-result error when the slot is out of range or unfinished, plus job/chunk/storage errors.
     public func record(jobID: UUID, slot: Int) throws -> ProductionRecord {
         let job = try loadJob(jobID)
         guard (0..<job.plannedCount).contains(slot), let record = try chunk(job,index:slot/job.configuration.chunkSize).records[slot] else {

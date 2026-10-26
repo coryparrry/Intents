@@ -10,6 +10,7 @@ struct WorkspaceExpandableText: View {
     @State private var fullHeight: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Creates expandable attributed text with its collapsed line limit and accessibility label.
     init(_ content: AttributedString, lineLimit: Int, label: String) {
         self.content = content
         self.lineLimit = lineLimit

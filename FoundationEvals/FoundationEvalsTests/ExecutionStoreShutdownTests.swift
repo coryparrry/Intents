@@ -109,7 +109,9 @@ struct ExecutionStoreShutdownTests {
         await store.closeAndWait()
     }
 
-    @Test func developerCloseJoinsCancellationCleanupAndRejectsNewExecution() async throws {
+    /// Checks that closing joins tracked cancellation cleanup even when stop already cancelled the run.
+    @Test(arguments: [false, true])
+    func developerCloseJoinsCancellationCleanupAndRejectsNewExecution(stopFirst: Bool) async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let evaluation = EvaluationStore(supportDirectory: root)
@@ -125,6 +127,12 @@ struct ExecutionStoreShutdownTests {
             completed = true
         }
         await started.wait()
+        if stopFirst {
+            runners.stop()
+            await cancelled.wait()
+            #expect(!completed)
+            #expect(runners.executingRunID == runID)
+        }
         let closing = Task { @MainActor in
             await runners.closeAndWait()
             closed = true

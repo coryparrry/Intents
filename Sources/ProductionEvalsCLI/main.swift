@@ -14,6 +14,7 @@ struct TextWorkerSettings: Codable, Sendable {
 struct Options {
     let command: String
     let values: [String: String]
+    /// Parses command-specific options, rejects unknown/duplicate arguments, and requires exactly one backend for job/worker commands.
     init(_ arguments: [String]) throws {
         guard let command = arguments.first else { throw ProductionFailure.invalid(Self.help) }
         self.command = command; var result: [String:String] = [:]; var i = 1
@@ -45,10 +46,15 @@ struct Options {
         }
         values = result
     }
+    /// Returns a supplied nonempty option or throws an invalid-argument error naming its missing key.
     func required(_ key: String) throws -> String { guard let value = values[key], !value.isEmpty else { throw ProductionFailure.invalid("Missing --\(key)") }; return value }
+    /// Requires an absolute path option and converts it to a file URL.
     func url(_ key: String) throws -> URL { let value = try required(key); guard value.hasPrefix("/") else { throw ProductionFailure.invalid("--\(key) must be an absolute path.") }; return URL(fileURLWithPath: value) }
+    /// Parses a required UUID option and rejects malformed identifiers.
     func uuid(_ key: String) throws -> UUID { guard let value = UUID(uuidString: try required(key)) else { throw ProductionFailure.invalid("Invalid --\(key) UUID.") }; return value }
+    /// Parses an optional integer value, using the caller fallback only when the option is absent.
     func integer(_ key: String, default fallback: Int) throws -> Int { guard let value = values[key] else { return fallback }; guard let number = Int(value) else { throw ProductionFailure.invalid("Invalid integer --\(key)") }; return number }
+    /// Parses an optional finite numeric value, using the caller fallback only when the option is absent.
     func number(_ key: String, default fallback: Double) throws -> Double { guard let value = values[key] else { return fallback }; guard let number = Double(value), number.isFinite else { throw ProductionFailure.invalid("Invalid finite number --\(key)") }; return number }
     static let help = """
     intents-evals <command> --storage /absolute/directory [options]
@@ -83,10 +89,14 @@ private final class WorkerCommitProgress: Sendable {
 
 @main
 struct ProductionEvalsCLI {
+    /// Dispatches the CLI command and reports uncaught errors to standard error with exit status 30.
     static func main() async {
         do { try await run() } catch { FileHandle.standardError.write(Data(("intents-evals: \(error.localizedDescription)\n").utf8)); exit(30) }
     }
+    /// Writes one value using the production codec followed by a newline for machine-readable CLI output.
     static func printJSON<T: Encodable>(_ value: T) throws { FileHandle.standardOutput.write(try ProductionCodec.encode(value)); print("") }
+    /// Executes the selected local storage, job, review, control, report, or scheduling command after option validation.
+    /// Report commands exit with the computed gate status; other failures propagate to the CLI entry point.
     static func run() async throws {
         let arguments = Array(CommandLine.arguments.dropFirst())
         if arguments.isEmpty || arguments == ["--help"] { print(Options.help); return }
@@ -164,6 +174,8 @@ struct ProductionEvalsCLI {
         default: throw ProductionFailure.invalid(Options.help)
         }
     }
+    /// Registers the selected backend worker, ticks schedules, and executes matching jobs up to the response limit.
+    /// Commit callbacks count durable progress even before later errors; explicit-job errors propagate while multi-job runs log and continue.
     static func work(options: Options, storage: ProductionStorage) async throws {
         let native = options.values["native"] != nil, identifier = try options.required("worker-id")
         var worker: ProductionWorker
@@ -217,6 +229,8 @@ struct ProductionEvalsCLI {
         "Intel"
         #endif
     }
+    /// Executes the frozen on-device text contract with collect, trimmed exact, or case/diacritic-insensitive contains scoring.
+    /// Throws for unavailable models, incompatible context, missing expected answers for scored modes, or inference errors.
     static func nativeText(_ request: ProductionRequest) async throws -> ProductionResponse {
         #if canImport(FoundationModels)
         let settings = try ProductionCodec.decode(TextWorkerSettings.self, request.configuration.executionContext)

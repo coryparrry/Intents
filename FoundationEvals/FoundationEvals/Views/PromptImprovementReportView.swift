@@ -87,6 +87,7 @@ struct PromptImprovementReportView: View {
         }
     }
 
+    /// Displays selectable shared instructions or an empty-instructions label in an inset panel.
     private func instructions(_ title: String, text: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.callout.weight(.semibold)).foregroundStyle(.secondary)
@@ -102,12 +103,14 @@ struct PromptImprovementReportView: View {
         return .info
     }
 
+    /// Displays the run score with an accessibility description that distinguishes incomplete evidence from a completed pass count.
     private func score(_ run: EvaluationRun?) -> some View {
         Text(PromptImprovementPresentation.scoreSummary(run)).monospacedDigit()
             .accessibilityLabel(run.map { PromptImprovementPresentation.scoreSummary($0) == "Incomplete"
                 ? "Incomplete" : "\($0.passedCount) of \($0.plannedResultCount) passed" } ?? "Not run")
     }
 
+    /// Builds an evidence row whose response button opens the supplied run through the inspection callback.
     private func evidence(_ title: String, run: EvaluationRun) -> some View {
         HStack {
             Text(title)

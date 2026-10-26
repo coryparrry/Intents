@@ -81,6 +81,7 @@ struct SuiteEditorView: View {
     @State private var runError: String?
     @FocusState private var isEditorFocused: Bool
 
+    /// Connects the suite store and seeds the selected editor page from the requested initial page.
     init(store: EvaluationStore, initialPage: SuiteEditorPage = .cases) {
         self.store = store
         self.initialPage = initialPage
@@ -255,19 +256,14 @@ private struct SuiteEditorSelectionObserver: View {
         Color.clear
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-            .onAppear { selectFirstCaseIfNeeded() }
+            .onAppear {
+                repairEditorSelection(selectedCaseID, ids: store.draftSuite.cases.map(\.id)) { selectedCaseID = $0 }
+            }
             .onChange(of: store.draftSuite.id) { _, _ in selectedPage = initialPage }
             .onChange(of: store.draftSuite.cases.map(\.id)) { _, _ in
-                selectFirstCaseIfNeeded()
+                repairEditorSelection(selectedCaseID, ids: store.draftSuite.cases.map(\.id)) { selectedCaseID = $0 }
             }
     }
-
-    private func selectFirstCaseIfNeeded() {
-        if selectedCaseID.flatMap({ id in store.draftSuite.cases.firstIndex(where: { $0.id == id }) }) == nil {
-            selectedCaseID = store.draftSuite.cases.first?.id
-        }
-    }
-
 }
 
 private struct SuiteOverviewHeader: View {
@@ -432,6 +428,7 @@ struct RunReadinessPanel: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// Chooses the readiness heading, prioritizing an active run, an unsaved completed run, and file processing over blockers.
     private func statusTitle(blocker: String?) -> LocalizedStringResource {
         if store.isRunning { return "Evaluation in progress" }
         if store.hasUnsavedCompletedRun { return "Run could not be saved" }
@@ -439,6 +436,7 @@ struct RunReadinessPanel: View {
         return blocker == nil ? "Ready to run" : "Needs attention"
     }
 
+    /// Explains the current run, storage, import, or validation state; when ready, describes planned requests and judge behavior.
     private func statusDetail(blocker: String?) -> String {
         if store.isRunning {
             return "You can review the suite while the current run finishes."
@@ -472,6 +470,7 @@ struct RunReadinessPanel: View {
         return "\(responseLabel) · up to \(store.plannedRequestCount) model request\(store.plannedRequestCount == 1 ? "" : "s") · \(provider)\(toolSuffix)."
     }
 
+    /// Chooses the readiness symbol, prioritizing active work and unsaved results before the supplied blocker.
     private func statusSymbol(blocker: String?) -> String {
         if store.isRunning { return "waveform.circle.fill" }
         if store.hasUnsavedCompletedRun { return "exclamationmark.triangle.fill" }
@@ -479,6 +478,7 @@ struct RunReadinessPanel: View {
         return blocker == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
     }
 
+    /// Chooses the readiness color, showing active work in accent color and storage or validation problems as warnings.
     private func statusColor(blocker: String?) -> Color {
         if store.isRunning { return .accentColor }
         if store.hasUnsavedCompletedRun { return WorkspaceStyle.warning }

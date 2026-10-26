@@ -9,6 +9,7 @@ struct EvaluationWorkflowHTTPRequest {
     var statusCode: Int?
     var responseBytes = 0
 
+    /// Begins a child HTTP span only when a recorder and parent span are available, retaining a sanitized endpoint and byte count.
     init?(recorder: EvaluationWorkflowRecorder?, parentID: UUID?, endpoint: URL, requestBytes: Int) {
         guard let recorder, let parentID else { return nil }
         self.recorder = recorder
@@ -20,6 +21,8 @@ struct EvaluationWorkflowHTTPRequest {
             ])
     }
 
+    /// Finishes the HTTP span with response size, optional status, and a diagnostic that excludes URL credentials and response bodies.
+    /// The supplied error determines failure or cancellation status; a non-2xx code supplies a message without independently changing status.
     func finish(error: Error? = nil) {
         var metadata = ["responseBytes": String(responseBytes)]
         if let statusCode { metadata["statusCode"] = String(statusCode) }
@@ -40,6 +43,7 @@ struct EvaluationWorkflowHTTPRequest {
         recorder.finish(spanID, status: status, errorMessage: message, metadata: metadata)
     }
 
+    /// Removes URL user information, query, and fragment before recording an endpoint, returning an unavailable marker if reconstruction fails.
     static func sanitizedEndpoint(_ endpoint: URL) -> String {
         guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else { return "Unavailable" }
         components.user = nil

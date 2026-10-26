@@ -62,6 +62,8 @@ struct ProductionReportPane: View {
             Text("Approval applies to this batch's saved results and review history. Further reviews or control changes require approval again.")
         }
     }
+    /// Formats a fractional score as a percentage, using an unscored label when absent.
     private func rate(_ value: Double?) -> String { value.map { String(format: "%.1f%%", $0*100) } ?? "Unscored" }
+    /// Translates production exit codes into their release-policy or execution-gate outcome labels.
     private func gateName(_ value: Int) -> String { switch value { case 0: "Release policy satisfied"; case 10: "Quality gate failed"; case 20: "Incomplete evidence"; default: "Execution gate failed" } }
 }

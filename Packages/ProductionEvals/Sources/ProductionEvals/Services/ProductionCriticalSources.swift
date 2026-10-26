@@ -2,6 +2,7 @@ import Foundation
 
 extension ProductionStorage {
     // Frozen jobs and clones already contain source IDs; never reinterpret them as case/example IDs.
+    /// Checks that all already-frozen critical source IDs occur in the dataset without reinterpreting them as case IDs.
     func validateCriticalSources(_ sources: [String], reader: ProductionDatasetReader) throws {
         guard !sources.isEmpty else { return }
         var missing = Set(sources)
@@ -10,11 +11,15 @@ extension ProductionStorage {
     }
     /// Native case IDs resolve to exact example IDs or an explicit suiteCaseID metadata link.
     /// Existing source IDs remain accepted for an explicitly configured production policy.
+    /// - Returns: Unique sorted source IDs corresponding to all requested identifiers.
+    /// - Throws: An invalid-mapping error for missing identifiers, or dataset validation/read errors.
     public func resolveCriticalSources(_ identifiers: [String], datasetRevision: String) throws -> [String] {
         guard !identifiers.isEmpty else { return [] }
         let reader = try ProductionDatasetReader(storage: self, revision: datasetRevision)
         return try resolveCriticalSources(identifiers, reader: reader)
     }
+    /// Matches identifiers against example ID, source ID, and `suiteCaseID` metadata, returning unique sorted source IDs.
+    /// Throws when any required identifier has no dataset link.
     func resolveCriticalSources(_ identifiers: [String], reader: ProductionDatasetReader) throws -> [String] {
         guard !identifiers.isEmpty else { return [] }
         let required = Set(identifiers)

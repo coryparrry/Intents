@@ -1,6 +1,8 @@
 import Foundation
 
 actor WorkspaceOverviewLoader {
+    /// Loads summaries for active project suites without moving draft recovery files or admitting uncommitted pending runs.
+    /// Cancellation returns an empty result; unreadable suite evidence becomes an unavailable summary with a storage notice.
     func load(project: EvaluationProject, directory: URL) async -> [SuiteOverviewSummary] {
         var summaries: [SuiteOverviewSummary] = []
         for record in project.suites where !record.isArchived {
@@ -66,6 +68,7 @@ actor WorkspaceOverviewLoader {
         return summaries
     }
 
+    /// Decodes an optional saved JSON value, returning nil only for a missing file and propagating all other read or decoding failures.
     private func optional<T: Decodable>(_ type: T.Type, at url: URL) throws -> T? {
         do { return try CanonicalJSON.decode(type, from: Data(contentsOf: url)) }
         catch CocoaError.fileReadNoSuchFile { return nil }

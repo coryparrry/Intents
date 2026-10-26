@@ -9,6 +9,8 @@ enum ProductionRequestDeadline {
         }
     }
 
+    /// Returns the first operation, deadline, or caller-cancellation result without awaiting a noncooperative executor after cancellation.
+    /// Throws the winning operation error, `Exceeded`, or `CancellationError`.
     static func run<Value: Sendable>(seconds: Double,
         operation: @escaping @Sendable () async throws -> Value) async throws -> Value {
         let race = Race<Value>()
@@ -26,6 +28,7 @@ enum ProductionRequestDeadline {
         private var continuation: CheckedContinuation<Value, any Error>?
         private var tasks: [Task<Void, Never>] = []
 
+        /// Starts unstructured execution and timer tasks only if no result has already won the race.
         func start(seconds: Double, operation: @escaping @Sendable () async throws -> Value) {
             guard result == nil else { return }
             // These unstructured tasks intentionally outlive the waiting scope
@@ -47,6 +50,7 @@ enum ProductionRequestDeadline {
             tasks = [execution, timer]
         }
 
+        /// Returns an already-selected result or suspends until the race chooses its first result.
         func wait() async throws -> Value {
             try await withCheckedThrowingContinuation { continuation in
                 if let result { continuation.resume(with: result) }
@@ -54,6 +58,7 @@ enum ProductionRequestDeadline {
             }
         }
 
+        /// Accepts only the first result, cancels both competing tasks, and resumes the waiter exactly once.
         func finish(_ result: Result<Value, any Error>) {
             guard self.result == nil else { return }
             self.result = result

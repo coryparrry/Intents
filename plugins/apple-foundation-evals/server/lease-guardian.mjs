@@ -3,7 +3,9 @@ import { invokeNative } from './runtime.mjs';
 import { MAX_REQUEST_BYTES } from './validation.mjs';
 
 let active = null, closing = false;
+/** Writes one guardian protocol message unless shutdown has already begun. */
 const send = (value) => { if (!closing) process.stdout.write(JSON.stringify(value) + '\n'); };
+/** Aborts and reaps the active native invocation before exiting so the kernel lock outlives its worker. */
 async function close() {
   if (closing) return;
   closing = true;
@@ -23,7 +25,7 @@ lines.on('line', (line) => {
   if (message.kind !== 'invoke' || active) return;
   const controller = new AbortController();
   active = { controller, requestId: message.requestId, done: null };
-  active.done = invokeNative(message.binary, message.input, { signal: controller.signal, timeoutMs: message.timeoutMs, onEvent: (event) => send({ kind: 'event', requestId: message.requestId, event }), onSpawn: (pid) => send({ kind: 'native', pid }) })
+  active.done = invokeNative(message.binary, message.input, { signal: controller.signal, timeoutMs: message.timeoutMs, /** Forwards native progress with its request identity to the lease owner. */ onEvent: (event) => send({ kind: 'event', requestId: message.requestId, event }), /** Reports the native worker PID while the guardian retains process and lock ownership. */ onSpawn: (pid) => send({ kind: 'native', pid }) })
     .then((result) => send({ kind: 'result', requestId: message.requestId, result }), (error) => send({ kind: 'result', requestId: message.requestId, error: error.message }))
     .finally(() => { active = null; });
 });

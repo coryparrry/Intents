@@ -35,12 +35,15 @@ actor EvaluationCustomToolRecorder {
     private var rejectedCallCount = 0
     private var traces: [EvaluationCustomToolCallTrace] = []
 
+    /// Creates bounded tool-call recording with an optional shared limiter and workflow recorder, clamping the reported call limit to zero through four.
     init(maximumCalls: Int, callLimiter: EvaluationToolCallLimiter? = nil, workflowRecorder: EvaluationWorkflowRecorder? = nil) {
         self.workflowRecorder = workflowRecorder
         self.maximumCalls = min(max(0, maximumCalls), Self.maximumCallsPerSample)
         self.callLimiter = callLimiter ?? EvaluationToolCallLimiter(maximumCalls: maximumCalls)
     }
 
+    /// Reserves shared call capacity and records bounded arguments for an admitted call.
+    /// On quota failure, retains at most four rejection traces and throws the custom-tool call-limit error.
     func beginCall(id: UUID, toolName: String, argumentsJSON: String) async throws {
         do {
             try await callLimiter.beginCall()
@@ -79,6 +82,7 @@ actor EvaluationCustomToolRecorder {
         )
     }
 
+    /// Updates a known call with bounded output and error text, nonnegative duration, and its final outcome.
     func finishCall(
         id: UUID,
         output: String?,
@@ -97,6 +101,7 @@ actor EvaluationCustomToolRecorder {
         )
     }
 
+    /// Replaces a known call’s recorded arguments with a byte-bounded representation.
     func updateArguments(id: UUID, argumentsJSON: String) {
         guard let index = traces.firstIndex(where: { $0.id == id }) else { return }
         traces[index].argumentsJSON = argumentsJSON.boundedUTF8(
@@ -104,10 +109,12 @@ actor EvaluationCustomToolRecorder {
         )
     }
 
+    /// Returns the recorded calls in their insertion order, including retained rejections.
     func snapshot() -> [EvaluationCustomToolCallTrace] {
         traces
     }
 
+    /// Formats recorded arguments, outputs, outcomes, and timing as judge evidence, including an explicit no-call message when empty.
     func evidenceText() -> String {
         guard !traces.isEmpty else { return "No custom tools were called." }
 
@@ -149,6 +156,7 @@ struct EvaluationCustomTool: Tool {
 
     @SessionProperty(\.history) private var history
 
+    /// Validates a tool definition and builds its argument schema using the default local HTTP client and system tokenizer.
     init(
         definition: EvaluationCustomToolDefinition,
         recorder: EvaluationCustomToolRecorder
@@ -161,6 +169,7 @@ struct EvaluationCustomTool: Tool {
         )
     }
 
+    /// Validates a tool definition and constructs its argument schema with the supplied HTTP client and token counter, propagating configuration or schema errors.
     init(
         definition: EvaluationCustomToolDefinition,
         recorder: EvaluationCustomToolRecorder,
@@ -184,6 +193,7 @@ struct EvaluationCustomTool: Tool {
         self.tokenCounter = tokenCounter
     }
 
+    /// Builds custom tools sharing a recorder and tokenizer, rejecting invalid tool configuration or an excessive tool count.
     static func makeTools(
         definitions: [EvaluationCustomToolDefinition],
         recorder: EvaluationCustomToolRecorder,
@@ -208,6 +218,8 @@ struct EvaluationCustomTool: Tool {
         }
     }
 
+    /// Executes a fixture or configured local HTTP tool after quota, argument-schema, image-reference, byte, and token admission checks.
+    /// Returns bounded UTF-8 text and records success, rejection, failure, or cancellation; policy violations and execution errors propagate.
     @concurrent
     func call(arguments: GeneratedContent) async throws -> String {
         let argumentsJSON = arguments.jsonString
@@ -289,7 +301,7 @@ struct EvaluationCustomTool: Tool {
             await recorder.finishCall(
                 id: callID,
                 output: output,
-                durationMilliseconds: start.milliseconds(to: .now),
+                durationMilliseconds: start.evaluationMilliseconds(to: .now),
                 outcome: .succeeded
             )
             workflow?.finish(spanID, metadata: ["outputBytes": String(output.utf8.count)])
@@ -298,7 +310,7 @@ struct EvaluationCustomTool: Tool {
             await recorder.finishCall(
                 id: callID,
                 output: observedOutput,
-                durationMilliseconds: start.milliseconds(to: .now),
+                durationMilliseconds: start.evaluationMilliseconds(to: .now),
                 outcome: .cancelled,
                 errorDescription: "The custom tool call was cancelled."
             )
@@ -319,7 +331,7 @@ struct EvaluationCustomTool: Tool {
             await recorder.finishCall(
                 id: callID,
                 output: observedOutput,
-                durationMilliseconds: start.milliseconds(to: .now),
+                durationMilliseconds: start.evaluationMilliseconds(to: .now),
                 outcome: outcome,
                 errorDescription: error.localizedDescription
             )
@@ -328,6 +340,7 @@ struct EvaluationCustomTool: Tool {
         }
     }
 
+    /// Encodes a sorted-key tool-name and argument-object envelope, rejecting non-object JSON or argument and envelope byte-limit violations.
     static func requestBody(toolName: String, argumentsJSON: String) throws -> Data {
         let argumentsData = Data(argumentsJSON.utf8)
         guard argumentsData.count <= EvaluationCustomToolDefinition.maximumArgumentBytes else {
@@ -348,6 +361,7 @@ struct EvaluationCustomTool: Tool {
         return body
     }
 
+    /// Replaces schema-declared image references in argument JSON with metadata resolved from session history, propagating malformed JSON or unresolved-reference errors.
     static func resolvedArgumentsJSON<History: Sequence>(
         argumentsJSON: String,
         fields: [EvaluationSchemaField],
@@ -374,6 +388,7 @@ struct EvaluationCustomTool: Tool {
         return String(decoding: resolvedData, as: UTF8.self)
     }
 
+    /// Recursively resolves image-reference fields through objects, arrays, named definitions, and a matching union alternative, preserving other values.
     private static func resolveImageReferences<History: Sequence>(
         in value: Any,
         field: EvaluationSchemaField,
@@ -438,6 +453,7 @@ struct EvaluationCustomTool: Tool {
         }
     }
 
+    /// Resolves an image attachment label against session history and returns its label, dimensions, and orientation, throwing for invalid or missing references.
     private static func resolvedImageMetadata<History: Sequence>(
         from value: Any,
         fieldName: String,
@@ -467,6 +483,7 @@ struct EvaluationCustomTool: Tool {
         ]
     }
 
+    /// Reports whether any configured field reaches an image-reference schema through children or named definitions.
     private static func containsImageReference(
         fields: [EvaluationSchemaField],
         definitions: [EvaluationSchemaField]
@@ -481,6 +498,7 @@ struct EvaluationCustomTool: Tool {
         }
     }
 
+    /// Searches a field’s children and named definitions for image references while preventing repeated visits to named definitions.
     private static func containsImageReference(
         field: EvaluationSchemaField,
         definitions: [String: EvaluationSchemaField],
@@ -507,6 +525,7 @@ struct EvaluationCustomTool: Tool {
         }
     }
 
+    /// Checks the broad JSON shape and required object keys to select an image-bearing union alternative before metadata resolution.
     private static func valueCouldMatch(
         _ value: Any,
         field: EvaluationSchemaField,
@@ -537,16 +556,19 @@ struct EvaluationCustomTool: Tool {
 
 @available(macOS 27.0, *)
 protocol EvaluationCustomToolHTTPClient: Sendable {
+    /// Posts the supplied JSON body to a configured endpoint and returns response text, propagating transport or response validation errors.
     func post(body: Data, to endpoint: URL) async throws -> String
 }
 
 @available(macOS 27.0, *)
 protocol EvaluationCustomToolTokenCounting: Sendable {
+    /// Counts text tokens for argument and output admission, propagating tokenizer failures.
     func tokenCount(for text: String) async throws -> Int
 }
 
 @available(macOS 27.0, *)
 struct EvaluationSystemModelTokenCounter: EvaluationCustomToolTokenCounting {
+    /// Uses the system model tokenizer to count text represented as a prompt.
     func tokenCount(for text: String) async throws -> Int {
         try await SystemLanguageModel.default.tokenCount(for: Prompt(text))
     }
@@ -556,31 +578,23 @@ struct EvaluationSystemModelTokenCounter: EvaluationCustomToolTokenCounting {
 final class EvaluationLocalHTTPToolClient: EvaluationCustomToolHTTPClient {
     private let session: URLSession
 
+    /// Creates an ephemeral HTTP session with tool timeouts, disabled caches, cookies, credentials and proxies, and a delegate that refuses redirects.
     init() {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = EvaluationCustomToolDefinition.requestTimeoutSeconds
-        configuration.timeoutIntervalForResource = EvaluationCustomToolDefinition.requestTimeoutSeconds
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        configuration.urlCache = nil
-        configuration.httpCookieStorage = nil
-        configuration.httpShouldSetCookies = false
-        configuration.urlCredentialStorage = nil
-        configuration.connectionProxyDictionary = [:]
-        session = URLSession(
-            configuration: configuration,
-            delegate: EvaluationNoRedirectDelegate(),
-            delegateQueue: nil
-        )
+        session = EvaluationHTTPPolicy.isolatedSession(timeout: EvaluationCustomToolDefinition.requestTimeoutSeconds)
     }
 
+    /// Uses the supplied HTTP session for tool requests and takes responsibility for invalidating it when this client is released.
     init(session: URLSession) {
         self.session = session
     }
 
+    /// Invalidates the owned HTTP session and cancels its outstanding tasks.
     deinit {
         session.invalidateAndCancel()
     }
 
+    /// Posts JSON and streams a successful HTTP response within the configured output byte limit.
+    /// Throws for transport failures, non-2xx status, invalid UTF-8, oversized output, or cancellation, while recording available HTTP measurements.
     func post(body: Data, to endpoint: URL) async throws -> String {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -625,14 +639,40 @@ final class EvaluationLocalHTTPToolClient: EvaluationCustomToolHTTPClient {
     }
 }
 
-@available(macOS 27.0, *)
+/// Shared HTTP isolation for evaluation requests; each caller owns its session lifetime.
+enum EvaluationHTTPPolicy {
+    /// Creates an ephemeral configuration with matching timeouts and no cache, cookies, stored credentials or configured proxies.
+    static func isolatedConfiguration(timeout: TimeInterval) -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = timeout
+        configuration.timeoutIntervalForResource = timeout
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
+        configuration.connectionProxyDictionary = [:]
+        return configuration
+    }
+
+    /// Creates an isolated session that refuses every redirect; the caller must invalidate it when its work ends.
+    static func isolatedSession(timeout: TimeInterval) -> URLSession {
+        URLSession(
+            configuration: isolatedConfiguration(timeout: timeout),
+            delegate: EvaluationNoRedirectDelegate(),
+            delegateQueue: nil
+        )
+    }
+}
+
 final class EvaluationNoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    /// Refuses HTTP redirects by completing the redirect decision with no replacement request.
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
         willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest,
-        completionHandler: @escaping (URLRequest?) -> Void
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
         completionHandler(nil)
     }
@@ -700,16 +740,8 @@ private enum EvaluationCustomToolRejectedError: LocalizedError, Sendable {
 }
 
 @available(macOS 27.0, *)
-private extension ContinuousClock.Instant {
-    func milliseconds(to end: ContinuousClock.Instant) -> Double {
-        let components = duration(to: end).components
-        return Double(components.seconds) * 1_000
-            + Double(components.attoseconds) / 1_000_000_000_000_000
-    }
-}
-
-@available(macOS 27.0, *)
 private extension String {
+    /// Returns a UTF-8 byte-prefix decoded with replacement characters if truncation splits an encoded scalar.
     func boundedUTF8(to maximumBytes: Int) -> String {
         let bytes = utf8
         guard bytes.count > maximumBytes else { return self }

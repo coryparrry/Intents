@@ -14,10 +14,16 @@ struct MCPControlReceipt: Codable, Sendable {
   private var activeMutation: UUID?
   private var tasks: [UUID: Task<Void, Never>] = [:]
   private var isClosing = false
+  /// Uses the shared app controls and selects their MCPControl directory for durable operation
+  /// receipts.
   init(control: EvaluationAppControl) {
     self.control = control
     directory = control.store.overviewStorageDirectory.appendingPathComponent("MCPControl")
   }
+  /// Executes validated app-control calls, serving reads directly and serializing mutation dispatch
+  /// with persisted receipts. Identical retries return saved content when present; mismatched IDs
+  /// conflict and receipts without content require evidence inspection rather than replay. Errors
+  /// become tool failures.
   func execute(_ call: MCPControlCall) async -> MCPToolPayload {
     do {
       guard !isClosing else {
@@ -122,6 +128,8 @@ struct MCPControlReceipt: Codable, Sendable {
       }
     } catch { return Self.failure(error) }
   }
+  /// Updates an existing receipt with the final completed/failed payload. Missing receipts are ignored;
+  /// persistence failures are surfaced in the evaluation store's notice.
   func completeOperation(_ id: UUID, payload: MCPToolPayload) {
     do {
       guard var receipt = try load(id) else { return }
@@ -134,15 +142,20 @@ struct MCPControlReceipt: Codable, Sendable {
         "MCP completion receipt could not be saved: \(error.localizedDescription)"
     }
   }
+  /// Rejects future operations and requests cancellation of all tracked completion tasks.
   func beginClosing() {
     isClosing = true
     for task in tasks.values { task.cancel() }
   }
+  /// Begins closing and awaits the tracked tasks present at shutdown so their completion handling can
+  /// finish.
   func closeAndWait() async {
     beginClosing()
     let pending = Array(tasks.values)
     for task in pending { await task.value }
   }
+  /// Tracks an asynchronous operation body and saves its eventual payload into the receipt, removing
+  /// the task when it finishes. Throws if app control is already closing.
   func track(_ id: UUID, body: @escaping @MainActor () async -> MCPToolPayload) throws {
     guard !isClosing else {
       throw EvaluationStoreError.resourceConflict("App control is closing.")
@@ -155,6 +168,8 @@ struct MCPControlReceipt: Codable, Sendable {
   }
 
 
+  /// Dispatches production and runner prefixes to their controls, forwarding other actions to workspace
+  /// control. Domain errors propagate to the operation wrapper.
   private func route(_ call: MCPControlCall) async throws -> MCPToolPayload {
     if call.name.hasPrefix("eval_production_") {
       return try await MCPProductionControl.execute(call, control: control)
@@ -164,6 +179,8 @@ struct MCPControlReceipt: Codable, Sendable {
     }
     return try await MCPWorkspaceControl.execute(call, control: control)
   }
+  /// Loads a receipt by UUID, returning nil when absent. Enforces a 1 MiB bound before and after
+  /// reading and propagates persistence or decoding errors.
   private func load(_ id: UUID) throws -> MCPControlReceipt? {
     let file = directory.appendingPathComponent(id.uuidString + ".json")
     guard FileManager.default.fileExists(atPath: file.path) else { return nil }
@@ -176,6 +193,9 @@ struct MCPControlReceipt: Codable, Sendable {
     }
     return try JSONDecoder().decode(MCPControlReceipt.self, from: bytes)
   }
+  /// Atomically writes a bounded mode-0600 receipt, spilling content above 768 KiB to a mode-0600
+  /// result artifact with size/digest metadata. Rejects results over 8 MiB or receipts over 1 MiB; I/O
+  /// failures propagate.
   private func save(_ receipt: MCPControlReceipt) throws {
     var receipt = receipt
     if let content = receipt.content {
@@ -204,19 +224,26 @@ struct MCPControlReceipt: Codable, Sendable {
     try bytes.write(to: file, options: .atomic)
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
   }
+  /// Wraps fields as a successful structured tool response without adding a mutation outcome.
   static func read(_ values: [String: MCPJSONValue]) -> MCPToolPayload {
     .init(structuredContent: .object(values))
   }
+  /// Returns a successful response with outcome set to committed, replacing any outcome in the supplied
+  /// fields.
   static func committed(_ values: [String: MCPJSONValue] = [:]) -> MCPToolPayload {
     var values = values
     values["outcome"] = .string("committed")
     return read(values)
   }
+  /// Converts an error to a failed tool payload, using invalid_arguments for input errors and
+  /// control_failed otherwise.
   nonisolated static func failure(_ error: Error) -> MCPToolPayload {
     .failure(
       code: error is MCPToolInputError ? "invalid_arguments" : "control_failed",
       message: error.localizedDescription)
   }
+  /// Requires the named Boolean confirmation to be true, throwing confirmationRequired when absent or
+  /// false.
   nonisolated static func confirm(_ call: MCPControlCall, key: String = "confirm") throws {
     guard call.flag(key) else { throw MCPToolInputError.confirmationRequired }
   }

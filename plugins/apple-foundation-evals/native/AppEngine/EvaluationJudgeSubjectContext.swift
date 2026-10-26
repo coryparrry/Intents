@@ -16,6 +16,8 @@ struct EvaluationJudgeSubjectContext: Codable, Equatable, Sendable {
     var subjectInstructions: String? = nil
     var unavailableReason: String? = nil
 
+    /// Captures semantic model-facing history and instructions within the encoded evidence byte limit.
+    /// Unsupported entries, historical attachments, or oversized evidence produce an unavailable context with no retained entries.
     static func capture(_ history: [Transcript.Entry], instructions: String) -> Self {
         var context = Self(subjectInstructions: instructions)
         do {
@@ -44,6 +46,7 @@ struct EvaluationJudgeSubjectContext: Codable, Equatable, Sendable {
         return context
     }
 
+    /// Validates the saved evidence format, availability, and encoded byte limit for its current instructions.
     func validated() throws -> Self {
         try admittingInstructionVariants([subjectInstructions])
     }
@@ -90,6 +93,7 @@ struct EvaluationJudgeSubjectContext: Codable, Equatable, Sendable {
         return String(decoding: (try? encoder.encode(entries)) ?? Data(), as: UTF8.self)
     }
 
+    /// Joins text and structured transcript segments into semantic evidence, throwing for attachments or unsupported segment kinds.
     private static func text(_ segments: [Transcript.Segment]) throws -> String {
         try segments.map { segment in
             switch segment {

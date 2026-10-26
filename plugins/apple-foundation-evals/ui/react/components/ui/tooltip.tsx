@@ -4,6 +4,7 @@ import * as React from "react"
 import { cn } from "cn"
 import { Tooltip as TooltipPrimitive } from "radix-ui"
 
+/** Configures tooltip timing for descendants, defaulting to no opening delay. */
 function TooltipProvider({
   delayDuration = 0,
   ...props
@@ -17,18 +18,21 @@ function TooltipProvider({
   )
 }
 
+/** Provides Radix tooltip open state and interaction props for its trigger and content. */
 function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
 }
 
+/** Forwards props to the element that opens its tooltip through Radix interactions. */
 function TooltipTrigger({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
 }
 
+/** Ports tooltip content and its arrow into an animated panel with a configurable side offset. */
 function TooltipContent({
   className,
   sideOffset = 0,

@@ -21,6 +21,8 @@ struct FoundationEvalsApp: App {
     private let appControl: EvaluationAppControl
     private let mcpRuntime: FoundationEvalsMCPRuntime
 
+    /// Creates the shared stores, telemetry, MCP runtime, and connector settings for the launch isolation mode.
+    /// Production worker launches hide the app and start their asynchronous command using the same evaluation store.
     init() {
         let telemetry = TelemetryController(defaults: Self.launchDefaults, configuration: Self.telemetryConfiguration,
             discardPendingCrashes: { if Self.acceptanceStorageDirectory == nil && !Self.launchesProductionWorker { TelemetryPendingCrashReports.current?.discard() } })
@@ -120,10 +122,12 @@ struct FoundationEvalsApp: App {
         return UserDefaults(suiteName: "Intents.IsolatedLaunch.\(UUID().uuidString)")!
     }()
 
+    /// Applies debug capture appearance and bounded window dimensions for isolated acceptance launches after yielding for window creation.
     private static func sizeVerificationWindow() async {
         #if DEBUG
         guard acceptanceStorageDirectory != nil else { return }
         let arguments = ProcessInfo.processInfo.arguments
+        /// Reads a numeric launch argument only when its following value falls within the permitted range.
         func dimension(_ flag: String, within range: ClosedRange<Double>) -> Double? {
             guard let index = arguments.firstIndex(of: flag),
                   arguments.indices.contains(index + 1),
@@ -240,6 +244,8 @@ private final class FoundationEvalsAppDelegate: NSObject, NSApplicationDelegate 
     weak var runtime: FoundationEvalsMCPRuntime?
     private var isTerminating = false
 
+    /// Defers termination once while the runtime asynchronously prepares for shutdown, then replies to AppKit.
+    /// Repeated termination requests remain deferred until that preparation completes.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let runtime else { return .terminateNow }
         guard !isTerminating else { return .terminateLater }

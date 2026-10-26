@@ -188,12 +188,15 @@ private struct CustomToolsEditor: View {
                 )
             }
         }
-        .onAppear { selectToolIfNeeded() }
+        .onAppear {
+            repairEditorSelection(selectedToolID, ids: tools.map(\.id)) { selectedToolID = $0 }
+        }
         .onChange(of: tools.map(\.id)) { _, _ in
-            selectToolIfNeeded()
+            repairEditorSelection(selectedToolID, ids: tools.map(\.id)) { selectedToolID = $0 }
         }
     }
 
+    /// Appends and selects an empty custom tool when the configured tool limit allows it.
     private func addTool() {
         guard tools.count < EvaluationFeatureConfiguration.maximumTools else { return }
         let tool = EvaluationCustomToolDefinition()
@@ -201,6 +204,7 @@ private struct CustomToolsEditor: View {
         selectedToolID = tool.id
     }
 
+    /// Appends and selects a fixture order-lookup example when the configured tool limit allows it.
     private func addSampleTool() {
         guard tools.count < EvaluationFeatureConfiguration.maximumTools else { return }
         let tool = EvaluationCustomToolDefinition(
@@ -220,15 +224,10 @@ private struct CustomToolsEditor: View {
         selectedToolID = tool.id
     }
 
+    /// Removes the tool at the supplied index and selects its successor, or the last remaining tool.
     private func removeTool(at index: Int) {
         tools.remove(at: index)
         selectedToolID = tools.indices.contains(index) ? tools[index].id : tools.last?.id
-    }
-
-    private func selectToolIfNeeded() {
-        if selectedToolID.flatMap({ id in tools.firstIndex { $0.id == id } }) == nil {
-            selectedToolID = tools.first?.id
-        }
     }
 }
 
@@ -560,6 +559,7 @@ private struct LabeledField<Content: View>: View {
     let label: LocalizedStringResource
     @ViewBuilder let content: Content
 
+    /// Creates a labeled feature control, evaluating its content builder once.
     init(_ label: LocalizedStringResource, @ViewBuilder content: () -> Content) {
         self.label = label
         self.content = content()

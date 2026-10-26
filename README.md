@@ -162,6 +162,15 @@ swift build --product intents-evals -j 2
 python3 script/test_production_evals.py .build/debug/intents-evals
 ```
 
+Check function docstrings with the same 81% minimum used by CI:
+
+```sh
+npm ci --prefix Tools/DocstringCoverage --ignore-scripts --no-audit --no-fund
+python3 script/docstring_coverage.py --minimum 81
+```
+
+See the [coverage guide](docs/DOCSTRING_COVERAGE.md) for the source scope, accepted documentation formats, and missing-function reports.
+
 Run the app tests with:
 
 ```sh

@@ -19,10 +19,12 @@ import Observation
     @ObservationIgnored private let runOverride: (@MainActor (MacIntentCatalog, [MacIntentTestCase], MacIntentRunConfiguration) async throws -> MacIntentRunResult)?
     @ObservationIgnored private var draftRevision = 0
 
+    /// Creates a main-actor intent test session with an optional async runner override for controlled execution.
     init(runOverride: (@MainActor (MacIntentCatalog, [MacIntentTestCase], MacIntentRunConfiguration) async throws -> MacIntentRunResult)? = nil) {
         self.runOverride = runOverride
     }
 
+    /// Advances draft identity and clears result and diagnostic so edits cannot display an older successful result.
     private func invalidateResult() {
         draftRevision += 1
         result = nil
@@ -33,6 +35,8 @@ import Observation
         catalog?.actions.first { $0.id == selectedActionID }
     }
 
+    /// Loads a compiled app's intent catalog while idle and selects its first action.
+    /// Clears previous catalog/results first and publishes load or empty-catalog diagnostics.
     func load(appURL: URL) {
         guard !isRunning else { return }
         catalog = nil
@@ -47,11 +51,14 @@ import Observation
         } catch { diagnostic = error.localizedDescription }
     }
 
+    /// Publishes a file-selection error unless it represents user cancellation.
     func reportSelectionError(_ error: any Error) {
         guard (error as NSError).code != NSUserCancelledError else { return }
         diagnostic = error.localizedDescription
     }
 
+    /// Builds a test from the selected action and JSON object inputs, optionally validating an expected JSON value.
+    /// Throws for missing actions or malformed inputs/expectations; disabling comparison leaves the expectation nil.
     func testCase() throws -> MacIntentTestCase {
         guard selectedAction != nil else { throw MacIntentTestingError("Choose an action from the compiled catalog.") }
         guard let data = inputsJSON.data(using: .utf8),
@@ -68,6 +75,8 @@ import Observation
                                  expectedValueJSON: checksExpectedValue ? expectedValueJSON : nil)
     }
 
+    /// Validates signing and test inputs, then launches a generated test-host run for the loaded catalog.
+    /// Publishes results only if the draft revision still matches; validation/execution errors become diagnostics.
     func start() {
         guard !isRunning, let catalog else { return }
         result = nil
@@ -98,13 +107,16 @@ import Observation
         } catch { diagnostic = error.localizedDescription }
     }
 
+    /// Requests runner cancellation and waits for its retained task to finish before closing.
     func closeAndWait() async {
         cancel()
         await task?.value
     }
 
+    /// Waits for the currently retained test-run task without requesting cancellation.
     func waitForRun() async { await task?.value }
 
+    /// Requests cancellation of both the store task and underlying intent runner.
     func cancel() {
         task?.cancel()
         runner.cancel()

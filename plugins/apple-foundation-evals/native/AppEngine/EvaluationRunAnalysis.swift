@@ -11,6 +11,7 @@ struct EvaluationTokenSummary: Codable, Equatable, Sendable {
 
     var totalTokens: Int { inputTokens.saturatedAdding(outputTokens) }
 
+    /// Aggregates available request usage with saturating counters, retaining a separate count of samples whose usage is unavailable.
     fileprivate init(usages: [EvaluationUsage], usageUnavailableSampleCount: Int = 0) {
         requestCount = usages.count
         self.usageUnavailableSampleCount = usageUnavailableSampleCount
@@ -27,6 +28,7 @@ struct EvaluationLatencySummary: Codable, Equatable, Sendable {
     var p50Milliseconds: Double?
     var p95Milliseconds: Double?
 
+    /// Builds p50 and p95 latency summaries from finite nonnegative samples, excluding invalid measurements.
     fileprivate init(milliseconds: [Double]) {
         let sorted = milliseconds.filter { $0.isFinite && $0 >= 0 }.sorted()
         sampleCount = sorted.count
@@ -34,6 +36,7 @@ struct EvaluationLatencySummary: Codable, Equatable, Sendable {
         p95Milliseconds = Self.percentile(0.95, in: sorted)
     }
 
+    /// Linearly interpolates a percentile in an already sorted array; empty input returns nil and a single value is returned unchanged.
     private static func percentile(_ percentile: Double, in sortedValues: [Double]) -> Double? {
         guard let first = sortedValues.first else { return nil }
         guard sortedValues.count > 1 else { return first }
@@ -96,6 +99,8 @@ struct EvaluationRunAnalysis: Codable, Equatable, Sendable {
     var judgeUsage: EvaluationTokenSummary
     var cases: [EvaluationCaseAnalysis]
 
+    /// Builds run and case summaries using effective assessment scores while retaining original subject latency and usage.
+    /// Separates error, unscored, missing, and unavailable-usage evidence instead of treating it as passing or zero-cost coverage.
     init(run: EvaluationRun) {
         let effectiveResults = run.effectiveResults
         let buckets = effectiveResults.map(SampleBucket.init(result:))
@@ -136,6 +141,8 @@ struct EvaluationRunAnalysis: Codable, Equatable, Sendable {
         cases = Self.caseAnalyses(for: run, results: effectiveResults)
     }
 
+    /// Summarizes planned cases in definition order, appending result-only cases and retaining cases with no results.
+    /// Computes coverage and pass/fail variation per case from the effective assessment results.
     private static func caseAnalyses(
         for run: EvaluationRun,
         results effectiveResults: [EvaluationSampleResult]
@@ -238,6 +245,7 @@ struct EvaluationScoredRate: Codable, Equatable, Sendable {
     var plannedSampleCount: Int
     var passRate: Double?
 
+    /// Copies the case's scored pass fraction and coverage counts for side-by-side run comparison.
     fileprivate init(caseAnalysis: EvaluationCaseAnalysis) {
         passedSampleCount = caseAnalysis.passedSampleCount
         scoredSampleCount = caseAnalysis.scoredSampleCount
@@ -284,6 +292,8 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
     var unchangedCaseCount: Int
     var meanComparableCasePassRateDelta: Double?
 
+    /// Compares compatible scoring conditions and complete per-case rates, reporting partial coverage when any case cannot be compared.
+    /// Keeps model, instruction, execution, environment, and reference changes as warnings and averages deltas only over comparable cases.
     init(current: EvaluationRun, baseline: EvaluationRun) {
         currentRunID = current.id
         baselineRunID = baseline.id
@@ -334,6 +344,7 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
         meanComparableCasePassRateDelta = deltas.isEmpty ? nil : deltas.reduce(0, +) / Double(deltas.count)
     }
 
+    /// Compares conversation behavior while ignoring setup-turn IDs and irrelevant retained-turn counts; absent settings use current defaults.
     private static func sameConversation(
         _ lhs: EvaluationConversationConfiguration?, _ rhs: EvaluationConversationConfiguration?
     ) -> Bool {
@@ -346,6 +357,7 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
             && (lhs.modelHistoryProjection ?? .init()) == (rhs.modelHistoryProjection ?? .init())
     }
 
+    /// Compares ordered assertion behavior while treating nil as empty, ignoring editing IDs and unused existence-check expectations.
     private static func sameAssertions(_ lhs: [EvaluationFieldAssertion]?, _ rhs: [EvaluationFieldAssertion]?) -> Bool {
         let lhs = lhs ?? []
         let rhs = rhs ?? []
@@ -355,6 +367,7 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
         }
     }
 
+    /// Finds incompatible suite identity, sample structure, or selected-assessment scoring conditions before comparing case rates.
     private static func incompatibilities(current: EvaluationRun, baseline: EvaluationRun) -> [String] {
         var reasons: [String] = []
         if current.suiteID != baseline.suiteID { reasons.append("The runs belong to different suites.") }
@@ -381,6 +394,7 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
         return reasons
     }
 
+    /// Checks sample IDs, planned counts, case membership, and unique valid case/repetition coordinates without requiring every planned sample to exist.
     private static func hasValidSampleStructure(_ run: EvaluationRun) -> Bool {
         guard run.repetitions > 0,
               Set(run.results.map(\.id)).count == run.results.count else { return false }
@@ -403,6 +417,8 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
         return true
     }
 
+    /// Resolves scoring conditions from the selected assessment or original run, rejecting missing explicit selections and inconsistent captured contracts.
+    /// Legacy assessments may derive the contract from their saved rubric and judge policy.
     private static func comparisonScoringContract(for run: EvaluationRun) -> EvaluationScoringContract? {
         guard let assessment = run.selectedAssessment else {
             // An explicit missing selection must not fall back to the original score set.
@@ -425,6 +441,7 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
         return captured == derived ? captured : nil
     }
 
+    /// Splits rubric lines into ordered nonempty criteria after trimming surrounding whitespace.
     private static func normalizedRubric(_ rubric: String) -> [String] {
         rubric
             .split(whereSeparator: \Character.isNewline)
@@ -432,6 +449,7 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
             .filter { !$0.isEmpty }
     }
 
+    /// Reports comparison-context changes without making them scoring incompatibilities, including missing execution contracts and altered attachment signatures.
     private static func warnings(
         current: EvaluationRun,
         baseline: EvaluationRun
@@ -462,12 +480,15 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
         return warnings
     }
 
+    /// Builds sorted attachment signatures from name, kind, byte count, and content hash for order-independent reference comparison.
     private static func attachmentSignatures(_ attachments: [EvaluationAttachmentTrace]) -> [String] {
         attachments.map {
             "\($0.name)|\($0.kind.rawValue)|\($0.byteCount)|\($0.sha256)"
         }.sorted()
     }
 
+    /// Pairs cases by ID and compares rates only when scoring-relevant definitions match and both sides have complete scored coverage.
+    /// Missing, changed, or incompletely scored cases retain an explicit noncomparability reason.
     private static func compareCases(
         current: [EvaluationCaseAnalysis],
         baseline: [EvaluationCaseAnalysis]
@@ -564,6 +585,7 @@ private enum SampleBucket {
     case unscored
     case error
 
+    /// Classifies subject or judge diagnostics as errors before interpreting the sample's saved result status.
     init(result: EvaluationSampleResult) {
         if result.hasSubjectError || result.hasJudgeError {
             self = .error
@@ -586,6 +608,7 @@ private struct CaseDefinition {
     var conversation: EvaluationConversationConfiguration?
     var fieldAssertions: [EvaluationFieldAssertion]?
 
+    /// Captures the planned case's scoring inputs and display name for analysis, including conversation and assertion configuration.
     init(_ evaluationCase: EvaluationCase) {
         name = evaluationCase.name
         prompt = evaluationCase.prompt
@@ -594,6 +617,7 @@ private struct CaseDefinition {
         fieldAssertions = evaluationCase.fieldAssertions
     }
 
+    /// Reconstructs a result-only case definition from saved sample text and assertion results; conversation configuration remains unavailable.
     init(_ result: EvaluationSampleResult) {
         name = result.caseName
         prompt = result.prompt

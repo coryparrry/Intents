@@ -1,6 +1,7 @@
 import * as React from "react"
 import { cn } from "cn"
 
+/** Forwards native input props with shared focus, disabled, file-input, and aria-invalid styling. */
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (
     <input

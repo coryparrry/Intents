@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { JSDOM } from 'jsdom';
 import { removeCase } from '../ui/react/case-actions.js';
 import { caseEditorDetails, commitCaseEditorDetails, isAppSuiteFormat } from '../ui/suite-form-state.js';
-import { appSchemaEditor, newAppSuite, renderNativeCases } from '../ui/native-suite.js';
+import { appSchemaEditor, newAppSuite } from '../ui/native-suite.js';
 import { renderNativeSetup } from '../ui/native-setup.js';
 import { suite } from '../server/validation.mjs';
 
@@ -26,21 +26,16 @@ function context(draft, setupPage = 'instructions') {
 function input(root, label) { const found = [...root.querySelectorAll('[aria-label]')].find(el => el.getAttribute('aria-label') === label); assert.ok(found, label); return found; }
 function change(control, value) { control.value = String(value); control.onchange(); }
 
-test('deleting a critical case removes only its release requirement in both case handlers', () => {
-  for (const legacyHandler of [false, true]) {
-    const draft = newAppSuite(randomUUID()), removed = draft.cases[0].id, kept = randomUUID();
-    draft.cases.push({ ...structuredClone(draft.cases[0]), id: kept });
-    draft.releasePolicy = { required: true, criticalCaseIDs: [removed.toUpperCase(), kept], maximumErrorCount: 0 };
-    if (legacyHandler) {
-      const h = context(draft); const view = renderNativeCases(h.ctx);
-      [...view.querySelectorAll('button')].find(el => el.textContent === 'Delete Case').click(); h.close();
-    } else removeCase(draft, removed);
-    assert.deepEqual(draft.releasePolicy.criticalCaseIDs, [kept]);
-    assert.equal(draft.cases[0].id, kept);
-    assert.doesNotThrow(() => suite(draft, randomUUID));
-    assert.throws(() => removeCase(draft, kept), /at least one/);
-    assert.deepEqual(draft.releasePolicy.criticalCaseIDs, [kept]);
-  }
+test('deleting a critical case removes only its release requirement', () => {
+  const draft = newAppSuite(randomUUID()), removed = draft.cases[0].id, kept = randomUUID();
+  draft.cases.push({ ...structuredClone(draft.cases[0]), id: kept });
+  draft.releasePolicy = { required: true, criticalCaseIDs: [removed.toUpperCase(), kept], maximumErrorCount: 0 };
+  removeCase(draft, removed);
+  assert.deepEqual(draft.releasePolicy.criticalCaseIDs, [kept]);
+  assert.equal(draft.cases[0].id, kept);
+  assert.doesNotThrow(() => suite(draft, randomUUID));
+  assert.throws(() => removeCase(draft, kept), /at least one/);
+  assert.deepEqual(draft.releasePolicy.criticalCaseIDs, [kept]);
 });
 
 test('schema Type and Optional controls discard hidden incompatible metadata only on transitions', () => {
@@ -64,12 +59,12 @@ test('schema Type and Optional controls discard hidden incompatible metadata onl
   assert.equal(field.representNilExplicitlyInGeneratedContent, false); h.close();
 });
 
-test('rendering or editing supported flat suites preserves named IDs and independent scoring', () => {
+test('setup rendering or editing supported flat suites preserves named IDs and independent scoring', () => {
   for (const id of [randomUUID(), 'named-exact-case']) {
     const draft = suite({ name: 'Legacy', instructions: '', cases: [{ id, name: 'Exact', prompt: 'Apple', expected: 'Apple', scoring: 'exact' }, { id: 'contains-case', prompt: 'Fruit', expected: 'apple', scoring: 'contains' }] }, randomUUID);
     const before = structuredClone(draft); const h = context(draft);
     const details = caseEditorDetails(draft.cases[0]);
-    renderNativeCases(h.ctx); renderNativeSetup(h.ctx);
+    renderNativeSetup(h.ctx);
     assert.deepEqual(draft, before); assert.equal(isAppSuiteFormat(draft), false);
     details.checks.push({ id: randomUUID(), operation: 'exists' }); commitCaseEditorDetails(draft, draft.cases[0], details);
     draft.name = 'Renamed'; const saved = suite(draft, randomUUID, { draft: true });

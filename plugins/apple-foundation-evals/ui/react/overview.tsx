@@ -33,6 +33,7 @@ import { appSuiteHealth } from "../native-overview.js";
 
 type Context = any;
 import { Action } from "./shared";
+/** Renders project suite-health summaries, searchable suite actions and recent non-running reports. */
 export function Overview({ ctx }: { ctx: Context }) {
   const { state } = ctx;
   const project = state.projects.find(

@@ -27,6 +27,7 @@ struct ReferenceSearchIndex: Sendable {
 
     private let documents: [Document]
 
+    /// Indexes only text attachments containing nonempty extracted text, retaining their filenames for search results.
     init(attachments: [EvaluationAttachment]) {
         documents = attachments.compactMap { attachment in
             guard attachment.kind == .text,
@@ -36,6 +37,7 @@ struct ReferenceSearchIndex: Sendable {
         }
     }
 
+    /// Ranks reference files by normalized query terms, filename matches, and phrase bonuses, returning at most two excerpts in score order.
     func search(query: String, maximumResults: Int) -> [ReferenceSearchResult] {
         let terms = Self.terms(in: query)
         guard !terms.isEmpty else { return [] }
@@ -67,6 +69,7 @@ struct ReferenceSearchIndex: Sendable {
         .map { $0 }
     }
 
+    /// Extracts up to twelve distinct normalized query terms, omitting short terms and common stop words.
     private static func terms(in query: String) -> [String] {
         normalized(query)
             .split { !$0.isLetter && !$0.isNumber }
@@ -78,22 +81,26 @@ struct ReferenceSearchIndex: Sendable {
             .map { $0 }
     }
 
+    /// Folds diacritics and lowercases text using the current locale for reference matching.
     private static func normalized(_ text: String) -> String {
         text.folding(options: .diacriticInsensitive, locale: .current).lowercased(with: .current)
     }
 
+    /// Counts letter-and-number tokens in already normalized reference text.
     private static func tokenCounts(in text: String) -> [String: Int] {
         text.split { !$0.isLetter && !$0.isNumber }
             .map(String.init)
             .reduce(into: [:]) { counts, token in counts[token, default: 0] += 1 }
     }
 
+    /// Sums occurrences of exact or supported singular/plural matches for one query term.
     private static func occurrenceCount(of term: String, in counts: [String: Int]) -> Int {
         counts.reduce(into: 0) { total, entry in
             if matches(term: term, token: entry.key) { total += entry.value }
         }
     }
 
+    /// Matches exact tokens or a trailing-s plural variant for query terms longer than three characters.
     private static func matches(term: String, token: String) -> Bool {
         if term == token { return true }
         guard term.count > 3 else { return false }
@@ -106,6 +113,7 @@ struct ReferenceSearchIndex: Sendable {
         "of", "on", "or", "that", "the", "this", "to", "was", "what", "when", "where", "which", "who", "why", "with"
     ]
 
+    /// Returns an excerpt of at most 350 UTF-8 bytes anchored at the first matching word when present, marking omitted leading text with an ellipsis.
     private static func excerpt(from text: String, matching terms: [String]) -> String {
         var anchor = text.startIndex
         text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: .byWords) { substring, range, _, stop in
@@ -120,16 +128,6 @@ struct ReferenceSearchIndex: Sendable {
         let excerpt = boundedUTF8Prefix(String(text[anchor...]), maximumBytes: 350 - marker.utf8.count)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return marker + excerpt
-    }
-
-    private static func boundedUTF8Prefix(_ text: String, maximumBytes: Int) -> String {
-        var bytes = 0
-        return String(text.prefix { character in
-            let characterBytes = String(character).utf8.count
-            guard bytes + characterBytes <= maximumBytes else { return false }
-            bytes += characterBytes
-            return true
-        })
     }
 }
 
@@ -170,6 +168,7 @@ actor ReferenceToolRecorder {
     private var traces: [EvaluationToolCallTrace] = []
     private var ephemeralOutputs: [(callIndex: Int, text: String)] = []
 
+    /// Creates a reference recorder with a one-to-four local call limit, optional shared admission, workflow recording, and a pre-record hook.
     init(
         maximumCalls: Int,
         callLimiter: (any EvaluationToolCallLimiting)? = nil,
@@ -182,6 +181,7 @@ actor ReferenceToolRecorder {
         self.beforeRecord = beforeRecord
     }
 
+    /// Reserves local and optional shared call capacity and returns its attempt index without creating a workflow span.
     func reserveCall() async throws -> Int {
         let reservation = try await reserveCallAndBeginWorkflowSpan(parentID: nil, beginWorkflowSpan: false)
         return reservation.callIndex
@@ -194,6 +194,8 @@ actor ReferenceToolRecorder {
         try await reserveCallAndBeginWorkflowSpan(parentID: parentID, beginWorkflowSpan: true)
     }
 
+    /// Counts an attempt, reserves local capacity before shared admission suspends, and optionally begins an admitted call span.
+    /// Shared admission failure releases the local slot and retains bounded rejection evidence before rethrowing.
     private func reserveCallAndBeginWorkflowSpan(
         parentID: UUID?,
         beginWorkflowSpan: Bool
@@ -256,8 +258,10 @@ actor ReferenceToolRecorder {
         workflowRecorder?.finish(spanID, status: status, errorMessage: error.localizedDescription)
     }
 
+    /// Returns the saturating total of attempted calls, including rejected attempts.
     func attemptedCallTotal() -> Int { attemptedCallCount }
 
+    /// Suspends until the attempted-call count reaches the target, returning immediately if that threshold is already met.
     func waitUntilAttempted(_ target: Int) async {
         guard attemptedCallCount < target else { return }
         await withCheckedContinuation { continuation in
@@ -266,6 +270,7 @@ actor ReferenceToolRecorder {
         }
     }
 
+    /// Resumes and removes waiters whose requested attempted-call thresholds have been reached.
     private func resumeReadyAttemptWaiters() {
         var ready: [CheckedContinuation<Void, Never>] = []
         attemptWaiters.removeAll { waiter in
@@ -276,6 +281,8 @@ actor ReferenceToolRecorder {
         for continuation in ready { continuation.resume() }
     }
 
+    /// Stores successful search output and summary trace after cancellation checks and the optional pre-record hook.
+    /// Cancellation before recording leaves successful output uncommitted to the evidence recorder.
     func record(
         callIndex: Int,
         results: [ReferenceSearchResult],
@@ -299,6 +306,7 @@ actor ReferenceToolRecorder {
         ))
     }
 
+    /// Retains a bounded number of rejection or cancellation traces and evidence messages, releasing their pending workflow reservations.
     func recordRejectedCall(
         callIndex: Int,
         durationMilliseconds: Double,
@@ -319,10 +327,12 @@ actor ReferenceToolRecorder {
         ))
     }
 
+    /// Returns retained reference-call traces sorted by attempt index.
     func snapshot() -> [EvaluationToolCallTrace] {
         traces.sorted { $0.callIndex < $1.callIndex }
     }
 
+    /// Joins retained tool outputs and rejection messages in call order, returning nil when no evidence exists.
     func evidenceText() -> String? {
         let text = ephemeralOutputs
             .sorted { $0.callIndex < $1.callIndex }
@@ -331,6 +341,7 @@ actor ReferenceToolRecorder {
         return text.isEmpty ? nil : text
     }
 
+    /// Starts a rejection workflow span only when retained rejections and pending admitted spans leave evidence capacity.
     private func beginCappedWorkflowSpanIfAvailable(parentID: UUID?, callIndex: Int) -> UUID? {
         guard let workflowRecorder,
               recordedRejectionCount + pendingWorkflowCallIndices.count < Self.maximumRecordedRejections else { return nil }
@@ -356,11 +367,14 @@ struct ReferenceLookupTool: Tool {
     private let index: ReferenceSearchIndex
     private let recorder: ReferenceToolRecorder
 
+    /// Creates a read-only reference lookup tool sharing the supplied index and call recorder.
     init(index: ReferenceSearchIndex, recorder: ReferenceToolRecorder) {
         self.index = index
         self.recorder = recorder
     }
 
+    /// Reserves call capacity, validates a nonempty query of at most 200 characters, and returns bounded matching reference passages.
+    /// Records lookup evidence and workflow outcomes, propagating quota, query, recording, and cancellation failures.
     func call(arguments: ReferenceLookupArguments) async throws -> String {
         let workflow = recorder.workflowRecorder
         let started = ContinuousClock.now
@@ -376,13 +390,13 @@ struct ReferenceLookupTool: Tool {
             let query = arguments.query.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !query.isEmpty else {
                 await recorder.recordRejectedCall(callIndex: reservedCallIndex,
-                    durationMilliseconds: Self.milliseconds(since: started))
+                    durationMilliseconds: started.evaluationMilliseconds(to: .now))
                 didRecordTrace = true
                 throw ReferenceLookupError.emptyQuery
             }
             guard query.count <= 200 else {
                 await recorder.recordRejectedCall(callIndex: reservedCallIndex,
-                    durationMilliseconds: Self.milliseconds(since: started))
+                    durationMilliseconds: started.evaluationMilliseconds(to: .now))
                 didRecordTrace = true
                 throw ReferenceLookupError.queryTooLong
             }
@@ -398,14 +412,14 @@ struct ReferenceLookupTool: Tool {
             }
             output = Self.boundedOutput(output)
             try await recorder.record(callIndex: reservedCallIndex, results: results, output: output,
-                durationMilliseconds: Self.milliseconds(since: started))
+                durationMilliseconds: started.evaluationMilliseconds(to: .now))
             didRecordTrace = true
             workflow?.finish(spanID, metadata: ["outputBytes": String(output.utf8.count)])
             return output
         } catch is CancellationError {
             if let callIndex, !didRecordTrace {
                 await recorder.recordRejectedCall(callIndex: callIndex,
-                    durationMilliseconds: Self.milliseconds(since: started), outcome: "cancelled",
+                    durationMilliseconds: started.evaluationMilliseconds(to: .now), outcome: "cancelled",
                     evidence: "[Reference search cancelled before producing results.]")
             }
             workflow?.finish(spanID, status: .cancelled, errorMessage: "The reference search was cancelled.")
@@ -414,7 +428,7 @@ struct ReferenceLookupTool: Tool {
             if let callIndex, !didRecordTrace {
                 let wasCancelled = EvaluationWorkflowRecorder.status(for: error) == .cancelled
                 await recorder.recordRejectedCall(callIndex: callIndex,
-                    durationMilliseconds: Self.milliseconds(since: started),
+                    durationMilliseconds: started.evaluationMilliseconds(to: .now),
                     outcome: wasCancelled ? "cancelled" : "failed",
                     evidence: wasCancelled
                         ? "[Reference search cancelled before producing results.]"
@@ -425,19 +439,14 @@ struct ReferenceLookupTool: Tool {
         }
     }
 
-    private static func milliseconds(since started: ContinuousClock.Instant) -> Double {
-        let duration = started.duration(to: .now)
-        let components = duration.components
-        return Double(components.seconds) * 1_000
-            + Double(components.attoseconds) / 1_000_000_000_000_000
-    }
-
+    /// Caps reference output at 1,200 UTF-8 bytes, preserving whole characters and appending a truncation marker when needed.
     private static func boundedOutput(_ output: String) -> String {
         guard output.utf8.count > maximumOutputUTF8Bytes else { return output }
         let marker = "\n[Tool output truncated to its context budget.]"
         return boundedUTF8Prefix(output, maximumBytes: maximumOutputUTF8Bytes - marker.utf8.count) + marker
     }
 
+    /// Encodes a filename prefix of at most 80 UTF-8 bytes as a JSON string literal, escaping Unicode line separators for safe evidence framing.
     static func filenameJSONLiteral(_ filename: String) -> String {
         let filename = boundedUTF8Prefix(filename, maximumBytes: 80)
         guard let data = try? JSONEncoder().encode(filename) else { return "\"\"" }
@@ -446,22 +455,24 @@ struct ReferenceLookupTool: Tool {
             .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
             .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
     }
-
-    private static func boundedUTF8Prefix(_ text: String, maximumBytes: Int) -> String {
-        var bytes = 0
-        return String(text.prefix { character in
-            let characterBytes = String(character).utf8.count
-            guard bytes + characterBytes <= maximumBytes else { return false }
-            bytes += characterBytes
-            return true
-        })
-    }
 }
 
 @available(macOS 27.0, *)
 private extension Sequence where Element: Hashable {
+    /// Removes duplicate elements while preserving their first-occurrence order.
     func uniqued() -> [Element] {
         var seen: Set<Element> = []
         return filter { seen.insert($0).inserted }
     }
+}
+
+/// Returns the longest whole-character prefix fitting the reference evidence byte budget.
+private func boundedUTF8Prefix(_ text: String, maximumBytes: Int) -> String {
+    var bytes = 0
+    return String(text.prefix { character in
+        let characterBytes = String(character).utf8.count
+        guard bytes + characterBytes <= maximumBytes else { return false }
+        bytes += characterBytes
+        return true
+    })
 }

@@ -14,7 +14,7 @@ struct TranscriptFeedbackSection: View {
     @State private var selectedIssues: Set<EvaluationFeedbackIssueCategory> = []
     @State private var issueExplanations: [EvaluationFeedbackIssueCategory: String] = [:]
     @State private var desiredOutput = EvaluationFeedbackDesiredOutputDraft()
-    @State private var exportDocument = EvaluationJSONDataDocument()
+    @State private var exportDocument = JSONDocument()
     @State private var exportFilename = "transcript.json"
     @State private var isExporting = false
     @State private var isPreparingFeedback = false
@@ -150,6 +150,7 @@ struct TranscriptFeedbackSection: View {
         return "\(safeName)-repetition-\(repetition)"
     }
 
+    /// Copies formatted transcript JSON to the general pasteboard and marks success, exposing serialization failures as export errors.
     private func copyTranscript() {
         do {
             let text = String(decoding: try trace.formattedJSONData(), as: UTF8.self)
@@ -162,16 +163,19 @@ struct TranscriptFeedbackSection: View {
         }
     }
 
+    /// Prepares the captured transcript bytes and filename for the file exporter, or exposes the saved omission reason when unavailable.
     private func exportTranscript() {
         guard let data = trace.exportData else {
             exportError = trace.omissionReason ?? "The transcript was not captured."
             return
         }
-        exportDocument = EvaluationJSONDataDocument(data: data)
+        exportDocument = JSONDocument(data: data)
         exportFilename = "\(safeBaseFilename)-transcript.json"
         isExporting = true
     }
 
+    /// Validates model identity and desired output, then asynchronously prepares a feedback attachment before opening the file exporter.
+    /// The caller owns the task; this method clears its preparing flag after generation and displays thrown errors, including cancellation.
     private func exportFeedbackAttachment() async {
         guard let configuration else {
             exportError = "The run does not contain the model configuration required to preserve model identity."
@@ -183,8 +187,13 @@ struct TranscriptFeedbackSection: View {
             if let issue = desiredOutput.validationIssue {
                 throw EvaluationFeedbackDesiredOutputError.invalid(issue)
             }
-            let data = try await feedbackAttachment(configuration: configuration)
-            exportDocument = EvaluationJSONDataDocument(data: data)
+            let data = try await trace.feedbackAttachment(
+                configuration: configuration,
+                sentiment: sentiment,
+                issues: feedbackIssues,
+                desiredOutput: desiredOutput
+            )
+            exportDocument = JSONDocument(data: data)
             exportFilename = "\(safeBaseFilename)-apple-feedback.json"
             isExporting = true
         } catch {
@@ -192,38 +201,7 @@ struct TranscriptFeedbackSection: View {
         }
     }
 
-    private func feedbackAttachment(configuration: EvaluationModelConfiguration) async throws -> Data {
-        switch desiredOutput.mode {
-        case .none:
-            return try await trace.feedbackAttachment(
-                configuration: configuration,
-                sentiment: sentiment,
-                issues: feedbackIssues,
-                desiredResponseText: nil
-            )
-        case .responseText:
-            return try await trace.feedbackAttachment(
-                configuration: configuration,
-                sentiment: sentiment,
-                issues: feedbackIssues,
-                desiredResponseText: desiredOutput.responseText.trimmingCharacters(in: .whitespacesAndNewlines)
-            )
-        case .generatedContentJSON:
-            return try await trace.feedbackAttachment(
-                configuration: configuration,
-                sentiment: sentiment,
-                issues: feedbackIssues,
-                desiredResponseContent: desiredOutput.generatedContent()
-            )
-        case .transcriptJSON:
-            return try await trace.feedbackAttachment(
-                configuration: configuration,
-                sentiment: sentiment,
-                issues: feedbackIssues,
-                desiredOutput: desiredOutput.transcriptEntry()
-            )
-        }
-    }
+
 }
 
 private enum EvaluationFeedbackDesiredOutputError: LocalizedError {
@@ -393,6 +371,7 @@ private struct FeedbackDraftForm: View {
         }
     }
 
+    /// Binds issue-category membership and removes its explanation when the category is deselected.
     private func selectionBinding(for category: EvaluationFeedbackIssueCategory) -> Binding<Bool> {
         Binding(
             get: { selectedIssues.contains(category) },
@@ -407,6 +386,7 @@ private struct FeedbackDraftForm: View {
         )
     }
 
+    /// Binds a category explanation with an empty-string fallback for categories without saved text.
     private func explanationBinding(for category: EvaluationFeedbackIssueCategory) -> Binding<String> {
         Binding(
             get: { issueExplanations[category, default: ""] },
@@ -445,6 +425,7 @@ private struct TranscriptPreview: Sendable {
     var text: String
     var isTruncated: Bool
 
+    /// Formats a transcript preview capped at the display character limit, recording truncation or a readable serialization failure.
     init(trace: EvaluationTranscriptTrace) {
         do {
             let fullText = String(decoding: try trace.formattedJSONData(), as: UTF8.self)
@@ -456,28 +437,9 @@ private struct TranscriptPreview: Sendable {
         }
     }
 
+    /// Creates a preview with precomputed text and truncation state for placeholder values.
     private init(text: String, isTruncated: Bool) {
         self.text = text
         self.isTruncated = isTruncated
-    }
-}
-
-private struct EvaluationJSONDataDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.json] }
-
-    var data = Data()
-
-    init() {}
-
-    init(data: Data) {
-        self.data = data
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        data = configuration.file.regularFileContents ?? Data()
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
     }
 }

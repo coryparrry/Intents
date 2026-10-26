@@ -16,9 +16,11 @@ import {
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
 
 type Context = any;
+/** Runs a possibly synchronous UI action through a promise and routes failures to the workspace handler. */
 export function invoke(ctx: Context, action: () => unknown) {
   return Promise.resolve().then(action).catch(ctx.fail);
 }
+/** Renders an action button that blocks repeated clicks while pending and reports action failures through the workspace. */
 export function Action({ ctx, action, children, ...props }: any) {
   const [pending, setPending] = React.useState(false);
   return (
@@ -40,6 +42,7 @@ export function Action({ ctx, action, children, ...props }: any) {
     </Button>
   );
 }
+/** Renders a labeled controlled select from value-and-title option pairs. */
 export function Choice({ label, value, options, onChange }: any) {
   const id = React.useId();
   return (
@@ -62,6 +65,7 @@ export function Choice({ label, value, options, onChange }: any) {
     </Field>
   );
 }
+/** Renders a labeled controlled input or textarea, mapping empty values to text and optionally showing guidance. */
 export function TextField({
   label,
   value,

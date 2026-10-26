@@ -156,22 +156,27 @@ struct ReviewSampleEditor: View {
         }
     }
 
+    /// Builds an annotation from the current editor fields and source digest, preserving its review identity and updating its timestamp.
     private func makeAnnotation() -> EvaluationReviewAnnotation {
         .init(id: reviewID, runID: sample.run.id, sampleID: sample.sample.id, sourceDigest: sample.sourceDigest,
               verdict: verdict, note: note, tags: tagValues, updatedAt: Date())
     }
+    /// Loads the saved annotation into the editor when one exists, including its identity and comma-separated tags.
     private func loadAnnotation() {
         if let annotation { reviewID = annotation.id; verdict = annotation.verdict; note = annotation.note; tags = annotation.tags.joined(separator: ", ") }
     }
+    /// Retains dirty fields as a review draft only after initial loading, or clears the stored draft when the editor matches saved state.
     private func retainDraft() {
         guard hasLoaded else { return }
         if isDirty {
             store.reviewDrafts.update(.init(reviewID: reviewID, verdict: verdict, note: note, tags: tags), for: draftKey)
         } else { perform { try store.reviewDrafts.clear(draftKey) } }
     }
+    /// Accepts the proposal, then clears the local draft and reloads the annotation; any failure is exposed by the shared action handler.
     private func acceptProposal(_ id: UUID) {
         perform { try store.decideReviewProposal(id: id, accept: true); try store.reviewDrafts.clear(draftKey); loadAnnotation() }
     }
+    /// Runs a throwing review operation and stores its localized failure for display.
     private func perform(_ operation: () throws -> Void) { do { try operation() } catch { self.error = error.localizedDescription } }
 }
 

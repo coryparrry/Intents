@@ -1,6 +1,6 @@
 import { renderCatalogRecovery, exportRecoveryRecord, forgetRemovedRecoveryRecord, setCatalogRecoveryLayout } from "./catalog-recovery.js";
 import { createWorkspaceScope, resetSuiteEvidence, mutateSuiteDraft } from "./workspace-state.js";
-import { mountUI, unmountUI, libraryDialog } from "./react/workspace.tsx";
+import { mountUI, unmountUI, libraryDialog as dialog } from "./react/workspace.tsx";
 import { createAppTransport } from "./vendor/transport.js";
 import { applyHostContext } from "./theme.js";
 import {
@@ -23,9 +23,8 @@ import {
 } from "./presentation.js";
 import { createDraftAutosave } from "./autosave.js";
 import { createStatusPoller } from "./polling.js";
-import { APP_SCORING, newAppSuite, renderNativeCases } from "./native-suite.js";
+import { APP_SCORING, newAppSuite } from "./native-suite.js";
 import { renderNativeSetup } from "./native-setup.js";
-import { renderNativeOverview } from "./native-overview.js";
 import {
   nativeAnalyzeRun,
   nativeRewritePrompt,
@@ -44,6 +43,7 @@ import {
 
 let resumeRecoveryAutosave;
 const transport = createAppTransport(),
+  /** Looks up a workspace element by its DOM ID. */
   $ = (id) => document.getElementById(id);
 const state = {
   page: "overview",
@@ -84,21 +84,20 @@ let initialResult = false,
   fileSequence = 0,
   comparisonSequence = 0,
   fieldSequence = 0;
+/** Creates an HTML element with optional text content and CSS classes. */
 function node(tag, text, className) {
   const el = document.createElement(tag);
   if (text != null) el.textContent = String(text);
   if (className) el.className = className;
   return el;
 }
+/** Builds an aria-hidden SVG for the requested symbol, falling back to the file icon. */
 function icon(name) {
   const paths = {
     sidebar: ["M3 4h18v16H3zM9 4v16M5.5 7h1M5.5 10h1"],
-    plus: ["M12 5v14M5 12h14"],
     more: ["M5 12h.01M12 12h.01M19 12h.01"],
     close: ["M6 6l12 12M6 18L18 6"],
-    down: ["M7 10l5 5 5-5"],
     suite: ["M4 6l2 2 4-4M13 6h7M4 13l2 2 4-4M13 13h7M4 20l2 2 4-4M13 20h7"],
-    search: ["M21 21l-5-5"],
     cpu: [
       "M7 7h10v10H7zM9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3",
     ],
@@ -106,7 +105,6 @@ function icon(name) {
     trace: ["M4 5h7M4 12h12M4 19h7M17 3l4 2-4 2M19 10l2 2-2 2M17 17l4 2-4 2"],
     clock: ["M12 8v5l3 2"],
     file: ["M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"],
-    project: ["M3 7l9-5 9 5-9 5zM3 12l9 5 9-5M3 17l9 5 9-5"],
     chevron: ["M8 4l8 8-8 8"],
     instructions: ["M4 5h16M4 12h16M4 19h10"],
     tools: [
@@ -116,7 +114,6 @@ function icon(name) {
     profile: ["M5 21v-4a7 7 0 0 1 14 0v4M8 5a4 4 0 1 0 8 0a4 4 0 1 0-8 0"],
     reset: ["M3 10a9 9 0 1 1 2 8M3 3v7h7"],
     info: ["M12 10v7M12 6v1"],
-    overview: ["M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"],
   };
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -137,19 +134,21 @@ function icon(name) {
       svg.append(dot);
     }
   }
-  if (["search", "clock", "info"].includes(name)) {
+  if (["clock", "info"].includes(name)) {
     const circle = document.createElementNS(svg.namespaceURI, "circle");
-    circle.setAttribute("cx", name === "search" ? "10" : "12");
-    circle.setAttribute("cy", name === "search" ? "10" : "12");
-    circle.setAttribute("r", name === "search" ? "6.5" : "9");
+    circle.setAttribute("cx", "12");
+    circle.setAttribute("cy", "12");
+    circle.setAttribute("r", "9");
     svg.append(circle);
   }
   return svg;
 }
+/** Creates a button whose asynchronous action is disabled while pending and reports failures through the workspace notice. */
 function button(text, action, className = "secondary", disabled = false) {
   const el = node("button", text, className);
   el.type = "button";
   el.disabled = !!disabled;
+  /** Closes the surrounding action menu, awaits the action, and restores the connected button’s previous disabled state even after failure. */
   el.onclick = async () => {
     el.closest(".action-menu")?.removeAttribute("open");
     const disabled = el.disabled;
@@ -164,14 +163,20 @@ function button(text, action, className = "secondary", disabled = false) {
   };
   return el;
 }
+/** Updates the shared notice text, visibility, and error styling. */
 function notice(text, error = false) {
   $("notice").hidden = !text;
   $("notice").textContent = text;
   $("notice").classList.toggle("error", error);
 }
+/** Displays an exception message, or its string representation, as an error notice. */
 function fail(error) {
   notice(error?.message || String(error), true);
 }
+/**
+ * Calls a local eval tool through MCP tools/call with a 180-second timeout.
+ * Tool error responses become exceptions containing their text blocks; successful responses return structuredContent or an empty object.
+ */
 async function call(name, args = {}) {
   const response = await transport.request(
     "tools/call",
@@ -187,12 +192,13 @@ async function call(name, args = {}) {
     );
   return response.structuredContent || {};
 }
-const clone = (value) => structuredClone(value),
-  active = () =>
+/** Reports whether the selected run, any saved run, or a tracked instruction experiment is running. */
+const active = () =>
     state.run?.status === "running" ||
     state.allRuns.some((run) => run.status === "running") ||
     state.experiment?.status === "running" ||
     state.activeExperiment?.status === "running",
+  /** Formats a present timestamp with the local month, day, and time, or an em dash when absent. */
   date = (value) =>
     value
       ? new Date(value).toLocaleString(undefined, {
@@ -202,13 +208,16 @@ const clone = (value) => structuredClone(value),
           minute: "2-digit",
         })
       : "—",
+  /** Formats finite millisecond durations in milliseconds or seconds, using an em dash for unavailable values. */
   duration = (value) =>
     Number.isFinite(value)
       ? value < 1000
         ? `${Math.round(value)} ms`
         : `${(value / 1000).toFixed(2)} s`
       : "—",
+  /** Formats a fractional rate as a rounded percentage, preserving unavailable values as an em dash. */
   rate = (value) => (value == null ? "—" : `${Math.round(value * 100)}%`);
+/** Creates a status badge with CSS classes derived from its displayed value. */
 function pill(value) {
   return node(
     "span",
@@ -216,11 +225,13 @@ function pill(value) {
     `pill ${String(value).toLowerCase().replaceAll(" ", "-")}`,
   );
 }
+/** Creates a metric cell containing a label and its emphasized value. */
 function metric(label, value) {
   const cell = node("div", null, "metric");
   cell.append(node("span", label), node("strong", value));
   return cell;
 }
+/** Builds an accessible tab group with selected-tab focus and keyboard navigation delegated to the supplied action. */
 function segmented(items, selected, action, label) {
   const group = node("div", null, "segmented");
   group.setAttribute("role", "tablist");
@@ -230,6 +241,7 @@ function segmented(items, selected, action, label) {
     el.setAttribute("role", "tab");
     el.setAttribute("aria-selected", String(value === selected));
     el.tabIndex = value === selected ? 0 : -1;
+    /** Handles supported tab-navigation keys, awaits the new selection, and focuses the selected tab after rerendering. */
     el.onkeydown = (event) => {
       const next = tabDestination(event.key, index, items.length);
       if (next == null) return;
@@ -247,6 +259,7 @@ function segmented(items, selected, action, label) {
   }
   return group;
 }
+/** Creates a labeled input or textarea that applies each edit and schedules the draft for autosave. */
 function field(label, value, onInput, multiline = false, className = "") {
   const wrap = node("div", null, `field ${className}`),
     caption = node("label", label),
@@ -255,6 +268,7 @@ function field(label, value, onInput, multiline = false, className = "") {
   control.id = `field-${++fieldSequence}`;
   control.setAttribute("aria-label", label);
   caption.htmlFor = control.id;
+  /** Passes the current field value to its editor callback and marks the draft dirty. */
   control.oninput = () => {
     onInput(control.value);
     markDirty();
@@ -262,6 +276,7 @@ function field(label, value, onInput, multiline = false, className = "") {
   wrap.append(caption, control);
   return wrap;
 }
+/** Creates a panel title with an optional count and trailing action controls. */
 function panelHeader(title, count, actions = []) {
   const header = node("div", null, "panel-header"),
     text = node("h2", title);
@@ -271,12 +286,17 @@ function panelHeader(title, count, actions = []) {
   header.append(text, controls);
   return header;
 }
+/** Creates an empty-state explanation with an optional action control. */
 function empty(title, detail, action) {
   const view = node("div", null, "empty-state");
   view.append(icon("suite"), node("h2", title), node("p", detail));
   if (action) view.append(action);
   return view;
 }
+/**
+ * Exposes the shared state, navigation scope, rendering helpers, and workspace actions to React and native views.
+ * Callbacks operate on current state; asynchronous actions capture ownership where a response could otherwise update a different selection.
+ */
 function context() {
   return {
     state,
@@ -291,6 +311,7 @@ function context() {
     renderSidebar,
     renderToolbar,
     actions: {
+      /** Navigates to the overview after flushing pending draft edits. */
       overview: () => setPage("overview"),
       projectDetails,
       suiteDetails,
@@ -304,6 +325,10 @@ function context() {
       exportRun,
       deleteRun,
       projectReport,
+      /**
+       * Flushes pending edits before opening project creation or selecting another project.
+       * A superseding navigation cancels the state update; selection clears suite evidence and the current run and draft before rendering the overview.
+       */
       changeProject: async (id) => {
         const request = workspaceScope.navigate();
         await flush();
@@ -320,6 +345,7 @@ function context() {
         filterProject();
         render();
       },
+      /** Changes the active suite or run tab, loads experiments for comparison, and rerenders the main view and toolbar from the top. */
       changeTab: (value) => {
         if (state.page === "suites") {
           state.suiteTab = value;
@@ -329,6 +355,7 @@ function context() {
         renderToolbar();
         $("main").scrollTop = 0;
       },
+      /** Requests cancellation of the captured run, applies the response only to its current selection, and refreshes the catalog afterward. */
       cancelRun: async () => {
         const request = workspaceScope.capture(), runId = state.run.id;
         const result = await call("eval_cancel_run", { runId });
@@ -345,7 +372,6 @@ function context() {
     importCases,
     addReferences,
     rewritePrompt,
-    jsonEditor,
     date,
     duration,
     rate,
@@ -365,15 +391,21 @@ function context() {
     refresh,
     render,
     notice,
+    /** Resolves a scoring mode to its app label with a generic case-scoring fallback. */
     scoringLabel: (mode) => APP_SCORING[mode] || "Case scoring",
     newSuite: newAppSuite,
+    /** Starts the instruction-comparison workflow with the current workspace context. */
     createExperiment: () => createInstructionExperiment(context()),
+    /** Opens the judgment-correction workflow for the supplied run result in the current workspace. */
     correctJudgment: (run, result) =>
       nativeCorrectJudgment(context(), run, result),
+    /** Opens the baseline-approval workflow for the supplied run in the current workspace. */
     approveBaseline: (run) => nativeApproveBaseline(context(), run),
+    /** Opens the release-report workflow for the supplied run in the current workspace. */
     releaseReport: (run) => nativeReleaseReport(context(), run),
   };
 }
+/** Derives the visible suite and run lists from the selected project ID. */
 function filterProject() {
   state.suites = state.allSuites.filter(
     (item) => item.projectId === state.projectId,
@@ -382,6 +414,7 @@ function filterProject() {
     (item) => item.projectId === state.projectId,
   );
 }
+/** Updates the mounted save indicator for saved, pending, or failed autosave status. */
 function updateSavedLabel(status) {
   const label = $("save-state");
   if (label) {
@@ -395,7 +428,12 @@ function updateSavedLabel(status) {
   }
 }
 const autosave = createDraftAutosave({
+  /** Supplies the currently selected draft to the autosave queue. */
   read: () => state.draft,
+  /**
+   * Saves an autosave snapshot without server-managed revision or timestamp fields in the suite payload.
+   * The project is passed separately and an existing revision becomes expectedRevision so conflicting saves are rejected by the tool.
+   */
   save: async (snapshot) => {
     const { projectId, revision, updatedAt, createdAt, ...suite } = snapshot;
     return (
@@ -406,6 +444,7 @@ const autosave = createDraftAutosave({
       })
     ).suite;
   },
+  /** Copies saved metadata into the current draft, replaces its catalog entry, and retains dirty status when newer edits remain pending. */
   applied: (draft, saved, current) => {
     draft.revision = saved.revision;
     draft.updatedAt = saved.updatedAt;
@@ -421,6 +460,7 @@ const autosave = createDraftAutosave({
   status: updateSavedLabel,
   error: fail,
 });
+/** Tracks a running experiment independently of suite selection, clears a matching completed experiment, and updates polling unless disposed. */
 function trackExperiment(experiment) {
   if (state.disposed) return;
   if (experiment?.status === "running") state.activeExperiment = experiment;
@@ -428,13 +468,19 @@ function trackExperiment(experiment) {
   renderToolbar();
   schedulePoll();
 }
+/**
+ * Queues a server mutation only while the supplied owner remains the selected draft.
+ * The mutation helper flushes autosave and merges concurrent edits; this wrapper updates the catalog while rerendering only when its captured navigation remains current.
+ */
 async function mutateDraft(mutate, owner = state.draft) {
   if (!owner || state.draft !== owner) return null;
   const request = workspaceScope.capture();
   return mutateSuiteDraft({
     autosave,
+    /** Keeps a queued mutation attached to its original draft, returning null after a different draft is selected. */
     read: () => state.draft === owner ? owner : null,
     mutate,
+    /** Replaces the saved suite’s catalog entry, retains merged-edit dirty status, and rerenders only within the original navigation scope. */
     applied: (saved, edited) => {
       const index = state.allSuites.findIndex(item => item.id === saved.id);
       if (index < 0) state.allSuites.unshift(saved); else state.allSuites[index] = saved;
@@ -445,13 +491,16 @@ async function mutateDraft(mutate, owner = state.draft) {
     changed: markDirty,
   });
 }
+/** Marks the draft dirty and schedules its next autosave snapshot. */
 function markDirty() {
   state.dirty = true;
   autosave.changed();
 }
+/** Waits for pending autosaves and preserves the promise continuation boundary before navigation or teardown proceeds. */
 async function flush() {
   await autosave.flush();
 }
+/** Flushes draft edits before changing pages, discarding a superseded navigation and resetting imported-view state and scroll. */
 async function setPage(page) {
   const request = workspaceScope.navigate();
   await flush();
@@ -461,11 +510,15 @@ async function setPage(page) {
   render();
   $("main").scrollTop = 0;
 }
+/**
+ * Flushes edits and clones the latest catalog version of the requested suite into the editor.
+ * Only the current navigation may select it; selection resets case search and suite evidence and returns true when completed.
+ */
 async function selectSuite(suite) {
   const request = workspaceScope.navigate();
   await flush();
   if (!workspaceScope.current(request)) return;
-  state.draft = clone(
+  state.draft = structuredClone(
     state.allSuites.find((item) => item.id === suite.id) || suite,
   );
   state.dirty = false;
@@ -478,6 +531,7 @@ async function selectSuite(suite) {
   $("main").scrollTop = 0;
   return true;
 }
+/** Flushes edits before selecting a new app suite, resets suite evidence and case navigation, and schedules its initial autosave. */
 async function createSuite() {
   const request = workspaceScope.navigate();
   await flush();
@@ -491,6 +545,10 @@ async function createSuite() {
   markDirty();
   render();
 }
+/**
+ * Flushes edits and fetches a saved run before opening its requested trace or report tab.
+ * Navigation checks before and after the RPC prevent a stale run response from replacing a newer selection; result filters and imported state are reset.
+ */
 async function selectRun(id, tab = "trace") {
   const request = workspaceScope.navigate();
   await flush();
@@ -508,9 +566,14 @@ async function selectRun(id, tab = "trace") {
   render();
   $("main").scrollTop = 0;
 }
+/** Starts a run only if selecting and flushing the requested suite completes in the current navigation. */
 async function runSuite(suite) {
   if (await selectSuite(suite)) await startRun();
 }
+/**
+ * Flushes the captured draft and starts a run using its saved ID and expected revision.
+ * A current response opens the trace and enables polling; a stale response only refreshes the catalog, and the busy toolbar state is cleared in finally.
+ */
 async function startRun() {
   const request = workspaceScope.navigate(), draft = state.draft;
   await flush();
@@ -535,11 +598,13 @@ async function startRun() {
     renderToolbar();
   }
 }
+/** Mounts the React sidebar and updates the selected project’s suite and run counts. */
 function renderSidebar() {
   mountUI("sidebar", $("workspace-sidebar"), context());
   $("workspace-status").textContent =
     `${state.suites.length} suites · ${state.runs.length} runs`;
 }
+/** Mounts the action, breadcrumb, and tab controls, hiding view tabs on the overview. */
 function renderToolbar() {
   const ctx = context();
   mountUI("actions", $("toolbar-actions"), ctx);
@@ -547,6 +612,7 @@ function renderToolbar() {
   mountUI("tabs", $("view-tabs"), ctx);
   $("view-tabs").hidden = state.page === "overview";
 }
+/** Builds the editable suite heading with scoring metadata, save status, and a details action. */
 function suiteHeading() {
   const draft = state.draft,
     header = node("div", null, "page-heading"),
@@ -556,6 +622,7 @@ function suiteHeading() {
     input = node("input", null, "title-input");
   input.value = draft.name;
   input.setAttribute("aria-label", "Suite name");
+  /** Copies the edited title into the captured suite draft and schedules autosave. */
   input.oninput = () => {
     draft.name = input.value;
     markDirty();
@@ -576,6 +643,7 @@ function suiteHeading() {
   header.append(mark, copy, detail);
   return header;
 }
+/** Builds a run heading with its suite title, start time, scoring mode, sample count, and evidence origin. */
 function runHeading(run) {
   const header = node("div", null, "page-heading"),
     mark = node("div", null, "page-symbol");
@@ -595,6 +663,7 @@ function runHeading(run) {
   header.append(mark, copy);
   return header;
 }
+/** Uses React for overview and case editing, unmounting it before rendering the remaining legacy views. */
 function renderMain() {
   const main = $("main");
   if (
@@ -609,6 +678,7 @@ function renderMain() {
     renderLegacyMain();
   }
 }
+/** Rebuilds the selected native suite or run view with its layout classes while preserving the main scroll position. */
 function renderLegacyMain() {
   const main = $("main"),
     scroll = main.scrollTop;
@@ -618,23 +688,17 @@ function renderLegacyMain() {
     state.page === "traces" && state.runTab === "trace",
   );
   main.classList.toggle(
-    "cases-main",
-    state.page === "suites" && state.suiteTab === "cases",
-  );
-  main.classList.toggle(
     "setup-main",
     state.page === "suites" && state.suiteTab === "setup",
   );
-  if (state.page === "overview") main.append(renderNativeOverview(context()));
-  else if (state.page === "suites") {
+  if (state.page === "suites") {
     const page = node(
       "div",
       null,
-      `page suite-page ${state.suiteTab === "cases" ? "cases-page" : state.suiteTab === "setup" ? "setup-page" : ""}`,
+      `page suite-page ${state.suiteTab === "setup" ? "setup-page" : ""}`,
     );
     page.append(suiteHeading());
-    if (state.suiteTab === "cases") page.append(renderNativeCases(context()));
-    else if (state.suiteTab === "setup")
+    if (state.suiteTab === "setup")
       page.append(renderNativeSetup(context()));
     else if (state.suiteTab === "results")
       renderNativeHistory(
@@ -651,6 +715,10 @@ function renderLegacyMain() {
   }
   main.scrollTop = scroll;
 }
+/**
+ * Renders either catalog recovery or the normal sidebar, toolbar, and main workspace.
+ * Recovery hides normal navigation, unmounts the React main view, and wires paging, retry, export, and confirmed removal actions.
+ */
 function render() {
   const recovering = !!state.catalogRecovery;
   setCatalogRecoveryLayout(document, recovering);
@@ -659,13 +727,17 @@ function render() {
     $('view-tabs').hidden = true;
     $('workspace-status').textContent = 'Catalog recovery';
     const main = $('main'); unmountUI(main); main.className = 'legacy-view';
+    /** Loads a recovery cursor for the requested record kind, applies the returned page, and displays failures in the workspace notice. */
     const onPage = async (kind, cursor) => {
       try { await acceptResult({ structuredContent: await call('eval_catalog_recovery', { kind, cursor }) }); }
       catch (error) { fail(error); }
     };
     main.replaceChildren(renderCatalogRecovery({ node, button, data: state.catalogRecovery, canDownload: !!state.hostCapabilities.downloadFile, onPage,
+      /** Retries opening the workspace and applies either its recovered catalog or the next recovery response. */
       onRetry: async () => acceptResult({ structuredContent: await call('eval_open_workspace') }),
+      /** Exports the selected recovery record and passes its filename and text to the host download flow. */
       onExport: async (kind, record) => { const exported = await exportRecoveryRecord(call, kind, record); await download(exported.filename, exported.text); },
+      /** Removes the exact recovery record revision with confirmation, clears affected evidence, and reloads the first recovery page. */
       onRemove: async (kind, record) => {
         await call('eval_catalog_remove', { kind, recordId: record.id, recordRevision: record.recordRevision, confirm: true });
         if (forgetRemovedRecoveryRecord(state, kind, record.id)) resetSuiteEvidence(state);
@@ -678,6 +750,10 @@ function render() {
   renderToolbar();
   renderMain();
 }
+/**
+ * Fetches project, suite, and run catalogs concurrently, handing any catalog-recovery response to the recovery view.
+ * A captured refresh scope prevents stale catalog and selected-run updates; running evidence is refreshed, active editing views are preserved, and polling is rescheduled.
+ */
 async function refresh() {
   const request = workspaceScope.capture("refresh");
   const [projects, suites, runs] = await Promise.all([
@@ -724,44 +800,16 @@ async function refresh() {
   schedulePoll();
 }
 const statusPoller = createStatusPoller({
-  active: () => !state.catalogRecovery && active(), refresh, error: fail, disposed: () => state.disposed,
+  /** Allows status polling only while runnable work exists outside catalog recovery. */
+  active: () => !state.catalogRecovery && active(), refresh, error: fail,
+  /** Stops the status poller after the workspace has been torn down. */
+  disposed: () => state.disposed,
 });
-function schedulePoll() {
-  statusPoller.schedule();
-}
-function dialog(title, renderBody) {
-  return libraryDialog(title, renderBody);
-}
-function jsonEditor(title, object, applied) {
-  dialog(title, (el) => {
-    const input = node(
-        "textarea",
-        JSON.stringify(object, null, 2),
-        "json-editor",
-      ),
-      message = node("p", null, "hint");
-    input.setAttribute("aria-label", title);
-    el.append(
-      input,
-      message,
-      button(
-        "Apply",
-        () => {
-          try {
-            const value = JSON.parse(input.value);
-            applied(value);
-            markDirty();
-            renderMain();
-            el.close();
-          } catch (error) {
-            message.textContent = error.message;
-          }
-        },
-        "primary",
-      ),
-    );
-  });
-}
+const schedulePoll = statusPoller.schedule;
+/**
+ * Opens a project creation or editing dialog whose save action flushes pending draft edits before the project RPC.
+ * The action checks navigation ownership around asynchronous work, selects the saved project, clears prior evidence, and refreshes the overview.
+ */
 async function projectDetails(isNew = false) {
   const project = state.projects.find((item) => item.id === state.projectId);
   dialog(isNew ? "New project" : "Project details", (el) => {
@@ -808,6 +856,7 @@ async function projectDetails(isNew = false) {
     );
   });
 }
+/** Flushes and saves a duplicated suite, refreshes the catalog, and selects the copy only if the original navigation is still current. */
 async function duplicateSuite() {
   const request = workspaceScope.capture();
   await flush();
@@ -822,6 +871,7 @@ async function duplicateSuite() {
   await selectSuite(response.suite);
   notice("Suite duplicated with its cases and settings.");
 }
+/** Opens a cancel-or-delete dialog that closes after the asynchronous removal action succeeds. */
 function confirmRemoval(title, detail, action) {
   dialog(title, (el) => {
     const controls = node("div", null, "dialog-actions");
@@ -839,6 +889,10 @@ function confirmRemoval(title, detail, action) {
     el.append(node("p", detail, "hint"), controls);
   });
 }
+/**
+ * Offers deletion only for a selected suite while no run, experiment, or busy action is active.
+ * The confirmed action flushes edits, deletes the suite, and clears its selection only if still owned; saved runs remain in the refreshed catalog.
+ */
 function deleteSuite() {
   const suite = state.draft;
   if (!suite || state.busy || active()) return;
@@ -863,6 +917,10 @@ function deleteSuite() {
     },
   );
 }
+/**
+ * Offers deletion for a saved, nonrunning run while no busy action is active.
+ * The confirmed action deletes the captured run and clears its result and comparison state only if that selection remains current, then refreshes the catalog.
+ */
 function deleteRun() {
   const run = state.run;
   if (!run || state.imported || run.status === "running" || state.busy) return;
@@ -886,6 +944,7 @@ function deleteRun() {
     },
   );
 }
+/** Flushes the suite and fetches its approved baseline, opening the evidence dialog only while the captured navigation remains current. */
 async function showBaseline() {
   const request = workspaceScope.capture();
   await flush();
@@ -904,6 +963,7 @@ async function showBaseline() {
     ),
   );
 }
+/** Flushes edits and retrieves the selected project’s release report, displaying Markdown or structured data only for the current navigation. */
 async function projectReport() {
   const request = workspaceScope.capture();
   await flush();
@@ -922,6 +982,7 @@ async function projectReport() {
     ),
   );
 }
+/** Opens editable name and version fields for the current draft or run suite and displays its saved identity and revision. */
 function suiteDetails() {
   dialog("Suite details", (el) => {
     const draft = state.draft || state.run?.suite;
@@ -949,10 +1010,12 @@ function suiteDetails() {
     );
   });
 }
+/** Opens the local model-status dialog with an action that refreshes eval_model_status and redraws its availability details. */
 async function modelDetails() {
   dialog("This Mac", (el) => {
     const content = node("div");
     el.append(content);
+    /** Replaces the model-status content with current availability, reason or model name, and local engine requirements. */
     const show = () => {
       content.replaceChildren(
         node(
@@ -988,23 +1051,31 @@ async function modelDetails() {
     );
   });
 }
+/** Delegates prompt rewriting to the native workflow with the current workspace context and supplied test action. */
 function rewritePrompt(test, action) {
   return nativeRewritePrompt(context(), test, action);
 }
+/** Opens a hidden file picker with the requested extensions and multiplicity, reporting callback failures and removing the input after selection or cancellation. */
 function chooseFiles(accept, multiple, onFiles) {
   const input = node("input");
   input.type = "file";
   input.accept = accept;
   input.multiple = multiple;
   input.hidden = true;
+  /** Passes the selected files to the asynchronous import callback, reports failures, and removes the temporary input afterward. */
   input.onchange = () =>
     Promise.resolve(onFiles([...input.files]))
       .catch(fail)
       .finally(() => input.remove());
+  /** Removes the temporary file input when the picker is cancelled. */
   input.oncancel = () => input.remove();
   document.body.append(input);
   input.click();
 }
+/**
+ * Requires host download support and requests a JSON resource download with a five-minute timeout.
+ * The filename is URI-encoded in the resource URI; host error responses produce a cancellation notice instead of an export-success notice.
+ */
 async function download(filename, text) {
   if (!state.hostCapabilities.downloadFile)
     throw Error(
@@ -1028,11 +1099,13 @@ async function download(filename, text) {
   );
   notice(response.isError ? "Export cancelled." : "Exported.");
 }
+/** Flushes pending edits before exporting the selected saved suite and downloading the tool-provided JSON. */
 async function exportSuite() {
   await flush();
   const result = await call("eval_export_suite", { suiteId: state.draft.id });
   await download(result.filename, result.json);
 }
+/** Downloads tool-exported saved-run JSON or a locally serialized trace payload for an imported run. */
 async function exportRun() {
   const result = state.imported
     ? {
@@ -1042,6 +1115,10 @@ async function exportRun() {
     : await call("eval_export_run", { runId: state.run.id });
   await download(result.filename, result.json);
 }
+/**
+ * Chooses a suite or trace file, flushes edits, and imports its JSON into the selected project using the matching tool.
+ * The captured navigation guards import selection after file reads and catalog refresh; trace-format markers or a results field select run import.
+ */
 function importSuite() {
   const request = workspaceScope.capture();
   chooseFiles(".json,.afevalsuite,.afevaltrace", false, async (files) => {
@@ -1070,6 +1147,10 @@ function importSuite() {
     if (!state.disposed) notice("Imported with its saved settings and evidence.");
   });
 }
+/**
+ * Opens JSON, JSONL, or CSV case import with optional CSV column mapping and file loading.
+ * Submission mutates the captured draft at its expected revision, preserves concurrent edits, and selects the last case only while the original workspace scope remains current.
+ */
 function importCases() {
   const owner = state.draft, request = workspaceScope.capture();
   dialog("Import cases", (el) => {
@@ -1095,6 +1176,7 @@ function importCases() {
     const columns = node("div", null, "form-grid");
     columns.append(prompt, name, expected);
     columns.hidden = true;
+    /** Shows column-mapping inputs only when CSV is selected as the case import format. */
     format.onchange = () => (columns.hidden = format.value !== "csv");
     el.append(
       format,
@@ -1145,12 +1227,17 @@ function importCases() {
     );
   });
 }
+/** Encodes file bytes as base64 in bounded chunks to avoid oversized String.fromCharCode argument lists. */
 function fileBase64(bytes) {
   let string = "";
   for (let index = 0; index < bytes.length; index += 8192)
     string += String.fromCharCode(...bytes.subarray(index, index + 8192));
   return btoa(string);
 }
+/**
+ * Reads selected reference files sequentially, enforcing image or text byte limits and inferring missing MIME types before base64 encoding.
+ * Each tool mutation uses the captured draft’s saved revision and stops after navigation changes; extraction truncation is surfaced before the catalog refresh.
+ */
 function addReferences() {
   const owner = state.draft, request = workspaceScope.capture();
   chooseFiles(
@@ -1202,9 +1289,11 @@ function addReferences() {
     },
   );
 }
+/** Runs the native analysis workflow for the currently selected run. */
 async function analyzeRun() {
   return nativeAnalyzeRun(context(), state.run);
 }
+/** Loads experiments for the captured suite and rerenders only if both the request channel and suite selection remain current. */
 async function loadExperiments() {
   const suiteId = state.draft.id,
     request = workspaceScope.capture("experiment-list"),
@@ -1214,6 +1303,10 @@ async function loadExperiments() {
     renderMain();
   }
 }
+/**
+ * Builds saved-experiment selection and a two-to-four-run comparison interface for the selected suite.
+ * Comparison requests include pairwise analysis when applicable and apply only while navigation, request sequence, suite, and selected run IDs still match; aligned outcomes and responses are rendered below.
+ */
 function renderCompare(page) {
   if (state.experiments?.length) {
     const picker = node("select");
@@ -1227,6 +1320,7 @@ function renderCompare(page) {
         ),
       );
     picker.value = state.experiment?.id || "";
+    /** Loads and tracks the chosen experiment, applying its details only if the experiment-selection request and suite remain current. */
     picker.onchange = async () => {
       try {
         const request = workspaceScope.capture("experiment-selection"), suiteId = state.draft.id;
@@ -1278,6 +1372,7 @@ function renderCompare(page) {
   for (let n = 2; n <= Math.min(4, runs.length); n++)
     count.append(new Option(String(n), String(n)));
   count.value = String(state.compareCount);
+  /** Changes the number of compared runs, clears previous comparison evidence, and rebuilds the controls. */
   count.onchange = () => {
     state.compareCount = Number(count.value);
     state.comparison = null;
@@ -1310,6 +1405,7 @@ function renderCompare(page) {
         ),
       );
     select.value = state.compareIds[index];
+    /** Updates one comparison run selection, clears its previous evidence, and rerenders the comparison view. */
     select.onchange = () => {
       state.compareIds[index] = select.value;
       state.comparison = null;
@@ -1426,6 +1522,10 @@ function renderCompare(page) {
   }
   page.append(panel);
 }
+/**
+ * Flushes edits and reads a host-provided .afevaltrace resource as text or decoded base64, rejecting content larger than 32 MiB before parsing.
+ * The eval_parse_trace result opens as imported evidence only if both the file sequence and navigation scope remain current; catalog refresh follows asynchronously.
+ */
 async function openFile(file) {
   const request = workspaceScope.navigate();
   await flush();
@@ -1460,6 +1560,10 @@ async function openFile(file) {
   render();
   refresh().catch(fail);
 }
+/**
+ * Accepts structured tool results from either notification shape and ignores missing data or disposed workspaces.
+ * Catalog recovery pauses autosave until a workspace result resumes it and replaces the catalog, model status, and limits; trace results delegate to the guarded resource-opening flow.
+ */
 async function acceptResult(payload) {
   const data = payload?.structuredContent ?? payload?.result?.structuredContent;
   if (!data || state.disposed) return;
@@ -1484,44 +1588,8 @@ async function acceptResult(payload) {
     schedulePoll();
   } else if (data.page === "trace" && data.file) await openFile(data.file);
 }
-$("overview-tab").onclick = () => setPage("overview").catch(fail);
-$("new-suite").onclick = () => createSuite().catch(fail);
-$("workspace-symbol").append(icon("suite"));
-$("overview-symbol").append(icon("overview"));
-$("add-symbol").append(icon("plus"));
-$("project-details").append(icon("down"));
 $("sidebar-toggle").append(icon("sidebar"));
-$("search-symbol").append(icon("search"));
-$("workspace-search").placeholder = "Search workspace";
-$("workspace-search").setAttribute("aria-label", "Search workspace");
-$("project-symbol").append(icon("project"));
-$("workspace-search").oninput = (event) => {
-  state.workspaceSearch = event.target.value;
-  renderSidebar();
-};
-$("project-select").onchange = async (event) => {
-  const id = event.target.value, request = workspaceScope.navigate();
-  try {
-    await flush();
-    if (!workspaceScope.current(request)) return;
-    if (id === "__new") {
-      renderSidebar();
-      await projectDetails(true);
-      return;
-    }
-    state.projectId = id;
-    resetSuiteEvidence(state);
-    state.run = null;
-    state.draft = null;
-    state.page = "overview";
-    filterProject();
-    render();
-  } catch (error) {
-    fail(error);
-    renderSidebar();
-  }
-};
-$("project-details").onclick = () => projectDetails().catch(fail);
+/** Synchronizes sidebar expansion accessibility and inertness with narrow-screen open or wide-screen hidden state. */
 function updateSidebar() {
   const narrow = matchMedia("(max-width:600px)").matches,
     open = narrow
@@ -1530,6 +1598,7 @@ function updateSidebar() {
   $("sidebar-toggle").setAttribute("aria-expanded", String(open));
   $("workspace-sidebar").inert = !open;
 }
+/** Toggles the responsive sidebar visibility class and synchronizes its accessibility state. */
 $("sidebar-toggle").onclick = () => {
   document.body.classList.toggle(
     matchMedia("(max-width:600px)").matches ? "sidebar-open" : "sidebar-hidden",
@@ -1557,7 +1626,7 @@ document.addEventListener("keydown", (event) => {
     if (matchMedia("(max-width:600px)").matches)
       document.body.classList.add("sidebar-open");
     updateSidebar();
-    $("workspace-search").focus();
+    $("workspace-search")?.focus();
   }
 });
 transport.on("ui/notifications/tool-result", (payload) =>
@@ -1566,6 +1635,10 @@ transport.on("ui/notifications/tool-result", (payload) =>
 transport.on("ui/notifications/tool-input", (payload) => {
   if (payload.arguments?.file) openFile(payload.arguments.file).catch(fail);
 });
+/**
+ * Invalidates earlier navigation and awaits autosave before disposing workspace services.
+ * A flush failure rejects teardown before disposal; transport disposal is deferred until after the response.
+ */
 transport.handle("ui/resource-teardown", async () => {
   workspaceScope.navigate();
   await flush();

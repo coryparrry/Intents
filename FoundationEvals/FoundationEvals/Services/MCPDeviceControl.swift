@@ -1,6 +1,8 @@
 import Foundation
 
 @MainActor enum MCPDeviceControl {
+  /// Encodes a runner response as MCP JSON and rejects serialized output over 4 MiB so callers can
+  /// reduce its page.
   static func encode<T: Encodable & Sendable>(_ value: T) throws -> MCPJSONValue {
     let result = try MCPJSONValue.encode(value)
     guard try result.jsonText().utf8.count <= 4_194_304 else {
@@ -8,6 +10,9 @@ import Foundation
     }
     return result
   }
+  /// Applies runner discovery, selection, pairing, trust, dispatch, and cancellation controls.
+  /// Trust/forget actions require their confirmations; dispatch validates the selected suite and
+  /// returns a tracked acknowledgement whose final status is saved asynchronously.
   static func execute(_ call: MCPControlCall, control: EvaluationAppControl) throws
     -> MCPToolPayload
   {

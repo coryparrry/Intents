@@ -83,11 +83,13 @@ struct WorkspaceManagerView: View {
         .sheet(isPresented: $isCreatingSuite) { NewSuiteView(store: store) }
     }
 
+    /// Reloads the editable project and suite names from the current store selections.
     private func updateNames() {
         projectName = store.selectedProject.name
         suiteName = store.selectedSuiteRecord.name
     }
 
+    /// Runs a workspace mutation and refreshes displayed names on success, or retains the localized failure for display.
     private func perform(_ action: () throws -> Void) {
         do { try action(); error = nil; updateNames() }
         catch { self.error = error.localizedDescription }
@@ -141,6 +143,8 @@ struct WorkspaceCreationView: View {
         }
     }
 
+    /// Creates a project or suite from the trimmed name and selected starter, navigates to its destination, and closes the sheet on success.
+    /// Creation failures remain visible in the sheet.
     private func create() {
         do {
             let title = name.trimmingCharacters(in: .whitespacesAndNewlines)

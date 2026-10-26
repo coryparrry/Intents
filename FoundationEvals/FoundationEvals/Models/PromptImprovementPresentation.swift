@@ -56,11 +56,13 @@ struct PromptImprovementPresentation {
         }
     }
 
+    /// Returns the comparison's maximum sample budget only when the suite and partition satisfy the setup rules.
     static func maximumSamples(suite: EvaluationSuite, heldOutCaseIDs: Set<UUID>) -> Int? {
         guard EvaluationPromptImprovementRules.validationIssue(suite: suite, heldOutCaseIDs: heldOutCaseIDs) == nil else { return nil }
         return EvaluationPromptImprovement(source: suite, heldOutCaseIDs: heldOutCaseIDs).maximumSamples
     }
 
+    /// Formats a complete error-free scored run as passed/planned counts; distinguishes absent and incomplete evidence.
     static func scoreSummary(_ run: EvaluationRun?) -> String {
         guard let run else { return "Not run" }
         guard !run.cancelled, run.terminationReason == nil, run.errorCount == 0,
@@ -70,6 +72,7 @@ struct PromptImprovementPresentation {
         return "\(run.passedCount) / \(run.plannedResultCount)"
     }
 
+    /// Returns setup guidance for missing cases, scoring, or partition coverage before applying the shared validation rules.
     static func setupIssue(suite: EvaluationSuite, heldOutCaseIDs: Set<UUID>) -> String? {
         if suite.cases.count < 2 { return "Add at least two cases: one to practice with and one for the final check." }
         if suite.scoringMode == .review { return "Choose a scoring method so Intents can compare which instructions work better." }

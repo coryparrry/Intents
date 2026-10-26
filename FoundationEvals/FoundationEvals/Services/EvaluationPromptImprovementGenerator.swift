@@ -32,6 +32,8 @@ enum EvaluationPromptImprovementGenerator {
         var second: String
     }
 
+    /// Generates two instruction alternatives from Development evidence, with tools disabled.
+    /// Throws for unavailable models, oversized evidence, generation failures or cancellation; callers must exclude Held-out cases.
     static func generate(development: EvaluationSuite, baseline: EvaluationRun) async throws -> [String] {
         try Task.checkCancellation()
         #if DEBUG
@@ -70,6 +72,8 @@ enum EvaluationPromptImprovementGenerator {
         return [response.content.first, response.content.second]
     }
 
+    /// Encodes Development instructions, cases and effective baseline observations as untrusted evidence JSON.
+    /// Includes rubric criteria only for model-judge scoring; encoding failures propagate.
     static func inputData(development: EvaluationSuite, baseline: EvaluationRun) throws -> String {
         struct Evidence: Encodable {
             var instructions: String

@@ -4,27 +4,33 @@ export const MAX_REQUEST_BYTES = 65 * 1024 * 1024;
 export const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 export const MAX_NATIVE_OUTPUT_BYTES = 16 * 1024 * 1024;
 
+/** Requires a non-null, non-array object and returns it for continued validation. */
 export function object(value, name = 'arguments') {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${name} must be an object`);
   return value;
 }
+/** Rejects non-object inputs and any own enumerable key outside the permitted list. */
 export function only(value, keys) {
   object(value);
   for (const key of Object.keys(value)) if (!keys.includes(key)) throw new Error(`Unknown field: ${key}`);
 }
+/** Requires a UUID string and returns its lowercase form for storage and association checks. */
 export function id(value, name = 'id') {
   if (typeof value !== 'string' || !UUID.test(value)) throw new Error(`${name} must be a UUID`);
   return value.toLowerCase();
 }
+/** Requires a string within the character bound, optionally rejecting blank text. */
 function string(value, name, max, empty = true) {
   if (typeof value !== 'string' || value.length > max || (!empty && !value.trim())) throw new Error(`${name} must be ${empty ? 'a' : 'a non-empty'} string of at most ${max} characters`);
   return value;
 }
+/** Applies a nullish fallback and validates a finite inclusive numeric range, optionally requiring an integer. */
 function number(value, fallback, min, max, name, integer = false) {
   value ??= fallback;
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) throw new Error(`${name} must be ${integer ? 'an integer' : 'a number'} from ${min} to ${max}`);
   return value;
 }
+/** Normalizes app or legacy suites, enforcing case identity, size, repetition, and output-budget constraints before execution or persistence. */
 export function suite(value, generateId, options = {}) {
   object(value, 'suite');
   if (isAppSuite(value)) return appSuite(value, generateId, options);
@@ -50,6 +56,7 @@ export function suite(value, generateId, options = {}) {
   for (const key of ['projectId', 'revision', 'updatedAt']) if (value[key] !== undefined) result[key] = key === 'projectId' ? id(value[key], key) : string(value[key], key, 64);
   return result;
 }
+/** Validates result identity, completeness, timing, scores, trace bounds, and raw app evidence against the saved suite; optional assessment projection validates reassessed envelopes. */
 export function nativeResult(value, savedSuite, { allowAssessmentProjection = false } = {}) {
   object(value, 'native result');
   if (value.model !== undefined) string(value.model, 'model', 256);

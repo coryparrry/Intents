@@ -3,6 +3,8 @@ import FoundationModels
 
 @available(macOS 27.0, *)
 enum EvaluationSchemaBuilder {
+    /// Validates schema identifiers, field limits, and definitions before building a constrained generation schema.
+    /// Optional values may require explicit nulls; configuration, regex, and schema construction failures propagate.
     static func schema(
         fields: [EvaluationSchemaField],
         name: String,
@@ -45,6 +47,7 @@ enum EvaluationSchemaBuilder {
         return try GenerationSchema(root: root, dependencies: dependencies)
     }
 
+    /// Converts configured fields into named generation properties with descriptions, nested schemas, and optionality.
     private static func properties(
         for fields: [EvaluationSchemaField]
     ) throws -> [DynamicGenerationSchema.Property] {
@@ -58,6 +61,7 @@ enum EvaluationSchemaBuilder {
         }
     }
 
+    /// Converts a field into its dynamic schema, recursively applying constraints, definitions, null representation, unions, and image-reference types.
     private static func dynamicSchema(
         for field: EvaluationSchemaField
     ) throws -> DynamicGenerationSchema {
@@ -126,6 +130,7 @@ enum EvaluationSchemaBuilder {
         }
     }
 
+    /// Derives a unique identifier-safe generated type name from the field UUID.
     private static func generatedTypeName(for field: EvaluationSchemaField) -> String {
         "Schema_\(field.id.uuidString.replacingOccurrences(of: "-", with: ""))"
     }

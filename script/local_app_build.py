@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def lock_path():
     # Every invocation publishes into the same checkout, even when launched by
     # callers with different TMPDIR/TMP/TEMP values. Keep its lock equally stable.
+    """Create or validate a private owner-only lock directory and derive one stable checkout-specific lock filename."""
     directory = Path('/tmp').resolve() / f'intents-local-build-locks-{os.getuid()}'
     directory.mkdir(mode=0o700, exist_ok=True)
     info = directory.lstat()
@@ -27,6 +28,7 @@ def lock_path():
 
 
 def validate_lock(fd):
+    """Verify an inherited descriptor matches the safe current lock file and holds its exclusive nonblocking kernel lock."""
     expected = lock_path().lstat()
     actual = os.fstat(fd)
     if (not stat.S_ISREG(actual.st_mode) or actual.st_uid != os.getuid() or actual.st_nlink != 1
@@ -38,6 +40,7 @@ def validate_lock(fd):
 
 
 def run_locked(script, arguments):
+    """Require the maintained build script, acquire a safe exclusive checkout lock, and exec bash with the live descriptor inherited; exit 3 on contention."""
     if Path(script).resolve() != ROOT / 'script/build_and_run.sh':
         raise ValueError('Unexpected local build script')
     fd = os.open(lock_path(), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
@@ -58,6 +61,7 @@ def run_locked(script, arguments):
 
 
 def select_identity(inventory, override):
+    """Select exactly one Developer ID Application certificate by optional fingerprint or name and validate its final team suffix."""
     identities = []
     for line in inventory.splitlines():
         match = re.fullmatch(r'\s*\d+\)\s+([A-Fa-f0-9]{40})\s+"(Developer ID Application: [^"]+)"\s*', line)
@@ -106,6 +110,7 @@ def rename_exclusive(source, destination):
 
 
 def main():
+    """Dispatch lock acquisition, inherited-lock validation, identity selection, or exclusive rename and convert OS or validation failures into CLI diagnostics."""
     arguments = sys.argv[1:]
     try:
         if len(arguments) >= 2 and arguments[0] == '--run':

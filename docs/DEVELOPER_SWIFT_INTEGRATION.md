@@ -218,8 +218,6 @@ The observable surface contains:
   trust/connection state, last-seen time, and availability detail.
 - `pairingChallenges`: runner identity, pairing session ID, and expiry. The code
   is intentionally entered by the user and is never sent in discovery data.
-- `runTargets`: `.local` plus each connected runner, so local evaluation remains
-  available when no device is present.
 - `activeRuns`: preparing, dispatching, running, completed, cancelled, failed,
   timed-out, or disconnected, with completed and total sample counts.
 

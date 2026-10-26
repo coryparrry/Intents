@@ -25,18 +25,22 @@ final class ModelContextSizeCache {
     private var values: [Key: CachedValue] = [:]
     private let read: (EvaluationModelConfiguration) -> Int
 
+    /// Creates an empty context-size cache with an injectable synchronous model-size reader.
     init(read: @escaping (EvaluationModelConfiguration) -> Int = { $0.systemModel.contextSize }) {
         self.read = read
     }
 
+    /// Returns the cached context size for the configured use case and guardrails, reading the model once on a cache miss.
     func value(for configuration: EvaluationModelConfiguration) -> Int {
         cachedValue(for: configuration).size
     }
 
+    /// Reports whether the cached model-size reading required the on-device fallback window.
     func usedFallback(for configuration: EvaluationModelConfiguration) -> Bool {
         cachedValue(for: configuration).usedFallback
     }
 
+    /// Reads and caches one context-size result per use-case and guardrail pair, tracking whether a nonpositive report required fallback.
     private func cachedValue(for configuration: EvaluationModelConfiguration) -> CachedValue {
         let key = Key(
             useCase: configuration.customizationSettings.useCase,
@@ -52,10 +56,12 @@ final class ModelContextSizeCache {
         return value
     }
 
+    /// Uses the reported context size when positive, otherwise the 4,096-token on-device fallback.
     nonisolated static func resolvedOnDeviceContextSize(_ reportedValue: Int) -> Int {
         reportedValue > 0 ? reportedValue : onDeviceFallback
     }
 
+    /// Clears cached model-size readings so subsequent lookups query the reader again.
     func invalidate() {
         values.removeAll()
     }

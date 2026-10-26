@@ -10,6 +10,7 @@ struct EvaluationPromptCandidate: Identifiable, Codable, Sendable {
     var developmentRun: EvaluationRun?
 }
 
+/// Frozen source suite, partition, candidate instructions, and comparison evidence retained before an instruction change can be applied.
 struct EvaluationPromptImprovement: Identifiable, Codable, Sendable {
     var id = UUID()
     var createdAt = Date()
@@ -33,6 +34,7 @@ struct EvaluationPromptImprovement: Identifiable, Codable, Sendable {
             + [heldOutBaseline, heldOutCandidate].compactMap { $0 }
     }
 
+    /// Removes matching saved run references and invalidates the comparison so deleted evidence cannot authorize applying instructions.
     mutating func removeRun(id: UUID) {
         guard runs.contains(where: { $0.id == id }) else { return }
         if developmentBaseline?.id == id { developmentBaseline = nil }
@@ -45,6 +47,7 @@ struct EvaluationPromptImprovement: Identifiable, Codable, Sendable {
         message = "Saved comparison evidence was deleted. Start a new comparison before applying instructions."
     }
 
+    /// Requires complete matching development and held-out runs, a development gain, and no held-out case losing passed samples.
     var canApply: Bool {
         guard EvaluationPromptImprovementRules.validationIssue(suite: source, heldOutCaseIDs: heldOutCaseIDs) == nil,
               status == .completed, let selectedCandidate else { return false }
@@ -69,6 +72,7 @@ struct EvaluationPromptImprovement: Identifiable, Codable, Sendable {
         }
     }
 
+    /// Copies the source suite for one partition and retains only its applicable critical-case IDs.
     private func partition(heldOut: Bool) -> EvaluationSuite {
         var suite = source
         suite.cases = source.cases.filter { heldOutCaseIDs.contains($0.id) == heldOut }
@@ -79,6 +83,7 @@ struct EvaluationPromptImprovement: Identifiable, Codable, Sendable {
 }
 
 enum EvaluationPromptImprovementRules {
+    /// Requires distinct development and held-out cases, an automated scoring mode, and at most 100 planned samples.
     static func validationIssue(suite: EvaluationSuite, heldOutCaseIDs: Set<UUID>) -> String? {
         let caseIDs = Set(suite.cases.map(\.id))
         guard suite.cases.count >= 2, caseIDs.count == suite.cases.count else {
@@ -94,6 +99,7 @@ enum EvaluationPromptImprovementRules {
         return nil
     }
 
+    /// Checks complete, uniquely identified scoring coverage against the supplied suite, including instructions, saved definition, and case/repetition coordinates.
     static func isComplete(_ run: EvaluationRun, for suite: EvaluationSuite) -> Bool {
         guard !suite.cases.isEmpty, (1...100).contains(suite.repetitions),
               suite.cases.count <= 100 / suite.repetitions,

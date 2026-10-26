@@ -112,6 +112,7 @@ struct CaseImportView: View {
         }
     }
 
+    /// Discards the selected file, column mappings, and any import error so another file can be chosen.
     private func clearSelection() {
         fileSelection.clear()
         filename = ""
@@ -122,6 +123,7 @@ struct CaseImportView: View {
         errorMessage = nil
     }
 
+    /// Builds a column picker that writes either a selected column or an unmapped value to the supplied binding.
     private func optionalColumnPicker(selection: Binding<String?>) -> some View {
         Picker("Column", selection: selection) {
             Text("Not mapped").tag(String?.none)
@@ -131,6 +133,7 @@ struct CaseImportView: View {
         .frame(width: 240)
     }
 
+    /// Builds a column picker that writes a required source column to the supplied binding.
     private func requiredColumnPicker(selection: Binding<String>) -> some View {
         Picker("Column", selection: selection) {
             ForEach(columns, id: \.self) { Text($0).tag($0) }
@@ -139,6 +142,8 @@ struct CaseImportView: View {
         .frame(width: 240)
     }
 
+    /// Reads source columns, chooses conventional prompt/name/expected mappings, and refreshes the preview.
+    /// Parsing failures discard the preview and surface an error in the sheet.
     private func prepareColumns() {
         guard let data = fileSelection.data else { return }
         do {
@@ -154,6 +159,8 @@ struct CaseImportView: View {
         }
     }
 
+    /// Rebuilds the preview from the current file, format, and mappings, clearing the previous error on success.
+    /// Invalid mappings or data discard the preview and expose the parsing error.
     private func updatePreview() {
         guard let data = fileSelection.data, !promptColumn.isEmpty else { return }
         do {
@@ -173,6 +180,8 @@ struct CaseImportView: View {
         min(fileSelection.preview?.totalValidRowCount ?? 0, store.remainingCaseImportCapacity)
     }
 
+    /// Parses cases within the remaining workspace capacity and appends them to the store.
+    /// The import sheet closes only after success; failures remain visible for correction.
     private func importCases() {
         guard let data = fileSelection.data else { return }
         do {
@@ -196,11 +205,13 @@ struct CaseImportFileSelection {
     var data: Data?
     var preview: EvaluationCaseImportPreview?
 
+    /// Releases the selected file bytes and the preview derived from them.
     mutating func clear() {
         data = nil
         preview = nil
     }
 
+    /// Clears the previous selection before reading a size-limited import file, leaving no stale preview if reading fails.
     mutating func load(at url: URL, maximumBytes: Int) throws {
         clear()
         data = try EvaluationAttachmentStorage.readCaseImportFile(at: url, maximumBytes: maximumBytes)

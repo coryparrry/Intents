@@ -14,7 +14,7 @@ import UniformTypeIdentifiers
 @Observable
 final class EvaluationStore {
     nonisolated static let maximumCases = 100
-    nonisolated static let maximumPlannedSamples = 100
+    nonisolated static let maximumPlannedSamples = EvaluationDevelopmentLimits.maximumPlannedSamples
     nonisolated static let maximumAttachments = 20
     nonisolated static let maximumImages = 4
     nonisolated static let maximumFieldCharacters = 32_000
@@ -105,6 +105,9 @@ final class EvaluationStore {
     private var judgeConnectionsURL: URL { supportDirectory.appending(path: "judge-connections.json") }
     private var pendingCompletedRunsURL: URL { suiteDirectory.appending(path: "pending-completed-runs.json") }
 
+    /// Restores the workspace, selected suite, local decisions, drafts, and run recovery records.
+    /// Unreadable files produce notices and may block writes when their original bytes cannot be preserved.
+    /// The optional support directory and writer closures select storage and allow persistence failures to be exercised.
     init(
         supportDirectory customSupportDirectory: URL? = nil,
         telemetry: TelemetryController? = nil,
@@ -323,51 +326,8 @@ final class EvaluationStore {
         suiteLocalState.baselineApprovals.last { $0.isCurrent }
     }
 
-    var projectOverviews: [EvaluationProjectOverview] {
-        workspace.projects.filter { !$0.isArchived }.map { project in
-            var latest: Date?
-            var stale = 0
-            for record in project.suites where !record.isArchived {
-                let directory = EvaluationWorkspacePersistence.suiteDirectory(
-                    supportDirectory: supportDirectory, projectID: project.id, suiteID: record.id
-                )
-                let suite = EvaluationWorkspaceStatePersistence.loadSuite(from: directory, expectedSuiteID: record.id).suite
-                let storedRuns = Self.loadRuns(
-                    from: directory.appending(path: "Runs", directoryHint: .isDirectory),
-                    projectID: project.id,
-                    suiteID: record.id
-                ).runs.filter { $0.promptImprovementID == nil }
-                let pendingURL = directory.appending(path: "pending-completed-runs.json")
-                let runs: [EvaluationRun]
-                if FileManager.default.fileExists(atPath: pendingURL.path) {
-                    if let pending = try? CanonicalJSON.decode(
-                        PendingCompletedRuns.self, from: Data(contentsOf: pendingURL)
-                    ) {
-                        let pendingIDs = Set(pending.runs.map(\.id))
-                        runs = storedRuns.filter { !pendingIDs.contains($0.id) }
-                    } else {
-                        runs = []
-                    }
-                } else {
-                    runs = storedRuns
-                }
-                latest = [latest, runs.first?.startedAt].compactMap { $0 }.max()
-                if let suite,
-                   runs.first?.suiteRevision != (try? Self.revision(for: suite)) {
-                    stale += 1
-                } else if runs.isEmpty {
-                    stale += 1
-                }
-            }
-            return EvaluationProjectOverview(
-                id: project.id, name: project.name,
-                suiteCount: project.suites.count { !$0.isArchived },
-                suitesNeedingChecks: stale, latestRunAt: latest,
-                hasStaleResults: stale > 0
-            )
-        }
-    }
-
+    /// Creates and selects a project containing a fresh starter suite, returning the new project ID.
+    /// Requires an idle workspace and a recoverable current draft; catalog failure attempts to remove the staged project.
     @discardableResult
     func createProject(name: String, starter: EvaluationStarterPack? = nil) throws -> UUID {
         try requireIdle()
@@ -406,6 +366,8 @@ final class EvaluationStore {
         return projectID
     }
 
+    /// Copies a project's active suites, matching drafts, and attachment files under new IDs.
+    /// Returns the unselected copy's ID; staging cleanup is attempted if any source read or catalog save fails.
     @discardableResult
     func duplicateProject(id: UUID) throws -> UUID {
         try requireIdle()
@@ -462,6 +424,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Persists a trimmed, nonempty project name while idle, restoring the catalog in memory on failure.
     func renameProject(id: UUID, name: String) throws {
         try requireIdle()
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -480,6 +443,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Archives a project while idle, switching away first when it is selected.
+    /// Throws if the project is missing or archiving it would leave no active project.
     func archiveProject(id: UUID) throws {
         try requireIdle()
         guard workspace.projects.contains(where: { $0.id == id }) else {
@@ -506,6 +471,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Creates and selects a fresh suite in the current project and returns its ID.
+    /// An empty name keeps the starter's name; failed staging or catalog publication triggers cleanup of the new directory.
     @discardableResult
     func createSuite(name: String, starter: EvaluationStarterPack? = nil) throws -> UUID {
         try requireIdle()
@@ -601,6 +568,8 @@ final class EvaluationStore {
         return revision
     }
 
+    /// Copies a suite's canonical definition, compatible draft, and attachment files under a new suite ID.
+    /// Registers the copy without selecting it and attempts to remove staged files if duplication fails.
     @discardableResult
     func duplicateSuite(id: UUID) throws -> UUID {
         try requireIdle()
@@ -638,19 +607,8 @@ final class EvaluationStore {
         return copied.id
     }
 
-    private func suiteForDuplication(_ storedSuite: EvaluationSuite, projectID: UUID) throws -> EvaluationSuite {
-        guard projectID == selectedProjectID, storedSuite.id == selectedSuiteID,
-              isDraftSavePending || !pendingPromptEdits.isEmpty || draftSuite != suite else {
-            return storedSuite
-        }
-        guard saveSuite() else {
-            throw EvaluationStoreError.invalidSuite(
-                "Save a valid suite draft before duplicating it. \(notice ?? "The current draft could not be saved.")"
-            )
-        }
-        return suite
-    }
-
+    /// Renames the selected suite to a trimmed, nonempty name and attempts to save it.
+    /// Throws for another suite ID, a busy workspace, or an invalid or unsaved candidate.
     func renameSuite(id: UUID, name: String) throws {
         try requireIdle()
         guard id == selectedSuiteID else { throw EvaluationStoreError.resourceConflict("Switch to the suite before renaming it.") }
@@ -660,6 +618,8 @@ final class EvaluationStore {
         guard saveSuite() else { throw EvaluationStoreError.invalidSuite(notice ?? "The suite could not be saved.") }
     }
 
+    /// Archives a suite while idle, selecting an active replacement when necessary.
+    /// Throws if the suite is missing or it is the project's last active suite.
     func archiveSuite(id: UUID) throws {
         try requireIdle()
         let project = selectedProject
@@ -691,10 +651,14 @@ final class EvaluationStore {
         }
     }
 
+    /// Selects an active project and suite, preserving the outgoing draft and local decisions.
+    /// Throws when execution or file work prevents switching, or either workspace cannot be loaded or saved.
     func switchWorkspace(projectID: UUID, suiteID: UUID) throws {
         try switchWorkspace(projectID: projectID, suiteID: suiteID) { _ in }
     }
 
+    /// Loads a new selection and persists its catalog change together with the supplied mutation.
+    /// Restores the prior in-memory selection and execution state if loading or publication fails.
     private func switchWorkspace(
         projectID: UUID,
         suiteID: UUID,
@@ -785,6 +749,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Attempts a canonical save or durable draft save before leaving the current workspace.
+    /// Throws only when the draft could not be preserved, so an incomplete but saved draft may be left safely.
     private func preserveCurrentDraftBeforeWorkspaceChange() throws {
         _ = saveSuite()
         guard !draftSaveFailed else {
@@ -792,6 +758,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Switches to the project's remembered suite, throwing if the project is missing or switching fails.
     func switchProject(id: UUID) throws {
         guard let project = workspace.projects.first(where: { $0.id == id }) else {
             throw EvaluationWorkspaceError.missingProject
@@ -799,6 +766,7 @@ final class EvaluationStore {
         try switchWorkspace(projectID: id, suiteID: project.selectedSuiteID)
     }
 
+    /// Switches to an active suite in the current project using the draft-preserving workspace transition.
     func switchSuite(id: UUID) throws {
         try switchWorkspace(projectID: selectedProjectID, suiteID: id)
     }
@@ -819,6 +787,7 @@ final class EvaluationStore {
         try switchWorkspace(projectID: projectID, suiteID: suiteID)
     }
 
+    /// Applies a project mutation and saves the catalog, restoring its prior in-memory value on failure.
     private func updateProject(_ id: UUID, mutation: (inout EvaluationProject) -> Void) throws {
         guard let index = workspace.projects.firstIndex(where: { $0.id == id }) else {
             throw EvaluationWorkspaceError.missingProject
@@ -833,6 +802,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Writes the workspace catalog through the configured writer, wrapping write failures as persistence errors.
+    /// Refuses to write while startup recovery has left a workspace persistence blocker.
     private func persistWorkspace() throws {
         try requireWorkspaceWritable()
         do {
@@ -842,6 +813,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Restores the selected suite's decisions, compatible draft, history, and recovery state.
+    /// Applies uncontested repository changes, preserves conflicting drafts, and throws if required suite loading fails.
     private func loadSelectedSuite() throws {
         // Repository parsing and refresh may fail. Keep the selected suite's
         // durable decisions in memory before any of those operations can throw.
@@ -912,6 +885,8 @@ final class EvaluationStore {
 
     // MARK: Judge connections, reassessment, and human approval
 
+    /// Validates and persists judge metadata, then saves any supplied API key in Keychain.
+    /// Requires an effective key when configured and attempts to restore metadata and credentials if key storage fails.
     func saveJudgeConnection(_ connection: EvaluationJudgeConnection, apiKey: String?) throws {
         if let issue = connection.validationIssue { throw EvaluationStoreError.invalidSuite(issue) }
         var storedConnection = connection
@@ -952,6 +927,8 @@ final class EvaluationStore {
         judgeConnections = updatedConnections
     }
 
+    /// Deletes unused judge metadata and its Keychain secret.
+    /// Throws when a saved suite references the connection; credential failure triggers restoration attempts.
     func deleteJudgeConnection(id: UUID) throws {
         guard !workspace.projects.contains(where: { project in
             project.suites.contains { record in
@@ -981,6 +958,8 @@ final class EvaluationStore {
         judgeConnections = updatedConnections
     }
 
+    /// Checks the connection asynchronously and persists its latest check result if it still exists.
+    /// Publishes success or failure through the main-actor notice instead of throwing.
     func checkJudgeConnection(id: UUID) async {
         guard let connection = judgeConnections.first(where: { $0.id == id }) else {
             notice = "Judge connection not found."
@@ -1018,6 +997,8 @@ final class EvaluationStore {
             + " No unrelated runs, application tool access, or telemetry are sent."
     }
 
+    /// Records approval for the draft's exact external connection, attachment policy, and evidence-policy version.
+    /// Attempts to save the suite; does nothing if the selected external connection is unavailable.
     func approveExternalJudgeDisclosure() {
         guard draftSuite.judgeConfiguration.usesExternalConnection,
               let connectionID = draftSuite.judgeConfiguration.connectionID,
@@ -1031,6 +1012,9 @@ final class EvaluationStore {
         _ = saveSuite()
     }
 
+    /// Rejudges a saved run from historical evidence and appends and selects the persisted assessment.
+    /// Requires current external disclosure approval; completion runs on the main actor with an error message or nil.
+    /// Admission failures complete immediately; cancellation leaves the saved assessment unchanged.
     func reassessRun(id: UUID, connectionID: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
         guard !isClosing, !isRunning, !isReassessing, let runIndex = runs.firstIndex(where: { $0.id == id }) else {
             completion?("The saved run is unavailable or another operation is active.")
@@ -1088,6 +1072,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Persists the chosen assessment for a saved run, restoring its prior selection if the write fails.
+    /// Throws when the run or assessment is missing or workspace writes are blocked.
     func selectAssessment(runID: UUID, assessmentID: UUID) throws {
         try requireWorkspaceWritable()
         guard let index = runs.firstIndex(where: { $0.id == runID }),
@@ -1105,12 +1091,14 @@ final class EvaluationStore {
     }
 
     // Review mutations share the suite-local atomic persistence and rollback path.
+    /// Applies a throwing review mutation to a copy and commits the resulting suite-local state.
     func updateReviewState(_ mutation: (inout EvaluationReviewState) throws -> Void) throws {
         var candidate = suiteLocalState
         try mutation(&candidate.review)
         try commitReviewLocalState(candidate)
     }
 
+    /// Persists replacement suite-local decisions, restoring the prior in-memory state on failure.
     func commitReviewLocalState(_ candidate: EvaluationSuiteLocalState) throws {
         let previous = suiteLocalState
         suiteLocalState = candidate
@@ -1118,6 +1106,8 @@ final class EvaluationStore {
         catch { suiteLocalState = previous; throw error }
     }
 
+    /// Creates and saves a regression case from a current reviewed sample and verified expected text.
+    /// Returns an existing case for the same review; throws for busy work, unavailable evidence, or an invalid candidate.
     func promoteReviewToCase(reviewID: UUID, expected: String) throws -> UUID {
         try requireWorkspaceWritable()
         guard !isRunning, !isReassessing, !isProcessingFiles else {
@@ -1142,6 +1132,9 @@ final class EvaluationStore {
         return regression.id
     }
 
+    /// Persists a human correction without rewriting the original assessment.
+    /// When collecting a judge check, requires a complete subject response, pass/fail correction, and current judge prompt.
+    /// A failed local-state write restores the prior corrections and examples.
     func markJudgmentIncorrect(
         runID: UUID,
         assessmentID: UUID,
@@ -1211,6 +1204,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Runs reviewed judge examples against a connection and publishes the latest report on the main actor.
+    /// Invalid historical sources become source errors in the check input; completion receives an operation error or nil.
     func runJudgeChecks(connectionID: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
         guard !isClosing, !isReassessing else {
             completion?("Another reassessment or judge check is active.")
@@ -1269,6 +1264,9 @@ final class EvaluationStore {
         }
     }
 
+    /// Approves a complete saved run and revokes earlier current approvals in suite-local state.
+    /// AI rubric baselines require a complete, compatible assessment with one observed judge identity.
+    /// Restores prior approvals if persistence fails.
     func approveBaseline(runID: UUID, assessmentID: UUID?, note: String? = nil) throws {
         guard let run = runs.first(where: { $0.id == runID }),
               !run.cancelled, !run.stoppedEarly, run.results.count == run.plannedResultCount,
@@ -1331,6 +1329,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Freezes distinct trimmed candidate instructions, suite digests, and balanced execution order in a saved experiment.
+    /// Returns its ID; requires an idle, valid suite and restores local state if the save fails.
     func createInstructionExperiment(name: String, candidateInstructions: String) throws -> UUID {
         try requireIdle()
         let trimmed = candidateInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1379,6 +1379,8 @@ final class EvaluationStore {
         return experiment.id
     }
 
+    /// Saves an experiment decision, applying candidate instructions only after validating the frozen experiment.
+    /// Candidate adoption snapshots affected files and restores them if saving the decision fails.
     func decideExperiment(id: UUID, decision: EvaluationExperimentDecision) throws {
         try requireWorkspaceWritable()
         guard let index = suiteLocalState.experiments.firstIndex(where: { $0.id == id }) else {
@@ -1423,6 +1425,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Verifies candidate instructions, suite and variant revisions, digests, and balanced order against the current suite.
+    /// Throws instead of executing or adopting an experiment whose frozen contract has changed.
     private func validateFrozenExperiment(_ experiment: EvaluationExperiment) throws {
         let trimmed = experiment.candidate.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed == experiment.candidate.instructions,
@@ -1460,6 +1464,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Starts a bounded instruction-improvement session with the supplied held-out case IDs.
+    /// Saves the source and initial report before launching; checkpoints preserve completed evidence and terminal failures.
     func startPromptImprovement(heldOutCaseIDs: Set<UUID>) throws {
         try requireIdle()
         guard saveSuite() else {
@@ -1519,6 +1525,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Evaluates one frozen improvement variant and returns a history-sequenced run with subject evidence.
+    /// Requires reference-image digests to match the session snapshot and removes incomplete evidence if no run is produced.
     func evaluatePromptImprovementVariant(
         _ variant: EvaluationSuite, imageDigests: [String: String], externalJudge: EvaluationResolvedJudgeConnection?
     ) async throws -> EvaluationRun {
@@ -1549,7 +1557,7 @@ final class EvaluationStore {
             id: runID, suiteRevision: try Self.revision(for: variant), startedAt: Date(),
             suite: variant, images: capturedImages, externalJudge: externalJudge
         ) { [weak self] _, completed, _ in
-            await self?.updateExperimentProgress(completed: offset + completed, total: total)
+            await self?.updateProgress(completed: offset + completed, total: total)
         }
         run.suiteDefinition = EvaluationSuiteDefinition(suite: variant)
         run.projectID = ownerProjectID
@@ -1559,6 +1567,8 @@ final class EvaluationStore {
         return runPreparedForHistory(run)
     }
 
+    /// Saves newly completed comparison runs before persisting the improvement report.
+    /// Preserves UI selection and restores the prior report on a local-state write failure; terminal success checks cancellation.
     func savePromptImprovementCheckpoint(_ report: EvaluationPromptImprovement) throws {
         if report.status == .completed || report.status == .noImprovement { try Task.checkCancellation() }
         guard let index = suiteLocalState.promptImprovements.firstIndex(where: { $0.id == report.id }) else {
@@ -1576,6 +1586,8 @@ final class EvaluationStore {
         catch { suiteLocalState.promptImprovements[index] = previous; throw error }
     }
 
+    /// Applies an eligible, unapplied recommendation only while both canonical suite and draft match its source.
+    /// Saves instructions and application time, restoring the captured files and state if either save fails.
     func applyPromptImprovement(id: UUID) throws {
         try requireIdle()
         applyPendingPromptEdits()
@@ -1603,6 +1615,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Runs both frozen instruction variants and saves their evidence as a retryable batch.
+    /// Reports errors through notice and main-actor completion; cancellation before batch admission attempts incomplete-evidence cleanup.
     func runExperiment(id: UUID, completion: (@MainActor (String?) -> Void)? = nil) {
         do {
             try requireIdle()
@@ -1635,7 +1649,7 @@ final class EvaluationStore {
                         images: images,
                         externalJudge: externalJudge
                     ) { [weak self] _, completed, total in
-                        await self?.updateExperimentProgress(completed: completed, total: total)
+                        await self?.updateProgress(completed: completed, total: total)
                     }
                     try Task.checkCancellation()
                     outcome.current.projectID = ownerProjectID
@@ -1702,6 +1716,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Evaluates the selected suite's release policy using the requested run or latest ordinary run and current baseline.
     func releaseCheckReport(runID: UUID?) -> EvaluationReleaseCheckReport {
         let run: EvaluationRun?
         if let runID {
@@ -1717,6 +1732,8 @@ final class EvaluationStore {
         )
     }
 
+    /// Builds release checks from persisted evidence for every required active suite in an active project.
+    /// Unreadable definitions, local decisions, history, or pending saves yield incomplete reports; repository changes are read without saving.
     func projectReleaseCheckReport(projectID: UUID) throws -> EvaluationProjectReleaseCheckReport {
         guard let project = workspace.projects.first(where: { $0.id == projectID && !$0.isArchived }) else {
             throw EvaluationWorkspaceError.missingProject
@@ -1972,7 +1989,7 @@ final class EvaluationStore {
                 adapter: adapter
             ) { [weak self] result, completed, total in
                 await self?.checkpointSnapshotProgress(result: result, completed: completed, checkpointURL: checkpointURL)
-                await self?.updateFeatureAdapterProgress(completed: completed, total: total)
+                await self?.updateProgress(completed: completed, total: total)
                 await progress(completed, total)
             }
             run.subjectEvidence = evidence
@@ -2040,6 +2057,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Validates the runner feature's legacy input contract, then executes it through the selected suite's feature adapter.
+    /// Rejects attachments or conversation inputs the protocol cannot transmit; timeout and progress are passed to execution.
     func runDeveloperFeature(
         id: UUID = UUID(),
         expectedRevision: String,
@@ -2187,7 +2206,9 @@ final class EvaluationStore {
         return saved
     }
 
-    private func updateFeatureAdapterProgress(completed: Int, total: Int) {
+    /// Publishes completed and planned sample counts on the main actor for feature and comparison runs.
+    /// Callers preserve aggregate offsets and totals when one execution spans multiple variants.
+    private func updateProgress(completed: Int, total: Int) {
         completedSamples = completed
         totalSamples = total
     }
@@ -2211,6 +2232,8 @@ final class EvaluationStore {
         return nil
     }
 
+    /// Resolves an approved independent judge when feature-run rubric scoring needs one.
+    /// Returns nil when no model judge is required and rejects same-model judging for app features.
     private func resolvedFeatureJudge(
         for suite: EvaluationSuite
     ) throws -> EvaluationResolvedJudgeConnection? {
@@ -2223,11 +2246,7 @@ final class EvaluationStore {
         return try resolvedJudge(for: suite)
     }
 
-    private func updateExperimentProgress(completed: Int, total: Int) {
-        completedSamples = completed
-        totalSamples = total
-    }
-
+    /// Best-effort removes incomplete run files, copied evidence, and matching in-memory history entries.
     private func cleanupIncompleteRuns(ids: [UUID], projectID: UUID, suiteID: UUID) {
         let directory = EvaluationWorkspacePersistence.suiteDirectory(
             supportDirectory: supportDirectory,
@@ -2247,6 +2266,8 @@ final class EvaluationStore {
 
     // MARK: Repository definitions
 
+    /// Links the selected project to a Git root and writes or reuses its matching suite definition.
+    /// Rejects conflicting links or definitions; failed catalog publication restores memory and attempts to remove a newly created definition.
     func linkSelectedProject(toRepository rootPath: String) throws {
         try requireIdle()
         let root = URL(filePath: rootPath, directoryHint: .isDirectory).standardizedFileURL
@@ -2317,6 +2338,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Imports a changed linked definition only when the local definition still matches the last repository revision.
+    /// Writes the canonical suite and catalog metadata, restoring the suite file if metadata persistence fails.
     private func applyingRepositoryChanges(to localSuite: EvaluationSuite) throws -> EvaluationSuite {
         guard let url = EvaluationWorkspacePersistence.repositoryDefinitionURL(
             project: selectedProject, suite: selectedSuiteRecord
@@ -2355,6 +2378,8 @@ final class EvaluationStore {
         return updated
     }
 
+    /// Returns whether an existing linked definition differs from its recorded repository revision.
+    /// Missing links return false; unreadable definitions or revision encoding errors propagate.
     private func repositoryDefinitionChangedOutsideApp() throws -> Bool {
         guard let url = EvaluationWorkspacePersistence.repositoryDefinitionURL(
             project: selectedProject, suite: selectedSuiteRecord
@@ -2364,6 +2389,7 @@ final class EvaluationStore {
         return revision != selectedSuiteRecord.lastRepositoryRevision
     }
 
+    /// Mutates the selected suite's catalog record through the project persistence and rollback path.
     private func updateSelectedSuiteRecord(_ mutation: (inout EvaluationSuiteRecord) -> Void) throws {
         try updateProject(selectedProjectID) { project in
             guard let index = project.suites.firstIndex(where: { $0.id == selectedSuiteID }) else { return }
@@ -2375,6 +2401,8 @@ final class EvaluationStore {
         modelStatus(for: draftSuite)
     }
 
+    /// Returns readiness and explanatory UI text for the candidate's model provider.
+    /// Custom HTTP status validates configuration only; cloud and Core AI status use their loaded metadata.
     func modelStatus(for candidate: EvaluationSuite) -> ModelStatus {
         switch candidate.modelConfiguration.provider {
         case .onDevice:
@@ -2454,6 +2482,7 @@ final class EvaluationStore {
         selectedModelCapabilities(for: draftSuite)
     }
 
+    /// Returns provider capabilities for the candidate, using declared HTTP capabilities or a matching loaded Core AI model.
     func selectedModelCapabilities(for candidate: EvaluationSuite) -> LanguageModelCapabilities {
         switch candidate.modelConfiguration.provider {
         case .onDevice: candidate.modelConfiguration.systemModel.capabilities
@@ -2470,6 +2499,8 @@ final class EvaluationStore {
         return coreAILoadStatus
     }
 
+    /// Loads the selected Core AI resources when no run is active and publishes loading, success, or failure state.
+    /// Ignores a completion superseded by another loaded configuration and records model-load telemetry.
     func loadCoreAIModel() async {
         guard !isRunning, draftSuite.modelConfiguration.provider == .coreAI else { return }
         let diagnostic = telemetry?.begin(.modelLoad)
@@ -2490,10 +2521,13 @@ final class EvaluationStore {
         }
     }
 
+    /// Returns the loaded Core AI model only when its configuration matches the candidate.
     private func coreAIModel(for candidate: EvaluationSuite) -> CoreAIModelLoadResult? {
         candidate.modelConfiguration.coreAISettings == loadedCoreAIConfiguration ? loadedCoreAI : nil
     }
 
+    /// Refreshes cloud context capacity with an authorized signature while no run or refresh is executing.
+    /// Invalid capacity or lookup failure clears cached capacity and publishes a metadata error.
     func refreshCloudMetadata() async {
         guard !isRunning, !isRefreshingCloud,
               Self.hasAuthorizedPrivateCloudComputeSignature else { return }
@@ -2518,6 +2552,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Returns cached or configured context capacity for the candidate provider, using zero when required metadata is absent.
     private func contextSize(for candidate: EvaluationSuite) -> Int {
         switch candidate.modelConfiguration.provider {
         case .onDevice: onDeviceContextSizes.value(for: candidate.modelConfiguration)
@@ -2558,6 +2593,8 @@ final class EvaluationStore {
         return max(0, min(remainingCases, maximumCasesBySamples - draftSuite.cases.count))
     }
 
+    /// Appends imported cases within the remaining case and sample capacity while idle.
+    /// Saves the candidate and restores the prior draft and draft file if saving fails.
     func appendImportedCases(_ imported: [EvaluationCase]) throws {
         try requireIdle()
         guard !imported.isEmpty else { return }
@@ -2602,10 +2639,13 @@ final class EvaluationStore {
         (try? currentSuiteRevision()) ?? ""
     }
 
+    /// Returns the canonical suite's content revision; pending draft edits are not applied here.
     func currentSuiteRevision() throws -> String {
         try Self.revision(for: suite)
     }
 
+    /// Adds an empty draft case within case and sample limits, then attempts to save it.
+    /// Blocked mutations or exhausted capacity publish a notice.
     func addCase() {
         guard allowWorkspaceMutation() else { return }
         guard draftSuite.cases.count < Self.maximumCases,
@@ -2623,6 +2663,8 @@ final class EvaluationStore {
         _ = saveSuite()
     }
 
+    /// Duplicates a draft case with a fresh ID after applying pending prompt edits, then attempts a save.
+    /// Does nothing for an unknown ID and publishes a notice when sample capacity is exhausted.
     func duplicateCase(id: UUID) {
         guard allowWorkspaceMutation() else { return }
         applyPendingPromptEdits()
@@ -2641,6 +2683,7 @@ final class EvaluationStore {
         _ = saveSuite()
     }
 
+    /// Removes a draft case and attempts a save, retaining at least one case and respecting mutation blockers.
     func removeCase(id: UUID) {
         guard allowWorkspaceMutation() else { return }
         guard draftSuite.cases.count > 1 else {
@@ -2651,6 +2694,9 @@ final class EvaluationStore {
         _ = saveSuite()
     }
 
+    /// Replaces canonical suite content while retaining its ID and attachments, returning the resulting revision.
+    /// Flushes pending autosave first; an identical candidate succeeds without idle, revision, or deletion checks.
+    /// Changed content requires the expected canonical revision, idle storage, and confirmation for removed cases.
     func replaceSuite(
         _ replacement: EvaluationSuite,
         expectedRevision: String,
@@ -2678,6 +2724,7 @@ final class EvaluationStore {
         return try currentSuiteRevision()
     }
 
+    /// Attempts durable run deletion and reports any failure through notice.
     func deleteRun(id: UUID) {
         do {
             _ = try deleteRunDurably(id: id)
@@ -2686,6 +2733,9 @@ final class EvaluationStore {
         }
     }
 
+    /// Deletes a run across workspace history and copied evidence, returning false when no saved or staged run exists.
+    /// Rejects active or recoverable pending runs; staged tombstones keep partially deleted evidence hidden for retry.
+    /// Comparison evidence is updated before copied files are removed, with restoration attempted if that update fails.
     @discardableResult
     func deleteRunDurably(id: UUID) throws -> Bool {
         try requireWorkspaceWritable()
@@ -2783,6 +2833,8 @@ final class EvaluationStore {
         return true
     }
 
+    /// Removes a run from saved instruction-improvement reports in its owning suite.
+    /// Updates selected local state with rollback, or writes another suite's state without changing UI selection.
     private func removePromptImprovementEvidence(id: UUID, projectID: UUID, suiteID: UUID) throws {
         let isSelected = projectID == selectedProjectID && suiteID == selectedSuiteID
         let url = EvaluationWorkspacePersistence.suiteDirectory(
@@ -2814,6 +2866,8 @@ final class EvaluationStore {
     }
 
     /// A blank suite is intentionally incomplete; execution still validates it before running.
+    /// Saves blank content under the existing suite ID, restoring captured suite/catalog/repository files if commit fails.
+    /// After commit clears buffered edits and attempts old-draft and private-attachment cleanup, reporting cleanup failures.
     func resetSuite() throws {
         try requireIdle()
         guard !isImportingFiles else { throw EvaluationStoreError.fileOperationBusy }
@@ -2952,6 +3006,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Clears selected-suite JSON history, recovery marker, improvement reports, and copied run evidence while idle.
+    /// Stages history in deletion tombstones so cleanup failure cannot expose partial evidence, then reloads remaining history.
     func clearRunHistory() throws {
         try requireIdle()
         guard !isImportingFiles else { throw EvaluationStoreError.fileOperationBusy }
@@ -2996,6 +3052,9 @@ final class EvaluationStore {
         liveResponse = nil
     }
 
+    /// Imports selected local files in a returned task, or returns nil when run, reassessment, or file processing is active.
+    /// Reads bounded security-scoped files off the main actor, enforces 20-file/four-image capacity, and binds commit to the captured revision.
+    /// Failures become notices; the task completes after processing state is cleared.
     @discardableResult
     func importFiles(_ urls: [URL]) -> Task<Void, Never>? {
         guard !isRunning, !isReassessing, !isProcessingFiles else {
@@ -3045,6 +3104,9 @@ final class EvaluationStore {
         }
     }
 
+    /// Imports bounded text, PDF, or image data under a caller-supplied attachment ID and returns metadata with the resulting revision.
+    /// New IDs require an idle workspace and matching revision before and after preparation off the main actor.
+    /// Matching duplicates accept stale revisions or active runs, but still verify image bytes and reject changed selection or content.
     func importAttachment(
         id: UUID,
         name: String,
@@ -3099,6 +3161,7 @@ final class EvaluationStore {
         return try commitPreparedAttachments([prepared]).first!
     }
 
+    /// Flushes the draft, then attempts revision-bound attachment removal, reporting errors through notice.
     func removeAttachment(id: UUID) {
         _ = saveSuite()
         do {
@@ -3108,6 +3171,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Removes an attachment while idle at the expected revision, returning false if its ID is absent.
+    /// Rejects removal of the last image while image tools are enabled; commits metadata before best-effort private-file cleanup.
     @discardableResult
     func removeAttachment(id: UUID, expectedRevision: String) throws -> Bool {
         try requireIdle()
@@ -3143,10 +3208,12 @@ final class EvaluationStore {
         return true
     }
 
+    /// Returns a pending prompt edit, otherwise the draft prompt, or an empty string for an unknown case.
     func promptText(for caseID: UUID) -> String {
         pendingPromptEdits[caseID] ?? draftSuite.cases.first(where: { $0.id == caseID })?.prompt ?? ""
     }
 
+    /// Buffers a changed prompt for an existing case and schedules autosave when workspace mutation is allowed.
     func editPrompt(_ text: String, for caseID: UUID) {
         guard allowWorkspaceMutation() else { return }
         guard !isRunning, !isProcessingFiles,
@@ -3156,6 +3223,7 @@ final class EvaluationStore {
         scheduleSuiteSave()
     }
 
+    /// Merges buffered prompts into existing draft cases and clears the pending-edit buffer.
     private func applyPendingPromptEdits() {
         guard !pendingPromptEdits.isEmpty else { return }
         var updated = draftSuite
@@ -3168,6 +3236,7 @@ final class EvaluationStore {
         if draftSuite != updated { draftSuite = updated }
     }
 
+    /// Replaces the pending autosave with a 350 ms debounce task and advances its generation.
     func scheduleSuiteSave() {
         draftSaveTask?.cancel()
         draftSaveGeneration &+= 1
@@ -3179,6 +3248,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Awaits pending autosaves until the captured generation completes without a replacement.
+    /// The optional main-actor callback runs after each task capture, before suspension.
     func waitForScheduledSuiteSave(onTaskCaptured: (@MainActor () -> Void)? = nil) async {
         while let task = draftSaveTask {
             let generation = draftSaveGeneration
@@ -3188,6 +3259,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Invalidates on-device context metadata and drops a loaded Core AI model whose resource identity changed or cannot be read.
     func refreshModelMetadata() {
         onDeviceContextSizes.invalidate()
         guard draftSuite.modelConfiguration.provider == .coreAI,
@@ -3208,6 +3280,9 @@ final class EvaluationStore {
         }
     }
 
+    /// Applies buffered prompts and attempts to commit the draft, returning true only for a valid canonical save.
+    /// Invalid or failed commits fall back to revision-bound draft persistence; draftSaveFailed indicates whether that fallback also failed.
+    /// Developer-feature saves validate transmitted inputs and scoring without requiring the subject model configuration.
     @discardableResult
     func saveSuite(forDeveloperFeature: Bool = false) -> Bool {
         let diagnostic = telemetry?.begin(.suiteSave)
@@ -3240,6 +3315,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Atomically saves the current draft against the canonical revision and updates draft-save failure state.
+    /// Uses the optional fallback notice on success and a storage notice on failure.
     private func persistCurrentDraft(fallbackNotice: String?) {
         do {
             try EvaluationWorkspacePersistence.createSuiteDirectories(at: suiteDirectory)
@@ -3256,6 +3333,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Saves the draft and starts a fresh run at the canonical revision, reporting admission errors through notice.
     func startRun() {
         guard saveSuite() else { return }
         do {
@@ -3265,6 +3343,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Requests cancellation of direct feature work and the active run, or other owned run work when no active record exists.
+    /// Cancellation checkpoint errors are reported through notice.
     func cancelRun() {
         directFeatureTask?.cancel()
         guard let id = activeRun?.id else {
@@ -3291,6 +3371,7 @@ final class EvaluationStore {
         _ = saveSuite()
     }
 
+    /// Closes new execution admission, flushes review drafts, and requests reassessment and run cancellation.
     func beginClosing() {
         isClosing = true
         reviewDrafts.flushPendingDrafts()
@@ -3298,6 +3379,7 @@ final class EvaluationStore {
         cancelRun()
     }
 
+    /// Retries retained single-run and batch history saves, clearing notice only when no completed run remains unsaved.
     func retryPendingRunSave() {
         do {
             try retryUnsavedRun()
@@ -3307,18 +3389,23 @@ final class EvaluationStore {
         }
     }
 
+    /// Finds a run in retained unsaved evidence, the pending batch, selected history, or persisted workspace history.
     func run(with id: UUID) -> EvaluationRun? {
         if let unsavedRun, unsavedRun.id == id { return unsavedRun }
         if let pending = pendingCompletedRuns?.runs.first(where: { $0.id == id }) { return pending }
         return runs.first { $0.id == id } ?? persistedRunLocation(id: id)?.run
     }
 
+    /// Starts a run for the expected canonical revision, returning the known operation for an existing ID with that revision.
+    /// New runs require idle, valid storage and checkpoint immutable inputs before launching; admission errors emit telemetry.
     @discardableResult
     func startRun(id: UUID, expectedRevision: String) throws -> EvaluationRunOperation {
         do { return try beginRun(id: id, expectedRevision: expectedRevision) }
         catch { telemetry?.issue(.evaluation, .classify(error)); throw error }
     }
 
+    /// Retries pending history saves, resolves idempotent run IDs, and admits a validated revision-bound execution.
+    /// Copies subject evidence and checkpoints before publishing active state; terminal work retains the owning project and suite.
     private func beginRun(id: UUID, expectedRevision: String) throws -> EvaluationRunOperation {
         try retryUnsavedRun()
         if let existing = runStatus(id: id) {
@@ -3424,6 +3511,7 @@ final class EvaluationStore {
         throw EvaluationStoreError.invalidSuite(issue)
     }
 
+    /// Returns active or retained/saved run progress and its terminal phase, or nil when the ID is unknown.
     func runStatus(id: UUID) -> EvaluationRunOperation? {
         if let activeRun, activeRun.id == id { return operation(for: activeRun) }
         guard let run = run(with: id) else { return nil }
@@ -3450,11 +3538,15 @@ final class EvaluationStore {
         )
     }
 
+    /// Publishes streamed output only for the current active run and a noncancelled callback task.
     private func updateLiveResponse(runID: UUID, response: EvaluationLiveResponse) {
         guard activeRun?.id == runID, !Task.isCancelled else { return }
         liveResponse = response
     }
 
+    /// Requests cancellation of the matching active run and returns its operation, or an already terminal operation.
+    /// Stops the task before saving the request so storage failure cannot prevent cancellation.
+    /// Throws for unknown runs or completed evidence awaiting a save; repeated requests do not resubmit cancellation.
     @discardableResult
     func cancelRun(id: UUID) throws -> EvaluationRunOperation {
         if hasUnsavedCompletedRun {
@@ -3494,15 +3586,19 @@ final class EvaluationStore {
         return operation(for: active)
     }
 
+    /// Encodes retained or saved run evidence as canonical JSON, throwing when the run is unknown.
     func canonicalRunData(id: UUID) throws -> Data {
         guard let run = run(with: id) else { throw EvaluationStoreError.resourceNotFound("Run") }
         return try CanonicalJSON.data(for: run)
     }
 
+    /// Returns collected partial results only for the matching active run.
     func partialResults(runID: UUID) -> [EvaluationSampleResult] {
         activeRun?.id == runID ? activeRunResults : []
     }
 
+    /// Returns retained UTF-8 attachment text or bounded private image bytes for a canonical attachment.
+    /// Image reads validate a contained regular file, the 10 MB limit, saved byte count, and checksum; missing or changed data throws.
     func attachmentData(id: UUID) throws -> (attachment: EvaluationAttachment, data: Data) {
         guard let attachment = suite.attachments.first(where: { $0.id == id }) else {
             throw EvaluationStoreError.resourceNotFound("Attachment")
@@ -3560,6 +3656,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Finalizes only the current run, assigns history order, and publishes saved history and selection.
+    /// On write failure retains terminal evidence and attempts a recovery checkpoint for retry before clearing task ownership.
     private func finish(_ run: EvaluationRun) {
         guard activeRun?.id == run.id else { return }
         let run = runPreparedForHistory(run)
@@ -3599,6 +3697,8 @@ final class EvaluationStore {
         runTask = nil
     }
 
+    /// Appends a sample and publishes counters only for the matching active run.
+    /// Attempts a recovery checkpoint after each sample and reports checkpoint failure without discarding progress.
     private func updateProgress(
         runID: UUID,
         result: EvaluationSampleResult,
@@ -3626,6 +3726,9 @@ final class EvaluationStore {
         }
     }
 
+    /// Returns the first suite validation issue, or nil when enabled checks pass.
+    /// Always checks case, sample, text, attachment, scoring, and release-policy bounds.
+    /// Flags separately enable runtime readiness and subject-model configuration checks for external feature execution.
     func validationIssue(
         for candidate: EvaluationSuite,
         includeModelReadiness: Bool = true,
@@ -3856,6 +3959,8 @@ final class EvaluationStore {
         return includeModelReadiness && !status.isAvailable ? status.detail : nil
     }
 
+    /// Builds ordered image inputs from the selected suite's private attachment paths.
+    /// Throws for missing filenames or unsafe storage paths; content integrity is verified by later evidence capture.
     private func imageInputs(for suite: EvaluationSuite) throws -> [ImageEvaluationInput] {
         try suite.attachments
             .filter { $0.kind == .image }
@@ -3873,6 +3978,7 @@ final class EvaluationStore {
             }
     }
 
+    /// Returns the owning suite's per-run directory for copied immutable evidence.
     private func runEvidenceDirectory(
         projectID: UUID,
         suiteID: UUID,
@@ -3887,6 +3993,8 @@ final class EvaluationStore {
         .appending(path: runID.uuidString, directoryHint: .isDirectory)
     }
 
+    /// Copies verified image bytes and snapshots text, cases, and instructions into new digest-bound run evidence.
+    /// Rejects an existing evidence directory and attempts to remove newly staged evidence if capture fails.
     private func snapshotSubjectEvidence(
         runID: UUID,
         suite: EvaluationSuite,
@@ -3950,6 +4058,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Returns integrity-checked immutable evidence, or reconstructs legacy evidence from saved cases and matching current attachments.
+    /// Throws when historical definitions or matching attachment storage cannot be recovered.
     private func subjectEvidence(for run: EvaluationRun) throws -> EvaluationSubjectEvidenceSnapshot {
         if let evidence = run.subjectEvidence {
             guard evidence.hasValidDigest else {
@@ -4003,6 +4113,8 @@ final class EvaluationStore {
         )
     }
 
+    /// Builds ordered image inputs after verifying saved byte counts and checksums.
+    /// Uses copied per-run evidence unless legacy is true, which reads the selected suite's attachment directory.
     private func imageInputs(
         for evidence: EvaluationSubjectEvidenceSnapshot,
         projectID: UUID,
@@ -4028,6 +4140,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Requires valid historical subject evidence and verifies its copied images before review-derived mutations.
     func validateReviewImageEvidence(_ run: EvaluationRun) throws {
         guard let evidence = run.subjectEvidence, evidence.hasValidDigest else {
             throw EvaluationReviewError.invalid("The historical source evidence is unavailable or changed.")
@@ -4036,6 +4149,8 @@ final class EvaluationStore {
                             suiteID: run.suiteID, runID: run.id)
     }
 
+    /// Combines historical subject inputs with the supplied scoring settings for reassessment.
+    /// Returns the replay suite, integrity-checked images, evidence, and derived scoring contract.
     private func reassessmentContext(
         for run: EvaluationRun,
         scoringSuite: EvaluationSuite
@@ -4067,6 +4182,7 @@ final class EvaluationStore {
         return (replaySuite, images, evidence, scoringContract)
     }
 
+    /// Prepares a batch off the main actor and commits only if no selected-suite run is executing and the canonical revision still matches.
     private func importAttachments(
         _ inputs: [AttachmentInput],
         expectedRevision: String
@@ -4083,6 +4199,8 @@ final class EvaluationStore {
         _ = try commitPreparedAttachments(prepared)
     }
 
+    /// Validates a plain filename, declared media category, and bounded decodable import data without writing files.
+    /// Images retain at most 10 MB; text/PDF input is capped at 5 MB and extracted text at 16,000 characters plus a truncation marker.
     private nonisolated static func prepareAttachment(
         id: UUID,
         name: String,
@@ -4170,6 +4288,8 @@ final class EvaluationStore {
         )
     }
 
+    /// Commits prepared attachments within file/image limits and returns duplicate flags with the resulting revision.
+    /// Verifies matching duplicate images, stages new image files, and attempts unreferenced-file cleanup if suite persistence fails.
     private func commitPreparedAttachments(
         _ prepared: [PreparedAttachment]
     ) throws -> [EvaluationAttachmentImportResult] {
@@ -4238,6 +4358,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Validates and writes suite content, linked repository definition, and catalog metadata before publishing the canonical suite.
+    /// Snapshots affected files for rollback and reports rollback failures; obsolete draft markers are removed or preserved after commit.
     private func commitSuite(_ candidate: EvaluationSuite, includeSubjectModelConfiguration: Bool = true) throws {
         try requireNoReassessmentMutation()
         if let issue = validationIssue(for: candidate, includeModelReadiness: false,
@@ -4316,6 +4438,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Writes a run through the configured selected-suite history writer and records save telemetry.
+    /// Wraps encoding or storage failures as persistence errors.
     private func persistRun(_ run: EvaluationRun) throws {
         let diagnostic = telemetry?.begin(.runSave)
         do {
@@ -4328,6 +4452,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Returns the owning suite's snapshot checkpoint URL for a run ID.
     private func snapshotCheckpointURL(id: UUID, projectID: UUID, suiteID: UUID) -> URL {
         EvaluationWorkspacePersistence.suiteDirectory(
             supportDirectory: supportDirectory, projectID: projectID, suiteID: suiteID
@@ -4336,6 +4461,7 @@ final class EvaluationStore {
         .appending(path: "\(id.uuidString).json")
     }
 
+    /// Creates the checkpoint directory and atomically writes a snapshot recovery record, wrapping storage failures.
     private func persistSnapshotCheckpoint(_ record: ActiveRunRecord, at url: URL) throws {
         do {
             try FileManager.default.createDirectory(
@@ -4347,6 +4473,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Appends progress to a readable unfinished snapshot checkpoint; checkpoint failure publishes a notice.
     private func checkpointSnapshotProgress(
         result: EvaluationSampleResult,
         completed: Int,
@@ -4409,6 +4536,7 @@ final class EvaluationStore {
         return run
     }
 
+    /// Returns a run with stable history ordering, retaining an existing sequence or assigning a new workspace-wide sequence.
     private func runPreparedForHistory(_ run: EvaluationRun) -> EvaluationRun {
         var run = run
         if let sequence = run.historySequence {
@@ -4423,6 +4551,8 @@ final class EvaluationStore {
         return run
     }
 
+    /// Searches every catalog suite for a decodable run with matching ID and ownership in the requested directory.
+    /// Unreadable or mismatched records are skipped without changing selection.
     private func persistedRunLocation(id: UUID, directoryName: String = "Runs") -> EvaluationPersistedRunLocation? {
         for project in workspace.projects {
             for record in project.suites {
@@ -4451,6 +4581,7 @@ final class EvaluationStore {
         return nil
     }
 
+    /// Atomically writes the selected suite's active-run recovery record, wrapping encoding and storage failures.
     private func persistActiveRun(_ record: ActiveRunRecord) throws {
         do {
             try CanonicalJSON.data(for: record).write(to: activeRunURL, options: .atomic)
@@ -4459,6 +4590,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Retries retained single-run completion followed by pending batch persistence, throwing while completed evidence remains unsaved.
     private func retryUnsavedRun() throws {
         if let unsavedRun {
             finish(unsavedRun)
@@ -4469,6 +4601,8 @@ final class EvaluationStore {
         try retryCompletedRuns()
     }
 
+    /// Restores a pending completed-run batch and its durability flag from the selected suite.
+    /// Unreadable recovery data is left in place and recorded as a blocker for new completed batches.
     private func loadPendingCompletedRuns() {
         pendingCompletedRuns = nil
         pendingCompletedRunsIsDurable = false
@@ -4501,6 +4635,7 @@ final class EvaluationStore {
         return preserved
     }
 
+    /// Writes the retained completed-run retry record and marks it durable only after the configured writer succeeds.
     private func persistPendingCompletedRuns() throws {
         guard let pendingCompletedRuns else { return }
         try pendingCompletedRunsWriter(
@@ -4509,6 +4644,9 @@ final class EvaluationStore {
         pendingCompletedRunsIsDurable = true
     }
 
+    /// Retains completed runs as a retryable batch and saves its recovery record before writing history.
+    /// An optional experiment ID binds saved run IDs into suite-local state; another pending or unreadable batch blocks admission.
+    /// Failure keeps the batch available for retry and publishes its recovery notice.
     func saveCompletedRuns(_ completed: [EvaluationRun], experimentID: UUID? = nil) throws {
         guard pendingCompletedRuns == nil, pendingCompletedRunsLoadError == nil else {
             throw EvaluationStoreError.persistence("A completed run still needs to be saved.")
@@ -4523,6 +4661,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Rewrites a durable pending batch and optional experiment binding, then publishes history and removes its retry record.
+    /// Failures retain pending ownership for idempotent retry; unreadable recovery data must be preserved explicitly first.
     private func retryCompletedRuns() throws {
         if let pendingCompletedRunsLoadError {
             throw EvaluationStoreError.persistence(pendingCompletedRunsLoadError)
@@ -4566,6 +4706,7 @@ final class EvaluationStore {
         pendingCompletedRunsIsDurable = false
     }
 
+    /// Rejects suite mutations while reassessment or judge checks own the current suite.
     private func requireNoReassessmentMutation() throws {
         if isReassessing {
             throw EvaluationStoreError.resourceConflict(
@@ -4581,6 +4722,8 @@ final class EvaluationStore {
         isRunning || activeRun != nil || snapshotExecutionOwnerID != nil
     }
 
+    /// Requires open, writable, idle execution and no reassessment or file operation after retrying completed-run saves.
+    /// The ownerID parameter is currently unused; active-execution checks still apply.
     private func requireIdle(ownerID: UUID? = nil) throws {
         guard !isClosing else {
             throw EvaluationStoreError.resourceConflict("The workspace is closing.")
@@ -4594,6 +4737,7 @@ final class EvaluationStore {
         if isProcessingFiles || isImportingFiles { throw EvaluationStoreError.fileOperationBusy }
     }
 
+    /// Flushes a scheduled suite save and throws when neither canonical content nor a local draft could be preserved.
     private func flushPendingSuiteSave() throws {
         guard isDraftSavePending else { return }
         _ = saveSuite()
@@ -4602,6 +4746,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Flushes scheduled draft work, then throws staleRevision with the current canonical revision if it differs from expectedRevision.
     private func requireRevision(_ expectedRevision: String) throws {
         try flushPendingSuiteSave()
         let current = try currentSuiteRevision()
@@ -4610,6 +4755,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Projects active progress into an operation, preferring retained terminal evidence over execution and cancellation flags.
     private func operation(for active: EvaluationActiveRun) -> EvaluationRunOperation {
         let phase: EvaluationRunPhase
         if let unsavedRun, unsavedRun.id == active.id, !isRunning {
@@ -4642,6 +4788,8 @@ final class EvaluationStore {
         )
     }
 
+    /// Hashes canonical suite inputs, scoring, model/features, attachment identities and digests, and release policy into a revision.
+    /// Attachment text and private filenames are excluded from the payload; JSON encoding failures propagate.
     nonisolated static func revision(for suite: EvaluationSuite) throws -> String {
         let payload = SuiteRevisionPayload(
             id: suite.id,
@@ -4669,10 +4817,13 @@ final class EvaluationStore {
         return sha256(try CanonicalJSON.data(for: payload, prettyPrinted: false))
     }
 
+    /// Returns a lowercase hexadecimal SHA-256 digest of the supplied bytes.
     private nonisolated static func sha256(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Persists suite-local decisions only after recovery blockers clear and unreadable prior bytes are preserved.
+    /// Uses the configured writer and wraps preservation, encoding, and storage failures.
     private func persistSuiteLocalState() throws {
         try requireWorkspaceWritable()
         if let suiteLocalStatePersistenceBlocker {
@@ -4688,12 +4839,15 @@ final class EvaluationStore {
         }
     }
 
+    /// Migrates legacy review sources when a migration is available and commits the resulting local state.
     private func migrateLegacyReviewSourcesIfNeeded() throws {
         if let migrated = try EvaluationReviewWorkflow.migratingLegacySources(in: suiteLocalState, runs: runs) {
             try commitReviewLocalState(migrated)
         }
     }
 
+    /// Retries blocked local-state recovery, then restores decisions and migrates review sources.
+    /// Keeps writes blocked and publishes the recovery notice if original bytes still cannot be preserved.
     private func retrySuiteLocalStateRecoveryIfNeeded() throws {
         guard suiteLocalStatePersistenceBlocker != nil else { return }
         let loaded = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(from: suiteStateURL)
@@ -4707,6 +4861,8 @@ final class EvaluationStore {
         notice = loaded.notice
     }
 
+    /// Restores the previous draft in memory and its file snapshot after a failed save.
+    /// Reports draft rollback failure together with the original failure message.
     private func restoreDraftAfterFailedSave(
         _ previousDraft: EvaluationSuite,
         fileSnapshot: PersistedFileSnapshot,
@@ -4722,12 +4878,14 @@ final class EvaluationStore {
         }
     }
 
+    /// Throws the recorded persistence blocker when startup recovery has made workspace writes unsafe.
     private func requireWorkspaceWritable() throws {
         if let workspacePersistenceBlocker {
             throw EvaluationStoreError.persistence(workspacePersistenceBlocker)
         }
     }
 
+    /// Allows basic UI mutation only when workspace writes and reassessment permit it, publishing rejection through notice.
     private func allowWorkspaceMutation() -> Bool {
         do {
             try requireWorkspaceWritable()
@@ -4739,6 +4897,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Captures suite, draft, catalog, decisions, linked definition, and in-memory state before candidate adoption.
+    /// Throwing file reads prevent beginning adoption with an incomplete rollback snapshot.
     private func candidateAdoptionSnapshot() throws -> CandidateAdoptionSnapshot {
         let suiteFile = try snapshotFile(at: suiteDirectory.appending(path: "suite.json"))
         let draftFile = try snapshotFile(at: draftSuiteURL)
@@ -4766,6 +4926,8 @@ final class EvaluationStore {
         )
     }
 
+    /// Restores candidate-adoption files and in-memory state, rescheduling a previously pending draft save.
+    /// Any rollback failure blocks later workspace writes and reports affected files without publishing restored state.
     private func restoreCandidateAdoption(
         _ snapshot: CandidateAdoptionSnapshot,
         failureMessage: String
@@ -4802,6 +4964,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Captures whether a path exists and its current bytes, throwing when existing content cannot be read.
     private func snapshotFile(at url: URL) throws -> PersistedFileSnapshot {
         let existed = FileManager.default.fileExists(atPath: url.path)
         guard existed else { return PersistedFileSnapshot(url: url, existed: false, data: nil) }
@@ -4814,6 +4977,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Restores captured bytes atomically, or removes a newly created regular file or symlink for a previously absent path.
+    /// Throws for incomplete snapshots or unsafe replacement paths.
     private func restoreFile(_ snapshot: PersistedFileSnapshot) throws {
         if snapshot.existed {
             guard let data = snapshot.data else {
@@ -4835,6 +5000,7 @@ final class EvaluationStore {
         try FileManager.default.removeItem(at: snapshot.url)
     }
 
+    /// Preserves unreadable prior connection metadata before atomically writing replacements, wrapping persistence failures.
     private func persistJudgeConnections(_ connections: [EvaluationJudgeConnection]) throws {
         do {
             try EvaluationWorkspaceStatePersistence.preserveUnreadableBeforeReplacing(
@@ -4847,6 +5013,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Resolves saved judge metadata and its Keychain key, throwing for missing connections or required credentials.
     private func resolvedJudge(connectionID: UUID) throws -> EvaluationResolvedJudgeConnection {
         guard let connection = judgeConnections.first(where: { $0.id == connectionID }) else {
             throw EvaluationStoreError.resourceNotFound("Judge connection")
@@ -4858,6 +5025,8 @@ final class EvaluationStore {
         return EvaluationResolvedJudgeConnection(connection: connection, apiKey: apiKey)
     }
 
+    /// Returns the suite's approved external judge when rubric judging requires it, otherwise nil.
+    /// Throws for missing connections, credentials, or approval that no longer matches the disclosure contract.
     private func resolvedJudge(for suite: EvaluationSuite) throws -> EvaluationResolvedJudgeConnection? {
         guard suite.scoringMode == .modelJudge, suite.needsModelJudge,
               suite.judgeConfiguration.usesExternalConnection else { return nil }
@@ -4871,6 +5040,8 @@ final class EvaluationStore {
         return resolved
     }
 
+    /// Writes a linked repository definition and updates its recorded revision.
+    /// Rejects externally changed content unless it already matches the candidate, preserving repository conflicts for explicit resolution.
     private func persistRepositoryDefinitionIfLinked(_ candidate: EvaluationSuite) throws {
         guard let url = EvaluationWorkspacePersistence.repositoryDefinitionURL(
             project: selectedProject, suite: selectedSuiteRecord
@@ -4899,6 +5070,8 @@ final class EvaluationStore {
         try updateSelectedSuiteRecord { record in record.lastRepositoryRevision = candidateRevision }
     }
 
+    /// Reads a strict canonical/draft snapshot for duplication without archiving damaged source files.
+    /// For the selected suite, includes buffered prompts; throws when disk revisions or saved drafts no longer match.
     private func duplicationSnapshot(
         from directory: URL, projectID: UUID, suiteID: UUID
     ) throws -> (canonical: EvaluationSuite, draft: EvaluationSuite?) {
@@ -4939,6 +5112,8 @@ final class EvaluationStore {
         return (canonical, record.suite)
     }
 
+    /// Writes a copied canonical suite, rebases any copied draft to its new identity, and copies attachment files.
+    /// The caller owns removal of partially staged destination data if a step fails.
     private static func writeDuplicatedSuite(
         _ canonical: EvaluationSuite, draft: EvaluationSuite?, from source: URL, to target: URL
     ) throws {
@@ -4959,6 +5134,8 @@ final class EvaluationStore {
         )
     }
 
+    /// Copies source attachment-directory children that are absent at the destination and verifies all referenced filenames exist.
+    /// Throws when referenced source storage is missing or copy operations fail.
     private static func copyAttachmentFiles(
         from source: URL,
         to target: URL,
@@ -5001,6 +5178,7 @@ final class EvaluationStore {
         }
     }
 
+    /// Returns a lowercase hyphen-separated repository filename slug, falling back to suite when no letters or numbers remain.
     private static func repositorySlug(_ value: String) -> String {
         let lowered = value.lowercased()
         let mapped = lowered.map { character in
@@ -5010,6 +5188,8 @@ final class EvaluationStore {
         return slug.isEmpty ? "suite" : slug
     }
 
+    /// Loads only a draft bound to the canonical suite's ID and revision.
+    /// Moves stale or unreadable drafts to named backups when possible and returns recovery notices without throwing.
     private static func loadDraft(
         from directory: URL,
         canonicalSuite: EvaluationSuite
@@ -5040,6 +5220,8 @@ final class EvaluationStore {
         }
     }
 
+    /// Loads JSON history belonging to the requested suite/project and orders it by sequence, dates, and filename.
+    /// Leaves unreadable or mismatched files untouched, returning notices and an unreadable-file flag for release checks.
     private static func loadRuns(
         from directory: URL,
         projectID: UUID,
@@ -5098,6 +5280,7 @@ final class EvaluationStore {
         return (runs, notice, unreadableCount > 0)
     }
 
+    /// Decodes an active-run checkpoint, returning nil for missing, unreadable, or invalid data.
     private static func loadActiveRun(from url: URL) -> ActiveRunRecord? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? CanonicalJSON.decode(ActiveRunRecord.self, from: data)
@@ -5105,6 +5288,7 @@ final class EvaluationStore {
 
     // Save order spans every suite, including archived suites and other projects.
     // Restore once at startup rather than depending on the currently selected history.
+    /// Returns the highest saved history sequence across every project and suite, including archived entries.
     private static func maximumRunHistorySequence(
         catalog: EvaluationWorkspaceCatalog, supportDirectory: URL
     ) -> UInt64 {
@@ -5121,6 +5305,8 @@ final class EvaluationStore {
         return maximum
     }
 
+    /// Recovers snapshot checkpoints across the catalog and advances the shared history sequence.
+    /// Returns combined notices for recoveries or checkpoints whose evidence still needs a successful save.
     private static func recoverSnapshotRuns(
         catalog: EvaluationWorkspaceCatalog,
         supportDirectory: URL,
@@ -5159,6 +5345,9 @@ final class EvaluationStore {
         return notices.isEmpty ? nil : notices.joined(separator: "\n")
     }
 
+    /// Converts an unfinished checkpoint into interrupted history or retries its captured completed run.
+    /// Leaves unreadable checkpoints untouched; failed history writes return a pending record retaining terminal evidence.
+    /// Removes settled recovery markers when possible and reports preservation or cleanup outcomes.
     private static func recoverInterruptedRun(
         from activeRunURL: URL,
         runsDirectory: URL,
@@ -5377,6 +5566,8 @@ private struct RevisionAttachment: Codable {
 }
 
 extension EvaluationStore {
+    /// Freezes the draft's execution/scoring setup and verified image bytes for production, excluding dataset cases.
+    /// Requires idle admission and rejects changed image evidence or an encoded context larger than 64 MB.
     func productionSnapshot() throws -> NativeProductionContext {
         try requireIdle()
         var snapshot = draftSuite
@@ -5395,6 +5586,8 @@ extension EvaluationStore {
         }
         return context
     }
+    /// Admits native production execution while idle and returns its owner token and optional resolved judge.
+    /// Requires explicit external disclosure approval when configured and retains execution ownership until released.
     func beginProductionExecution(_ context: NativeProductionContext, externalDisclosureApproved: Bool) throws -> (UUID, EvaluationResolvedJudgeConnection?) {
         try requireIdle()
         if context.suite.judgeConfiguration.usesExternalConnection && !externalDisclosureApproved {
@@ -5404,6 +5597,7 @@ extension EvaluationStore {
         let owner = UUID(); snapshotExecutionOwnerID = owner
         return (owner, judge)
     }
+    /// Releases production execution ownership only when the supplied token matches the current owner.
     func endProductionExecution(_ owner: UUID) {
         if snapshotExecutionOwnerID == owner { snapshotExecutionOwnerID = nil }
     }

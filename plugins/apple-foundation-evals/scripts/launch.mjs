@@ -11,12 +11,14 @@ const compiling = new Map();
 const engineSources = (await readdir(join(pluginRoot, 'native/AppEngine'))).filter((name) => name.endsWith('.swift')).sort();
 const sources = ['RunnerCore.swift', 'FoundationModelsRunner.swift', ...engineSources.map((name) => `AppEngine/${name}`)].map((name) => join(pluginRoot, 'native', name));
 
+/** Require a regular nonsymlink executable and return its path; propagate filesystem validation failures. */
 async function executable(path) {
   const stat = await lstat(path);
   if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Native binary must be a regular file');
   await access(path, constants.X_OK);
   return path;
 }
+/** Reuse or compile a cached runner under a validated directory lock, honoring cancellation and cleaning temporary output and the acquired lock. */
 async function compile(target, cache, signal) {
   const lock = `${target}.building`;
   let acquired = false;

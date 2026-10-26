@@ -6,6 +6,7 @@ enum EvaluationTranscriptCaptureOutcome: String, Codable, Equatable, Sendable {
     case failure
 }
 
+/// Optional complete transcript archive with format identity, capture size, and explicit omission evidence.
 struct EvaluationTranscriptTrace: Codable, Equatable, Sendable {
     static let maximumEncodedBytes = 4 * 1_024 * 1_024
     static let formatIdentifier = "com.apple.FoundationModels.Transcript+json"
@@ -17,6 +18,7 @@ struct EvaluationTranscriptTrace: Codable, Equatable, Sendable {
     var transcriptJSON: Data?
     var omissionReason: String?
 
+    /// Encodes the complete transcript within the byte limit, retaining counts and an omission reason if encoding or admission fails.
     static func capture(
         _ transcript: Transcript,
         outcome: EvaluationTranscriptCaptureOutcome,
@@ -48,6 +50,7 @@ struct EvaluationTranscriptTrace: Codable, Equatable, Sendable {
         }
     }
 
+    /// Restores a Foundation Models transcript after checking the format and requiring captured JSON bytes.
     func restoredTranscript() throws -> Transcript {
         guard format == Self.formatIdentifier else {
             throw EvaluationTranscriptArchiveError.unsupportedFormat(format)
@@ -60,6 +63,7 @@ struct EvaluationTranscriptTrace: Codable, Equatable, Sendable {
 
     var exportData: Data? { transcriptJSON }
 
+    /// Pretty-prints captured JSON with sorted keys, throwing when bytes are absent or invalid.
     func formattedJSONData() throws -> Data {
         guard let transcriptJSON else {
             throw EvaluationTranscriptArchiveError.transcriptUnavailable(omissionReason)
@@ -68,48 +72,46 @@ struct EvaluationTranscriptTrace: Codable, Equatable, Sendable {
         return try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
     }
 
+    /// Creates feedback attachment data using the draft's desired output, decoding JSON before restoring the session.
     func feedbackAttachment(
         configuration: EvaluationModelConfiguration,
         sentiment: EvaluationFeedbackSentiment?,
         issues: [EvaluationFeedbackIssueDraft],
-        desiredResponseText: String?
+        desiredOutput: EvaluationFeedbackDesiredOutputDraft
     ) async throws -> Data {
+        // Decode first so invalid desired-output JSON takes precedence over archive errors.
+        let content: GeneratedContent?
+        let entry: Transcript.Entry?
+        switch desiredOutput.mode {
+        case .generatedContentJSON:
+            content = try desiredOutput.generatedContent()
+            entry = nil
+        case .transcriptJSON:
+            content = nil
+            entry = try desiredOutput.transcriptEntry()
+        case .none, .responseText:
+            content = nil
+            entry = nil
+        }
         let session = try await rehydratedSession(configuration: configuration)
-        return session.logFeedbackAttachment(
-            sentiment: sentiment?.foundationModelsValue,
-            issues: issues.map(\.foundationModelsValue),
-            desiredResponseText: desiredResponseText
-        )
+        let sentiment = sentiment?.foundationModelsValue
+        let issues = issues.map(\.foundationModelsValue)
+        switch desiredOutput.mode {
+        case .none:
+            return session.logFeedbackAttachment(sentiment: sentiment, issues: issues, desiredResponseText: nil)
+        case .responseText:
+            return session.logFeedbackAttachment(
+                sentiment: sentiment, issues: issues,
+                desiredResponseText: desiredOutput.responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        case .generatedContentJSON:
+            return session.logFeedbackAttachment(sentiment: sentiment, issues: issues, desiredResponseContent: content)
+        case .transcriptJSON:
+            return session.logFeedbackAttachment(sentiment: sentiment, issues: issues, desiredOutput: entry)
+        }
     }
 
-    func feedbackAttachment(
-        configuration: EvaluationModelConfiguration,
-        sentiment: EvaluationFeedbackSentiment?,
-        issues: [EvaluationFeedbackIssueDraft],
-        desiredOutput: Transcript.Entry?
-    ) async throws -> Data {
-        let session = try await rehydratedSession(configuration: configuration)
-        return session.logFeedbackAttachment(
-            sentiment: sentiment?.foundationModelsValue,
-            issues: issues.map(\.foundationModelsValue),
-            desiredOutput: desiredOutput
-        )
-    }
-
-    func feedbackAttachment(
-        configuration: EvaluationModelConfiguration,
-        sentiment: EvaluationFeedbackSentiment?,
-        issues: [EvaluationFeedbackIssueDraft],
-        desiredResponseContent: (any ConvertibleToGeneratedContent)?
-    ) async throws -> Data {
-        let session = try await rehydratedSession(configuration: configuration)
-        return session.logFeedbackAttachment(
-            sentiment: sentiment?.foundationModelsValue,
-            issues: issues.map(\.foundationModelsValue),
-            desiredResponseContent: desiredResponseContent
-        )
-    }
-
+    /// Restores the transcript with the configured provider, loading local Core AI resources when required.
     private func rehydratedSession(configuration: EvaluationModelConfiguration) async throws -> LanguageModelSession {
         let transcript = try restoredTranscript()
         switch configuration.provider {
@@ -227,6 +229,7 @@ enum EvaluationFeedbackDesiredOutputMode: String, CaseIterable, Identifiable, Se
     }
 }
 
+/// Editable desired feedback output, validated according to text, generated-content JSON, or transcript mode.
 struct EvaluationFeedbackDesiredOutputDraft: Equatable, Sendable {
     static let maximumCharacters = 32_000
 
@@ -268,10 +271,12 @@ struct EvaluationFeedbackDesiredOutputDraft: Equatable, Sendable {
         }
     }
 
+    /// Parses trimmed generated-content JSON, propagating Foundation Models parsing errors.
     func generatedContent() throws -> GeneratedContent {
         try GeneratedContent(json: generatedContentJSON.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    /// Decodes a complete transcript and requires exactly one response entry for use as desired output.
     func transcriptEntry() throws -> Transcript.Entry {
         let json = transcriptJSON.trimmingCharacters(in: .whitespacesAndNewlines)
         let transcript = try JSONDecoder().decode(Transcript.self, from: Data(json.utf8))
@@ -289,6 +294,7 @@ struct EvaluationFeedbackDesiredOutputDraft: Equatable, Sendable {
         return responseEntry
     }
 
+    /// Checks that requested output text is nonblank and within the configured character limit.
     private func textIssue(_ value: String, label: String) -> String? {
         if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return "\(label) cannot be empty."

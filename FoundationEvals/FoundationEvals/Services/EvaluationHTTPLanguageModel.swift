@@ -115,6 +115,7 @@ struct EvaluationHTTPLanguageModel: LanguageModel {
     let maximumInputTokens: Int?
     let liveResponseObserver: EvaluationHTTPLiveResponseObserver?
 
+    /// Stores local provider settings, the optional subject input ceiling, and a live-response observer without making a request.
     init(
         configuration: EvaluationCustomProviderConfiguration,
         maximumInputTokens: Int? = nil,
@@ -147,18 +148,22 @@ final class EvaluationHTTPLiveResponseObserver: Hashable, Sendable {
 
     private let handler: @Sendable (EvaluationHTTPLiveResponseUpdate) async -> Void
 
+    /// Retains an asynchronous callback for publishing provider response snapshots.
     init(handler: @escaping @Sendable (EvaluationHTTPLiveResponseUpdate) async -> Void) {
         self.handler = handler
     }
 
+    /// Awaits the observer callback with the latest accumulated response content and case metadata.
     func publish(_ update: EvaluationHTTPLiveResponseUpdate) async {
         await handler(update)
     }
 
+    /// Compares observer instances by identity so distinct callbacks remain distinct executor configurations.
     static func == (lhs: EvaluationHTTPLiveResponseObserver, rhs: EvaluationHTTPLiveResponseObserver) -> Bool {
         lhs === rhs
     }
 
+    /// Hashes object identity to match observer equality.
     func hash(into hasher: inout Hasher) {
         hasher.combine(ObjectIdentifier(self))
     }
@@ -183,6 +188,7 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
     private let maximumInputTokens: Int?
     private let liveResponseObserver: EvaluationHTTPLiveResponseObserver?
 
+    /// Validates provider settings and a positive optional input ceiling before creating an executor.
     init(configuration: Configuration) throws {
         if let issue = configuration.provider.validationIssue {
             throw EvaluationHTTPProviderError.invalidConfiguration(issue)
@@ -195,11 +201,18 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         self.liveResponseObserver = configuration.liveResponseObserver
     }
 
+    /// Performs no HTTP work because the local-provider protocol defines no prewarm request.
     func prewarm(model: Model, transcript: Transcript) {
         // A local HTTP provider has no common prewarm contract. In particular, this hook must
         // not make unsolicited requests merely because the Foundation Models session prewarms.
     }
 
+    /// Sends a bounded generation envelope and streams validated NDJSON commands into the model channel.
+    ///
+    /// When configured, the tokenizer endpoint admits the assembled request before generation.
+    /// The per-request session is invalidated on every exit. Cancellation, malformed events,
+    /// transport failures, byte-limit violations, and streams without response or tool-call output
+    /// throw. First visible content records latency; response mutations publish to the optional observer.
     func respond(
         to request: LanguageModelExecutorGenerationRequest,
         model: Model,
@@ -234,7 +247,7 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
             )
         }
 
-        let session = Self.isolatedSession(timeout: configuration.requestTimeoutSeconds)
+        let session = EvaluationHTTPPolicy.isolatedSession(timeout: configuration.requestTimeoutSeconds)
         defer { session.invalidateAndCancel() }
 
         var urlRequest = URLRequest(url: endpoint)
@@ -257,6 +270,7 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         var firstContentMilliseconds: Double?
         var liveResponse = EvaluationHTTPResponseAccumulator()
 
+        /// Validates and sends one event, then accumulates response content and publishes first-content timing and live updates.
         func consume(_ line: Data) async throws {
             guard let command = try Self.command(
                 fromLine: line,
@@ -304,23 +318,11 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         }
     }
 
-    private static func isolatedSession(timeout: TimeInterval) -> URLSession {
-        let sessionConfiguration = URLSessionConfiguration.ephemeral
-        sessionConfiguration.timeoutIntervalForRequest = timeout
-        sessionConfiguration.timeoutIntervalForResource = timeout
-        sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        sessionConfiguration.urlCache = nil
-        sessionConfiguration.httpCookieStorage = nil
-        sessionConfiguration.httpShouldSetCookies = false
-        sessionConfiguration.urlCredentialStorage = nil
-        sessionConfiguration.connectionProxyDictionary = [:]
-        return URLSession(
-            configuration: sessionConfiguration,
-            delegate: EvaluationHTTPNoRedirectDelegate(),
-            delegateQueue: nil
-        )
-    }
-
+    /// Asks the provider tokenizer to count the complete envelope and validates its usage fields.
+    ///
+    /// Enforces the optional subject input ceiling and reserves requested response tokens within
+    /// `contextSize`. Invalid counts, HTTP failures, oversized replies, cancellation, or insufficient
+    /// headroom throw before generation. The tokenizer session is invalidated on exit.
     private static func validateTokenBudget(
         body: Data,
         endpoint: URL,
@@ -329,7 +331,7 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         contextSize: Int,
         timeout: TimeInterval
     ) async throws {
-        let session = isolatedSession(timeout: timeout)
+        let session = EvaluationHTTPPolicy.isolatedSession(timeout: timeout)
         defer { session.invalidateAndCancel() }
 
         var urlRequest = URLRequest(url: endpoint)
@@ -384,6 +386,7 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         }
     }
 
+    /// Collects asynchronous bytes up to the inclusive byte limit, throwing on overflow or cancellation.
     static func boundedData<Bytes: AsyncSequence>(
         from bytes: Bytes,
         maximumBytes: Int
@@ -400,11 +403,13 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         return data
     }
 
+    /// Treats trimmed nonempty content other than `{}` and `null` as visible for latency measurement.
     private static func isVisibleContent(_ content: String) -> Bool {
         let visible = content.trimmingCharacters(in: .whitespacesAndNewlines)
         return !visible.isEmpty && visible != "{}" && visible != "null"
     }
 
+    /// Measures from supplied generation-start wall time when present, clamped to zero, otherwise from executor monotonic start.
     private static func firstContentMilliseconds(
         started: ContinuousClock.Instant,
         metadata: [String: any ConvertibleToGeneratedContent]
@@ -414,9 +419,10 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         ) {
             return max(0, (Date().timeIntervalSinceReferenceDate - generationStarted) * 1_000)
         }
-        return started.milliseconds(to: .now)
+        return started.evaluationMilliseconds(to: .now)
     }
 
+    /// Builds a live response update only when case UUID and repetition metadata decode successfully.
     private static func liveResponseUpdate(
         content: String,
         metadata: [String: any ConvertibleToGeneratedContent]
@@ -434,6 +440,7 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
         )
     }
 
+    /// Ignores blank NDJSON lines, removes a trailing carriage return, and decodes and validates an event command.
     private static func command(
         fromLine encodedLine: Data,
         expectsGuidedResponse: Bool
@@ -451,29 +458,26 @@ struct EvaluationHTTPLanguageModelExecutor: LanguageModelExecutor {
     }
 }
 
-private extension ContinuousClock.Instant {
-    func milliseconds(to other: Self) -> Double {
-        let elapsed = duration(to: other).components
-        return Double(elapsed.seconds) * 1_000 + Double(elapsed.attoseconds) / 1e15
-    }
-}
-
 private extension Dictionary where Key == String, Value == any ConvertibleToGeneratedContent {
+    /// Decodes a generated-content metadata value as a string, returning nil for missing or incompatible values.
     func stringValue(forKey key: String) -> String? {
         guard let json = self[key]?.generatedContent.jsonString else { return nil }
         return try? JSONDecoder().decode(String.self, from: Data(json.utf8))
     }
 
+    /// Decodes a generated-content metadata value as an integer, returning nil for missing or incompatible values.
     func intValue(forKey key: String) -> Int? {
         guard let json = self[key]?.generatedContent.jsonString else { return nil }
         return try? JSONDecoder().decode(Int.self, from: Data(json.utf8))
     }
 
+    /// Decodes a generated-content metadata value as a double, returning nil for missing or incompatible values.
     func doubleValue(forKey key: String) -> Double? {
         guard let json = self[key]?.generatedContent.jsonString else { return nil }
         return try? JSONDecoder().decode(Double.self, from: Data(json.utf8))
     }
 
+    /// Decodes string metadata and parses a UUID, returning nil when either step fails.
     func uuidValue(forKey key: String) -> UUID? {
         stringValue(forKey: key).flatMap(UUID.init(uuidString:))
     }
@@ -504,6 +508,10 @@ struct EvaluationHTTPResponseAccumulator: Sendable {
 
     private var entries: [Entry] = []
 
+    /// Applies a response mutation and returns all entry segments concatenated in encounter order.
+    ///
+    /// Missing entry IDs target the latest entry; missing segment IDs append to or replace the
+    /// last applicable segment, while explicit IDs identify the segment to mutate.
     mutating func apply(_ mutation: EvaluationHTTPResponseMutation) -> String {
         let existingEntry = mutation.entryID.flatMap { id in entries.firstIndex { $0.id == id } }
             ?? (mutation.entryID == nil ? entries.indices.last : nil)
@@ -544,12 +552,14 @@ struct EvaluationHTTPNDJSONBuffer: Sendable {
     private var receivedBytes = 0
     private var line = Data()
 
+    /// Creates an empty NDJSON buffer with independent per-event and total-response byte ceilings.
     init(maximumEventBytes: Int, maximumResponseBytes: Int) {
         self.maximumEventBytes = maximumEventBytes
         self.maximumResponseBytes = maximumResponseBytes
         line.reserveCapacity(min(4_096, maximumEventBytes))
     }
 
+    /// Counts each received byte and returns a completed line at newline boundaries, throwing when either byte ceiling is exceeded.
     mutating func append(_ byte: UInt8) throws -> Data? {
         receivedBytes += 1
         guard receivedBytes <= maximumResponseBytes else {
@@ -567,6 +577,7 @@ struct EvaluationHTTPNDJSONBuffer: Sendable {
         return nil
     }
 
+    /// Returns and clears a nonempty final unterminated line, or nil when no bytes remain.
     mutating func finish() -> Data? {
         guard !line.isEmpty else { return nil }
         defer { line.removeAll(keepingCapacity: true) }
@@ -623,6 +634,7 @@ struct EvaluationHTTPGenerationRequest: Encodable {
     var provider: Provider
     var metadata: [String: EvaluationHTTPJSONValue]
 
+    /// Encodes the versioned generation envelope with transcript, enabled tools, schema, options, provider declarations, and JSON metadata.
     static func makeBody(
         from request: LanguageModelExecutorGenerationRequest,
         configuration: EvaluationCustomProviderConfiguration
@@ -659,6 +671,7 @@ struct EvaluationHTTPTokenizationResponse: Decodable, Equatable, Sendable {
         case inputTokens, cachedInputTokens
     }
 
+    /// Decodes required input tokens and defaults omitted cached-input tokens to zero; validation occurs at admission.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         inputTokens = try container.decode(Int.self, forKey: .inputTokens)
@@ -667,6 +680,7 @@ struct EvaluationHTTPTokenizationResponse: Decodable, Equatable, Sendable {
 }
 
 private extension EvaluationHTTPGenerationRequest.Options {
+    /// Translates supported sampling and tool-calling options to wire values, throwing for unknown option kinds.
     init(_ options: GenerationOptions) throws {
         if let sampling = options.samplingMode {
             switch sampling.kind {
@@ -707,6 +721,7 @@ private extension EvaluationHTTPGenerationRequest.Options {
 }
 
 private extension EvaluationHTTPGenerationRequest.Context {
+    /// Translates schema-prompt and reasoning settings to wire values, throwing for unknown reasoning levels.
     init(_ context: ContextOptions) throws {
         includeSchemaInPrompt = context.includeSchemaInPrompt
         if let level = context.reasoningLevel {
@@ -769,6 +784,10 @@ struct EvaluationHTTPGenerationEvent: Decodable, Equatable, Sendable {
     var code: String?
     var message: String?
 
+    /// Validates event fields and translates a provider event into a channel command.
+    ///
+    /// Checks text versus guided response mode, required fields, token-count bounds, tool-call
+    /// action, and usage consistency. Provider error events throw the reported backend failure.
     func command(expectsGuidedResponse: Bool) throws -> EvaluationHTTPChannelCommand {
         switch kind {
         case .response:
@@ -835,6 +854,7 @@ struct EvaluationHTTPGenerationEvent: Decodable, Equatable, Sendable {
         }
     }
 
+    /// Builds an append or replace response command with required content and a nonnegative token count.
     private func textCommand(guided: Bool) throws -> EvaluationHTTPChannelCommand {
         let content = try required(content, named: "content")
         let tokenCount = try validTokenCount()
@@ -858,6 +878,7 @@ struct EvaluationHTTPGenerationEvent: Decodable, Equatable, Sendable {
         }
     }
 
+    /// Requires a nonnegative event token count, throwing an invalid-event error for missing or negative values.
     private func validTokenCount() throws -> Int {
         let count = try required(tokenCount, named: "tokenCount")
         guard count >= 0 else {
@@ -866,6 +887,7 @@ struct EvaluationHTTPGenerationEvent: Decodable, Equatable, Sendable {
         return count
     }
 
+    /// Unwraps an event field or throws an invalid-event error naming the missing field and event kind.
     private func required<Value>(_ value: Value?, named name: String) throws -> Value {
         guard let value else {
             throw EvaluationHTTPProviderError.invalidEvent("\(name) is required for a \(kind.rawValue) event.")
@@ -901,6 +923,7 @@ enum EvaluationHTTPChannelCommand: Equatable, Sendable {
         }
     }
 
+    /// Sends the corresponding response, reasoning, signature, tool-call argument, or usage mutation to the model channel.
     func send(into channel: LanguageModelExecutorGenerationChannel) async throws {
         switch self {
         case .responseAppend(let entryID, let segmentID, let content, let tokenCount, _):
@@ -966,10 +989,12 @@ enum EvaluationHTTPJSONValue: Codable, Sendable {
     case array([Self])
     case object([String: Self])
 
+    /// Decodes one JSON fragment into the recursive wire metadata representation.
     init(json: String) throws {
         self = try JSONDecoder().decode(Self.self, from: Data(json.utf8))
     }
 
+    /// Decodes null, Boolean, number, string, array, or object values from a single JSON container.
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() { self = .null }
@@ -980,6 +1005,7 @@ enum EvaluationHTTPJSONValue: Codable, Sendable {
         else { self = .object(try container.decode([String: Self].self)) }
     }
 
+    /// Encodes the stored recursive JSON value through a single-value container.
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
@@ -990,18 +1016,6 @@ enum EvaluationHTTPJSONValue: Codable, Sendable {
         case .array(let value): try container.encode(value)
         case .object(let value): try container.encode(value)
         }
-    }
-}
-
-final class EvaluationHTTPNoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest,
-        completionHandler: @escaping (URLRequest?) -> Void
-    ) {
-        completionHandler(nil)
     }
 }
 

@@ -141,11 +141,13 @@ struct SuiteCasesView: View {
         .workspaceSurface()
     }
 
+    /// Builds the case verdict from the latest run while accounting for current revision and unsaved draft changes.
     private func verdict(for caseID: UUID) -> CaseVerdict {
         CaseVerdict(run: latestRun, caseID: caseID, currentRevision: store.suiteRevision,
                     hasDraft: store.draftSuite != store.suite)
     }
 
+    /// Combines case position and title with a whitespace-normalized prompt excerpt of up to 80 characters for accessibility.
     private func caseAccessibilityLabel(title: String, prompt: String, position: Int) -> String {
         let excerpt = prompt.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return excerpt.isEmpty
@@ -153,6 +155,7 @@ struct SuiteCasesView: View {
             : "Case \(position): \(title). \(String(excerpt.prefix(80)))"
     }
 
+    /// Clears search, asks the store to add a case, and selects the new last case only if the count increased.
     private func addCase() {
         let previousCount = store.draftSuite.cases.count
         search = ""
@@ -167,6 +170,7 @@ struct CaseVerdict {
     let isOutOfDate: Bool
     let isIncomplete: Bool
 
+    /// Collects results for this case and marks them stale after revision or draft changes, or incomplete when repetitions are missing.
     init(run: EvaluationRun?, caseID: UUID, currentRevision: String? = nil, hasDraft: Bool = false) {
         let caseResults = run?.effectiveResults.filter { $0.caseID == caseID } ?? []
         results = caseResults
@@ -310,6 +314,7 @@ private struct CaseField<Content: View, Accessory: View>: View {
     @ViewBuilder let accessory: Accessory
     @ViewBuilder let content: Content
 
+    /// Creates a labeled case field with optional detail, evaluating its accessory and content builders once.
     init(_ title: String, detail: String? = nil,
          @ViewBuilder accessory: () -> Accessory = { EmptyView() },
          @ViewBuilder content: () -> Content) {

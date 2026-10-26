@@ -15,6 +15,8 @@ actor EvaluationRunner {
         category: "Evaluation"
     )
 
+    /// Executes suite samples serially with the on-device model, emitting optional live text and awaited sample progress.
+    /// Unavailable models or unsupported providers produce admission-error evidence; cancellation and batch-stopping failures retain completed samples and termination details.
     func run(
         id: UUID,
         suiteRevision: String,
@@ -35,6 +37,8 @@ actor EvaluationRunner {
             liveResponse: liveResponse, progress: progress)
     }
 
+    /// Runs samples in repetition and case order, records environment and execution settings, and selects an initial assessment for model-judged runs.
+    /// Stops on cancellation, admission failure, or batch-stopping errors, returning the evidence accumulated so far.
     private func run<Model: LanguageModel>(
         id runID: UUID,
         suiteRevision: String,
@@ -180,6 +184,8 @@ actor EvaluationRunner {
         return run
     }
 
+    /// Prepares a fresh case session, executes conversation setup and the scored turn, then applies scoring and field assertions.
+    /// Retains timing, tool, conversation, and workflow evidence on success or failure, and stops Spotlight recording on either path.
     private func evaluate<Model: LanguageModel>(
         _ evaluationCase: EvaluationCase,
         repetition: Int,
@@ -193,14 +199,8 @@ actor EvaluationRunner {
         liveResponse: @Sendable (EvaluationLiveResponse) async -> Void
     ) async -> EvaluationSampleResult {
         let started = ContinuousClock.now
-        let outputTokenCounter: any EvaluationToolOutputTokenCounting =
-            suite.modelConfiguration.provider == .customHTTP
-                ? EvaluationPortablePromptInputTokenCounter()
-                : EvaluationSystemPromptTokenCounter()
-        let customToolTokenCounter: any EvaluationCustomToolTokenCounting =
-            suite.modelConfiguration.provider == .customHTTP
-                ? EvaluationPortablePromptInputTokenCounter()
-                : EvaluationSystemModelTokenCounter()
+        let outputTokenCounter = EvaluationSystemPromptTokenCounter()
+        let customToolTokenCounter = EvaluationSystemModelTokenCounter()
         let workflow = EvaluationWorkflowRecorder(origin: started)
         let rootSpanID = workflow.begin(kind: .sample, title: evaluationCase.name, metadata: [
             "caseID": evaluationCase.id.uuidString, "repetition": String(repetition),
@@ -415,7 +415,7 @@ actor EvaluationRunner {
                         prompt: setupTurn.prompt,
                         effectivePrompt: setupEffectivePrompt,
                         response: response.content,
-                        durationMilliseconds: Self.milliseconds(since: turnStarted),
+                        durationMilliseconds: turnStarted.evaluationMilliseconds(to: .now),
                         usage: Self.usage(from: response.usage),
                         errorCategory: nil,
                         errorMessage: nil
@@ -441,7 +441,7 @@ actor EvaluationRunner {
                         prompt: setupTurn.prompt,
                         effectivePrompt: setupEffectivePrompt,
                         response: nil,
-                        durationMilliseconds: Self.milliseconds(since: turnStarted),
+                        durationMilliseconds: turnStarted.evaluationMilliseconds(to: .now),
                         usage: nil,
                         errorCategory: traceError.category,
                         errorMessage: traceError.message,
@@ -492,7 +492,7 @@ actor EvaluationRunner {
                 && prepared.imageInputTokenCountAvailable
             effectivePrompt = prepared.text
             workflow.finish(promptPreparationSpanID, metadata: ["estimatedInputTokens": String(prepared.tokenCount)])
-            timing.preparationMilliseconds = Self.milliseconds(since: started)
+            timing.preparationMilliseconds = started.evaluationMilliseconds(to: .now)
             generationStarted = ContinuousClock.now
             workflow.finish(preparationSpanID, metadata: ["estimatedInputTokens": String(prepared.tokenCount)])
             generationSpanID = workflow.begin(kind: .generation, title: "Generate response", parentID: rootSpanID,
@@ -535,9 +535,9 @@ actor EvaluationRunner {
             activePhase = "scoring"
 
             if let generationStarted {
-                timing.generationMilliseconds = Self.milliseconds(since: generationStarted)
+                timing.generationMilliseconds = generationStarted.evaluationMilliseconds(to: .now)
             }
-            let subjectDuration = Self.milliseconds(since: started)
+            let subjectDuration = started.evaluationMilliseconds(to: .now)
             let usage = Self.usage(from: activeSession.usage)
             let reasoningText = Self.reasoningText(from: response.transcriptEntries)
             conversationTrace.turns.append(EvaluationConversationTurnTrace(
@@ -546,7 +546,7 @@ actor EvaluationRunner {
                 prompt: evaluationCase.prompt,
                 effectivePrompt: prepared.text,
                 response: response.content,
-                durationMilliseconds: finalTurnStarted.map { Self.milliseconds(since: $0) } ?? 0,
+                durationMilliseconds: finalTurnStarted.map { $0.evaluationMilliseconds(to: .now) } ?? 0,
                 usage: Self.usage(from: response.usage),
                 errorCategory: nil,
                 errorMessage: nil
@@ -614,7 +614,7 @@ actor EvaluationRunner {
                     rationale: "The subject response succeeded, but complete tool evidence could not be retained for judging.",
                     errorCategory: "incompleteSavedEvidence", errorMessage: error.localizedDescription)
             }
-            timing.scoringMilliseconds = Self.milliseconds(since: scoringStarted)
+            timing.scoringMilliseconds = scoringStarted.evaluationMilliseconds(to: .now)
             let assertionResults = EvaluationFieldAssertions.evaluate(
                 response: response.content,
                 assertions: evaluationCase.fieldAssertions ?? []
@@ -673,9 +673,9 @@ actor EvaluationRunner {
                 refusalTrace = await EvaluationRefusalTrace.capture(from: error)
             }
             if let generationStarted {
-                timing.generationMilliseconds = Self.milliseconds(since: generationStarted)
+                timing.generationMilliseconds = generationStarted.evaluationMilliseconds(to: .now)
             } else {
-                timing.preparationMilliseconds = Self.milliseconds(since: started)
+                timing.preparationMilliseconds = started.evaluationMilliseconds(to: .now)
             }
             var traceError = Self.traceError(error)
             if traceError.category == "generation", activePhase != "generation" {
@@ -691,7 +691,7 @@ actor EvaluationRunner {
                     prompt: evaluationCase.prompt,
                     effectivePrompt: effectivePrompt,
                     response: nil,
-                    durationMilliseconds: Self.milliseconds(since: finalTurnStarted),
+                    durationMilliseconds: finalTurnStarted.evaluationMilliseconds(to: .now),
                     usage: nil,
                     errorCategory: traceError.category,
                     errorMessage: traceError.message,
@@ -740,7 +740,7 @@ actor EvaluationRunner {
                 status: .error,
                 score: nil,
                 rationale: nil,
-                durationMilliseconds: Self.milliseconds(since: started),
+                durationMilliseconds: started.evaluationMilliseconds(to: .now),
                 usage: session.map { Self.usage(from: $0.usage) } ?? EvaluationUsage(),
                 judgeDurationMilliseconds: nil,
                 judgeUsage: nil,
@@ -760,6 +760,7 @@ actor EvaluationRunner {
         }
     }
 
+    /// Builds the initial assessment from sample judgments, preserving distinct judge identities and marking aggregate usage or cost unavailable when required evidence is missing.
     private static func initialAssessment(
         runID: UUID,
         suite: EvaluationSuite,

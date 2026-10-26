@@ -41,16 +41,19 @@ export const spans = [
   { name: 'Score response', start: '9.38 s', end: '18.39 s', duration: '9.00 s', depth: 1, x: 68.5, width: 30, color: '#c652db', icon: 'file-check' }
 ];
 
+/** Filter recorded cases by status and a trimmed case-insensitive search across name, prompt, and response. */
 export function filterCases(items, filter, query) {
   const normalized = query.trim().toLocaleLowerCase();
   return items.filter(item => (filter === 'all' || item.status === filter) &&
     (!normalized || `${item.name} ${item.prompt} ${item.response}`.toLocaleLowerCase().includes(normalized)));
 }
 
+/** Retain the matching selected case, otherwise choose the first visible case or null for an empty list. */
 export function resolveSelection(items, selectedId) {
   return items.find(item => item.id === selectedId) ?? items[0] ?? null;
 }
 
+/** Escape ampersands, angle brackets, and quotes when inserting recorded text into HTML markup. */
 export function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 }

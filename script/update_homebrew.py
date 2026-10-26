@@ -15,16 +15,19 @@ VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
 
 
 def version_tuple(value):
+    """Require a stable semantic version without leading zeroes and return its numeric components for ordering."""
     if not re.fullmatch(VERSION, value):
         raise ValueError("Require a vMAJOR.MINOR.PATCH release tag.")
     return tuple(int(part) for part in value.split("."))
 
 
 def gh(*args):
+    """Return gh standard output as text and propagate nonzero subprocess status."""
     return subprocess.check_output(["gh", *args], text=True)
 
 
 def verify_provenance(directory, tag, repository):
+    """Resolve the tag to a full commit and run source and installer verification scripts against the same downloaded release bytes."""
     commit = gh("api", f"repos/{repository}/commits/{tag}", "--jq", ".sha").strip()
     if not re.fullmatch(r"[a-f0-9]{40}", commit):
         raise ValueError("Release source must resolve to a full Git SHA.")
@@ -37,6 +40,7 @@ def verify_provenance(directory, tag, repository):
 
 
 def render_cask(version, checksum, repository):
+    """Render the Intents arm64 macOS cask using the supplied validated version, checksum, and release repository."""
     return f'''cask "intents" do
   version "{version}"
   sha256 "{checksum}"
@@ -56,6 +60,7 @@ end
 
 
 def update(tag, tap_dir, repository):
+    """Download and verify one published stable installer with source provenance before writing the cask; skip downgrades and reject checksum changes to an existing version."""
     version = tag.removeprefix("v")
     requested_version = version_tuple(version)
     if tag != f"v{version}":
@@ -124,6 +129,7 @@ def update(tag, tap_dir, repository):
 
 
 def main():
+    """Parse the release tag, tap directory, and repository, then report validation, file, or gh failures with a failing CLI status."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tag")
     parser.add_argument("--tap-dir", type=Path, default=Path("tap"))

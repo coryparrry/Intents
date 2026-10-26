@@ -6,6 +6,7 @@ struct EditorSection<Content: View>: View {
     let sectionDescription: LocalizedStringResource
     @ViewBuilder let content: Content
 
+    /// Captures a localized section heading and description, evaluating the content builder once for the section.
     init(
         _ title: LocalizedStringResource,
         description: LocalizedStringResource,

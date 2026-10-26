@@ -19,6 +19,7 @@ ERROR_LIMIT = 6
 
 
 def redact(text, secrets=()):
+    """Strip terminal escapes and log timestamps, replacing complete lines containing credentials, supplied secrets, or environment values."""
     credential = re.compile(
         r"\b(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*\S+|"
         r"\bbearer\s+[A-Za-z0-9._~+/=-]+|"
@@ -41,11 +42,13 @@ def redact(text, secrets=()):
 
 
 def markdown(value, limit=400):
+    """Redact, flatten, and truncate a value before escaping HTML and Markdown punctuation for the workflow report."""
     value = redact(str(value)).replace("\n", " ")[:limit]
     return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", html.escape(value, quote=False))
 
 
 def error_excerpt(log, secrets=()):
+    """Return up to six distinct concrete assertions or diagnostics from redacted logs, ignoring wrapper failures and using failure-line fallbacks."""
     lines = redact(log, secrets).splitlines()
     assertion = re.compile(r"\bXCTAssert\w*|\bAssertionError|:\d+(?::\d+)?:\s*(?:fatal )?error:", re.I)
     diagnostic = re.compile(r"##\[error\]|\b\w*(?:error|exception):|\bfatal error\b", re.I)
@@ -74,17 +77,20 @@ def error_excerpt(log, secrets=()):
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, response, code, message, headers, new_url):
+        """Disable automatic redirects so API requests can validate destinations and restrict credential forwarding explicitly."""
         return None
 
 
 class GitHubAPI:
     def __init__(self, api_url, token, opener=None):
+        """Store the API origin and token and create an opener with automatic redirects disabled unless an opener is supplied."""
         self.api_url = api_url.rstrip("/")
         self.origin = urllib.parse.urlsplit(self.api_url)
         self.token = token
         self.opener = opener or urllib.request.build_opener(NoRedirect())
 
     def get(self, path, *, logs=False):
+        """Fetch bounded HTTPS JSON or log suffixes through at most six requests; forward tokens only to the API origin and reject invalid responses or ranges."""
         url = self.api_url + path
         headers = {"Accept": "application/vnd.github+json", "User-Agent": "Intents-CI-summary"}
         if logs:
@@ -162,6 +168,7 @@ class GitHubAPI:
         raise RuntimeError("GitHub redirect limit exceeded")
 
     def pages(self, path, key):
+        """Yield validated dictionary rows from 100-item GitHub pages until a short page; raise RuntimeError on malformed listings."""
         page = 1
         while True:
             body, _ = self.get(f"{path}?per_page=100&page={page}")
@@ -179,8 +186,10 @@ class GitHubAPI:
 
 
 def summarize(api, repository, run_id, attempt, server_url="https://github.com", needs=None):
+    """Build an escaped failure report for one workflow attempt, distinguishing aggregate gates, cancellations, artifact scope, and incomplete API evidence."""
     secrets = (getattr(api, "token", ""),)
     def escaped(value, limit=400):
+        """Redact the current API token and format a bounded value for safe inclusion in the Markdown summary."""
         return markdown(redact(str(value), secrets), limit)
     root = f"/repos/{repository}/actions/runs/{run_id}"
     run_url = f"{server_url.rstrip('/')}/{repository}/actions/runs/{run_id}/attempts/{attempt}"
@@ -254,6 +263,7 @@ def summarize(api, repository, run_id, attempt, server_url="https://github.com",
 
 
 def main(environ=None):
+    """Validate workflow identity, collect GitHub job evidence and gate status, then append the report to GITHUB_STEP_SUMMARY."""
     env = os.environ if environ is None else environ
     repository, run_id, attempt = env["GITHUB_REPOSITORY"], env["GITHUB_RUN_ID"], env.get("GITHUB_RUN_ATTEMPT", "1")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) or not run_id.isdigit() or not attempt.isdigit():

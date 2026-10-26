@@ -3,6 +3,7 @@ import FoundationModels
 
 @available(macOS 27.0, *)
 enum EvaluationConversationTranscriptCodec {
+    /// Restores a native transcript or exported evaluation transcript trace, throwing an invalid-transcript error when neither format decodes.
     static func decode(_ json: String) throws -> Transcript {
         let data = Data(json.utf8)
         do {
@@ -31,6 +32,8 @@ enum EvaluationConversationError: LocalizedError {
 
 @available(macOS 27.0, *)
 enum EvaluationConversationRuntime {
+    /// Creates a session with restored history, optional model-facing history projection, and an optional built-in tool boundary.
+    /// History transforms affect the model’s view while the supplied history initializes the stored transcript.
     static func makeSession<Model: LanguageModel>(
         model: Model,
         tools: [any Tool],
@@ -83,6 +86,7 @@ enum EvaluationConversationRuntime {
         return LanguageModelSession(profile: profile, history: history)
     }
 
+    /// Restores configured transcript history, returning no entries for missing or blank JSON and propagating invalid-transcript errors.
     static func restoredHistory(from configuration: EvaluationConversationConfiguration) throws -> [Transcript.Entry] {
         guard let json = configuration.restoredTranscriptJSON,
               !json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -91,6 +95,7 @@ enum EvaluationConversationRuntime {
         return Array(try EvaluationConversationTranscriptCodec.decode(json).history)
     }
 
+    /// Replaces only the history entries of a session transcript, retaining its other transcript state.
     static func replaceHistory(in session: LanguageModelSession, with entries: [Transcript.Entry]) {
         var transcript = session.transcript
         transcript.history.removeAll(keepingCapacity: true)
@@ -98,6 +103,7 @@ enum EvaluationConversationRuntime {
         session.transcript = transcript
     }
 
+    /// Applies the configured pre-final history retention policy and returns entry counts before and after mutation.
     static func applyHistoryPolicy(
         _ configuration: EvaluationConversationConfiguration,
         to session: LanguageModelSession
@@ -112,6 +118,7 @@ enum EvaluationConversationRuntime {
         return (history.count, retained.count)
     }
 
+    /// Retains all history, clears it, or keeps the requested nonnegative number of complete prompt-to-response turns.
     static func retainedHistory(
         _ history: [Transcript.Entry],
         policy: EvaluationHistoryPolicy,
@@ -129,6 +136,7 @@ enum EvaluationConversationRuntime {
         }
     }
 
+    /// Projects stored history for the model, retaining any unfinished turn while applying the configured complete-turn retention policy.
     static func projectedHistory(
         _ history: [Transcript.Entry],
         using projection: EvaluationModelHistoryProjection
@@ -147,6 +155,7 @@ enum EvaluationConversationRuntime {
         }
     }
 
+    /// Computes history visible to the next generation by applying projection after a synthetic new prompt, then removing that prompt.
     static func modelFacingHistory(
         _ storedHistory: [Transcript.Entry],
         projection: EvaluationModelHistoryProjection?
@@ -159,10 +168,12 @@ enum EvaluationConversationRuntime {
         return Array(projectedHistory(storedHistory + [nextPrompt], using: projection).dropLast())
     }
 
+    /// Returns complete prompt-to-response turns, including intervening tool and reasoning entries and excluding unfinished or orphan entries.
     static func completeTurns(in history: [Transcript.Entry]) -> [[Transcript.Entry]] {
         conversationHistory(in: history).completeTurns
     }
 
+    /// Partitions history into completed turns and the latest unfinished prompt-led turn, discarding orphan entries and superseded unfinished turns.
     private static func conversationHistory(
         in history: [Transcript.Entry]
     ) -> (completeTurns: [[Transcript.Entry]], incompleteTurn: [Transcript.Entry]) {
@@ -185,6 +196,7 @@ enum EvaluationConversationRuntime {
         return (turns, current ?? [])
     }
 
+    /// Generates an unscored setup response with structured output fields disabled, forwarding partial text and generation failures.
     static func generateSetupTurn(
         _ prompt: Prompt,
         session: LanguageModelSession,

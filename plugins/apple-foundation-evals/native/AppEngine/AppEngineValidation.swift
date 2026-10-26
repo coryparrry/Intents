@@ -5,7 +5,7 @@ import FoundationModels
 enum AppEngineValidation {
 
     static let maximumCases = 100
-    static let maximumPlannedSamples = 100
+    static let maximumPlannedSamples = EvaluationDevelopmentLimits.maximumPlannedSamples
     static let maximumAttachments = 20
     static let maximumImages = 4
     static let maximumFieldCharacters = 32_000
@@ -15,6 +15,8 @@ enum AppEngineValidation {
     static let maximumTextFileBytes = 5_000_000
     static let maximumImageBytes = 10_000_000
 
+    /// Returns the first suite validation issue, or nil when standalone on-device execution and same-model judging are admissible.
+    /// Set `includeModelReadiness` to false to validate saved configuration without requiring the model to be ready.
     static func validationIssue(
         for candidate: EvaluationSuite,
         includeModelReadiness: Bool = true

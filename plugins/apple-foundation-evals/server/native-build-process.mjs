@@ -7,6 +7,7 @@ export function runBuildCommand(command, args, { signal, timeoutMs = 180000 } = 
     const grouped = process.platform !== 'win32';
     const child = spawn(command, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: grouped });
     let diagnostics = '', failure, graceTimer;
+    /** Signals the compiler process group where supported, retaining unexpected termination errors for the final result. */
     const terminate = (signal) => {
       if (!grouped || !child.pid) { child.kill(signal); return; }
       try { process.kill(-child.pid, signal); }
@@ -19,6 +20,7 @@ export function runBuildCommand(command, args, { signal, timeoutMs = 180000 } = 
       failure ??= new Error('Native build exceeded its time limit');
       terminate('SIGKILL');
     }, timeoutMs);
+    /** Records an AbortError, requests graceful process-group termination, then schedules a forced kill after three seconds. */
     const abort = () => {
       failure ??= Object.assign(new Error('Native build cancelled', { cause: signal?.reason }),
         { name: 'AbortError', code: 'ABORT_ERR' });

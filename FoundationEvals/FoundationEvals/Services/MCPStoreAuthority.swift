@@ -3,6 +3,8 @@ import UniformTypeIdentifiers
 
 @MainActor
 enum MCPStoreAuthority {
+    /// Binds a store and shared app controls to the transport's asynchronous tool/resource authority.
+    /// Creates app controls when not supplied.
     static func make(store: EvaluationStore, control: EvaluationAppControl? = nil) -> MCPAuthority {
         let control = control ?? EvaluationAppControl(store: store)
         return MCPAuthority(
@@ -11,6 +13,9 @@ enum MCPStoreAuthority {
         )
     }
 
+    /// Routes typed tool calls to store and app-control operations, preserving revision and
+    /// duplicate-run semantics. Returns domain failures as structured payloads; accepted run starts and
+    /// cancellation requests remain asynchronous operations to poll.
     private static func handle(_ call: MCPToolCall, store: EvaluationStore, control: EvaluationAppControl) async -> MCPToolPayload {
         do {
             switch call {
@@ -128,6 +133,7 @@ enum MCPStoreAuthority {
         }
     }
 
+    /// Lists unarchived projects and suites with selected IDs and optional repository roots.
     private static func listProjects(_ store: EvaluationStore) -> MCPToolPayload {
         readPayload([
             "selectedProjectID": .string(store.selectedProjectID.uuidString),
@@ -149,6 +155,8 @@ enum MCPStoreAuthority {
         ])
     }
 
+    /// Reads stored attachment bytes or the canonical saved-run export, selecting text or binary MIME
+    /// representation. Converts storage and UTF-8 failures into resource error payloads.
     private static func read(_ request: MCPResourceRequest, store: EvaluationStore) async -> MCPResourcePayload {
         do {
             switch request {
@@ -181,6 +189,8 @@ enum MCPStoreAuthority {
         }
     }
 
+    /// Returns the selected suite, revisions, attachments, model readiness/capabilities, workload
+    /// estimates, limits, and active-run status. Encoding and revision-read failures propagate.
     private static func state(_ store: EvaluationStore) throws -> MCPToolPayload {
         let suite = store.suite
         let modelStatus = store.modelStatus(for: suite)
@@ -271,6 +281,8 @@ enum MCPStoreAuthority {
         ])
     }
 
+    /// Returns a paginated saved or active run with normalized phase and saved-run skipped-sample
+    /// metadata. Throws for unknown runs or invalid/stale cursors.
     private static func getRun(_ arguments: MCPGetRunArguments, store: EvaluationStore) throws -> MCPToolPayload {
         guard let operation = store.runStatus(id: arguments.runID) else {
             throw EvaluationStoreError.resourceNotFound("Run")
@@ -302,6 +314,8 @@ enum MCPStoreAuthority {
         ])])
     }
 
+    /// Analyzes saved run evidence and optionally compares a saved baseline without executing the
+    /// model. Active runs return run_not_finished; missing saved runs or baselines throw.
     private static func analyzeRun(_ arguments: MCPAnalyzeRunArguments, store: EvaluationStore) throws -> MCPToolPayload {
         guard let run = store.run(with: arguments.runID) else {
             if store.activeRun?.id == arguments.runID {
@@ -319,6 +333,8 @@ enum MCPStoreAuthority {
         return readPayload(output)
     }
 
+    /// Lists active and saved-run summaries with optional suite-name/version and phase filters, using
+    /// bounded cursor pagination. Rejects unsupported phases and invalid/stale cursors.
     private static func listRuns(_ arguments: MCPListRunsArguments, store: EvaluationStore) throws -> MCPToolPayload {
         var summaries: [MCPJSONValue] = []
         if let active = store.activeRun, let operation = store.runStatus(id: active.id) {
@@ -373,6 +389,9 @@ enum MCPStoreAuthority {
         ])
     }
 
+    /// Applies a legacy suite declaration to the current suite while retaining its identity and
+    /// attachments. Preserves omitted feature/provider/customization fields and matching-case
+    /// conversation/assertion metadata.
     private static func suite(
         from declaration: MCPSuiteDeclaration,
         current: EvaluationSuite
@@ -424,6 +443,8 @@ enum MCPStoreAuthority {
         return suite
     }
 
+    /// Serializes the editable legacy suite declaration, including conversation configuration and
+    /// optional field assertions, without attachment contents or suite identity.
     private static func suiteJSON(_ suite: EvaluationSuite) -> MCPJSONValue {
         let configuration = suite.modelConfiguration
         return .object([
@@ -477,6 +498,8 @@ enum MCPStoreAuthority {
         ])
     }
 
+    /// Serializes model settings and optional customization/provider/resource declarations for MCP
+    /// clients, retaining numeric seed precision.
     private static func modelConfigurationJSON(
         _ configuration: EvaluationModelConfiguration
     ) -> MCPJSONValue {
@@ -551,6 +574,8 @@ enum MCPStoreAuthority {
         return .object(value)
     }
 
+    /// Serializes configured tools, profiles, Spotlight search, output schemas, and prewarm/stream
+    /// settings for the legacy suite surface.
     private static func featureJSON(_ features: EvaluationFeatureConfiguration) -> MCPJSONValue {
         .object([
             "tools": .array(features.tools.map { tool in
@@ -598,6 +623,8 @@ enum MCPStoreAuthority {
         ])
     }
 
+    /// Serializes Spotlight sources, guidance, identity fields, pipeline options, and response bounds
+    /// without performing a search.
     private static func spotlightSearchJSON(
         _ configuration: EvaluationSpotlightSearchConfiguration
     ) -> MCPJSONValue {
@@ -655,6 +682,7 @@ enum MCPStoreAuthority {
         ])
     }
 
+    /// Serializes preset and custom Spotlight attribute selections by their stored names.
     private static func spotlightAttributeSelectionJSON(
         _ selection: EvaluationSpotlightAttributeSelection
     ) -> MCPJSONValue {
@@ -664,6 +692,8 @@ enum MCPStoreAuthority {
         ])
     }
 
+    /// Serializes a schema field recursively, including optional constraints, enum identities,
+    /// references, and explicit-nil behavior.
     private static func schemaFieldJSON(_ field: EvaluationSchemaField) -> MCPJSONValue {
         var constraints: [String: MCPJSONValue] = [
             "stringPattern": .string(field.constraints.stringPattern)
@@ -707,6 +737,8 @@ enum MCPStoreAuthority {
         ])
     }
 
+    /// Returns attachment identity, media kind, stored byte count, digest, and extracted-text
+    /// truncation status without embedding file contents.
     private static func attachmentMetadata(_ attachment: EvaluationAttachment) -> MCPJSONValue {
         .object([
             "id": .string(attachment.id.uuidString),
@@ -724,6 +756,8 @@ enum MCPStoreAuthority {
         var repetition: Int
     }
 
+    /// Derives missing case/repetition pairs by comparing planned cases with retained results. Returns
+    /// no inferred skipped samples when the run lacks planned cases.
     private static func skippedSamples(in run: EvaluationRun) -> [SkippedSample] {
         guard let cases = run.plannedCases else { return [] }
         let completed = Set(run.results.map { "\($0.caseID.uuidString):\($0.repetition)" })
@@ -736,14 +770,19 @@ enum MCPStoreAuthority {
         }
     }
 
+    /// Wraps mutation fields with the supplied outcome, preserving an outcome already present in the
+    /// fields.
     private static func mutation(_ outcome: String, _ fields: [String: MCPJSONValue]) -> MCPToolPayload {
         MCPToolPayload(structuredContent: .object(fields.merging(["outcome": .string(outcome)]) { current, _ in current }))
     }
 
+    /// Wraps read fields with outcome read, preserving an outcome already present in the fields.
     private static func readPayload(_ fields: [String: MCPJSONValue]) -> MCPToolPayload {
         MCPToolPayload(structuredContent: .object(fields.merging(["outcome": .string("read")]) { current, _ in current }))
     }
 
+    /// Converts store errors into failed or conflicted tool payloads, exposing the current revision for
+    /// stale-revision conflicts.
     private static func failure(_ error: Error) -> MCPToolPayload {
         let outcome: String
         var fields: [String: MCPJSONValue] = [
@@ -762,6 +801,8 @@ enum MCPStoreAuthority {
         return MCPToolPayload(structuredContent: .object(fields), isError: true)
     }
 
+    /// Maps known store, workspace, and cursor errors to stable MCP error codes, falling back to
+    /// invalid_request.
     private static func errorCode(_ error: Error) -> String {
         switch error {
         case EvaluationStoreError.staleRevision: "stale_revision"
@@ -778,6 +819,7 @@ enum MCPStoreAuthority {
         }
     }
 
+    /// Builds the canonical attachment or run URI for a typed resource request.
     private static func resourceURI(_ request: MCPResourceRequest) -> String {
         switch request {
         case .attachment(let id): "foundation-evals://attachments/\(id.uuidString)"
@@ -785,16 +827,22 @@ enum MCPStoreAuthority {
         }
     }
 
+    /// Converts an Encodable domain value through canonical JSON into the MCP JSON representation;
+    /// coding errors propagate.
     private static func json<T: Encodable>(_ value: T) throws -> MCPJSONValue {
         try JSONDecoder().decode(MCPJSONValue.self, from: CanonicalJSON.data(for: value, prettyPrinted: false))
     }
 
+    /// Serializes a run operation and replaces its phase with the MCP wire spelling.
     static func operationJSON(_ operation: EvaluationRunOperation) throws -> MCPJSONValue {
         var object = try json(operation).objectValue!
         object["phase"] = .string(phaseName(operation.phase))
         return .object(object)
     }
 
+    /// Returns cancellation status and run metadata, reporting committed only when the previous phase
+    /// was running. Other prior phases are duplicate; this receipt does not wait for cancellation to
+    /// finish.
     static func cancellationPayload(
         previousPhase: EvaluationRunPhase?,
         operation: EvaluationRunOperation
@@ -805,10 +853,14 @@ enum MCPStoreAuthority {
         ])
     }
 
+    /// Uses cancellation_requested for the cancellation-request phase and the stored raw value for all
+    /// other phases.
     private static func phaseName(_ phase: EvaluationRunPhase) -> String {
         phase == .cancellationRequested ? "cancellation_requested" : phase.rawValue
     }
 
+    /// Slices sample results using a validated cursor and requested/default page size, returning a next
+    /// cursor only when more results remain.
     private static func resultPage(
         _ results: [EvaluationSampleResult],
         arguments: MCPGetRunArguments
@@ -821,14 +873,18 @@ enum MCPStoreAuthority {
         )
     }
 
+    /// Multiplies nonnegative workload counts using saturation instead of overflowing Int.
     private static func saturatedProduct(_ lhs: Int, _ rhs: Int) -> Int {
         lhs.nonnegativeSaturatedMultiplying(rhs)
     }
 
+    /// Encodes a result offset as an opaque base64 pagination cursor.
     private static func cursor(_ offset: Int) -> String {
         Data("offset:\(offset)".utf8).base64EncodedString()
     }
 
+    /// Decodes an offset cursor and requires it to lie within the current result count. An absent
+    /// cursor starts at zero; malformed or out-of-range cursors throw invalidCursor.
     private static func pageOffset(_ cursor: String?, count: Int) throws -> Int {
         guard let cursor else { return 0 }
         guard let data = Data(base64Encoded: cursor),

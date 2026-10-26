@@ -61,6 +61,8 @@ struct EvaluationSpotlightSearchRuntime: Sendable {
     private let nativeTool: SpotlightSearchTool
     private let recorder: EvaluationSpotlightSearchRecorder
 
+    /// Creates a validated native Spotlight tool with explicit sources, optional contact identity and deduplication, plus shared call and output limits.
+    /// Returns nil when disabled; rejects broad or unavailable folders and attributes that resolve to duplicates.
     static func make(
         from configuration: EvaluationSpotlightSearchConfiguration,
         limiter: EvaluationToolCallLimiter,
@@ -123,6 +125,7 @@ struct EvaluationSpotlightSearchRuntime: Sendable {
         return Self(tool: tool, nativeTool: nativeTool, recorder: recorder)
     }
 
+    /// Starts consuming the native tool's reply stream into the actor-isolated trace until the stream ends or recording is cancelled.
     func startRecording() -> Task<Void, Never> {
         let nativeTool = nativeTool
         let recorder = recorder
@@ -134,6 +137,7 @@ struct EvaluationSpotlightSearchRuntime: Sendable {
         }
     }
 
+    /// Waits briefly for expected replies to become complete and quiet, then cancels and joins recording before returning its final trace.
     func stopRecording(
         _ recording: Task<Void, Never>?,
         expectingReplies: Bool
@@ -147,10 +151,12 @@ struct EvaluationSpotlightSearchRuntime: Sendable {
         return await recorder.stop(drainResult: drainResult)
     }
 
+    /// Returns the current actor-isolated reply counts and recording duration without stopping collection.
     func snapshot() async -> EvaluationSpotlightSearchTrace {
         await recorder.snapshot()
     }
 
+    /// Canonicalizes the configured folder, rejects broad search scopes, and requires an existing directory.
     private static func resolvedFolderURL(path: String) throws -> URL {
         let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
         let folderURL = URL(fileURLWithPath: trimmedPath, isDirectory: true)
@@ -168,6 +174,7 @@ struct EvaluationSpotlightSearchRuntime: Sendable {
         return folderURL
     }
 
+    /// Resolves preset and trimmed custom names to native attributes, rejecting collisions after resolution.
     private static func nativeAttributes(
         _ selection: EvaluationSpotlightAttributeSelection
     ) throws -> [SearchableItemAttribute] {
@@ -202,10 +209,13 @@ private actor EvaluationSpotlightSearchRecorder {
     private var incompleteStageTokens = Set<SpotlightSearchTool.SearchReply.StageToken>()
     private var isStopped = false
 
+    /// Seeds the recorder with configured search scope and policy before any replies arrive.
     init(initialTrace: EvaluationSpotlightSearchTrace) {
         trace = initialTrace
     }
 
+    /// Counts reply kinds, query and stage identities, and incomplete stages while recording is active.
+    /// Count replies use saturating totals; replies received after stop are ignored.
     func record(_ reply: SpotlightSearchTool.SearchReply) {
         guard !isStopped else { return }
         trace.replyCount += 1
@@ -245,6 +255,7 @@ private actor EvaluationSpotlightSearchRecorder {
         }
     }
 
+    /// Returns current reply counters with distinct query/stage counts and elapsed recording time.
     func snapshot() -> EvaluationSpotlightSearchTrace {
         var snapshot = trace
         snapshot.queryCount = queryTokens.count
@@ -258,6 +269,7 @@ private actor EvaluationSpotlightSearchRecorder {
     var recordedReplyCount: Int { trace.replyCount }
     var hasIncompleteStages: Bool { !incompleteStageTokens.isEmpty }
 
+    /// Stops accepting replies and saves the drain's completeness result before producing the final snapshot.
     func stop(
         drainResult: EvaluationSpotlightRecordingDrain.Result
     ) -> EvaluationSpotlightSearchTrace {
@@ -301,6 +313,8 @@ enum EvaluationSpotlightRecordingDrain {
         }
     }
 
+    /// Waits for at least one expected reply, no partial stages, and a quiet revision interval, bounded by the maximum wait.
+    /// Returns a specific incomplete-collection reason on timeout or cancellation; no expected replies require no wait.
     static func waitUntilQuiescent(
         expectingReplies: Bool,
         quietPeriod: Duration = .milliseconds(20),
@@ -343,6 +357,7 @@ enum EvaluationSpotlightRecordingDrain {
         return .timedOutBeforeQuiescence
     }
 
+    /// Cancels an optional recording task and waits for it to finish so no further replies can mutate the trace.
     static func cancelAndWait(_ recording: Task<Void, Never>?) async {
         guard let recording else { return }
         recording.cancel()
@@ -352,6 +367,7 @@ enum EvaluationSpotlightRecordingDrain {
 
 @available(macOS 27.0, *)
 private extension EvaluationSpotlightSearchTrace {
+    /// Captures configured sources, mail permission, guidance, result limits, identity resolution, and custom stages before execution.
     init(configuration: EvaluationSpotlightSearchConfiguration) {
         searchedFiles = configuration.fileSource.enabled
         searchedCoreSpotlight = configuration.coreSpotlightSource.enabled
@@ -377,6 +393,7 @@ private extension EvaluationSpotlightSearchTrace {
 private struct EvaluationSpotlightConfiguredContactResolver: ContactResolver {
     let configuration: EvaluationSpotlightContactIdentityConfiguration
 
+    /// Builds the user identity solely from normalized configured contact fields without consulting host contacts.
     func userIdentity() -> ResolvedContact {
         var contact = ResolvedContact(displayName: configuration.normalizedDisplayName)
         contact.names = configuration.normalized(configuration.alternateNames)
@@ -399,6 +416,7 @@ struct EvaluationSpotlightDeduplicateItemsStage: CustomStage {
     @Guide(description: "Keep the first duplicate when true, or the last duplicate when false.")
     var keepFirst = true
 
+    /// Removes duplicate unique identifiers, preserving the original order of retained first or last occurrences according to keepFirst.
     func execute(items: [SearchableItem]) async throws -> SearchPipelineData {
         var identifiers = Set<String>()
         if keepFirst {

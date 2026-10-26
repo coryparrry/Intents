@@ -5,6 +5,8 @@ import FoundationModels
 /// valid JSON. Check the complete value before treating it as output or input.
 @available(macOS 27.0, *)
 enum EvaluationSchemaValidator {
+    /// Checks generated content against a validated closed object schema, enforcing configured constraints and optional-null representation.
+    /// Throws a path-specific schema error for invalid configuration, extra properties, missing fields, or mismatched values.
     static func validate(
         _ content: GeneratedContent,
         fields: [EvaluationSchemaField],
@@ -21,6 +23,7 @@ enum EvaluationSchemaValidator {
             explicitNil: representNilExplicitlyInGeneratedContent, path: "$")
     }
 
+    /// Validates a closed JSON object and each configured property, requiring explicit nulls for missing optional values when that mode is enabled.
     private static func validateObject(
         _ content: GeneratedContent,
         fields: [EvaluationSchemaField],
@@ -50,12 +53,14 @@ enum EvaluationSchemaValidator {
         }
     }
 
+    /// Recursively validates a value’s type, constraints, nested fields, references, or union alternatives and throws a schema error at its JSON path.
     private static func validate(
         _ content: GeneratedContent,
         field: EvaluationSchemaField,
         definitions: [String: EvaluationSchemaField],
         path: String
     ) throws {
+        /// Creates a validation error associated with the current field’s JSON path.
         func reject(_ issue: String) -> EvaluationSchemaValidationError {
             .init(path: path, issue: issue)
         }

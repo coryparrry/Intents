@@ -7,6 +7,7 @@ import { WORKFLOW_TOOLS } from './workflow-tools.mjs';
 export { SUITE_SCHEMA };
 const referenceFiles = { type: 'array', maxItems: 20, items: obj({ attachmentId: uuid, name: text(1024, 1), mimeType: text(128, 1), base64: text(13333336, 1) }, ['name', 'mimeType', 'base64']) };
 const icon = { src: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.33"><path d="M4 3h12v14H4zM7 7h6M7 10h6M7 13h3"/></svg>'), mimeType: 'image/svg+xml' };
+/** Builds an MCP tool definition with recursive draft field schemas, effect annotations, and optional workspace UI metadata. */
 const define = (name, title, description, inputSchema, readOnly = true, destructive = false, meta) => ({ name, title, description, inputSchema: { ...inputSchema, $defs: { field: draftSchema(FIELD_SCHEMA) } }, annotations: { readOnlyHint: readOnly, destructiveHint: destructive, idempotentHint: readOnly || destructive, openWorldHint: false }, ...(meta ? { _meta: meta, icons: [icon] } : {}) });
 export const TOOLS = [
   define('eval_open_workspace', 'Evaluation Workspace', 'Open local suites and real on-device Foundation Models evaluation runs. Availability is checked only when requested.', obj(), true, false, { ui: { resourceUri: UI_URI }, 'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] } }),

@@ -14,6 +14,7 @@ extension EvaluationRunner {
         "customProviderError",
     ]
 
+    /// Reports whether an error category prevents dispatching further samples in the batch.
     static func stopsBatch(for category: String?) -> Bool {
         category.map(batchStoppingErrorCategories.contains) == true
     }
@@ -32,6 +33,7 @@ extension EvaluationRunner {
         }
     }
 
+    /// Copies model usage into persisted input, cached-input, output, and reasoning token counts.
     static func usage(from usage: LanguageModelSession.Usage) -> EvaluationUsage {
         EvaluationUsage(
             inputTokens: usage.input.totalTokenCount,
@@ -41,6 +43,7 @@ extension EvaluationRunner {
         )
     }
 
+    /// Joins nonblank text segments from reasoning entries, returning nil when none are present.
     static func reasoningText<S: Sequence>(from entries: S) -> String? where S.Element == Transcript.Entry {
         let text = entries.flatMap { entry -> [String] in
             guard case .reasoning(let reasoning) = entry else { return [] }
@@ -53,6 +56,7 @@ extension EvaluationRunner {
         return text.isEmpty ? nil : text
     }
 
+    /// Merges tool calls by identifier in first-seen order, replacing an entry only when new evidence supplies its missing output.
     static func mergingBuiltinToolCalls(
         _ existing: [EvaluationBuiltinToolTrace],
         with additions: [EvaluationBuiltinToolTrace]
@@ -75,12 +79,12 @@ extension EvaluationRunner {
         return merged
     }
 
+    /// Returns elapsed monotonic time in milliseconds for run and trace measurements.
     static func milliseconds(since instant: ContinuousClock.Instant) -> Double {
-        let duration = instant.duration(to: .now)
-        return Double(duration.components.seconds) * 1_000
-            + Double(duration.components.attoseconds) / 1_000_000_000_000_000
+        instant.evaluationMilliseconds(to: .now)
     }
 
+    /// Returns an on-device availability explanation, or nil when requests can proceed.
     static func unavailableMessage(for availability: SystemLanguageModel.Availability) -> String? {
         switch availability {
         case .available:
@@ -96,6 +100,7 @@ extension EvaluationRunner {
         }
     }
 
+    /// Returns a Private Cloud Compute availability explanation, or nil when requests can proceed.
     static func unavailableMessage(
         for availability: PrivateCloudComputeLanguageModel.Availability
     ) -> String? {
@@ -111,6 +116,10 @@ extension EvaluationRunner {
         }
     }
 
+    /// Maps runner, provider, tool, session, and model errors to stable persisted categories and messages.
+    ///
+    /// Task cancellation takes precedence. Known erased custom-provider messages retain a provider
+    /// category, and unsupported generation guides include bounded schema and debug details.
     static func traceError(_ error: Error) -> (category: String, message: String) {
         if error is CancellationError || Task.isCancelled {
             return ("cancelled", "The evaluation was cancelled.")
@@ -204,6 +213,7 @@ extension EvaluationRunner {
         return (category, modelError.localizedDescription)
     }
 
+    /// Normalizes backend error codes to shared categories used for batch termination, with unknown codes treated as provider errors.
     private static func customProviderCategory(for code: String) -> String {
         let normalized = code
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -224,6 +234,7 @@ extension EvaluationRunner {
         }
     }
 
+    /// Appends bounded schema and debug context to an unsupported-guide message without duplicating the localized description.
     private static func unsupportedGenerationGuideMessage(
         localizedDescription: String,
         context: LanguageModelError.UnsupportedGenerationGuide
@@ -240,6 +251,7 @@ extension EvaluationRunner {
         return parts.joined(separator: " ")
     }
 
+    /// Creates a zero-duration admission error sample with no generated response, usage, or judge evidence.
     static func errorResult(
         evaluationCase: EvaluationCase,
         repetition: Int,

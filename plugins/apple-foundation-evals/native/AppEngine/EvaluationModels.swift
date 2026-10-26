@@ -9,6 +9,7 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
     var conversation = EvaluationConversationConfiguration()
     var fieldAssertions: [EvaluationFieldAssertion]? = nil
 
+    /// Creates an identified evaluation case while retaining its prompt, expected response, conversation, and optional field assertions verbatim.
     init(
         id: UUID = UUID(),
         name: String,
@@ -29,6 +30,7 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
         case id, name, prompt, expected, conversation, fieldAssertions
     }
 
+    /// Decodes required case text, generating a missing ID and defaulting absent conversation settings for older cases; absent assertions remain nil.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
@@ -232,6 +234,7 @@ struct EvaluationSuite: Codable, Equatable, Sendable {
             .filter { !$0.isEmpty }
     }
 
+    /// Creates the default example suite with its standard rubric, on-device model, and release policy.
     init() {}
 
     private enum CodingKeys: String, CodingKey {
@@ -239,6 +242,7 @@ struct EvaluationSuite: Codable, Equatable, Sendable {
         case judgeConfiguration, releasePolicy
     }
 
+    /// Decodes saved suite fields with current initializer defaults for absent or null values, while malformed present values still throw.
     init(from decoder: Decoder) throws {
         let defaults = EvaluationSuite()
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -270,6 +274,7 @@ struct EvaluationUsage: Codable, Sendable {
 
     var totalTokens: Int { inputTokens.saturatedAdding(outputTokens) }
 
+    /// Accumulates each token counter independently with saturating arithmetic so telemetry totals cannot overflow.
     mutating func add(_ other: Self) {
         inputTokens = inputTokens.saturatedAdding(other.inputTokens)
         cachedInputTokens = cachedInputTokens.saturatedAdding(other.cachedInputTokens)
@@ -280,12 +285,14 @@ struct EvaluationUsage: Codable, Sendable {
 
 @available(macOS 27.0, *)
 extension Int {
+    /// Adds signed integers and clamps overflow to the appropriate integer limit.
     func saturatedAdding(_ other: Int) -> Int {
         let (sum, overflowed) = addingReportingOverflow(other)
         guard overflowed else { return sum }
         return other >= 0 ? .max : .min
     }
 
+    /// Multiplies nonnegative integers with saturation at Int.max; returns zero if either input is negative.
     func nonnegativeSaturatedMultiplying(_ other: Int) -> Int {
         guard self >= 0, other >= 0 else { return 0 }
         let (product, overflowed) = multipliedReportingOverflow(by: other)
@@ -357,6 +364,8 @@ struct EvaluationSampleResult: Identifiable, Codable, Sendable {
                 || !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
+    /// Describes the scorer recorded on this sample, including requested-versus-reported model differences and nonlocal provider provenance.
+    /// Without a judge identity, falls back to the selected local, assertion, collection, or AI-rubric mode.
     func scorerSummary(scoringMode: ScoringMode) -> String {
         if let identity = judgeIdentity {
             if identity.requestedModelID == "none" { return identity.connectionName }

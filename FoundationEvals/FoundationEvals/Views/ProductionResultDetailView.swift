@@ -20,7 +20,6 @@ struct ProductionResultDetailView: View {
                 if let run = validatedRun, let result = run.results.first {
                     EvaluationResultDetail(result: result, scoringMode: run.scoringMode,
                         repetitions: run.repetitions,
-                        passingScore: run.judgePassingScore ?? EvaluationSuite.judgePassingScore,
                         subjectModelName: run.execution?.modelDisplayName ?? run.environment.model,
                         modelConfiguration: run.execution?.configuration)
                 } else {

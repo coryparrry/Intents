@@ -22,20 +22,24 @@ export async function acquireLease(root) {
   let resolveReady, rejectReady, resolveClosed;
   const closed = new Promise((accept) => { resolveClosed = accept; });
   const acquired = new Promise((accept, reject) => { resolveReady = accept; rejectReady = reject; });
+  /** Writes one newline-delimited command to the lock-owning guardian. */
   const send = (value) => child.stdin.write(JSON.stringify(value) + '\n');
   const lease = {
     guardianPid: null, nativePid: null,
+    /** Admits one native request through the guardian, forwards progress, and converts signal aborts into cancellation commands. */
     async invoke(binary, input, { signal, timeoutMs, onEvent } = {}) {
       if (pending) throw new Error('An evaluation is already active');
       if (signal?.aborted) throw new Error('Evaluation cancelled');
       const requestId = ++nextId;
+      /** Requests cancellation of this invocation without ending the guardian's lock ownership. */
       const abort = () => send({ kind: 'cancel', requestId });
       return new Promise((accept, reject) => {
-        pending = { requestId, accept, reject, onEvent, cleanup: () => signal?.removeEventListener('abort', abort) };
+        pending = { requestId, accept, reject, onEvent, /** Detaches this request's abort listener after completion or guardian failure. */ cleanup: () => signal?.removeEventListener('abort', abort) };
         signal?.addEventListener('abort', abort, { once: true });
         send({ kind: 'invoke', requestId, binary, input, timeoutMs });
       });
     },
+    /** Closes command input and waits for guardian exit, including any active worker cleanup. */
     async release() { child.stdin.end(); await closed; },
   };
   child.stdin.on('error', () => {});

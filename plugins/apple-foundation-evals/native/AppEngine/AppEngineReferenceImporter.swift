@@ -16,6 +16,7 @@ enum AppEngineReferenceImporter {
         var byteCount: Int { attachment.byteCount }
         var sha256: String { attachment.sha256 }
         enum CodingKeys: String, CodingKey { case attachment, truncated, text, kind, byteCount, sha256 }
+        /// Encodes the attachment and import metadata, omitting the extracted text field when no text exists.
         func encode(to encoder: Encoder) throws {
             var values = encoder.container(keyedBy: CodingKeys.self)
             try values.encode(attachment, forKey: .attachment)
@@ -26,6 +27,8 @@ enum AppEngineReferenceImporter {
             try values.encode(sha256, forKey: .sha256)
         }
     }
+    /// Reads a regular local file within the 10 MB reference limit and prepares its attachment metadata.
+    /// Throws for invalid URLs, oversized or growing files, read failures, or unsupported contents; file storage remains the host’s responsibility.
     static func extract(_ request: Request) throws -> Output {
         guard request.fileURL.isFileURL else { throw RunnerFailure.validation("Reference must be a local file URL.") }
         let attributes = try FileManager.default.attributesOfItem(atPath: request.fileURL.path)
@@ -43,6 +46,8 @@ enum AppEngineReferenceImporter {
         }
         return try prepare(id: UUID(), name: request.name, mediaType: request.mimeType, data: data)
     }
+    /// Validates a basename and declared media category, hashes the original bytes, and prepares image metadata or extracted text.
+    /// Throws for type mismatches, unreadable contents, or size limits; text exceeding 16,000 characters is truncated and marked.
     static func prepare(
         id: UUID,
         name: String,

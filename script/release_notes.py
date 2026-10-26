@@ -34,6 +34,7 @@ MARKER_LINES = {
 
 
 def subject_details(subject):
+    """Parse a conventional subject into its type and breaking flag, returning an absent type for malformed or nontext input."""
     match = SUBJECT.fullmatch(subject.strip()) if isinstance(subject, str) else None
     return (
         (match.group("type"), bool(match.group("breaking"))) if match else (None, False)
@@ -41,6 +42,7 @@ def subject_details(subject):
 
 
 def extract_override(body):
+    """Parse one visible ordered release-note block, returning None when absent and rejecting hidden, duplicate, empty, or invalid entries."""
     if not isinstance(body, str):
         raise ValueError("The pull request body must be text")
     uncommented = HTML_COMMENT.sub("", body)
@@ -80,6 +82,7 @@ def extract_override(body):
 
 
 def validate_pull_request(title, body):
+    """Require curated override notes consistent with the PR release type and breaking status, returning validated entry text or raising ValueError."""
     if not isinstance(title, str) or not title.strip():
         raise ValueError("The pull request title must be nonempty text")
     pull_request_type, pull_request_breaking = subject_details(title)
@@ -130,6 +133,7 @@ def is_generated_release(pull_request):
 
 
 def validate_event(path):
+    """Load a pull-request event and validate its notes, exempting only the trusted generated release PR and printing the validated result."""
     try:
         event = json.loads(path.read_text())
         pull_request = event["pull_request"]
@@ -149,6 +153,7 @@ def validate_event(path):
 
 
 def main():
+    """Require an event path from arguments or the environment and run curated release-note validation."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("validate-event",))
     parser.add_argument("--event", type=Path)

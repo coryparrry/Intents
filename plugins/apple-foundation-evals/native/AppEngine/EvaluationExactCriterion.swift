@@ -20,6 +20,7 @@ enum EvaluationExactCriterion {
         "AND", "OR", "IF", "UNLESS", "EXCEPT", "BUT", "THEN"
     ]
 
+    /// Parses only the documented whole-line exact-output grammar; returns nil for unsupported or ambiguous requirements.
     static func expectedText(in criterion: String) -> String? {
         let line = criterion.trimmingCharacters(in: .whitespacesAndNewlines)
         if line.hasPrefix("exact:") {
@@ -35,6 +36,8 @@ enum EvaluationExactCriterion {
         return nil
     }
 
+    /// Produces a deterministic 4-or-1 criterion score for recognized exact-output requirements.
+    /// Comparison preserves all response case, punctuation, and whitespace; unrecognized criteria return nil.
     static func check(criterion: String, index: Int, response: String) -> EvaluationJudgeCriterionTrace? {
         guard let expected = expectedText(in: criterion) else { return nil }
         let matches = response == expected
@@ -49,11 +52,13 @@ enum EvaluationExactCriterion {
         )
     }
 
+    /// Decodes a complete JSON string literal, returning nil for malformed literals or non-string JSON.
     private static func decodeJSONString(_ literal: String) -> String? {
         guard literal.first == "\"" else { return nil }
         return try? JSONDecoder().decode(String.self, from: Data(literal.utf8))
     }
 
+    /// Accepts bounded uppercase status literals while rejecting conjunction tokens that could encode compound requirements.
     private static func unquotedStatus(_ literal: String) -> String? {
         guard !literal.isEmpty, literal.count <= 256,
               literal == literal.trimmingCharacters(in: .whitespaces),

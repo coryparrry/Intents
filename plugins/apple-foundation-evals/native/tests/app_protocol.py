@@ -73,8 +73,13 @@ defaults = invoke({'operation':'suite-defaults'})
 check(defaults.get('modelConfiguration',{}).get('provider') == 'onDevice',defaults)
 for provider in ['privateCloudCompute','customHTTP','coreAI']:
     suite=base();suite['modelConfiguration']['provider']=provider
+    validation=invoke({'operation':'validate-suite','suite':suite})
+    check(validation['valid'] is False,validation)
+    check(validation['issue']=='Only the on-device Apple Foundation Model is supported.',validation)
     result=invoke({'operation':'evaluate','suite':suite})
     check(result['status']=='failed' and result['error']['kind']=='invalidInput',result)
+    check(result['error']['message']=='Only the on-device Apple Foundation Model is supported.',result)
+    check(result['results']==[] and 'appRun' not in result,result)
 suite=base();suite['judgeConfiguration']['mode']='connection'
 check(not invoke({'operation':'validate-suite','suite':suite})['valid'])
 # An enabled profile supplies its own tool policy; inactive legacy policy must not block it.

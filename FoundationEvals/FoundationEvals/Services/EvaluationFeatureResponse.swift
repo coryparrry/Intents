@@ -17,6 +17,11 @@ struct EvaluationFeatureResponse {
     var transcriptEntries: [Transcript.Entry]
     var firstContentMilliseconds: Double?
 
+    /// Generates a text or schema-constrained response using the suite's streaming and model options.
+    ///
+    /// Structured output is validated before returning. Streaming publishes partial snapshots and
+    /// returns collected usage, transcript entries, and the earliest measured visible-content time.
+    /// Model, schema, stream, and cancellation failures propagate to the caller.
     static func generate(
         session: LanguageModelSession,
         prompt: Prompt,
@@ -83,12 +88,17 @@ struct EvaluationFeatureResponse {
                     transcriptEntries: Array(response.transcriptEntries))
     }
 
+    /// Parses generated JSON and validates its fields, definitions, and explicit-null policy against the suite.
     private static func validateStructuredContent(_ json: String, suite: EvaluationSuite) throws {
         try EvaluationSchemaValidator.validate(GeneratedContent(json: json), fields: suite.features.outputFields,
             definitions: suite.features.outputSchemaDefinitions,
             representNilExplicitlyInGeneratedContent: suite.features.outputRepresentNilExplicitlyInGeneratedContent)
     }
 
+    /// Collects a response stream, publishing partial text at most once per 100 ms and then the collected final text.
+    ///
+    /// Cancellation is checked around callbacks. First-content timing excludes empty, `{}`, and
+    /// `null` snapshots and uses the earlier app or provider measurement when both are available.
     private static func collect<Content: Generable>(
         _ stream: LanguageModelSession.ResponseStream<Content>,
         text: (LanguageModelSession.ResponseStream<Content>.Snapshot) -> String,

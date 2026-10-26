@@ -5,6 +5,8 @@ enum MCPWorkspaceTools {
     let s = MCPControlSchema.self
     let revision = ["expectedWorkspaceRevision": s.text(64)]
     let suite = ["projectID": s.uuid, "suiteID": s.uuid, "expectedRevision": s.text(64)]
+    /// Builds a workspace mutation schema requiring both the expected workspace revision and the shared
+    /// operationID. Merges revision fields without replacing caller-supplied definitions.
     func tool(
       _ name: String, _ description: String, _ fields: [String: MCPJSONValue] = [:],
       required: [String] = [], destructive: Bool = false

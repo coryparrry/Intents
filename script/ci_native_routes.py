@@ -49,6 +49,7 @@ def declared_suites(text):
 
 
 def select_native_tests(paths, native, root, full=False):
+    """Select known dependent native suites for changed paths, omit UI-only edits, and fall back to the full target for unknown or shared dependencies."""
     if not native:
         return []
     if full or paths is None:

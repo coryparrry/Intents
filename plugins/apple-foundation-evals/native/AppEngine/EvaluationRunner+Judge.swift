@@ -39,6 +39,8 @@ extension EvaluationRunner {
         literal comparisons, and do not require the wording of the verified reference.
         """
 
+    /// Scores deterministic metrics locally or combines objective rubric checks with a fresh same-model semantic judge.
+    /// Admits saved conversation evidence and context budget before judging, allows one validated repair attempt, and returns unscored outcomes with traces on judge failure.
     func score<Model: LanguageModel>(
         response: String,
         evaluationCase: EvaluationCase,
@@ -165,7 +167,7 @@ extension EvaluationRunner {
                     workflowRecorder?.finish(judgeSpanID, metadata: EvaluationWorkflowRecorder.usageMetadata(totalUsage))
                     return JudgeOutcome(status: judgment.score >= EvaluationSuite.judgePassingScore ? .passed : .failed,
                         score: judgment.score, rationale: judgment.rationale,
-                        durationMilliseconds: Self.milliseconds(since: started), usage: totalUsage,
+                        durationMilliseconds: started.evaluationMilliseconds(to: .now), usage: totalUsage,
                         reasoningText: reasoning.isEmpty ? nil : reasoning.joined(separator: "\n\n"), trace: judgeTrace,
                         identity: EvaluationJudgeIdentity(mode: .sameModel, connectionID: nil, connectionName: "Same model as subject",
                             endpointKind: nil, baseURL: nil, requestedModelID: modelName, reportedModelID: modelName,
@@ -209,12 +211,13 @@ extension EvaluationRunner {
             return JudgeOutcome(status: .unscored,
                 rationale: invalidJudgment ? "The AI judge returned inconsistent or incomplete evidence. This sample was not scored."
                     : "The subject response succeeded, but the model judge failed.",
-                durationMilliseconds: Self.milliseconds(since: started), usage: totalUsage,
+                durationMilliseconds: started.evaluationMilliseconds(to: .now), usage: totalUsage,
                 reasoningText: reasoning.isEmpty ? nil : reasoning.joined(separator: "\n\n"),
                 errorCategory: traceError.category, errorMessage: traceError.message, trace: judgeTrace)
         }
     }
 
+    /// Builds the judge prompt with numbered requirements and escaped subject instructions, observed history, input, reference, tool evidence, and response as untrusted data.
     static func judgePrompt(response: String, evaluationCase: EvaluationCase, effectivePrompt: String,
                             suite: EvaluationSuite, toolEvidence: String?,
                             subjectContext: EvaluationJudgeSubjectContext? = nil) -> String {

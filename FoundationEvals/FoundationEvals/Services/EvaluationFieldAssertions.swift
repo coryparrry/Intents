@@ -3,6 +3,8 @@ import Foundation
 enum EvaluationFieldAssertions {
     static let maximumAssertions = 32
 
+    /// Returns the first assertion count, identity or configuration problem, or nil when assertions are valid.
+    /// The scoring-mode argument currently does not change these checks.
     static func validationIssue(assertions: [EvaluationFieldAssertion], scoringMode: ScoringMode) -> String? {
         guard !assertions.isEmpty else { return nil }
         if assertions.count > maximumAssertions { return "Use at most \(maximumAssertions) field assertions per case." }
@@ -13,6 +15,7 @@ enum EvaluationFieldAssertions {
         return nil
     }
 
+    /// Validates JSON Pointer syntax and the operation-specific expected value without evaluating a response.
     static func configurationIssue(_ assertion: EvaluationFieldAssertion) -> String? {
         guard pointerTokens(assertion.pointer) != nil else { return "Use a JSON Pointer such as /answer or /items/0. Escape ~ as ~0 and / as ~1." }
         switch assertion.operation {
@@ -27,9 +30,12 @@ enum EvaluationFieldAssertions {
         }
     }
 
+    /// Evaluates every assertion against one complete strict JSON response, retaining failure explanations and resolved values.
+    /// Rejects extra prose and numbers outside supported exact decimal precision instead of coercing or rounding them.
     static func evaluate(response: String, assertions: [EvaluationFieldAssertion]) -> [EvaluationFieldAssertionResult] {
         let document = parse(response)
         return assertions.map { assertion in
+            /// Packages one assertion result with an optional canonical JSON representation of the resolved value.
             func result(_ passed: Bool, _ explanation: String, actual: FieldAssertionJSON? = nil) -> EvaluationFieldAssertionResult {
                 .init(assertion: assertion, passed: passed, actualJSON: actual?.jsonString, explanation: explanation)
             }
@@ -58,6 +64,8 @@ enum EvaluationFieldAssertions {
         }
     }
 
+    /// Applies assertion failures as a gate on passed scores; optionally lets assertions score previously unscored responses.
+    /// Existing errors, cancellations and failed scores are preserved.
     static func gatedStatus(
         baseStatus: EvaluationResultStatus,
         results: [EvaluationFieldAssertionResult],
@@ -70,12 +78,15 @@ enum EvaluationFieldAssertions {
         return baseStatus == .unscored && allowAssertionsToScore ? .passed : baseStatus
     }
 
+    /// Decodes one strict JSON value only when every numeric token fits the supported exact decimal representation.
     private static func parse(_ text: String) -> FieldAssertionJSON? {
         guard exactNumbersSupported(in: text) else { return nil }
         return try? JSONDecoder().decode(FieldAssertionJSON.self, from: Data(text.utf8))
     }
 
     // Reject numeric inputs that Decimal would round, rather than falsely passing equality.
+    /// Rejects numeric tokens whose significant digits or effective exponent would require Decimal rounding.
+    /// Quoted text is skipped; ordinary JSON syntax validation is left to the decoder.
     private static func exactNumbersSupported(in text: String) -> Bool {
         let characters = Array(text)
         var index = 0
@@ -116,6 +127,8 @@ enum EvaluationFieldAssertions {
         return true
     }
 
+    /// Decodes JSON Pointer tokens, preserving empty keys and rejecting malformed tilde escapes.
+    /// An empty pointer addresses the document root.
     private static func pointerTokens(_ pointer: String) -> [String]? {
         if pointer.isEmpty { return [] }
         guard pointer.first == "/" else { return nil }
@@ -136,6 +149,7 @@ enum EvaluationFieldAssertions {
         }
     }
 
+    /// Traverses object keys and canonical nonnegative array indices; returns nil for missing values or invalid traversal.
     private static func resolve(_ tokens: [String], in document: FieldAssertionJSON) -> FieldAssertionJSON? {
         var value = document
         for token in tokens {
@@ -157,6 +171,7 @@ enum EvaluationFieldAssertions {
 private indirect enum FieldAssertionJSON: Codable, Equatable {
     case null, bool(Bool), string(String), number(Decimal), array([Self]), object([String: Self])
 
+    /// Decodes JSON into distinct null, Boolean, string, finite decimal, array and object cases without text coercion.
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() { self = .null }
@@ -167,6 +182,7 @@ private indirect enum FieldAssertionJSON: Codable, Equatable {
         else { self = .object(try container.decode([String: Self].self)) }
     }
 
+    /// Encodes the original JSON value kind recursively so assertion evidence retains its type.
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {

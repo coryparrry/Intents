@@ -5,6 +5,10 @@ extension ProductionStorage {
     // Each of 100 records may retain a 256 KiB example's metadata, a ~784 KB
     // escaped/base64 response and a 20 KB worker; attempts retain workers too.
 
+    /// Freezes a verified dataset, execution configuration, target matrix, and compatible optional baseline into a resumable job.
+    /// - Parameter resolveCriticalCaseIDs: Resolves example IDs and suite-case metadata links to source IDs before freezing the gate.
+    /// - Returns: A newly installed job or the existing identical job for the supplied ID.
+    /// - Throws: Invalid configuration, source mapping, baseline compatibility, dataset integrity, or persistence errors.
     public func createJob(name: String, datasetRevision: String, configuration: ProductionJobConfiguration,
                           id: UUID = UUID(), resolveCriticalCaseIDs: Bool = false) throws -> ProductionJob {
         let reader = try ProductionDatasetReader(storage: self, revision: datasetRevision)
@@ -35,6 +39,8 @@ extension ProductionStorage {
         return try transaction { try installJob(job) }
     }
     // Caller holds the store lock, including scheduled creation/advancement.
+    /// Installs staged job and control files, or returns the identical job already assigned this ID.
+    /// The caller must hold the store transaction; a conflicting frozen job is rejected.
     func installJob(_ job: ProductionJob) throws -> ProductionJob {
             let id = job.id, datasetRevision = job.datasetRevision, configuration = job.configuration
             let directory = jobDirectory(id)
@@ -53,6 +59,9 @@ extension ProductionStorage {
             try FileManager.default.moveItem(at: staging, to: directory)
             return job
     }
+    /// Loads and validates frozen job identity, configuration, dataset, and planned response count.
+    /// Accepts the current or legacy date encoding when verifying the job revision.
+    /// - Throws: Integrity errors for changed identity, plus configuration, decoding, or file errors.
     public func loadJob(_ id: UUID) throws -> ProductionJob {
         // The 64 MB execution context expands by 4/3 when JSON encodes it as base64.
         let job = try ProductionCodec.read(ProductionJob.self, from: jobDirectory(id).appendingPathComponent("job.json"), maximumBytes: Self.maximumJobBytes)
@@ -67,6 +76,7 @@ extension ProductionStorage {
         }
         return job
     }
+    /// Returns validated jobs newest first, rejecting malformed job-directory names or frozen job evidence.
     public func jobs() throws -> [ProductionJob] {
         try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("Jobs"), includingPropertiesForKeys: nil)
             .filter { !$0.lastPathComponent.hasPrefix(".") }.map {
@@ -74,16 +84,22 @@ extension ProductionStorage {
                 return try loadJob(id)
             }.sorted { $0.createdAt > $1.createdAt }
     }
+    /// Reads the bounded mutable pause, cancellation, timing, and cost ledger for a frozen job.
     public func control(_ job: ProductionJob) throws -> ProductionControl {
         try ProductionCodec.read(ProductionControl.self, from: jobDirectory(job.id).appendingPathComponent("control.json"), maximumBytes: 1_000_000)
     }
+    /// Reads the job control state and hashes its pause and cancellation flags for an optimistic control update.
     public func controlRevision(_ job: ProductionJob) throws -> String {
         let value = try control(job)
         return Self.controlRevision(value)
     }
+    /// Hashes only the pause and cancellation flags used to detect competing control changes.
     public static func controlRevision(_ value: ProductionControl) -> String {
         ProductionCodec.digest(Data("\(value.paused)/\(value.cancelled)".utf8))
     }
+    /// Changes supplied control flags under the store lock and invalidates baseline evidence when flags change.
+    /// - Parameter expectedControlRevision: Optional pause/cancel revision that must still match.
+    /// - Throws: A conflict for stale state or an attempt to reverse permanent cancellation, plus storage errors.
     public func setControl(jobID: UUID, paused: Bool? = nil, cancelled: Bool? = nil, expectedControlRevision: String? = nil) throws {
         try transaction {
             let job = try loadJob(jobID); var value = try control(job)
@@ -96,6 +112,8 @@ extension ProductionStorage {
             try ProductionCodec.write(value, to: jobDirectory(jobID).appendingPathComponent("control.json"))
         }
     }
+    /// Validates worker provenance and persists it under a digest of its identifier.
+    /// - Throws: Invalid or oversized provenance, encoding errors, or storage errors.
     public func register(_ worker: ProductionWorker) throws {
         try Self.validateWorker(worker)
         try transaction {
@@ -103,6 +121,7 @@ extension ProductionStorage {
             try ProductionCodec.write(worker, to: root.appendingPathComponent("Workers/\(key).json"), maximumBytes: ProductionStorageLimits.encodedWorkerBytes)
         }
     }
+    /// Checks required worker provenance strings and the encoded worker byte limit.
     private static func validateWorker(_ worker: ProductionWorker) throws {
         guard !worker.id.isEmpty, worker.id.count <= 200, !worker.name.isEmpty, worker.name.count <= 200,
               [worker.platform, worker.operatingSystem, worker.hardware, worker.locale, worker.model].allSatisfy({ !$0.isEmpty && $0.count <= 200 }),
@@ -110,16 +129,22 @@ extension ProductionStorage {
             throw ProductionFailure.invalid("Worker provenance is incomplete.")
         }
     }
+    /// Reads bounded worker descriptors and returns them sorted by display name.
     public func workers() throws -> [ProductionWorker] {
         try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("Workers"), includingPropertiesForKeys: nil)
             .map { try ProductionCodec.read(ProductionWorker.self, from: $0,
                                            maximumBytes: ProductionStorageLimits.encodedWorkerBytes) }.sorted { $0.name < $1.name }
     }
+    /// Computes the number of chunks needed to cover all planned response slots.
     public func chunkCount(_ job: ProductionJob) -> Int { (job.plannedCount + job.configuration.chunkSize - 1) / job.configuration.chunkSize }
+    /// Locates one numbered chunk within the frozen job directory.
     func chunkURL(_ job: ProductionJob, _ index: Int) -> URL { jobDirectory(job.id).appendingPathComponent("Chunks/\(index).json") }
+    /// Persists a chunk using the bound derived from maximum record, response, and worker sizes.
     func writeChunk(_ chunk: ProductionChunk, job: ProductionJob, index: Int) throws {
         try ProductionCodec.write(chunk, to: chunkURL(job, index), maximumBytes: ProductionStorageLimits.encodedChunkBytes)
     }
+    /// Loads a chunk or returns an empty chunk when no file exists, then checks slot, request, and attempt ownership.
+    /// - Throws: An invalid index or integrity error for foreign evidence, plus storage/decoding errors.
     public func chunk(_ job: ProductionJob, index: Int) throws -> ProductionChunk {
         guard (0..<chunkCount(job)).contains(index) else { throw ProductionFailure.invalid("Chunk index is out of range.") }
         let url = chunkURL(job, index)
@@ -137,12 +162,17 @@ extension ProductionStorage {
         }
         return value
     }
+    /// Maps a chunk index to its half-open response-slot range, truncating the final chunk at the planned count.
     public func slots(_ job: ProductionJob, chunk: Int) -> Range<Int> {
         let start = chunk * job.configuration.chunkSize
         return start..<min(job.plannedCount, start + job.configuration.chunkSize)
     }
+    /// Maps a response slot to its position in the frozen target matrix.
     public func targetIndex(_ job: ProductionJob, slot: Int) -> Int { slot % job.configuration.targets.count }
+    /// Derives a stable request UUID from the frozen job revision and response slot for recovery and duplicate detection.
     public func requestID(_ job: ProductionJob, slot: Int) -> UUID { ProductionCodec.stableID("\(job.revision)/\(slot)") }
+    /// Builds the request for a zero-based slot, selecting its example, target, repetition, and timeout deadline.
+    /// - Throws: An invalid-slot error or a dataset read/validation error.
     public func request(_ job: ProductionJob, slot: Int, reader: ProductionDatasetReader, now: Date = Date()) throws -> ProductionRequest {
         guard (0..<job.plannedCount).contains(slot) else { throw ProductionFailure.invalid("Slot is out of range.") }
         let matrixSize = job.configuration.targets.count, repetitions = job.configuration.repetitions
@@ -151,10 +181,15 @@ extension ProductionStorage {
             targetIndex: targetIndex(job, slot: slot), example: try reader.example(at: slot / (matrixSize * repetitions)),
             configuration: job.configuration, deadline: now.addingTimeInterval(job.configuration.timeoutSeconds))
     }
+    /// Returns whether an interrupted attempt must finish as evidence without replay because it has side effects or exhausted its attempt budget.
     func canFinalizeWithoutExecution(_ job: ProductionJob, attempt: ProductionAttempt?) -> Bool {
         guard let attempt else { return false }
         return job.configuration.replaySafety == .sideEffects || attempt.number >= job.configuration.maximumAttempts
     }
+    /// Leases an unfinished chunk containing work for this worker, skipping live leases and completed prefixes.
+    /// Paused or cancelled jobs yield no claim; expired elapsed budgets still permit interrupted attempts to be finalized without execution.
+    /// - Returns: The leased chunk, or `nil` when no eligible chunk is available.
+    /// - Throws: A budget error after recovery work is exhausted, or worker/chunk/storage errors.
     public func claim(_ job: ProductionJob, worker: ProductionWorker, now: Date = Date()) throws -> ProductionChunk? {
         try Self.validateWorker(worker)
         return try transaction {
@@ -195,6 +230,9 @@ extension ProductionStorage {
             return nil
         }
     }
+    /// Applies and persists a chunk mutation only while the supplied lease token is current and unexpired.
+    /// A retained lease is extended; clearing it releases ownership.
+    /// - Throws: `ProductionFailure.staleLease`, mutation errors, or persistence errors.
     public func updateChunk(_ job: ProductionJob, index: Int, token: UUID, now: Date = Date(),
                             update: (inout ProductionChunk) throws -> Void) throws {
         try transaction {
@@ -205,6 +243,8 @@ extension ProductionStorage {
             try writeChunk(value, job: job, index: index)
         }
     }
+    /// Checks request identity, payload byte limits, and finite nonnegative latency and optional cost.
+    /// - Throws: `ProductionFailure.invalid` for foreign, oversized, or invalid numeric evidence.
     public func validateResponse(_ response: ProductionResponse, requestID: UUID) throws {
         guard response.requestID == requestID, response.output.utf8.count <= ProductionStorageLimits.outputBytes,
               (response.explanation?.utf8.count ?? 0) <= ProductionStorageLimits.explanationBytes,
@@ -214,6 +254,7 @@ extension ProductionStorage {
             throw ProductionFailure.invalid("Worker returned foreign, oversized or non-finite evidence.")
         }
     }
+    /// Validates frozen context identity, execution/retry limits, target count, budgets, and gate thresholds.
     static func validate(_ config: ProductionJobConfiguration) throws {
         try ProductionCodec.validateDigest(config.scoringRevision)
         guard config.executionRevision == ProductionCodec.digest(config.executionContext), config.executionContext.count <= 64_000_000,

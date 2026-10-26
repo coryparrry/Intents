@@ -6,6 +6,15 @@ import UIKit
 #endif
 
 public extension DeveloperRunnerIdentity {
+    /// Collects this process's platform, bundle, OS, hardware and locale into a runner identity.
+    /// Build provenance hashes the bundle executable when readable; missing bundle metadata
+    /// uses `unknown`, and unavailable provenance is omitted.
+    /// - Parameters:
+    ///   - id: Stable runner identity supplied by the containing app.
+    ///   - displayName: Human-readable label supplied by the containing app.
+    ///   - bundle: App bundle whose identifier, version and executable are reported.
+    ///   - processInfo: Source of the operating-system version string.
+    /// - Returns: App-reported identity metadata, rather than device attestation.
     @MainActor
     static func current(
         id: UUID,
@@ -45,6 +54,8 @@ public extension DeveloperRunnerIdentity {
 
     /// This is app-supplied provenance from the paired process, not device
     /// attestation. The host still compares it with its checked build product.
+    /// Hashes the readable executable and copies optional build metadata from the bundle;
+    /// returns `nil` if executable reading fails or the bundle identifier is unavailable.
     private static func buildProvenance(for bundle: Bundle) -> DeveloperRunnerBuildProvenance? {
         guard let executableURL = bundle.executableURL,
               let file = try? FileHandle(forReadingFrom: executableURL) else { return nil }
@@ -67,6 +78,7 @@ public extension DeveloperRunnerIdentity {
     }
 
 #if os(macOS)
+    /// Reads the Mac hardware model with `sysctlbyname`, falling back to `Mac` on failure.
     private static func hardwareMachineName() -> String {
         var size = 0
         guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 0 else {

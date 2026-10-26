@@ -50,15 +50,16 @@ test('repeated status failures use capped backoff and success restores normal ca
 test('a pending status request does not overlap and teardown prevents rescheduling', async () => {
   let release, calls = 0;
   const f = fixture(() => { calls++; return new Promise(resolve => { release = resolve; }); });
-  f.poller.schedule();
+  const schedule = f.poller.schedule;
+  schedule();
   const pending = f.tick();
-  f.poller.schedule();
+  schedule();
   assert.equal(calls, 1);
   assert.equal(f.timers.size, 0);
   f.poller.dispose();
   release();
   await pending;
-  f.poller.schedule();
+  schedule();
   assert.equal(f.timers.size, 0);
 });
 

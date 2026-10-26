@@ -18,6 +18,7 @@ APP_DISPLAY_NAME = "Intents"
 
 
 def validate_checks(jobs):
+    """Require each named release gate to have a success conclusion, raising ValueError for missing or unsuccessful checks."""
     conclusions = {job["name"]: job["conclusion"] for job in jobs}
     missing = sorted(
         name for name in REQUIRED_CHECKS if conclusions.get(name) != "success"
@@ -27,6 +28,7 @@ def validate_checks(jobs):
 
 
 def verify_checksum(directory, filename):
+    """Require a checksum file naming exactly the expected installer, compare its SHA-256, and return the verified digest."""
     checksum = (directory / "SHA256SUMS.txt").read_text().strip()
     match = re.fullmatch(r"([a-fA-F0-9]{64}) [ *]" + re.escape(filename), checksum)
     if not match:
@@ -38,6 +40,7 @@ def verify_checksum(directory, filename):
 
 
 def validate_app_metadata(info, version, expected_commit=None):
+    """Require the Intents bundle brand and requested version, and compare embedded source provenance when an expected commit is supplied."""
     if info.get("CFBundleDisplayName") != APP_DISPLAY_NAME:
         raise ValueError("App display name does not match the Intents release brand.")
     if info.get("CFBundleName") != APP_DISPLAY_NAME:
@@ -56,6 +59,7 @@ PUBLIC_KEY = "fpED/OlsZgCvLG9IgiEI0+/JmGjbwEkxmnwwkwymPgY="
 
 
 def validate_update_feed(directory, info, tag):
+    """Validate updater configuration, positive build number, exact release enclosure URL and size, and a 64-byte base64 signature; return its encoded text."""
     if info.get("SUFeedURL") != FEED_URL or info.get("SUPublicEDKey") != PUBLIC_KEY:
         raise ValueError(
             "App updater feed or public key does not match release configuration."

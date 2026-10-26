@@ -2319,9 +2319,12 @@ struct EvaluationDevelopmentWorkflowTests {
         #expect(requiredSuite.report.outcome == .incompleteOrIncompatibleEvidence)
         #expect(requiredSuite.report.runID == nil)
         #expect(requiredSuite.report.summary.contains("awaiting a successful save"))
-        let overview = try #require(store.projectOverviews.first { $0.id == store.selectedProjectID })
-        #expect(overview.latestRunAt == nil)
-        #expect(overview.suitesNeedingChecks == 1)
+        let summaries = await WorkspaceOverviewLoader().load(project: store.selectedProject, directory: directory)
+        let overview = try #require(summaries.first { $0.id == store.selectedSuiteID })
+        #expect(overview.state == .notRun)
+        #expect(overview.lastCheckedAt == nil)
+        #expect(overview.history.isEmpty)
+        #expect(overview.loadError == nil)
     }
 
     @MainActor

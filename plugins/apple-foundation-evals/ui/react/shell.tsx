@@ -57,6 +57,7 @@ import { cn } from "@/lib/utils";
 
 type Context = any;
 import { Action, invoke } from "./shared";
+/** Renders project selection and the new-project sentinel through the shared workspace action handler. */
 function ProjectSelect({ ctx }: { ctx: Context }) {
   const { state, actions } = ctx;
   return (
@@ -80,6 +81,7 @@ function ProjectSelect({ ctx }: { ctx: Context }) {
     </Select>
   );
 }
+/** Renders project navigation with searchable suites and runs scoped to the displayed suite when applicable. */
 export function WorkspaceSidebar({ ctx }: { ctx: Context }) {
   const { state, actions } = ctx;
   const suiteId =
@@ -216,6 +218,7 @@ export function WorkspaceSidebar({ ctx }: { ctx: Context }) {
     </SidebarProvider>
   );
 }
+/** Renders the current project and optional suite or run title with responsive breadcrumb truncation. */
 export function Breadcrumb({ ctx }: { ctx: Context }) {
   const { state } = ctx;
   const project =
@@ -246,6 +249,7 @@ export function Breadcrumb({ ctx }: { ctx: Context }) {
     </div>
   );
 }
+/** Renders page-specific workspace actions, respecting busy state, active runs and host download capability. */
 export function ToolbarActions({ ctx }: { ctx: Context }) {
   const { state, actions } = ctx;
   if (state.page === "suites" && state.draft)
@@ -396,6 +400,7 @@ export function ToolbarActions({ ctx }: { ctx: Context }) {
     </div>
   );
 }
+/** Renders suite or run document tabs and routes changes through the workspace action handler. */
 export function DocumentTabs({ ctx }: { ctx: Context }) {
   const { state, actions } = ctx;
   const suite = state.page === "suites" && state.draft;

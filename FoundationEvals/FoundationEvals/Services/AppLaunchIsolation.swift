@@ -6,10 +6,13 @@ struct AppLaunchIsolation: Sendable {
     let isHostedTest: Bool
     let storageDirectory: URL?
 
+    /// Allows a requested production worker only outside a hosted XCTest process.
     func shouldLaunchProductionWorker(requested: Bool) -> Bool {
         requested && !isHostedTest
     }
 
+    /// Resolves hosted-test isolation before UI-test storage arguments; returns nil storage for an ordinary launch.
+    /// The supplied ID names a fresh hosted-test directory, and explicit storage paths must be absolute.
     static func resolve(arguments: [String], environment: [String: String],
                         applicationSupport: URL, temporaryDirectory: URL, id: UUID = UUID()) -> Self {
         let hosted = environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil
