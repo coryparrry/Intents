@@ -16,6 +16,8 @@ private struct ProgressChunk: Decodable {
 }
 
 extension ProductionStorage {
+    /// Reads bounded persisted slot counts under the storage transaction without scoring or qualifying evidence.
+    /// Throws for malformed slot identities; cancellation and pause take precedence over completion.
     public func progress(jobID: UUID) throws -> ProductionProgress {
         try transaction {
             let job = try loadJob(jobID), control = try control(job)

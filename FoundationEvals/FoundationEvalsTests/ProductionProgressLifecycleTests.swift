@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import FoundationEvals
 
+/// Checks worker completion clears execution state before refreshing the full report and saved results.
 @MainActor struct ProductionProgressLifecycleTests {
     @Test(.timeLimit(.minutes(1))) func completedJobsAutomaticallyReceiveTheFullAudit() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("progress-lifecycle-\(UUID())")

@@ -148,6 +148,7 @@ import Foundation
     return try ProductionCodec.decode(
       ProductionJobConfiguration.self, JSONSerialization.data(withJSONObject: native))
   }
+  /// Executes validated production reads and persisted operations, exposing lightweight progress only when explicitly requested.
   nonisolated private static func readOrPersist(_ call: MCPControlCall, storage: ProductionStorage)
     throws -> [String: MCPJSONValue]
   {

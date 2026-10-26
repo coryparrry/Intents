@@ -17,6 +17,7 @@ actor EvaluationRunner {
     )
     let compatibleJudgeClient: EvaluationCompatibleJudgeClient
 
+    /// Injects the judge client and optional job-scoped token counter; ordinary runs retain their default counter.
     init(compatibleJudgeClient: EvaluationCompatibleJudgeClient = .init(),
          batchTokenCounter: (any EvaluationPromptInputTokenCounting)? = nil) {
         self.compatibleJudgeClient = compatibleJudgeClient
@@ -163,6 +164,7 @@ actor EvaluationRunner {
     }
 
     // Model injection exercises the production session path without model assets or a network.
+    /// Executes one suite with the supplied model, preserving per-sample sessions and provider-specific token counting.
     func run<Model: LanguageModel>(
         id runID: UUID,
         suiteRevision: String,

@@ -6,24 +6,33 @@ import Testing
 private actor CacheTestCounter: EvaluationPromptInputTokenCounting {
     var prompts = 0, instructions = 0, histories = 0
     var failNext = false
+    /// Makes the next prompt count fail so the test can detect accidental caching of failures.
     func failOnce() { failNext = true }
+    /// Returns prompt, instruction and history invocation counts for cache-hit assertions.
     func calls() -> (Int, Int, Int) { (prompts, instructions, histories) }
+    /// Counts prompt requests and can fail once before returning a stable nonzero estimate.
     func tokenCount(for prompt: Prompt) async throws -> Int {
         prompts += 1
         if failNext { failNext = false; throw CancellationError() }
         return 11
     }
+    /// Tracks instruction counts separately from prompts with a distinct estimate.
     func tokenCount(for instructions: Instructions) async throws -> Int { self.instructions += 1; return 7 }
+    /// Provides a zero-cost schema estimate for text-only cache fixtures.
     func tokenCount(for schema: GenerationSchema) async throws -> Int { 0 }
+    /// Returns distinct empty and nonempty history counts to detect lost history admission costs.
     func tokenCount(for history: [Transcript.Entry]) async throws -> Int {
         histories += 1
         return history.isEmpty ? 3 : 17
     }
+    /// Provides a tool-count stub for fixtures that do not exercise tool caching.
     func tokenCount(for tools: [any Tool]) async throws -> Int { 0 }
+    /// Provides a portable text estimate matching the prompt fixture.
     func tokenCount(forText text: String) async throws -> Int { 11 }
 }
 
 struct EvaluationTokenCountCacheTests {
+    /// Checks that empty-history caching preserves its real cost while nonempty histories always delegate.
     @Test func emptyHistoryRetainsTheRealCountAndNonemptyHistoryAlwaysDelegates() async throws {
         let base = CacheTestCounter()
         let cached = EvaluationCachedPromptInputTokenCounter(base: base)
@@ -38,6 +47,7 @@ struct EvaluationTokenCountCacheTests {
         #expect(try await otherJob.tokenCount(for: [Transcript.Entry]()) == 3)
         #expect(await base.calls().2 == 4)
     }
+    /// Checks 1,000 repeated preparations reuse exact text without changing context admission.
     @Test func repeatedPreparationUsesExactTextAndKeepsAdmissionUnchanged() async throws {
         let base = CacheTestCounter()
         let cached: any EvaluationPromptInputTokenCounting = EvaluationCachedPromptInputTokenCounter(base: base)
@@ -61,6 +71,7 @@ struct EvaluationTokenCountCacheTests {
         #expect(await base.calls().1 == 2)
     }
 
+    /// Checks namespace and job isolation, failed-count retries, and distinct Unicode byte spellings.
     @Test func domainsFailuresAndJobsCannotShareCounts() async throws {
         let base = CacheTestCounter()
         let cached: any EvaluationPromptInputTokenCounting = EvaluationCachedPromptInputTokenCounter(base: base)
@@ -81,6 +92,7 @@ struct EvaluationTokenCountCacheTests {
         #expect(await base.calls().0 == 6)
     }
 
+    /// Checks capacity eviction and that oversized keys are never retained.
     @Test func cacheCapacityAndLargeInputsAreBounded() async throws {
         let base = CacheTestCounter()
         let cached = EvaluationCachedPromptInputTokenCounter(base: base, capacity: 2)

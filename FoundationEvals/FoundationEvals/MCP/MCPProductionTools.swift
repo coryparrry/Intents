@@ -3,12 +3,14 @@ import Foundation
 enum MCPProductionTools {
   static let definitions: [MCPToolDefinition] = {
     let s = MCPControlSchema.self
+    /// Defines a bounded read-only production action using the shared schema builder.
     func read(
       _ name: String, _ description: String, _ fields: [String: MCPJSONValue] = [:],
       _ required: [String] = []
     ) -> MCPToolDefinition {
       s.tool("eval_production_" + name, description, fields, required: required)
     }
+    /// Defines a production mutation with operation identity and optional destructive-action semantics.
     func write(
       _ name: String, _ description: String, _ fields: [String: MCPJSONValue], _ required: [String],
       destructive: Bool = false

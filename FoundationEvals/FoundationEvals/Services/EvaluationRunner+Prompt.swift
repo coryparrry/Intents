@@ -7,7 +7,9 @@ struct EvaluationInputTokenEstimate: Sendable {
 }
 
 protocol EvaluationPromptInputTokenCounting: Sendable {
+    /// Estimates a text prompt using an exact source-text key when the counter supports caching.
     func tokenCount(for prompt: Prompt, cacheKey: String) async throws -> Int
+    /// Estimates frozen instructions using an exact source-text key when caching is available.
     func tokenCount(for instructions: Instructions, cacheKey: String) async throws -> Int
     func tokenCount(for prompt: Prompt) async throws -> Int
     func tokenCount(for instructions: Instructions) async throws -> Int
@@ -99,6 +101,7 @@ struct EvaluationDeferredPromptInputTokenCounter: EvaluationPromptInputTokenCoun
 }
 
 enum EvaluationInputTokenCounter {
+    /// Uses keyed counts for text-only prompts while preserving image-aware counting and availability evidence.
     static func promptEstimate(
         text: String,
         prompt: Prompt,
@@ -112,6 +115,7 @@ enum EvaluationInputTokenCounter {
         )
     }
 
+    /// Uses keyed counts for text-only prompts while preserving image-aware counting and availability evidence.
     static func promptEstimate<Counter: EvaluationPromptInputTokenCounting>(
         text: String,
         prompt: Prompt,
@@ -210,6 +214,7 @@ enum EvaluationInputTokenCounter {
 }
 
 extension EvaluationRunner {
+    /// Prepares a request within its context budget while retaining instruction, tool, schema, profile and history costs.
     func preparedPrompt(
         for evaluationCase: EvaluationCase,
         suite: EvaluationSuite,

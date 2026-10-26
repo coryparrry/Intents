@@ -9,6 +9,7 @@ struct ProductionActiveBatchBanner: View {
     let repeatBatch: () -> Void
     let export: () -> Void
 
+    /// Presents the existing toolbar progress control and actions bound to the running job.
     var body: some View {
         HStack(spacing: 2) {
             RunToolbarProgress(completed: progress?.completed ?? 0, total: job.plannedCount)

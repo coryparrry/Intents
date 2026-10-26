@@ -26,6 +26,7 @@ actor NativeProductionExecutor {
     let runner = EvaluationRunner(batchTokenCounter: EvaluationCachedPromptInputTokenCounter())
     let imageDirectory: URL
     let images: [ImageEvaluationInput]
+    /// Freezes one native job context and prepares its image inputs and job-scoped runner.
     init(context: NativeProductionContext, executionRevision: String, judge: EvaluationResolvedJudgeConnection?) throws {
         self.context = context; self.executionRevision = executionRevision; self.judge = judge
         imageDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("production-images-\(UUID().uuidString)")
@@ -40,6 +41,7 @@ actor NativeProductionExecutor {
         images = values
     }
     deinit { try? FileManager.default.removeItem(at: imageDirectory) }
+    /// Executes one frozen native slot and captures its response, verdict, timing and trace.
     func execute(_ request: ProductionRequest) async throws -> ProductionResponse {
         guard request.configuration.executionRevision == executionRevision else {
             throw ProductionFailure.integrity("Native worker setup differs from this frozen job.")

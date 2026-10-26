@@ -3,6 +3,7 @@ import Testing
 @testable import ProductionEvals
 
 struct ProductionProgressTests {
+    /// Checks durable progress through partial execution, resume, completed pause, cancellation and malformed slot rejection.
     @Test func pollingMatchesDurableCountsAcrossPartialResumeAndControlChanges() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("progress-counts-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }

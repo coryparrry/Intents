@@ -10,14 +10,14 @@ struct ProductionResultDetailView: View {
     @State private var verifiedOutput = ""
     @State private var verifiedCost = ""
     @State private var trace: EvaluationRun?
+    /// Presents validated response details and operator review for the selected batch record.
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let record = model.selectedRecord {
                 Text("Source \(record.sourceID) · \(record.partition.rawValue) · trial \(record.repetition) · \(record.worker.name)")
                     .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                if let job = model.selectedJob,
-                   let run = ProductionResultPresentation.nativeRun(record: record, job: job),
-                   let result = run.results.first {
+                let validatedRun = model.selectedJob.flatMap { ProductionResultPresentation.nativeRun(record: record, job: $0) }
+                if let run = validatedRun, let result = run.results.first {
                     EvaluationResultDetail(result: result, scoringMode: run.scoringMode,
                         repetitions: run.repetitions,
                         passingScore: run.judgePassingScore ?? EvaluationSuite.judgePassingScore,
@@ -34,7 +34,7 @@ struct ProductionResultDetailView: View {
                     if let explanation = record.response.explanation { Text(explanation).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
                 }
                 if let output = model.review?.response?.output { LabeledText(label: "Reconciled output", text: output) }
-                if let data = record.response.artifact, let run = try? ProductionCodec.decode(EvaluationRun.self, data) {
+                if let run = validatedRun {
                     Button("Inspect trace", systemImage: "point.3.connected.trianglepath.dotted") { trace = run }.buttonStyle(.bordered)
                 }
                 DisclosureGroup("Operator review") {
@@ -71,6 +71,7 @@ struct ProductionResultDetailView: View {
             if let trace { VStack { HStack { Text("Saved batch trace").font(.headline); Spacer(); Button("Done") { self.trace = nil } }; WorkflowTraceView(run: trace) }.padding(24).frame(minWidth: 800, minHeight: 600) }
         }
     }
+    /// Appends the chosen operator action using the selected saved response and entered review evidence.
     private func append(_ action: ProductionReviewAction) {
         model.appendReview(action: action, reviewer: reviewer, assignee: assignee, outcome: outcome, note: note, tags: tags, verifiedOutput: verifiedOutput, verifiedCost: Double(verifiedCost))
     }
@@ -78,6 +79,7 @@ struct ProductionResultDetailView: View {
 
 /// Artifacts are supporting evidence; a worker cannot override the saved response with an unrelated trace.
 enum ProductionResultPresentation {
+    /// Returns a single native trace only when its request, revision, output and outcome match the authoritative saved record.
     static func nativeRun(record: ProductionRecord, job: ProductionJob) -> EvaluationRun? {
         guard let data = record.response.artifact,
               let run = try? ProductionCodec.decode(EvaluationRun.self, data),
@@ -89,6 +91,7 @@ enum ProductionResultPresentation {
         return run
     }
 
+    /// Formats recorded latency and preserves unavailable evidence instead of presenting a fabricated zero.
     static func latency(_ response: ProductionResponse) -> String {
         guard response.latencyAvailable != false else { return "Unavailable" }
         return Duration.milliseconds(response.latencyMilliseconds)

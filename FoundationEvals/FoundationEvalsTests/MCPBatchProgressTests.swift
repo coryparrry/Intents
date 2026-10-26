@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import FoundationEvals
 
+/// Checks explicit lightweight polling omits qualification data while the default response retains the full audit.
 @MainActor struct MCPBatchProgressTests {
     @Test func lightweightProgressIsExplicitAndFullAuditRemainsTheDefault() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("mcp-progress-\(UUID())")
@@ -12,6 +13,7 @@ import Testing
         try Data("{\"id\":\"case\",\"prompt\":\"hello\",\"capturedOutput\":\"saved\"}\n".utf8).write(to: input)
         let dataset = try storage.importDataset(from: input, name: "Polling", version: "1")
         let job = try storage.createCapturedJob(name: "Polling", datasetRevision: dataset.revision)
+        /// Invokes the production read through the public action gateway and requires a successful structured response.
         func read(_ fields: [String: MCPJSONValue]) async throws -> [String: MCPJSONValue] {
             let call = try MCPToolCatalog.parse(name: "eval_read_action", arguments: .object([
                 "action": .string("eval_production_job_get"), "arguments": .object(fields)]))

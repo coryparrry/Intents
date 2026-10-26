@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import FoundationEvals
 
+/// Imports a single captured response for navigation tests without invoking a model.
 @MainActor struct ProductionBatchNavigationTests {
     private func dataset(_ storage: ProductionStorage, root: URL) throws -> ProductionDataset {
         let file = root.appendingPathComponent("examples.jsonl")
@@ -9,6 +10,7 @@ import Testing
         return try storage.importDataset(from: file, name: "Navigation", version: "1")
     }
 
+    /// Checks opening a batch loads its report and results, and dismissing a loading result prevents stale detail restoration.
     @Test func openingBatchLoadsItsOutcomeAndSavedResults() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("batch-results-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -34,6 +36,7 @@ import Testing
         #expect(model.selectedRecord == nil && model.selectedExample == nil && model.review == nil)
     }
 
+    /// Checks older results retain active progress and explicit controls mutate only the running batch.
     @Test(.timeLimit(.minutes(1))) func olderResultsKeepActiveProgressAndControlsTargetTheirExplicitJob() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("batch-active-progress-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -69,6 +72,7 @@ import Testing
         #expect(model.selectedJobID == older.id)
         await model.closeAndWait()
     }
+    /// Checks native artifacts must match saved identity, output and status, and absent latency remains unavailable.
     @Test func nativeDetailsRequireAnArtifactMatchingTheSavedResponse() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("batch-artifact-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }

@@ -15,6 +15,7 @@ struct ProductionReviewPane: View {
         })
     }
 
+    /// Presents paginated saved responses with selection-bound inline details.
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             if let job = model.selectedJob {
@@ -63,10 +64,12 @@ struct ProductionReviewPane: View {
             }
         }
     }
+    /// Clears the selected detail before loading another page of saved results.
     private func changePage(_ offset: Int) {
         model.dismissResult(); model.offset = offset
         Task { await model.refresh() }
     }
+    /// Maps each persisted outcome to the workspace status symbol used by the result table.
     private func symbol(_ outcome: ProductionOutcome) -> String {
         switch outcome {
         case .passed: "checkmark.circle.fill"
@@ -75,6 +78,7 @@ struct ProductionReviewPane: View {
         case .unscored: "circle.dashed"
         }
     }
+    /// Maps result status to the shared workspace color vocabulary.
     private func color(_ outcome: ProductionOutcome) -> Color {
         switch outcome {
         case .passed: WorkspaceStyle.success

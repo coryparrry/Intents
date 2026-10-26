@@ -39,6 +39,7 @@ final class ProductionWorkspaceStore {
         catch { storage = nil; self.error = error.localizedDescription }
     }
     var selectedJob: ProductionJob? { jobs.first { $0.id == selectedJobID } }
+    /// Loads a consistent workspace snapshot; the active Jobs pane uses counts while result and report panes retain audited evidence.
     func refresh() async {
         guard !isClosing, let storage else { return }
         let token = UUID(); refreshID = token
@@ -64,6 +65,7 @@ final class ProductionWorkspaceStore {
             }
         }
     }
+    /// Selects a batch and clears prior details before asynchronously loading its first result page.
     func select(_ id: UUID) {
         guard !isClosing else { return }
         refreshID = UUID()
@@ -71,13 +73,16 @@ final class ProductionWorkspaceStore {
         progress = nil
         Task { await refresh() }
     }
+    /// Opens a saved batch directly in Results and loads its report and records.
     func showResults(for id: UUID) {
         pane = .review
         select(id)
     }
+    /// Clears selected response evidence so a delayed detail load cannot reopen a dismissed result.
     func dismissResult() {
         selectedRecord = nil; selectedExample = nil; review = nil
     }
+    /// Updates counts for the executing batch without replacing an older batch currently being inspected.
     func refreshRunningProgress() async {
         guard !isClosing, let id = runningJobID, let storage else { return }
         do {
@@ -199,6 +204,7 @@ final class ProductionWorkspaceStore {
             return try storage.createJob(name: name, datasetRevision: dataset, configuration: frozen, resolveCriticalCaseIDs: true)
         }, completed: { self.select($0.id) })
     }
+    /// Clones the named frozen job, defaulting to the selection, and selects the new batch.
     func duplicateJob(jobID: UUID? = nil) {
         guard let id = jobID ?? selectedJobID, let job = jobs.first(where: { $0.id == id }) else { return }
         perform({ try $0.createJob(name: job.name + " · repeat", datasetRevision: job.datasetRevision, configuration: job.configuration) }, completed: { self.select($0.id) })
@@ -206,6 +212,7 @@ final class ProductionWorkspaceStore {
     func createCaptured(_ dataset: ProductionDataset) {
         perform({ try $0.createCapturedJob(name: dataset.name + " · captured review", datasetRevision: dataset.revision) }, completed: { self.select($0.id) })
     }
+    /// Applies pause or cancellation to an explicit job or the selection, interrupting only that local execution.
     @discardableResult
     func setControl(jobID: UUID? = nil, paused: Bool? = nil, cancelled: Bool? = nil, completed: @escaping @MainActor () -> Void = {}) -> Task<Void, Never>? {
         guard let id = jobID ?? selectedJobID else { return nil }
@@ -246,6 +253,7 @@ final class ProductionWorkspaceStore {
         catch { self.error = error.localizedDescription }
     }
     func interrupt(jobID: UUID) { if jobID == runningJobID { runTask?.cancel() } }
+    /// Admits and starts a matching native or captured worker; completion releases ownership before loading its final audit.
     func start(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool, resuming: Bool = false) throws {
         guard !isClosing, let storage, runTask == nil else { throw EvaluationStoreError.runBusy }
         var owner: UUID?
@@ -311,6 +319,7 @@ final class ProductionWorkspaceStore {
             tags: tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }, reconciledResponse: response)
         perform { try $0.appendReview(jobID: jobID, slot: record.slot, event: event) }
     }
+    /// Exports the explicit job or current selection only after the operator chooses a destination.
     func export(jobID: UUID? = nil) {
         guard let id = jobID ?? selectedJobID else { return }
         let panel = NSSavePanel(); panel.nameFieldStringValue = "eval-evidence-\(id.uuidString.prefix(8))"

@@ -23,6 +23,7 @@ struct ProductionBatchOutcomeSummary: View {
         return report.exitCode == 0 ? "All responses passed their checks" : "Some release checks need attention"
     }
 
+    /// Presents batch identity and audited outcome counts using the native report components.
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 10) {

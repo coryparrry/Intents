@@ -35,6 +35,7 @@ struct ProductionWorkspaceView: View {
     @State private var cancellingJobID: UUID?
     @State private var scheduleHours = 24.0
     @State private var scheduleRuns = 1
+    /// Presents batch panes and restarts refresh/polling whenever the selected pane changes.
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -78,7 +79,7 @@ struct ProductionWorkspaceView: View {
             }
         }
         .background(WorkspaceStyle.canvas).navigationTitle("Batch runs")
-        .task {
+        .task(id: pane) {
             await model.refresh()
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
