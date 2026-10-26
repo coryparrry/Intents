@@ -91,14 +91,14 @@ layout read.
 - `dist/index.html.md` is a linked Markdown product overview. Keep its facts
   and the JSON-LD consistent with the visible site and current product.
 - `dist/getting-started.html` and its Markdown alternate distinguish the
-  Intents v1.4.0 download from Intents development source, explain
+  Intents v1.5.2 download from Intents development source, explain
   a first evaluation, and link current source guides.
 - Sites serves that HTML at `/getting-started` and redirects its `.html` URL.
   Canonical, sitemap and internal links use the extensionless public route.
   A plain local static server may still require `/getting-started.html`.
-- Download facts were verified on 9 October 2026. Recheck published release
+- Download facts were verified on 26 October 2026. Recheck published release
   assets before publishing or updating version copy.
-  Review and Batch runs are also available in the v1.4.0 release.
+  Review and Batch runs are also available in the v1.5.2 release.
 - `.openai/hosting.json` disables the homepage fallback for nonexistent URLs,
   so missing pages return HTTP 404 instead of duplicate homepage content.
 - Alternate and canonical links are in the HTML head. Sites serves the text

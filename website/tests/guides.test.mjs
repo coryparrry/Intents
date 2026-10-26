@@ -38,7 +38,8 @@ test('editorial pages have short answers, Markdown twins, sources, and discovera
       assert.ok(text.includes(dmg), `${route}: current download`);
       assert.ok(text.includes('brew install --cask coryparrry/tap/intents'), `${route}: Homebrew`);
       assert.match(text, /26 October 2026/);
-      assert.ok(text.includes('https://github.com/coryparrry/Intents/issues'));
+      const links = [...text.matchAll(/(?:href="|\]\()([^"\)]+)(?:"|\))/g)].map(([, url]) => url);
+      assert.ok(links.some(url => url === 'https://github.com/coryparrry/Intents/issues'));
     }
     assert.match(html, /src="\/analytics.mjs"/);
     const article = data(html).find(item => ['Article', 'WebPage'].includes(item['@type']));
@@ -91,7 +92,7 @@ test('current product surfaces and SoftwareApplication describe the stable Inten
   const app = data(read('index.html')).find(item => item['@type'] === 'SoftwareApplication');
   assert.equal(app.softwareVersion, '1.5.2');
   assert.equal(app.downloadUrl, dmg);
-  assert.ok(app.sameAs.includes('https://github.com/coryparrry/homebrew-tap'));
+  assert.deepEqual(app.sameAs, ['https://github.com/coryparrry/Intents', 'https://github.com/coryparrry/homebrew-tap']);
   const manifest = JSON.parse(readFileSync(new URL('../.openai/hosting.json', import.meta.url), 'utf8'));
   assert.equal(manifest.static.not_found_handling, 'none');
 });

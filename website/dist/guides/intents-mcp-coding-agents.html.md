@@ -19,7 +19,7 @@ Intents generates a bearer credential, keeps it in the login Keychain, and confi
 
 Use **Advanced → Copy Endpoint** and **Copy Manual Configuration** in the connector settings. Keep the connector running. The documented endpoint is `http://127.0.0.1:17873/mcp`; an endpoint alone does not authenticate a client.
 
-Make your copied bearer credential available as `INTENTS_MCP_TOKEN` to the shell that launches Claude Code, using your local secret-management method. Do not put a real credential in this example, a repository, or shell history. The following single-quoted JSON preserves the environment placeholder for Claude Code:
+The copied manual configuration is a Codex TOML snippet. In its `http_headers` entry, find `Authorization = "Bearer …"`. The credential is only the value after `Bearer `, without the surrounding quotes; do not include the word Bearer in the environment variable. Make that credential available as `INTENTS_MCP_TOKEN` to the shell that launches Claude Code, using your local secret-management method. Do not put a real credential in this example, a repository, or shell history. The following single-quoted JSON preserves the environment placeholder for Claude Code:
 
 ```sh
 claude mcp add-json intents '{"type":"http","url":"http://127.0.0.1:17873/mcp","headers":{"Authorization":"Bearer ${INTENTS_MCP_TOKEN}"}}'
