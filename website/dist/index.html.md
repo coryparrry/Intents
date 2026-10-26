@@ -6,11 +6,11 @@ Intents is a free, open-source native Mac workbench for Apple Foundation Models,
 
 ## Current download and development source
 
-Intents was previously **Foundation Evals**. As checked 9 October 2026, the current published release is **v1.4.0**, published 4 October 2026. Its installer and app use the Intents name.
+Intents was previously **Foundation Evals**. As checked 26 October 2026, the current published release is **v1.5.2**. Its installer and app use the Intents name.
 
-- [Download Intents 1.4.0 for Apple silicon](https://github.com/coryparrry/Intents/releases/download/v1.4.0/Intents-1.4.0-macOS-arm64.dmg).
-- [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.4.0).
-- [Released interface instructions](https://github.com/coryparrry/Intents/blob/v1.4.0/README.md).
+- [Download Intents 1.5.2 for Apple silicon](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg).
+- [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.5.2).
+- [Released interface instructions](https://github.com/coryparrry/Intents/blob/v1.5.2/README.md).
 - [Build development source](https://github.com/coryparrry/Intents#build-from-source).
 
 The released workflow includes prompt suites, scoring, traces, saved comparisons, JSON reports, authenticated local MCP access, **Review** and **Batch runs**. Build development source to develop the app or try unshipped changes.
@@ -42,3 +42,40 @@ The examples are HTML/CSS browser recreations, not native recordings or live exe
 ## Contribute
 
 [Report an issue](https://github.com/coryparrry/Intents/issues) with the release/source commit, macOS/model, a minimal synthetic prompt, scoring rule, expected outcome, and actual response. Review attachments for private data first. Documentation fixes and focused patches are welcome through the [repository](https://github.com/coryparrry/Intents). [MIT licence](https://github.com/coryparrry/Intents/blob/main/LICENSE).
+
+## Install with Homebrew
+
+```sh
+brew install --cask coryparrry/tap/intents
+```
+
+## Guides & comparisons
+
+- [Intents vs Foundation Evals](https://intents-workbench.coryparry.chatgpt.site/compare/foundation-evals)
+- [Intents vs Promptfoo](https://intents-workbench.coryparry.chatgpt.site/compare/promptfoo)
+- [Intents vs DeepEval](https://intents-workbench.coryparry.chatgpt.site/compare/deepeval)
+- [Intents vs Braintrust](https://intents-workbench.coryparry.chatgpt.site/compare/braintrust)
+- [Intents vs Apple’s Evaluations framework](https://intents-workbench.coryparry.chatgpt.site/compare/apple-evaluations)
+- [How to evaluate Apple Foundation Models on a Mac before you ship](https://intents-workbench.coryparry.chatgpt.site/guides/evaluate-apple-foundation-models-mac)
+- [Install Intents with Homebrew on Apple silicon](https://intents-workbench.coryparry.chatgpt.site/guides/install-intents-homebrew)
+- [Connect Codex or Claude Code to Intents over MCP](https://intents-workbench.coryparry.chatgpt.site/guides/intents-mcp-coding-agents)
+- [On-device LLM evaluation on macOS 27 (without sending prompts to a vendor SaaS)](https://intents-workbench.coryparry.chatgpt.site/guides/on-device-llm-evaluation-macos)
+- [How Intents compares with other LLM evaluation tools](https://intents-workbench.coryparry.chatgpt.site/compare)
+
+## Frequently asked questions
+
+### What is Intents?
+
+Intents is a free, MIT-licensed native Mac workbench for Apple Foundation Models, with suites, scoring, traces, comparisons, Review, Batch runs, and authenticated local MCP.
+
+### How do I install Intents?
+
+Download Intents 1.5.2 for Apple silicon, or run brew install --cask coryparrry/tap/intents. Requires macOS 27 or later.
+
+### Do I need Xcode?
+
+Ordinary on-device suites do not need Xcode. Source builds and development-source Mac App Intent tests require Xcode 27.
+
+### Can I connect a coding agent?
+
+Yes. Open Intents Settings → MCP Connector and choose Connect to Codex, then restart Codex. Other HTTP MCP clients require manual bearer authentication; keep Intents open.

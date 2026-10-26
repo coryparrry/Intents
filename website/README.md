@@ -84,7 +84,7 @@ the app script. ResizeObserver supplies preview geometry without an immediate
 layout read.
 
 - `dist/robots.txt` permits crawlers and advertises the sitemap.
-- `dist/sitemap.xml` lists the homepage and getting-started HTML page. Update `lastmod` when
+- `dist/sitemap.xml` lists the homepage, getting-started guide, privacy page, comparison hub, five comparisons, and four practical guides. Update `lastmod` when
   its substantive content changes, not on every deployment.
 - `dist/llms.txt` is a concise reading guide following the optional llms.txt
   proposal. It is not an indexing requirement or a ranking guarantee.
@@ -128,10 +128,14 @@ References: [Google AI search guidance](https://developers.google.com/search/doc
 
 ## Website analytics
 
-PostHog EU project 266962 measures anonymous, cookieless traffic. Both product pages and the privacy page load `analytics.mjs` asynchronously. Preview/localhost domains do not initialize PostHog. Production events have `site: intents`, `analytics_source: website`, and `is_test: false`.
+PostHog EU project 266962 measures anonymous, cookieless traffic. All product, comparison, guide, and privacy pages load `analytics.mjs` asynchronously. Preview/localhost domains do not initialize PostHog. Production events have `site: intents`, `analytics_source: website`, and `is_test: false`.
 
 - `$pageview` / `$pageleave`: visits, daily anonymous visitors, pages, referrals, campaign sources and session duration.
-- `website_download_clicked`: `download_location` (navigation, hero, closing, getting_started), `download_type` (release_page or disk_image), `release_version`, `platform`, `download_url`. It measures clicks, not completed downloads or installs.
+- `website_download_clicked`: `download_location` (navigation, hero, closing, getting_started, comparison, guide), `download_type` (release_page or disk_image), `release_version`, `platform`, `download_url`. It measures clicks, not completed downloads or installs.
 - `?analytics_test=1` marks a manual verification visit and its clicks as `is_test: true`; the dedicated dashboard excludes these.
 
 Cookieless server hash mode is enabled in PostHog. IP-derived country enrichment and reliable returning-user counts across days are unavailable in this mode. No session replay, text/form autocapture, heatmaps or exception capture is enabled by this integration. Only UTM campaign parameters survive URL sanitization. Browser privacy signals prevent SDK loading. The privacy page can store an opt-out preference, propagated to other open tabs.
+
+## Editorial pages
+
+Comparison and practical guide routes use extensionless canonicals and matching `.html.md` alternates. Keep both formats in sync. Update the sitemap, llms.txt, homepage links, and checked dates when substantive facts change. Competitor statements link to official sources; “check” means unverified, not unsupported. `tests/guides.test.mjs` covers route resolution, metadata, release links, FAQ parity, and Markdown coverage.
