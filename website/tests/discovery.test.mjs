@@ -11,7 +11,7 @@ test('published HTML and AI reading guides resolve their local links', () => {
   for (const text of [html, guide, markdown]) {
     for (const match of text.matchAll(/https:\/\/intents-workbench\.coryparry\.chatgpt\.site\/([^\s"<>)]*)/g)) {
       const path = match[1].split('#')[0];
-      assert.ok(existsSync(new URL(`../dist/${path === 'getting-started' ? 'getting-started.html' : path || 'index.html'}`, import.meta.url)), path);
+      assert.ok(existsSync(new URL(`../dist/${!path ? 'index.html' : /\.[^/]+$/.test(path) ? path : `${path}.html`}`, import.meta.url)), path);
     }
   }
 });
@@ -40,7 +40,7 @@ test('interactive contract declares its inputs, expected result and evidence lim
   assert.match(app, /function macIntentMarkup\(\)/);
   assert.match(app, /\{"message":"Hello"\}/);
   assert.match(app, /Expected JSON/);
-  assert.match(app, /not a recorded invocation or a feature of the published 1\.4\.0 download/);
+  assert.match(app, /not a recorded invocation or a feature of the published 1\.5\.2 download/);
   assert.match(app, /does not verify Siri/);
   assert.match(app, /\['explore-mac-intents','mac-intent'\]/);
 });

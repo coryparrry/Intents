@@ -41,3 +41,13 @@
 @layer responsive {
   @media(max-width:760px){.hero h1{font-size:clamp(36px,9.6vw,52px);letter-spacing:-2px}.hero-actions{padding-inline:18px}.hero-description{padding-inline:18px}}
 }
+
+@layer components {
+  .brew-install{margin:20px auto 0;padding:0 22px;font-size:13px;line-height:1.8;max-width:600px;overflow-wrap:anywhere}.brew-install code{background:#eef2f7;border-radius:6px;padding:7px 10px;box-decoration-break:clone;-webkit-box-decoration-break:clone}.brew-install a{color:#2265b8;text-decoration:underline;text-underline-offset:3px}
+  .resource-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-top:32px}.resource-card{display:block;border-top:1px solid var(--line);padding:24px 0}.resource-card h3{font-size:20px;letter-spacing:-.5px;line-height:1.35}.resource-card p{color:#616773;font-size:15px;line-height:1.7;margin:12px 0}.resource-card span{color:#2265b8;font-size:14px}.resource-card:hover h3{color:#2265b8}.resource-card:focus-visible{outline:2px solid var(--blue);outline-offset:5px}
+  .faq-section details{border-bottom:1px solid var(--line);padding:20px 0}.faq-section summary{cursor:pointer;font-size:18px;font-weight:600}.faq-section details p{max-width:760px;font-size:16px;line-height:1.75;margin:14px 0;color:#616773}.faq-section .guide-note{margin-top:24px;font-size:14px;color:#606773}
+  .guide-body .resource-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.comparison-scroll{max-width:100%;overflow-x:auto;margin:24px 0;border:1px solid var(--line);border-radius:8px}.comparison-scroll:focus-visible{outline:2px solid var(--blue);outline-offset:3px}.comparison-scroll table{border-collapse:collapse;width:100%;min-width:620px;font-size:14px;line-height:1.6}.comparison-scroll th,.comparison-scroll td{padding:14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line);min-width:145px}.comparison-scroll thead{background:#eef2f7}.comparison-scroll th{font-weight:600}.guide-body ul,.guide-body ol{padding-left:24px}.guide-body a{overflow-wrap:anywhere}
+}
+@layer responsive {
+  @media(max-width:760px){.resource-grid,.guide-body .resource-grid{grid-template-columns:1fr;gap:0}.site-header .nav-download{max-width:185px;text-align:center}.guide-body pre{font-size:14px}.brew-install{font-size:12px}}
+}

@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://intents-workbench.coryparry.chatgpt.site/</loc><lastmod>2026-10-21</lastmod></url>
-  <url><loc>https://intents-workbench.coryparry.chatgpt.site/getting-started</loc><lastmod>2026-10-21</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/getting-started</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/privacy</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/compare/foundation-evals</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/compare/promptfoo</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/compare/deepeval</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/compare/braintrust</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/compare/apple-evaluations</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/guides/evaluate-apple-foundation-models-mac</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/guides/install-intents-homebrew</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/guides/intents-mcp-coding-agents</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/guides/on-device-llm-evaluation-macos</loc><lastmod>2026-10-26</lastmod></url>
+  <url><loc>https://intents-workbench.coryparry.chatgpt.site/compare</loc><lastmod>2026-10-26</lastmod></url>
 </urlset>

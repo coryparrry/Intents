@@ -12,10 +12,14 @@ const checks = [
   ['', 'Claude-SearchBot', /text\/html/, 'Apple Foundation Models'],
   ['robots.txt', 'OAI-SearchBot', /text\/plain/, 'User-agent: *'],
   ['sitemap.xml', 'Googlebot', /(?:application|text)\/xml/, `<loc>${canonical}</loc>`],
-  ['llms.txt', 'Claude-SearchBot', /text\/plain/, '# Intents'],
+  ['llms.txt', 'Claude-SearchBot', /text\/plain/, 'Intents 1.5.2'],
   ['index.html.md', 'ChatGPT-User', /text\/(?:markdown|plain)/, '# Intents'],
-  ['getting-started.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.4.0'],
+  ['getting-started.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.5.2'],
   ['getting-started.html.md', 'Claude-SearchBot', /text\/(?:markdown|plain)/, '# Get started with Intents'],
+  ['compare.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.5.2'],
+  ['compare/apple-evaluations.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.5.2'],
+  ['guides/evaluate-apple-foundation-models-mac.html', 'Claude-SearchBot', /text\/html/, 'Intents 1.5.2'],
+  ['privacy.html', 'Googlebot', /text\/html/, 'Website privacy'],
   ['seo-check-missing-page', 'Googlebot', null, null, 404],
 ];
 
@@ -27,11 +31,11 @@ const results = await Promise.allSettled(checks.map(async ([path, userAgent, typ
     headers: { 'User-Agent': userAgent }, redirect: 'manual', signal: AbortSignal.timeout(30000),
   };
   let response = await fetch(requestUrl, requestOptions);
-  if (path === 'getting-started.html' && response.status === 307) {
+  if (path.endsWith('.html') && [301, 302, 307, 308].includes(response.status)) {
     // Sites normalizes .html to the extensionless public route. Follow only
     // that exact same-origin redirect; login or challenge redirects still fail.
     const target = new URL(response.headers.get('location') || '', requestUrl);
-    assert.equal(target.href, new URL('getting-started', base).href, 'Guide redirect must use its public route');
+    assert.equal(target.href, new URL(path.slice(0, -5), base).href, 'Guide redirect must use its public route');
     response = await fetch(target, requestOptions);
   }
   assert.equal(response.status, status, `${path || '/'} (${userAgent}): expected ${status}, got ${response.status}`);
@@ -43,8 +47,15 @@ const results = await Promise.allSettled(checks.map(async ([path, userAgent, typ
     assert.match(body, /<meta name="robots" content="index, follow/);
     assert.match(body, /<link rel="canonical" href="https:\/\/intents-workbench\.coryparry\.chatgpt\.site\/"/);
   }
-  if (path === 'getting-started.html') {
-    assert.ok(body.includes(`<link rel="canonical" href="${canonical}getting-started"`), 'Guide canonical must use its delivered public route');
+  if (path.endsWith('.html')) {
+    assert.ok(body.includes(`<link rel="canonical" href="${canonical}${path.slice(0, -5)}"`), 'Guide canonical must use its delivered public route');
+  }
+  if ((!path || path.endsWith('.html') || path.endsWith('.md') || path === 'llms.txt') && path !== 'privacy.html') {
+    assert.ok(body.includes('Intents 1.5.2'), `${path || '/'} must identify the current release`);
+    assert.doesNotMatch(body, /Foundation-Evals-1\.3|current download is Foundation Evals|Intents (?:v)?1\.[34]\.0/);
+  }
+  if (path === 'sitemap.xml' || path === 'llms.txt') {
+    for (const route of ['compare', 'guides/evaluate-apple-foundation-models-mac']) assert.ok(body.includes(canonical + route), `Missing discovery route: ${route}`);
   }
   return `${path || '/'} · ${userAgent}: ${status}${status === 200 ? ', readable, no indexing block' : ', correctly not found'}`;
 }));

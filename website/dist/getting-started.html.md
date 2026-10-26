@@ -4,21 +4,27 @@ Canonical page: https://intents-workbench.coryparry.chatgpt.site/getting-started
 
 Start with a test you can explain.
 
+## Short answer
+
 Intents is a free, open-source Mac workbench for Apple Foundation Models. Start with one prompt, a concrete expectation, and a saved response. Then add cases that expose failures.
 
 ## Choose a build
 
-### Released download: Intents 1.4.0
+### Released download: Intents 1.5.2
 
-Published 4 October 2026. Intents was previously named Foundation Evals. The released app includes prompt suites, scoring, traces, saved comparisons, Review, Batch runs, JSON exports, and authenticated local MCP access.
+Intents was previously named Foundation Evals. The released app includes prompt suites, scoring, traces, saved comparisons, Review, Batch runs, JSON exports, and authenticated local MCP access.
 
-[Download the Apple silicon disk image](https://github.com/coryparrry/Intents/releases/download/v1.4.0/Intents-1.4.0-macOS-arm64.dmg) · [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.4.0)
+[Download for macOS · v1.5.2](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg) · [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.5.2)
 
-Open `Intents-1.4.0-macOS-arm64.dmg`, drag Intents to Applications, eject the disk image, and open the app. Follow the [v1.4.0 instructions](https://github.com/coryparrry/Intents/blob/v1.4.0/README.md#run-your-first-evaluation) for this interface.
+```sh
+brew install --cask coryparrry/tap/intents
+```
+
+Open `Intents-1.5.2-macOS-arm64.dmg`, drag Intents to Applications, eject the disk image, and open the app. Follow the [v1.5.2 instructions](https://github.com/coryparrry/Intents/blob/v1.5.2/README.md#run-your-first-evaluation) for this interface.
 
 ### Development source: Intents
 
-Build source to develop the app or try changes that have not shipped. Review and Batch runs are also available in the released 1.4.0 app. Check [published releases](https://github.com/coryparrry/Intents/releases) for any later download.
+Build source to develop the app or try changes that have not shipped. Review and Batch runs are also available in the released 1.5.2 app. Check [published releases](https://github.com/coryparrry/Intents/releases) for any later download.
 
 With Xcode 27 and its command-line tools selected, clone the repository and run the project’s build script:
 
@@ -38,7 +44,7 @@ Compatible Core AI models and custom HTTP providers have their own requirements.
 
 ## Run your first case
 
-In the released app, create a suite in **Overview**, then open **Cases** and **Setup → Scoring**.
+In the released app, select **Model evaluations → New Suite → Blank suite → Create suite**, then open **Cases** and **Setup → Scoring**.
 
 - Name the case “Capital answer”. Enter the prompt `Reply with only the capital of France` and expected text `Paris`.
 
@@ -60,6 +66,15 @@ Add a formatting failure, an ambiguous request, and a changed-preference case. U
 
 When [reporting an issue](https://github.com/coryparrry/Intents/issues), include your release or source commit, macOS and model, a minimal synthetic prompt, scoring rule, expected result, and actual response. Review exports for private content before attaching them. A reproducible case, documentation correction, or focused patch helps others test the same behavior. The source uses the [MIT licence](https://github.com/coryparrry/Intents/blob/main/LICENSE).
 
-Version facts checked 9 October 2026. The homepage’s HTML/CSS examples use a recorded 17 September evaluation and an illustrative source-only Mac App Intent contract. They are browser recreations, not live model or App Intent execution. Example scores are not model benchmarks.
+Version facts checked 26 October 2026. The homepage’s HTML/CSS examples use a recorded 17 September evaluation and an illustrative source-only Mac App Intent contract. They are browser recreations, not live model or App Intent execution. Example scores are not model benchmarks.
 
 [Return to the workbench showcase](/) · [Product overview in Markdown](/index.html.md)
+
+## Guides for your next step
+
+- [How to evaluate Apple Foundation Models on a Mac before you ship](/guides/evaluate-apple-foundation-models-mac)
+- [Install Intents with Homebrew on Apple silicon](/guides/install-intents-homebrew)
+- [Connect Codex or Claude Code to Intents over MCP](/guides/intents-mcp-coding-agents)
+- [On-device LLM evaluation on macOS 27 (without sending prompts to a vendor SaaS)](/guides/on-device-llm-evaluation-macos)
+
+[Compare evaluation tools](/compare)
