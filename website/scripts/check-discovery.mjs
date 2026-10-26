@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 const canonical = 'https://intents-workbench.coryparry.chatgpt.site/';
 const args = process.argv.slice(2);
 if (args.length && (args.length !== 2 || args[0] !== '--base')) throw new Error('Usage: node scripts/check-discovery.mjs [--base URL]');
 const base = args[1] || canonical;
+const indexNowKey = readFileSync(new URL('../dist/indexnow-key.txt', import.meta.url), 'utf8').trim();
 const checks = [
   ['', 'Intents discovery verification', /text\/html/, 'application/ld+json'],
   ['', 'Googlebot', /text\/html/, 'Apple Foundation Models'],
@@ -13,6 +15,7 @@ const checks = [
   ['robots.txt', 'OAI-SearchBot', /text\/plain/, 'User-agent: *'],
   ['sitemap.xml', 'Googlebot', /(?:application|text)\/xml/, `<loc>${canonical}</loc>`],
   ['llms.txt', 'Claude-SearchBot', /text\/plain/, 'Intents 1.5.2'],
+  ['indexnow-key.txt', 'Intents IndexNow verification', /text\/plain/, indexNowKey],
   ['index.html.md', 'ChatGPT-User', /text\/(?:markdown|plain)/, '# Intents'],
   ['getting-started.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.5.2'],
   ['getting-started.html.md', 'Claude-SearchBot', /text\/(?:markdown|plain)/, '# Get started with Intents'],
@@ -42,6 +45,7 @@ const results = await Promise.allSettled(checks.map(async ([path, userAgent, typ
   if (type) assert.match(response.headers.get('content-type') || '', type, `${path || '/'} content type`);
   if (status === 200) assert.doesNotMatch(response.headers.get('x-robots-tag') || '', /noindex|none|nosnippet/i);
   const body = await response.text();
+  if (path === 'indexnow-key.txt') assert.equal(body.trim(), indexNowKey, 'IndexNow ownership key must match this checkout');
   if (content) assert.ok(body.includes(content), `${path || '/'} must deliver product content, not a login or challenge`);
   if (!path) {
     assert.match(body, /<meta name="robots" content="index, follow/);
