@@ -32,8 +32,8 @@ extension ProductionStorage {
                 completed += chunk.records.count
                 activeLease = activeLease || (chunk.lease.map { $0.expiresAt > Date() } ?? false)
             }
-            let phase = control.cancelled ? "cancelled" : completed == job.plannedCount ? "completed"
-                : control.paused ? "paused" : activeLease ? "running" : "pending"
+            let phase = control.cancelled ? "cancelled" : control.paused ? "paused"
+                : completed == job.plannedCount ? "completed" : activeLease ? "running" : "pending"
             return ProductionProgress(completed: completed, planned: job.plannedCount, phase: phase)
         }
     }

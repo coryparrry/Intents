@@ -27,6 +27,9 @@ struct ProductionProgressTests {
         let progress = try storage.progress(jobID: job.id)
         #expect(progress.completed == 3 && progress.planned == 3 && progress.phase == "completed")
         #expect(try storage.report(jobID: job.id).completed == progress.completed)
+        try storage.setControl(jobID: job.id, paused: true)
+        #expect(try storage.progress(jobID: job.id).phase == "paused")
+        #expect(try storage.progress(jobID: job.id).phase == storage.report(jobID: job.id).phase)
         try storage.setControl(jobID: job.id, cancelled: true)
         #expect(try storage.progress(jobID: job.id).phase == "cancelled")
         // Lightweight counts must still reject malformed or out-of-range slot identities.

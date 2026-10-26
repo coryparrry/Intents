@@ -13,6 +13,8 @@ struct ProductionResultDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let record = model.selectedRecord {
+                Text("Source \(record.sourceID) · \(record.partition.rawValue) · trial \(record.repetition) · \(record.worker.name)")
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 if let job = model.selectedJob,
                    let run = ProductionResultPresentation.nativeRun(record: record, job: job),
                    let result = run.results.first {
