@@ -8,14 +8,20 @@ struct ImageEvaluationInput: Sendable {
 }
 
 actor EvaluationRunner {
+    private let batchTokenCounter: (any EvaluationPromptInputTokenCounting)?
+
+
     let signposter = OSSignposter(
         subsystem: "com.coryparry.FoundationEvals",
         category: "Evaluation"
     )
     let compatibleJudgeClient: EvaluationCompatibleJudgeClient
 
-    init(compatibleJudgeClient: EvaluationCompatibleJudgeClient = .init()) {
+    /// Injects the judge client and optional job-scoped token counter; ordinary runs retain their default counter.
+    init(compatibleJudgeClient: EvaluationCompatibleJudgeClient = .init(),
+         batchTokenCounter: (any EvaluationPromptInputTokenCounting)? = nil) {
         self.compatibleJudgeClient = compatibleJudgeClient
+        self.batchTokenCounter = batchTokenCounter
     }
 
     func run(
@@ -158,6 +164,7 @@ actor EvaluationRunner {
     }
 
     // Model injection exercises the production session path without model assets or a network.
+    /// Executes one suite with the supplied model, preserving per-sample sessions and provider-specific token counting.
     func run<Model: LanguageModel>(
         id runID: UUID,
         suiteRevision: String,
@@ -184,7 +191,7 @@ actor EvaluationRunner {
         case .customHTTP:
             EvaluationPortablePromptInputTokenCounter()
         default:
-            EvaluationSystemPromptInputTokenCounter()
+            batchTokenCounter ?? EvaluationSystemPromptInputTokenCounter()
         }
 
         let environment = EvaluationEnvironment(

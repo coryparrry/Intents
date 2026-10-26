@@ -470,7 +470,7 @@ private struct ResultsSection: View {
 
                 if let selectedResult {
                     Divider()
-                    ResultDetail(
+                    EvaluationResultDetail(
                         result: selectedResult,
                         scoringMode: run.scoringMode,
                         repetitions: run.repetitions,
@@ -583,7 +583,7 @@ private struct ResultStatusLabel: View {
     }
 }
 
-private struct ResultDetail: View {
+struct EvaluationResultDetail: View {
     let result: EvaluationSampleResult
     let scoringMode: ScoringMode
     let repetitions: Int
@@ -838,7 +838,7 @@ private struct ErrorBanner: View {
     }
 }
 
-private struct LabeledText: View {
+struct LabeledText: View {
     let label: LocalizedStringResource
     let text: String
 

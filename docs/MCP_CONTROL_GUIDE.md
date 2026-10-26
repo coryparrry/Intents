@@ -57,3 +57,7 @@ Approve a completed baseline with `eval_production_baseline_approve` after readi
 Use the [Review guide](EVAL_REVIEW_GUIDE.md) for human labels, failure patterns, regression promotion, and Development/Held-out judge checks. Use the [production guide](PRODUCTION_EVALS_GUIDE.md) for original-output audits and current-evidence baseline approval. A committed operation receipt proves that a request was recorded; inspect its saved result before reporting a pass.
 
 Judge secrets are bound in Keychain to the saved connection ID, provider, and exact endpoint. Keys are resolved at execution time and never included in frozen context. Older unbound keys or endpoint/provider changes require explicit key re-entry in judge settings. Imported worker metadata cannot redirect an existing bound credential.
+
+### Polling large batches
+
+For routine progress, call `eval_production_job_get` with `includeReport: false`. This returns saved slot counts and phase without running the full provenance, scoring and release-gate audit. Progress alone cannot qualify a batch. The default remains a full audited report. Once `runningOnThisMac` is false, read the default full report. Page `eval_production_results` with a fixed `limit`, advancing `offset` by `limit` until the returned `count` is less than `limit`. Inspect errors, uncertain work and gates before claiming completion.

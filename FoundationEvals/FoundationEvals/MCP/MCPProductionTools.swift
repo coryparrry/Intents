@@ -3,12 +3,14 @@ import Foundation
 enum MCPProductionTools {
   static let definitions: [MCPToolDefinition] = {
     let s = MCPControlSchema.self
+    /// Defines a bounded read-only production action using the shared schema builder.
     func read(
       _ name: String, _ description: String, _ fields: [String: MCPJSONValue] = [:],
       _ required: [String] = []
     ) -> MCPToolDefinition {
       s.tool("eval_production_" + name, description, fields, required: required)
     }
+    /// Defines a production mutation with operation identity and optional destructive-action semantics.
     func write(
       _ name: String, _ description: String, _ fields: [String: MCPJSONValue], _ required: [String],
       destructive: Bool = false
@@ -82,8 +84,8 @@ enum MCPProductionTools {
         ["jobID", "expectedJobRevision", "newJobID", "name"]),
       read(
         "job_get",
-        "Read frozen job metadata, control and report. Execution context is retrieved separately in bounded chunks.",
-        ["jobID": s.uuid], ["jobID"]),
+        "Read frozen job metadata, control and report. Set includeReport=false for lightweight progress polling (report is null; progress has saved counts only). Read the default full report at completion for scores, evidence and gates. Execution context is retrieved separately in bounded chunks.",
+        ["jobID": s.uuid, "includeReport": s.boolean], ["jobID"]),
       read(
         "context_read",
         "Read base64 frozen execution context bytes. Never contains authentication secrets.",

@@ -148,6 +148,7 @@ import Foundation
     return try ProductionCodec.decode(
       ProductionJobConfiguration.self, JSONSerialization.data(withJSONObject: native))
   }
+  /// Executes validated production reads and persisted operations, exposing lightweight progress only when explicitly requested.
   nonisolated private static func readOrPersist(_ call: MCPControlCall, storage: ProductionStorage)
     throws -> [String: MCPJSONValue]
   {
@@ -267,8 +268,12 @@ import Foundation
       return ["jobID": .string(value.id.uuidString)]
     case "eval_production_job_get":
       let value = try storage.loadJob(call.id("jobID"))
-      var report = try storage.report(jobID: value.id)
-      report.job = stripped(report.job)
+      let includeReport = call.arguments.objectValue?["includeReport"] != .bool(false)
+      var report = includeReport ? try storage.report(jobID: value.id) : nil
+      if var fullReport = report {
+        fullReport.job = stripped(fullReport.job)
+        report = fullReport
+      }
       let currentControl = try storage.control(value)
       return [
         "job": try encode(stripped(value)),
@@ -276,6 +281,7 @@ import Foundation
         "control": try encode(currentControl),
         "controlRevision": .string(ProductionStorage.controlRevision(currentControl)),
         "report": try encode(report),
+        "progress": includeReport ? .null : try encode(storage.progress(jobID: value.id)),
       ]
     case "eval_production_context_read":
       let value = try storage.loadJob(call.id("jobID"))
