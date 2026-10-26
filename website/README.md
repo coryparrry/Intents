@@ -118,13 +118,53 @@ The canonical and sitemap URLs must still refer to the public Site.
 Public Sites access is required. The checks use representative crawler
 user-agent headers; they do not prove visits from real crawler IPs, indexing,
 rankings, or inclusion in AI answers. Search Console / Bing Webmaster ownership
-verification and sitemap submission can be completed by the domain owner; no
-verification token has been invented or added to this site.
+verification and sitemap submission can be completed by the domain owner.
+IndexNow uses the separate generated ownership file described below; it does
+not establish Search Console or Bing Webmaster account ownership.
 
 References: [Google AI search guidance](https://developers.google.com/search/docs/appearance/ai-features),
 [OpenAI crawlers](https://developers.openai.com/api/docs/bots),
 [Anthropic crawlers](https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler),
 [llms.txt proposal](https://llmstxt.org/), and [Schema.org SoftwareApplication](https://schema.org/SoftwareApplication).
+
+## IndexNow after publication
+
+The root `dist/indexnow-key.txt` is the generated IndexNow ownership proof.
+Keep it stable across deployments and out of the sitemap. It must be publicly
+served before submitting URLs. The submission script uses its explicit root
+`keyLocation`, so it covers this Site's host without DNS or a custom domain.
+
+Preview the sitemap URLs without sending any network request:
+
+```sh
+node scripts/submit-indexnow.mjs
+```
+
+After a successful Sites deployment, verify production delivery, then submit
+only the pages that were just added, materially changed, or deleted. Use
+extensionless canonical paths; deleted pages do not need to remain in the
+sitemap. For example, after publishing changes to these two pages:
+
+```sh
+node scripts/check-discovery.mjs
+node scripts/submit-indexnow.mjs --submit /compare /guides/intents-mcp-coding-agents
+```
+
+`--submit` requires explicit paths or same-origin HTTPS URLs. The script
+deduplicates them, enforces the 10,000-URL batch limit, verifies the live key
+matches this checkout, and sends one JSON POST to `https://api.indexnow.org/indexnow`.
+It refuses redirects or a missing/mismatched key. It does not run from visitors'
+browsers or on a schedule, and ordinary discovery checks never send notifications.
+
+HTTP 200 means the URLs were received; HTTP 202 means key validation is still
+pending. Neither proves crawling, indexing, or ranking. Errors exit nonzero;
+there are no automatic retries. Investigate 403/422 responses and wait after
+429 rate limits instead of repeatedly resubmitting. Participating search engines
+share notifications, so there is no need to post the same batch to each one.
+
+References: [IndexNow protocol](https://www.indexnow.org/documentation) and
+[submission guidance](https://www.indexnow.org/faq). This is a publishing step,
+not an indexing guarantee or a Google Search Console submission.
 
 ## Website analytics
 
