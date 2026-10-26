@@ -15,6 +15,7 @@ final class ProductionWorkspaceStore {
     var progress: ProductionProgress?
     var runningProgress: ProductionProgress?
     var records: [ProductionRecord] = []
+    private var outcomesByRequestID: [UUID: ProductionOutcome] = [:]
     var selectedRecord: ProductionRecord?
     var selectedExample: ProductionExample?
     var review: ProductionReviewResolution?
@@ -43,8 +44,8 @@ final class ProductionWorkspaceStore {
     func refresh() async {
         guard !isClosing, let storage else { return }
         let token = UUID(); refreshID = token
-        let selectedID = selectedJobID, page = offset, activeID = runningJobID
-        let polling = runningJobID == selectedID && runningJobID != nil && pane == .jobs
+        let selectedID = selectedJobID, page = offset, activeID = runningJobID, expectedPane = pane
+        let polling = runningJobID == selectedID && runningJobID != nil && expectedPane == .jobs
         isLoading = true
         defer { if refreshID == token { isLoading = false } }
         do {
@@ -54,23 +55,34 @@ final class ProductionWorkspaceStore {
                 let runningProgress = try activeID.map { try storage.progress(jobID: $0) }
                 let progress: ProductionProgress? = polling ? runningProgress : nil
                 let records = try selectedID.map { polling ? [] : try storage.records(jobID: $0, offset: page, limit: 50) } ?? []
-                return (datasets,jobs,workers,schedules,report,progress,runningProgress,records)
+                var outcomes: [UUID: ProductionOutcome] = [:]
+                if let selectedID {
+                    for record in records {
+                        let review = try storage.review(jobID: selectedID, requestID: record.response.requestID)
+                        outcomes[record.response.requestID] = review.outcome ?? review.response?.outcome ?? record.response.outcome
+                    }
+                }
+                return (datasets,jobs,workers,schedules,report,progress,runningProgress,records,outcomes)
             }.value
-            guard !isClosing, refreshID == token, selectedJobID == selectedID, offset == page, runningJobID == activeID else { return }
-            (datasets,jobs,workers,schedules,report,progress,runningProgress,records) = snapshot
+            guard !isClosing, refreshID == token, selectedJobID == selectedID, offset == page, runningJobID == activeID, pane == expectedPane else { return }
+            (datasets,jobs,workers,schedules,report,progress,runningProgress,records,outcomesByRequestID) = snapshot
             if let record = selectedRecord, let id = selectedJobID { review = try storage.review(jobID: id, requestID: record.response.requestID) }
         } catch {
-            if !isClosing, refreshID == token, selectedJobID == selectedID, offset == page {
+            if !isClosing, refreshID == token, selectedJobID == selectedID, offset == page, pane == expectedPane {
                 self.error = error.localizedDescription
             }
         }
+    }
+    /// Uses the same review/reconciliation precedence as the audit without changing the original saved record.
+    func outcome(for record: ProductionRecord) -> ProductionOutcome {
+        outcomesByRequestID[record.response.requestID] ?? record.response.outcome
     }
     /// Selects a batch and clears prior details before asynchronously loading its first result page.
     func select(_ id: UUID) {
         guard !isClosing else { return }
         refreshID = UUID()
         selectedJobID = id; offset = 0; records = []; selectedRecord = nil; selectedExample = nil; review = nil; report = nil
-        progress = nil
+        progress = nil; outcomesByRequestID = [:]
         Task { await refresh() }
     }
     /// Opens a saved batch directly in Results and loads its report and records.

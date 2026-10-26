@@ -1,9 +1,11 @@
 import Foundation
+import Darwin
 import Testing
 @testable import FoundationEvals
 
-/// Imports a single captured response for navigation tests without invoking a model.
+/// Exercises batch navigation and review presentation using isolated stores.
 @MainActor struct ProductionBatchNavigationTests {
+    /// Imports one captured response without invoking a model.
     private func dataset(_ storage: ProductionStorage, root: URL) throws -> ProductionDataset {
         let file = root.appendingPathComponent("examples.jsonl")
         try Data("{\"id\":\"case\",\"prompt\":\"Question\",\"capturedOutput\":\"Saved answer\"}\n".utf8).write(to: file)
@@ -111,6 +113,69 @@ import Testing
         run.results[0].status = .unscored; run.id = UUID()
         record.response.artifact = try ProductionCodec.encode(run)
         #expect(ProductionResultPresentation.nativeRun(record: record, job: job) == nil)
+    }
+
+    /// Blocks a Jobs snapshot at the storage lock and verifies it cannot clear Results after a pane switch.
+    @Test(.timeLimit(.minutes(1))) func refreshRejectsSnapshotsFromThePreviousPane() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("batch-pane-race-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = ProductionWorkspaceStore(root: root)
+        let storage = try #require(model.storage)
+        let data = try dataset(storage, root: root)
+        let job = try storage.createCapturedJob(name: "Pane race", datasetRevision: data.revision)
+        let worker = ProductionWorker(id: "fixture", name: "Fixture", platform: "captured", operatingSystem: "fixture", hardware: "fixture", locale: "en", model: "original")
+        _ = try await ProductionBatchRunner(storage: storage).run(jobID: job.id, worker: worker) { try ProductionStorage.capturedResponse($0) }
+        model.jobs = [job]; model.selectedJobID = job.id; model.pane = .review
+        await model.refresh()
+        #expect(model.report?.completed == 1 && model.records.count == 1)
+        let descriptor = open(root.appendingPathComponent("ProductionEvals/.store.lock").path, O_RDWR)
+        #expect(descriptor >= 0)
+        guard descriptor >= 0 else { return }
+        defer { close(descriptor) }
+        #expect(flock(descriptor, LOCK_EX) == 0)
+        defer { _ = flock(descriptor, LOCK_UN) }
+        model.pane = .jobs; model.runningJobID = job.id
+        let staleRefresh = Task { await model.refresh() }
+        for _ in 0..<500 {
+            if model.isLoading { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(model.isLoading)
+        model.pane = .review
+        _ = flock(descriptor, LOCK_UN)
+        await staleRefresh.value
+        #expect(model.report?.completed == 1 && model.records.count == 1)
+        model.runningJobID = nil
+    }
+
+    /// Checks table outcomes follow reconciled evidence and review disagreement while raw records remain immutable.
+    @Test func tableOutcomesFollowReconciliationAndDisagreement() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("batch-review-outcome-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = ProductionWorkspaceStore(root: root)
+        let storage = try #require(model.storage)
+        let data = try dataset(storage, root: root)
+        let job = try storage.createCapturedJob(name: "Reviewed", datasetRevision: data.revision)
+        let worker = ProductionWorker(id: "fixture", name: "Fixture", platform: "captured", operatingSystem: "fixture", hardware: "fixture", locale: "en", model: "original")
+        _ = try await ProductionBatchRunner(storage: storage).run(jobID: job.id, worker: worker) {
+            .init(requestID: $0.requestID, outcome: .needsEvidence, explanation: "Interrupted fixture", cost: 0)
+        }
+        model.jobs = [job]; model.selectedJobID = job.id; model.pane = .review
+        await model.refresh()
+        let original = try #require(model.records.first)
+        #expect(model.outcome(for: original) == .needsEvidence)
+        let id = original.response.requestID
+        try storage.appendReview(jobID: job.id, slot: 0, event: .init(requestID: id, reviewer: "A", action: .assign, assignee: "A", note: "Verify fixture evidence"))
+        try storage.appendReview(jobID: job.id, slot: 0, event: .init(requestID: id, reviewer: "A", action: .reconcile, note: "Verified saved state", reconciledResponse: .init(requestID: id, outcome: .passed, output: "Verified", cost: 0)))
+        await model.refresh()
+        #expect(model.outcome(for: original) == .passed && model.report?.counts.passed == 1)
+        #expect(model.records.first?.response.outcome == .needsEvidence)
+        for (reviewer, outcome) in [("B", ProductionOutcome.failed), ("A", .passed)] {
+            try storage.appendReview(jobID: job.id, slot: 0, event: .init(requestID: id, reviewer: reviewer, outcome: outcome, note: "Independent fixture assessment"))
+        }
+        await model.refresh()
+        #expect(model.outcome(for: original) == .needsEvidence && model.report?.counts.uncertain == 1)
+        #expect(model.records.first?.response.outcome == .needsEvidence)
     }
 
 }

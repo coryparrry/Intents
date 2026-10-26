@@ -6,6 +6,7 @@ struct ProductionReviewPane: View {
 
     private struct Row: Identifiable {
         let record: ProductionRecord
+        let outcome: ProductionOutcome
         var id: Int { record.slot }
     }
     private var selection: Binding<Int?> {
@@ -24,13 +25,13 @@ struct ProductionReviewPane: View {
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     WorkspacePanelHeader("Results", count: model.report?.completed ?? 0)
-                    Table(model.records.map { Row(record: $0) }, selection: selection) {
+                    Table(model.records.map { Row(record: $0, outcome: model.outcome(for: $0)) }, selection: selection) {
                         TableColumn("Case") { row in
                             Text(row.record.metadata["task"] ?? row.record.exampleID).lineLimit(1)
                         }.width(min: 160, ideal: 300)
                         TableColumn("Outcome") { row in
-                            Label(row.record.response.outcome.rawValue.capitalized, systemImage: symbol(row.record.response.outcome))
-                                .foregroundStyle(color(row.record.response.outcome))
+                            Label(row.outcome.rawValue.capitalized, systemImage: symbol(row.outcome))
+                                .foregroundStyle(color(row.outcome))
                         }.width(min: 90, ideal: 110)
                         TableColumn("Latency") { row in
                             Text(ProductionResultPresentation.latency(row.record.response)).monospacedDigit()
