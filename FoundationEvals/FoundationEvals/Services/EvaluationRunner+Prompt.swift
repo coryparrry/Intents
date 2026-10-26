@@ -251,6 +251,11 @@ extension EvaluationRunner {
         tokenCount: Int,
         imageInputTokenCountAvailable: Bool
     ) {
+        let suite = suite.effectiveSuite(for: evaluationCase)
+        if evaluationCase.documentEvidence != nil,
+           suite.modelConfiguration.contextPolicy != .requireFullInput || suite.modelConfiguration.referenceMode != .inline {
+            throw EvaluationStoreError.invalidSuite("Document context must be supplied inline and complete; automatic reference fitting and lookup are unsupported.")
+        }
         let afterToolProfileIsReachable = suite.features.profile.enabled
             && (profileHasTransitioned || !tools.isEmpty)
         let instructionTokens = suite.instructions.isEmpty

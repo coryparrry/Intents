@@ -200,6 +200,9 @@ actor EvaluationCompatibleJudgeClient {
                 Return a complete JSON verdict for every numbered requirement. Do not add fields or prose.
                 """
             let attemptPrompt = [prompt, repair].compactMap { $0 }.joined(separator: "\n\n")
+            if evaluationCase.documentEvidence != nil {
+                try Self.validateDocumentBudget(prompt: attemptPrompt, configuration: configuration, connection: connection)
+            }
             attempts.append(.init(prompt: attemptPrompt, requestConfiguration: configuration))
             do {
                 let envelope = try await requestVerdict(prompt: attemptPrompt, configuration: configuration,
@@ -267,6 +270,20 @@ actor EvaluationCompatibleJudgeClient {
             maximumResponseTokens: thinking ? thinkingJudgeMaxTokens : portableJudgeMaxTokens,
             timeoutSeconds: requestTimeoutSeconds(for: connection),
             stream: connection.generationPolicy != .portable, thinking: thinking)
+    }
+
+    static func validateDocumentBudget(prompt: String, configuration: EvaluationJudgeRequestConfiguration,
+                                       connection: EvaluationJudgeConnection, candidateReserve: Int = 0) throws {
+        guard let limit = connection.capabilities.contextWindowTokens, limit >= 2_048 else {
+            throw EvaluationCompatibleJudgeError.capabilityMismatch("Declare this judge's context window in Settings before sending document evidence.")
+        }
+        let schema = try JSONEncoder().encode(ResponseFormat.verdict(criteriaCount: configuration.criteriaCount))
+        // A byte-based upper estimate plus envelope headroom; rechecked against the actual candidate for every attempt.
+        let budget = prompt.utf8.count + configuration.instructions.utf8.count + schema.count
+            + 1_024 + configuration.maximumResponseTokens + candidateReserve
+        guard budget <= limit else {
+            throw EvaluationCompatibleJudgeError.capabilityMismatch("The complete document evidence needs approximately \(budget) tokens with conservative admission, beyond this judge's declared \(limit)-token context. Use a smaller complete context or a capable judge; no evidence was truncated.")
+        }
     }
 
     /// Posts a configured verdict request, decodes one completion and preserves validated usage and reported cost.

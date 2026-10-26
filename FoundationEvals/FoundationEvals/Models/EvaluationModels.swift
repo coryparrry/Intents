@@ -8,6 +8,8 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
     var conversation = EvaluationConversationConfiguration()
     var fieldAssertions: [EvaluationFieldAssertion]? = nil
     var reviewSource: EvaluationRegressionSource? = nil
+    var criteriaOverride: [String]? = nil
+    var documentEvidence: EvaluationDocumentEvidence? = nil
 
     /// Creates a case with optional conversation setup and field assertions; review provenance is assigned separately.
     init(
@@ -27,7 +29,30 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, prompt, expected, conversation, fieldAssertions, reviewSource
+        case id, name, prompt, expected, conversation, fieldAssertions, reviewSource, criteriaOverride, documentEvidence
+    }
+
+    private struct VersionedPrompt: Codable {
+        var format = "document-case-v1"
+        var text: String
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        // Pre-feature readers require a String here and must fail instead of dropping evidence.
+        if documentEvidence != nil || criteriaOverride != nil {
+            try container.encode(VersionedPrompt(text: prompt), forKey: .prompt)
+        } else {
+            try container.encode(prompt, forKey: .prompt)
+        }
+        try container.encode(expected, forKey: .expected)
+        try container.encode(conversation, forKey: .conversation)
+        try container.encodeIfPresent(fieldAssertions, forKey: .fieldAssertions)
+        try container.encodeIfPresent(reviewSource, forKey: .reviewSource)
+        try container.encodeIfPresent(criteriaOverride, forKey: .criteriaOverride)
+        try container.encodeIfPresent(documentEvidence, forKey: .documentEvidence)
     }
 
     /// Decodes required case text, generating an absent ID and defaulting absent conversation settings for older suite files.
@@ -35,7 +60,18 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try container.decode(String.self, forKey: .name)
-        prompt = try container.decode(String.self, forKey: .prompt)
+        criteriaOverride = try container.decodeIfPresent([String].self, forKey: .criteriaOverride)
+        documentEvidence = try container.decodeIfPresent(EvaluationDocumentEvidence.self, forKey: .documentEvidence)
+        if criteriaOverride != nil || documentEvidence != nil {
+            let versioned = try container.decode(VersionedPrompt.self, forKey: .prompt)
+            guard versioned.format == "document-case-v1" else {
+                throw DecodingError.dataCorruptedError(forKey: .prompt, in: container,
+                    debugDescription: "This case requires a newer version of Intents.")
+            }
+            prompt = versioned.text
+        } else {
+            prompt = try container.decode(String.self, forKey: .prompt)
+        }
         expected = try container.decode(String.self, forKey: .expected)
         conversation = try container.decodeIfPresent(EvaluationConversationConfiguration.self, forKey: .conversation)
             ?? EvaluationConversationConfiguration()
@@ -216,7 +252,8 @@ struct EvaluationSuite: Codable, Equatable, Sendable {
     var releasePolicy = EvaluationReleasePolicy()
 
     var needsModelJudge: Bool {
-        scoringMode == .modelJudge && rubricCriteria.contains { EvaluationExactCriterion.expectedText(in: $0) == nil }
+        scoringMode == .modelJudge && (cases.isEmpty ? [rubricCriteria] : cases.map { effectiveCriteria(for: $0) })
+            .joined().contains { EvaluationExactCriterion.expectedText(in: $0) == nil }
     }
 
     var usesSubjectModelForJudging: Bool {

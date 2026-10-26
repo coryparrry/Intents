@@ -123,6 +123,9 @@ struct SuiteCasesView: View {
             .frame(maxHeight: .infinity)
             Divider()
             HStack(spacing: 8) {
+                if store.draftSuite.hasDocumentCases {
+                    DocumentSuiteExportButton(suite: store.draftSuite).labelStyle(.iconOnly).disabled(isBusy)
+                }
                 Button("Add Case", systemImage: "plus", action: addCase)
                     .labelStyle(.titleAndIcon)
                     .buttonStyle(.borderless)
@@ -259,6 +262,8 @@ private struct EvaluationCaseEditor: View {
             }
 
             LatestResponsePanel(verdict: verdict, run: latestRun, openRun: openRun)
+
+            DocumentEvidenceReview(evaluationCase: $evaluationCase)
 
             DisclosureGroup {
                 VStack(alignment: .leading, spacing: 14) {

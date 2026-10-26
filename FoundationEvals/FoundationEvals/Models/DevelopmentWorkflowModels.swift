@@ -164,6 +164,8 @@ enum EvaluationJudgeConnectionKind: String, Codable, CaseIterable, Identifiable,
 struct EvaluationJudgeCapabilities: Codable, Equatable, Sendable {
     var structuredOutputs = true
     var multimodal = false
+    /// Required for document evidence admission; nil preserves legacy connection behavior.
+    var contextWindowTokens: Int? = nil
 }
 
 enum EvaluationJudgeGenerationPolicy: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -257,6 +259,9 @@ struct EvaluationJudgeConnection: Identifiable, Codable, Equatable, Sendable {
     }
 
     var validationIssue: String? {
+        if let context = capabilities.contextWindowTokens, !(2_048...10_000_000).contains(context) {
+            return "The declared judge context window must be between 2,048 and 10,000,000 tokens."
+        }
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedModel = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return "Name the judge connection." }
@@ -443,6 +448,8 @@ private struct EvaluationScoringCaseProjection: Codable {
     var expected: String
     var conversation: EvaluationScoringConversationProjection
     var fieldAssertions: [EvaluationScoringAssertionProjection]
+    var criteriaOverride: [String]?
+    var documentEvidence: EvaluationDocumentEvidence?
     /// Projects case content used for scoring without display names or review provenance.
     init(case evaluationCase: EvaluationCase) {
         id = evaluationCase.id
@@ -450,6 +457,8 @@ private struct EvaluationScoringCaseProjection: Codable {
         expected = evaluationCase.expected
         conversation = .init(configuration: evaluationCase.conversation)
         fieldAssertions = (evaluationCase.fieldAssertions ?? []).map(EvaluationScoringAssertionProjection.init(assertion:))
+        criteriaOverride = evaluationCase.criteriaOverride
+        documentEvidence = evaluationCase.documentEvidence
     }
 }
 

@@ -52,6 +52,9 @@ function withDefaults(defaults, value) {
 }
 /** Validates and normalizes an app suite with generated identities and native defaults. Draft mode permits incomplete editor content but retains size, identity, and integrity checks. */
 export function appSuite(value, generateId = randomUUID, { draft = false } = {}) {
+  if (Array.isArray(value.cases) && value.cases.some((item) => item && (item.documentEvidence != null || item.criteriaOverride != null || item.prompt?.format === 'document-case-v1'))) {
+    throw new Error('Document suites require source review and per-case scoring in the native Intents app. This plugin cannot import or execute them yet; no source evidence was discarded.');
+  }
   const schema = draft ? DRAFT_APP_SUITE_SCHEMA : APP_SUITE_SCHEMA;
   validateSchema(value, schema, 'suite', schema);
   const modelConfiguration = { ...MODEL_DEFAULTS, ...clean(value.modelConfiguration || {}) };
