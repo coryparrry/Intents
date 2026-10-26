@@ -9,4 +9,5 @@ SWIFT_MANUAL_METHODS = frozenset()
 
 
 def swift_manual_methods():
+    """Return the explicitly opted-in Swift method identifiers that ordinary CI dispatch must omit."""
     return SWIFT_MANUAL_METHODS

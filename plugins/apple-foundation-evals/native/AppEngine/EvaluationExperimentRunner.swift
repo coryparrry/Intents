@@ -19,6 +19,7 @@ actor EvaluationExperimentRunner {
 
     private let runPart: PartRunner
 
+    /// Creates an experiment runner whose trial parts execute through one shared evaluation actor.
     init() {
         let runner = EvaluationRunner()
         runPart = { id, suiteRevision, startedAt, suite, images, progress in
@@ -33,10 +34,13 @@ actor EvaluationExperimentRunner {
         }
     }
 
+    /// Creates an experiment runner with an injected trial executor that reports per-sample progress.
     init(runPart: @escaping PartRunner) {
         self.runPart = runPart
     }
 
+    /// Executes paired variant trials in frozen order, adjusting repetitions and reporting progress across both variants.
+    /// Throws for invalid plans, cancellation, or missing output; batch-stopping errors end further trials and remain recorded in the combined runs.
     func run(
         suite: EvaluationSuite,
         experiment: EvaluationExperiment,
@@ -111,6 +115,7 @@ actor EvaluationExperimentRunner {
         )
     }
 
+    /// Rejects empty, overflowing, duplicate-case, or malformed experiment plans and requires each trial pair to contain both variants exactly once.
     private func validatePlan(suite: EvaluationSuite, experiment: EvaluationExperiment) throws {
         let samples = suite.cases.count.multipliedReportingOverflow(by: suite.repetitions)
         let positions = samples.partialValue.multipliedReportingOverflow(by: 2)
@@ -129,6 +134,8 @@ actor EvaluationExperimentRunner {
         }
     }
 
+    /// Combines trial parts into one variant run with planned counts, termination evidence, and merged assessments.
+    /// A fallback supplies metadata for an unexecuted variant; throws when neither parts nor fallback exist.
     private func combined(
         parts: [EvaluationRun],
         id: UUID,
@@ -189,6 +196,7 @@ actor EvaluationExperimentRunner {
         return run
     }
 
+    /// Sums available judgment costs, marking the sum estimated if needed or unavailable when any component lacks a monetary amount.
     private func combinedCost(_ costs: [EvaluationCost]) -> EvaluationCost {
         guard costs.allSatisfy({ $0.usd != nil }) else {
             return .init(availability: .unavailable, usd: nil, explanation: "At least one experiment judgment cost was unavailable.")

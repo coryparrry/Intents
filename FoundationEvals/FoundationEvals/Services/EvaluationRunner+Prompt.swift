@@ -11,35 +11,47 @@ protocol EvaluationPromptInputTokenCounting: Sendable {
     func tokenCount(for prompt: Prompt, cacheKey: String) async throws -> Int
     /// Estimates frozen instructions using an exact source-text key when caching is available.
     func tokenCount(for instructions: Instructions, cacheKey: String) async throws -> Int
+    /// Counts prompt input using the implementation's tokenizer or admission policy.
     func tokenCount(for prompt: Prompt) async throws -> Int
+    /// Counts session instructions separately from the prompt.
     func tokenCount(for instructions: Instructions) async throws -> Int
+    /// Counts the response schema included in input budgeting.
     func tokenCount(for schema: GenerationSchema) async throws -> Int
+    /// Counts the model-facing transcript history used by admission.
     func tokenCount(for history: [Transcript.Entry]) async throws -> Int
+    /// Counts enabled tool definitions included in the request.
     func tokenCount(for tools: [any Tool]) async throws -> Int
+    /// Counts text without requiring image attachment tokenization.
     func tokenCount(forText text: String) async throws -> Int
 }
 
 struct EvaluationSystemPromptInputTokenCounter: EvaluationPromptInputTokenCounting {
+    /// Uses the default system model tokenizer for a prompt, propagating tokenizer failures.
     func tokenCount(for prompt: Prompt) async throws -> Int {
         try await SystemLanguageModel.default.tokenCount(for: prompt)
     }
 
+    /// Uses the default system model tokenizer for session instructions.
     func tokenCount(for instructions: Instructions) async throws -> Int {
         try await SystemLanguageModel.default.tokenCount(for: instructions)
     }
 
+    /// Uses the default system model tokenizer for a generation schema.
     func tokenCount(for schema: GenerationSchema) async throws -> Int {
         try await SystemLanguageModel.default.tokenCount(for: schema)
     }
 
+    /// Uses the default system model tokenizer for transcript history.
     func tokenCount(for history: [Transcript.Entry]) async throws -> Int {
         try await SystemLanguageModel.default.tokenCount(for: history)
     }
 
+    /// Uses the default system model tokenizer for enabled tool definitions.
     func tokenCount(for tools: [any Tool]) async throws -> Int {
         try await SystemLanguageModel.default.tokenCount(for: tools)
     }
 
+    /// Wraps text in a prompt for the default system model tokenizer.
     func tokenCount(forText text: String) async throws -> Int {
         try await SystemLanguageModel.default.tokenCount(for: Prompt(text))
     }
@@ -51,38 +63,47 @@ struct EvaluationSystemPromptInputTokenCounter: EvaluationPromptInputTokenCounti
 struct EvaluationPortablePromptInputTokenCounter: EvaluationPromptInputTokenCounting,
     EvaluationToolOutputTokenCounting,
     EvaluationCustomToolTokenCounting {
+    /// Estimates representable tool output from the UTF-8 size of its description.
     func tokenCount<Output: PromptRepresentable>(for output: Output) async throws -> Int {
         Self.estimate(String(describing: output))
     }
 
+    /// Estimates prompt input from the UTF-8 size of its description.
     func tokenCount(for prompt: Prompt) async throws -> Int {
         Self.estimate(String(describing: prompt))
     }
 
+    /// Estimates instruction input from the UTF-8 size of its description.
     func tokenCount(for instructions: Instructions) async throws -> Int {
         Self.estimate(String(describing: instructions))
     }
 
+    /// Estimates schema input from the UTF-8 size of its description.
     func tokenCount(for schema: GenerationSchema) async throws -> Int {
         Self.estimate(String(describing: schema))
     }
 
+    /// Estimates history input from the UTF-8 size of its description.
     func tokenCount(for history: [Transcript.Entry]) async throws -> Int {
         Self.estimate(String(describing: history))
     }
 
+    /// Estimates tool-definition input from the UTF-8 size of the tool array description.
     func tokenCount(for tools: [any Tool]) async throws -> Int {
         Self.estimate(String(describing: tools))
     }
 
+    /// Uses UTF-8 byte length as a portable text-token estimate.
     func tokenCount(forText text: String) async throws -> Int {
         Self.estimate(text)
     }
 
+    /// Uses UTF-8 byte length to budget custom-tool argument or output text.
     func tokenCount(for text: String) async throws -> Int {
         Self.estimate(text)
     }
 
+    /// Returns at least one token, using one token per UTF-8 byte as the conservative estimate.
     private static func estimate(_ text: String) -> Int {
         // Byte-derived tokenizers cannot emit more than one token per input byte.
         max(1, text.utf8.count)
@@ -92,30 +113,24 @@ struct EvaluationPortablePromptInputTokenCounter: EvaluationPromptInputTokenCoun
 /// Exact prompt admission is performed by a configured custom-provider tokenizer
 /// endpoint after Foundation Models has assembled the complete generation request.
 struct EvaluationDeferredPromptInputTokenCounter: EvaluationPromptInputTokenCounting {
+    /// Returns zero because prompt admission is deferred to the provider tokenizer endpoint.
     func tokenCount(for prompt: Prompt) async throws -> Int { 0 }
+    /// Returns zero because the provider tokenizer will count instructions in the assembled request.
     func tokenCount(for instructions: Instructions) async throws -> Int { 0 }
+    /// Returns zero because the provider tokenizer will count the schema in the assembled request.
     func tokenCount(for schema: GenerationSchema) async throws -> Int { 0 }
+    /// Returns zero because the provider tokenizer will count history in the assembled request.
     func tokenCount(for history: [Transcript.Entry]) async throws -> Int { 0 }
+    /// Returns zero because the provider tokenizer will count tool definitions in the assembled request.
     func tokenCount(for tools: [any Tool]) async throws -> Int { 0 }
+    /// Returns zero because text admission is deferred to the provider tokenizer endpoint.
     func tokenCount(forText text: String) async throws -> Int { 0 }
 }
 
 enum EvaluationInputTokenCounter {
-    /// Uses keyed counts for text-only prompts while preserving image-aware counting and availability evidence.
-    static func promptEstimate(
-        text: String,
-        prompt: Prompt,
-        hasImages: Bool
-    ) async throws -> EvaluationInputTokenEstimate {
-        try await promptEstimate(
-            text: text,
-            prompt: prompt,
-            hasImages: hasImages,
-            using: EvaluationSystemPromptInputTokenCounter()
-        )
-    }
-
-    /// Uses keyed counts for text-only prompts while preserving image-aware counting and availability evidence.
+    /// Counts the full prompt when it has no images, otherwise counting only its text.
+    ///
+    /// Image-bearing input is marked incomplete because attachment tokens are not measured here.
     static func promptEstimate<Counter: EvaluationPromptInputTokenCounting>(
         text: String,
         prompt: Prompt,
@@ -134,12 +149,7 @@ enum EvaluationInputTokenCounter {
         )
     }
 
-    static func historyEstimate(
-        _ history: [Transcript.Entry]
-    ) async throws -> EvaluationInputTokenEstimate {
-        try await historyEstimate(history, using: EvaluationSystemPromptInputTokenCounter())
-    }
-
+    /// Counts history after removing image attachments when present and marks that estimate as missing image tokens.
     static func historyEstimate<Counter: EvaluationPromptInputTokenCounting>(
         _ history: [Transcript.Entry],
         using tokenCounter: Counter
@@ -156,6 +166,7 @@ enum EvaluationInputTokenCounter {
         )
     }
 
+    /// Detects attachment segments in supported transcript entry kinds.
     static func historyContainsImage(_ history: [Transcript.Entry]) -> Bool {
         history.contains { entry in
             segments(in: entry).contains {
@@ -165,6 +176,7 @@ enum EvaluationInputTokenCounter {
         }
     }
 
+    /// Copies history with attachment segments removed, preserving tool-call entries and other segment content.
     static func historyWithoutImages(_ history: [Transcript.Entry]) -> [Transcript.Entry] {
         history.map { entry in
             switch entry {
@@ -191,6 +203,7 @@ enum EvaluationInputTokenCounter {
         }
     }
 
+    /// Extracts segments from known entry kinds, returning none for tool-call or unknown entries.
     private static func segments(in entry: Transcript.Entry) -> [Transcript.Segment] {
         switch entry {
         case .instructions(let instructions): instructions.segments
@@ -203,6 +216,7 @@ enum EvaluationInputTokenCounter {
         }
     }
 
+    /// Filters attachment segments while preserving the order of all remaining segments.
     private static func segmentsWithoutImages(
         _ segments: [Transcript.Segment]
     ) -> [Transcript.Segment] {
@@ -214,7 +228,12 @@ enum EvaluationInputTokenCounter {
 }
 
 extension EvaluationRunner {
-    /// Prepares a request within its context budget while retaining instruction, tool, schema, profile and history costs.
+    /// Composes a prompt and checks its input and same-model judge headroom before generation.
+    ///
+    /// Counts instructions, tools, schema, reachable after-tool instructions, and model-facing
+    /// history. Inline reference text may be shortened in up to eight passes under `fitReferences`.
+    /// Image tokens remain unavailable in the returned estimate when current or historical images
+    /// were excluded. Throws when the composed input or required judge evidence cannot fit.
     func preparedPrompt(
         for evaluationCase: EvaluationCase,
         suite: EvaluationSuite,
@@ -363,6 +382,7 @@ extension EvaluationRunner {
         )
     }
 
+    /// Builds a prompt containing text followed by labeled image attachments in input order.
     static func prompt(text: String, images: [ImageEvaluationInput]) -> Prompt {
         Prompt {
             text
@@ -372,6 +392,10 @@ extension EvaluationRunner {
         }
     }
 
+    /// Adds bounded inline references or lookup-tool guidance and image labels to the authored prompt.
+    ///
+    /// `textCharacterLimit` is shared across inline text files; filenames are emitted as bounded
+    /// JSON literals and reference passages are explicitly delimited as untrusted data.
     static func promptText(
         for evaluationCase: EvaluationCase,
         attachments: [EvaluationAttachment],

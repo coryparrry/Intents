@@ -278,10 +278,12 @@ struct WorkflowSpanDetail: View {
         }
     }
 
+    /// Formats a recorded span offset with a plus prefix, or indicates that it was not recorded.
     private func offset(_ value: Double?) -> String {
         value == nil ? "Not recorded" : "+\(WorkflowTracePresentation.duration(value))"
     }
 
+    /// Builds a labeled detail group around caller-supplied span content.
     private func detailSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.caption2.weight(.semibold)).tracking(0.6).foregroundStyle(.secondary)
@@ -290,6 +292,7 @@ struct WorkflowSpanDetail: View {
     }
 
     private static let usageKeys: Set<String> = ["inputTokens", "cachedInputTokens", "outputTokens", "reasoningTokens", "usageSource"]
+    /// Returns friendly labels for known trace metadata, falling back to spaced and capitalized camel-case keys.
     private static func metadataLabel(_ key: String) -> String {
         switch key {
         case "method": "Method"

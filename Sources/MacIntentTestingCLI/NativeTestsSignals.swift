@@ -12,6 +12,7 @@ final class NativeTestsSignals {
     }
     private var registrations: [Registration] = []
 
+    /// Routes SIGINT and SIGTERM through a main-actor cancellation callback, restoring prior handlers if setup fails.
     init(cancel: @escaping @MainActor () -> Void) throws {
         do {
             for number in [SIGINT, SIGTERM] {
@@ -36,6 +37,7 @@ final class NativeTestsSignals {
         }
     }
 
+    /// Cancels signal sources and restores each saved signal action, clearing registrations for repeated cleanup.
     func restore() {
         for var registration in registrations {
             registration.source.cancel()
@@ -44,6 +46,7 @@ final class NativeTestsSignals {
         registrations.removeAll()
     }
 
+    /// Installs cooperative cancellation handlers for the asynchronous operation and restores original handlers on every exit.
     static func whileRunning<T>(cancel: @escaping @MainActor () -> Void,
                                 operation: @MainActor () async throws -> T) async throws -> T {
         let signals = try NativeTestsSignals(cancel: cancel)

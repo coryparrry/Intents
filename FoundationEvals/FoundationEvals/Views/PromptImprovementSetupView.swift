@@ -66,6 +66,7 @@ struct PromptImprovementSetupView: View {
         .accessibilityIdentifier("Instruction comparison setup")
     }
 
+    /// Displays a numbered comparison step with its title and explanatory detail.
     private func step(_ number: String, title: String, detail: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text(number).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -77,6 +78,7 @@ struct PromptImprovementSetupView: View {
         }
     }
 
+    /// Displays a labeled example count and symbol as one accessibility element.
     private func count(_ value: Int, title: String, symbol: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: symbol).foregroundStyle(.secondary)

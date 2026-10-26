@@ -12,6 +12,7 @@ enum EvaluationReviewVerdict: String, Codable, CaseIterable, Identifiable, Senda
     }
 }
 
+/// Human label bound to run/sample identity and a versioned source digest, allowing callers to detect stale evidence.
 struct EvaluationReviewAnnotation: Identifiable, Codable, Sendable {
     var id: UUID
     var runID: UUID
@@ -36,11 +37,13 @@ struct EvaluationReviewProposal: Identifiable, Codable, Sendable {
 struct EvaluationReviewState: Codable, Sendable {
     var annotations: [EvaluationReviewAnnotation] = []
     var proposals: [EvaluationReviewProposal] = []
+    /// Returns the latest annotation for the exact run/sample identity pair without validating its source digest.
     func annotation(runID: UUID, sampleID: UUID) -> EvaluationReviewAnnotation? {
         annotations.last { $0.runID == runID && $0.sampleID == sampleID }
     }
 }
 
+/// Provenance linking a promoted regression case to its human review and source evidence digest.
 struct EvaluationRegressionSource: Codable, Hashable, Sendable {
     var reviewID: UUID
     var runID: UUID

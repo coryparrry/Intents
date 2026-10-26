@@ -10,6 +10,8 @@ struct MCPAuthority: Sendable {
     let call: @Sendable (MCPToolCall) async -> MCPToolPayload
     let readResource: @Sendable (MCPResourceRequest) async -> MCPResourcePayload
 
+    /// Binds asynchronous tool and resource handlers supplied by the domain authority; transport
+    /// concerns remain with the protocol handler.
     init(
         call: @escaping @Sendable (MCPToolCall) async -> MCPToolPayload,
         readResource: @escaping @Sendable (MCPResourceRequest) async -> MCPResourcePayload
@@ -23,11 +25,13 @@ struct MCPToolPayload: Sendable {
     var structuredContent: MCPJSONValue
     var isError: Bool
 
+    /// Creates a tool response from structured content and an optional MCP tool-error flag.
     init(structuredContent: MCPJSONValue, isError: Bool = false) {
         self.structuredContent = structuredContent
         self.isError = isError
     }
 
+    /// Builds a failed tool response with a stable error code/message envelope and isError set.
     static func failure(code: String, message: String) -> Self {
         Self(
             structuredContent: .object([
@@ -43,6 +47,8 @@ enum MCPResourceRequest: Equatable, Sendable {
     case attachment(UUID)
     case run(UUID)
 
+    /// Parses an attachment or run resource URI with one UUID suffix. Rejects unsupported prefixes,
+    /// extra path segments, queries, fragments, and malformed IDs.
     init?(uri: String) {
         let mappings: [(String, (UUID) -> Self)] = [
             ("foundation-evals://attachments/", Self.attachment),
@@ -67,14 +73,19 @@ struct MCPResourcePayload: Sendable {
     var blob: Data?
     var isError: Bool
 
+    /// Creates a successful text resource payload without a blob body.
     static func text(uri: String, mimeType: String, text: String) -> Self {
         Self(uri: uri, mimeType: mimeType, text: text, blob: nil, isError: false)
     }
 
+    /// Creates a successful binary resource payload without a text body; base64 encoding is deferred to
+    /// transport.
     static func blob(uri: String, mimeType: String, data: Data) -> Self {
         Self(uri: uri, mimeType: mimeType, text: nil, blob: data, isError: false)
     }
 
+    /// Creates an error resource payload containing a JSON text envelope for the requested URI, with a
+    /// fixed fallback if text encoding fails.
     static func failure(uri: String, code: String, message: String) -> Self {
         let value = MCPJSONValue.object([
             "outcome": .string("failed"),
@@ -207,6 +218,8 @@ struct MCPCustomProviderConfiguration: Codable, Sendable {
     var capabilities: [MCPModelCapability]
     var requestTimeoutSeconds: Double
 
+    /// Copies custom-provider endpoints, context size, timeout, and enabled capabilities into the MCP
+    /// declaration.
     init(_ configuration: EvaluationCustomProviderConfiguration) {
         endpoint = configuration.endpoint
         tokenizerEndpoint = configuration.tokenizerEndpoint
@@ -246,6 +259,7 @@ struct MCPCoreAIConfiguration: Codable, Sendable {
     var resourcesPath: String
     var resourcesBookmark: Data?
 
+    /// Copies Core AI resource location and bookmark data into the MCP declaration.
     init(_ configuration: EvaluationCoreAIConfiguration) {
         resourcesPath = configuration.resourcesPath
         resourcesBookmark = configuration.resourcesBookmark
@@ -456,6 +470,9 @@ enum MCPToolCatalog {
         ])
     ]
 
+    /// Resolves an action name and validates its argument shape before returning a typed authority
+    /// call. Enforces legacy bounds and destructive confirmations, delegates control/discovery schemas,
+    /// and normalizes decoding failures to invalidArguments.
     static func parse(name: String, arguments: MCPJSONValue) throws -> MCPToolCall {
         if MCPActionDiscovery.names.contains(name) {
             return try MCPActionDiscovery.parse(name: name, arguments: arguments)
@@ -542,6 +559,9 @@ enum MCPToolCatalog {
         }
     }
 
+    /// Checks legacy suite declarations against interactive workload, text, configuration,
+    /// conversation, assertion, and feature bounds. Requires an expected revision and unique case IDs;
+    /// violations throw invalidArguments.
     private static func validate(_ arguments: MCPReplaceSuiteArguments) throws {
         let suite = arguments.suite
         guard !arguments.expectedRevision.isEmpty,
@@ -588,17 +608,22 @@ enum MCPToolCatalog {
         else { throw MCPToolInputError.invalidArguments }
     }
 
+    /// Rejects cursors longer than 512 characters and page limits outside one through fifty. Cursor
+    /// contents are validated later against stored results.
     private static func validatePage(cursor: String?, limit: Int?) throws {
         guard (cursor?.count ?? 0) <= 512, (1...50).contains(limit ?? 50) else {
             throw MCPToolInputError.invalidArguments
         }
     }
 
+    /// Requires an object-valued argument container, throwing invalidArguments for other JSON types.
     private static func requireObject(_ value: MCPJSONValue) throws -> [String: MCPJSONValue] {
         guard let object = value.objectValue else { throw MCPToolInputError.invalidArguments }
         return object
     }
 
+    /// Recursively rejects properties absent from the declared object schemas, including objects within
+    /// arrays. This check does not perform general type or value validation.
     private static func rejectUndeclaredProperties(
         in value: MCPJSONValue,
         schema: MCPJSONValue
@@ -625,6 +650,8 @@ enum MCPToolCatalog {
         }
     }
 
+    /// Builds a legacy tool definition with a closed input schema and caller-supplied read-only,
+    /// destructive, and idempotence annotations.
     private static func tool(
         _ name: String,
         _ title: String,
@@ -1019,6 +1046,8 @@ enum MCPToolCatalog {
         "maxItems": .integer(Int64(EvaluationSpotlightSearchConfiguration.maximumIdentityValuesPerKind))
     ])
 
+    /// Builds a schema-field declaration recursively to the remaining depth, bounding child arrays to
+    /// empty at the final level and exposing supported constraints.
     private static func schemaFieldSchema(remainingDepth: Int) -> MCPJSONValue {
         var properties: [String: MCPJSONValue] = [
             "id": uuid("Stable schema field UUID."),
@@ -1079,6 +1108,7 @@ enum MCPToolCatalog {
         )
     }
 
+    /// Declares a JSON Schema object with explicit required fields and no additional properties.
     private static func object(properties: [String: MCPJSONValue], required: [String]) -> MCPJSONValue {
         .object([
             "$schema": .string("https://json-schema.org/draft/2020-12/schema"),
@@ -1089,6 +1119,7 @@ enum MCPToolCatalog {
         ])
     }
 
+    /// Declares a string schema with optional description, enum, length bounds, and content encoding.
     private static func string(
         _ description: String? = nil,
         enum values: [String]? = nil,
@@ -1105,16 +1136,19 @@ enum MCPToolCatalog {
         return .object(schema)
     }
 
+    /// Declares a UUID-formatted string with the supplied description.
     private static func uuid(_ description: String) -> MCPJSONValue {
         .object(["type": .string("string"), "format": .string("uuid"), "description": .string(description)])
     }
 
+    /// Declares a Boolean schema and includes a description when provided.
     private static func boolean(_ description: String? = nil) -> MCPJSONValue {
         var schema: [String: MCPJSONValue] = ["type": .string("boolean")]
         if let description { schema["description"] = .string(description) }
         return .object(schema)
     }
 
+    /// Declares an integer schema with optional description and inclusive bounds.
     private static func integer(
         _ description: String? = nil,
         minimum: Int? = nil,
@@ -1127,6 +1161,7 @@ enum MCPToolCatalog {
         return .object(schema)
     }
 
+    /// Declares either null or an integer within the supplied inclusive range.
     private static func nullableInteger(minimum: Int, maximum: Int) -> MCPJSONValue {
         .object([
             "anyOf": .array([
@@ -1136,6 +1171,7 @@ enum MCPToolCatalog {
         ])
     }
 
+    /// Declares a numeric schema with optional inclusive bounds.
     private static func number(minimum: Double? = nil, maximum: Double? = nil) -> MCPJSONValue {
         var schema: [String: MCPJSONValue] = ["type": .string("number")]
         if let minimum { schema["minimum"] = .number(minimum) }
@@ -1143,6 +1179,7 @@ enum MCPToolCatalog {
         return .object(schema)
     }
 
+    /// Declares an array with the supplied item schema and inclusive element-count bounds.
     private static func array(items: MCPJSONValue, minimum: Int, maximum: Int) -> MCPJSONValue {
         .object([
             "type": .string("array"),
@@ -1152,6 +1189,7 @@ enum MCPToolCatalog {
         ])
     }
 
+    /// Declares an optionally enumerated string array with unique items and bounded item length/count.
     private static func uniqueStringArray(
         enum values: [String]? = nil,
         maximumLength: Int? = nil,

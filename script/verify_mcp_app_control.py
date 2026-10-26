@@ -19,6 +19,7 @@ import uuid
 
 class Client:
     def __init__(self, endpoint, token):
+        """Restrict the credential destination to an HTTP localhost /mcp endpoint and initialize request, assertion, and discovery state."""
         parsed=urllib.parse.urlsplit(endpoint)
         if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1","localhost","::1") or parsed.path != "/mcp":
             raise ValueError("Verification only sends credentials to a localhost /mcp endpoint")
@@ -28,6 +29,7 @@ class Client:
         self.discovered_calls = 0
 
     def rpc(self, method, params):
+        """Send an authenticated sequential JSON-RPC request with a 60-second timeout, converting tool-call RPC errors into tool errors and asserting other errors."""
         self.sequence += 1
         body = json.dumps(dict(jsonrpc="2.0", id=self.sequence, method=method, params=params)).encode()
         request = urllib.request.Request(self.endpoint, data=body, headers={
@@ -42,6 +44,7 @@ class Client:
         return value["result"]
 
     def call(self, name, fields=None, failure=False):
+        """Discover and cache missing action schemas on demand, invoke the advertised dispatcher, assert the expected error flag, and return structured content."""
         selected_name, arguments = name, fields or {}
         if self.advertised is not None and name not in self.advertised:
             if name not in self.action_definitions:
@@ -63,29 +66,35 @@ class Client:
         return value.get("structuredContent", {})
 
     def write(self, name, fields=None, **kw):
+        """Copy mutation arguments, supply a UUID operation ID when absent, and invoke the tool with the requested error expectation."""
         fields = dict(fields or {})
         fields.setdefault("operationID", str(uuid.uuid4()))
         return self.call(name, fields, **kw)
 
     def check(self, condition, label):
+        """Raise an assertion labeled with the failed contract or increment the successful verification count."""
         if not condition:
             raise AssertionError(label)
         self.checks += 1
 
     def state(self):
+        """Read the current workspace snapshot through the MCP workspace-state tool."""
         return self.call("eval_workspace_state")
 
     def workspace(self, extra=None):
+        """Attach the latest workspace revision to caller fields, allowing explicit supplied fields to override it."""
         state = self.state()
         fields = dict(expectedWorkspaceRevision=state["workspaceRevision"])
         fields.update(extra or {})
         return fields
 
     def target(self):
+        """Read current project, suite, and revision identifiers for optimistic suite mutations."""
         state = self.state()
         return dict(projectID=state["projectID"], suiteID=state["suiteID"], expectedRevision=state["revision"])
 
     def wait_job(self, job_id, expected, operation):
+        """Poll job and operation receipts for up to 240 seconds, requiring uninterrupted completion with the expected retained outputs and no execution error."""
         deadline = time.monotonic() + 240
         while time.monotonic() < deadline:
             value = self.call("eval_production_job_get", dict(jobID=job_id))
@@ -101,6 +110,7 @@ class Client:
 
 
 def verify(client, native=False):
+    """Exercise isolated local MCP discovery, uploads, jobs, revision guards, scheduling, and export; optionally run one native Apple response and evidence-bound approval."""
     deadline = time.monotonic() + 20
     while True:
         try:

@@ -133,6 +133,7 @@ struct PromptImprovementView: View {
         }.padding(.horizontal, 24).padding(.vertical, 16)
     }
 
+    /// Displays the active comparison stage and sample progress from the shared store, marking completed and upcoming stages.
     private func progress(_ report: EvaluationPromptImprovement) -> some View {
         let presentation = PromptImprovementPresentation(report: report, isActive: true)
         return VStack(alignment: .leading, spacing: 20) {

@@ -3,6 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { Tabs as TabsPrimitive } from "radix-ui"
 
+/** Composes Radix tab state with horizontal or vertical layout styling and forwards the remaining root props. */
 function Tabs({
   className,
   orientation = "horizontal",
@@ -36,6 +37,7 @@ const tabsListVariants = cva(
   }
 )
 
+/** Renders the Radix tab list with either a filled background or line-style treatment. */
 function TabsList({
   className,
   variant = "default",
@@ -52,6 +54,7 @@ function TabsList({
   )
 }
 
+/** Styles a keyboard-accessible Radix tab trigger for active, disabled, and list-variant states. */
 function TabsTrigger({
   className,
   ...props
@@ -71,17 +74,4 @@ function TabsTrigger({
   )
 }
 
-function TabsContent({
-  className,
-  ...props
-}: React.ComponentProps<typeof TabsPrimitive.Content>) {
-  return (
-    <TabsPrimitive.Content
-      data-slot="tabs-content"
-      className={cn("flex-1 text-sm outline-none", className)}
-      {...props}
-    />
-  )
-}
-
-export { Tabs, TabsList, TabsTrigger, TabsContent, tabsListVariants }
+export { Tabs, TabsList, TabsTrigger, tabsListVariants }

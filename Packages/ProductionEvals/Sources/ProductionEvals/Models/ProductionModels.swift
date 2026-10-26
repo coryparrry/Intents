@@ -16,6 +16,8 @@ public struct ProductionExample: Codable, Identifiable, Sendable, Equatable {
     public var feedback: String?
     /// Developer-owned typed input; never mixed with the expected answer.
     public var input: Data?
+    /// Creates an example, defaulting its source identity to its example ID and its partition to regression.
+    /// `input` retains developer-owned bytes separately from the expected answer.
     public init(id: String, sourceID: String? = nil, prompt: String, expected: String? = nil,
                 partition: ProductionPartition = .regression, metadata: [String: String] = [:],
                 capturedOutput: String? = nil, feedback: String? = nil, input: Data? = nil) {
@@ -24,6 +26,8 @@ public struct ProductionExample: Codable, Identifiable, Sendable, Equatable {
         self.feedback = feedback; self.input = input
     }
     private enum CodingKeys: String, CodingKey { case id, sourceID, prompt, expected, partition, metadata, capturedOutput, feedback, input }
+    /// Decodes an example while supplying legacy defaults for omitted source ID, partition, and metadata.
+    /// - Throws: A decoding error when a required field is missing or a supplied field has the wrong type.
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
@@ -59,11 +63,13 @@ public struct ProductionTarget: Codable, Sendable, Equatable {
     public var operatingSystem: String?
     public var locale: String?
     public var model: String?
+    /// Creates a target filter whose omitted fields match any worker value.
     public init(workerID: String? = nil, platform: String? = nil, operatingSystem: String? = nil,
                 locale: String? = nil, model: String? = nil) {
         self.workerID = workerID; self.platform = platform; self.operatingSystem = operatingSystem
         self.locale = locale; self.model = model
     }
+    /// Returns whether every specified target field exactly matches the worker provenance.
     public func matches(_ worker: ProductionWorker) -> Bool {
         (workerID == nil || workerID == worker.id) && (platform == nil || platform == worker.platform)
         && (operatingSystem == nil || operatingSystem == worker.operatingSystem)
@@ -80,6 +86,7 @@ public struct ProductionWorker: Codable, Identifiable, Sendable, Equatable {
     public var locale: String
     public var model: String
     public var lastSeen: Date
+    /// Records the worker provenance attached to attempts and committed results, with a default last-seen timestamp.
     public init(id: String, name: String, platform: String, operatingSystem: String, hardware: String,
                 locale: String, model: String, lastSeen: Date = Date()) {
         self.id = id; self.name = name; self.platform = platform; self.operatingSystem = operatingSystem
@@ -98,6 +105,7 @@ public struct ProductionGatePolicy: Codable, Sendable, Equatable {
     /// Keys use metadataKey=metadataValue, for example locale=fr_FR.
     public var cohortMinimumPassRates: [String: Double] = [:]
     public var requireBaseline: Bool = false
+    /// Creates the default gate requiring a perfect pass rate, zero execution errors, and no pass-rate regression.
     public init() {}
 }
 
@@ -118,6 +126,7 @@ public struct ProductionJobConfiguration: Codable, Sendable, Equatable {
     public var executionRevision: String
     /// Frozen developer/native setup. Never contains authentication credentials.
     public var executionContext: Data
+    /// Combines scoring and execution revisions with frozen execution bytes; storage validates their consistency when creating a job.
     public init(scoringRevision: String, executionRevision: String, executionContext: Data = Data()) {
         self.scoringRevision = scoringRevision; self.executionRevision = executionRevision
         self.executionContext = executionContext
@@ -157,6 +166,8 @@ public struct ProductionResponse: Codable, Sendable, Equatable {
     public var cost: Double?
     public var retryable: Bool
     public var artifact: Data?
+    /// Creates response evidence for one stable request ID.
+    /// Use `latencyAvailable: false` when no execution latency was observed; an omitted cost represents unknown cost.
     public init(requestID: UUID, outcome: ProductionOutcome, output: String = "", explanation: String? = nil,
                 latencyMilliseconds: Double = 0, latencyAvailable: Bool? = nil, cost: Double? = nil, retryable: Bool = false, artifact: Data? = nil) {
         self.requestID = requestID; self.outcome = outcome; self.output = output; self.explanation = explanation
@@ -204,6 +215,7 @@ public struct ProductionControl: Codable, Sendable {
     public var reportedCost: Double = 0
     public var costReservations: [String: Double] = [:]
     public var costReservationSlots: [String: Int]? = nil
+    /// Creates an unpaused, uncancelled job control state with no start time or cost reservations.
     public init() {}
 }
 

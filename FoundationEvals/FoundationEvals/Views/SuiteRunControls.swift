@@ -185,6 +185,7 @@ private struct SuiteRunButton: View {
         }
     }
 
+    /// Starts the selected local or device run and forwards a localized startup error to the host.
     private func run() {
         do { try runners.startSelectedRun(for: store) }
         catch { reportError(error.localizedDescription) }
@@ -194,14 +195,17 @@ private struct SuiteRunButton: View {
 extension DeveloperRunnerStore {
     var selectedRunner: DeveloperRunnerSnapshot? { runners.first { $0.id == selectedRunnerID } }
 
+    /// Reports whether evaluation, reassessment, file processing, or a developer-device run currently owns execution resources.
     func isBusy(for store: EvaluationStore) -> Bool {
         store.isRunning || store.isReassessing || store.isProcessingFiles || executingRunID != nil
     }
 
+    /// Allows a new run only when resources are idle, completed results are saved, and destination validation passes.
     func canStartRun(for store: EvaluationStore) -> Bool {
         !isBusy(for: store) && !store.hasUnsavedCompletedRun && runIssue(for: store) == nil
     }
 
+    /// Reports whether the current device run still accepts cancellation, otherwise using the local run state.
     func canCancelRun(for store: EvaluationStore) -> Bool {
         if let runID = executingRunID {
             return status(for: runID)?.phase != .cancelled
@@ -209,6 +213,7 @@ extension DeveloperRunnerStore {
         return store.isRunning
     }
 
+    /// Routes cancellation to the owning developer-device run when present, or to the local evaluation store.
     func cancelCurrentRun(for store: EvaluationStore) {
         if let runID = executingRunID {
             cancelRun(runID)
@@ -217,6 +222,8 @@ extension DeveloperRunnerStore {
         }
     }
 
+    /// Starts a local run when no device is selected, otherwise validates the device feature and saves the suite before device execution.
+    /// Throws for resource conflicts or invalid device input; returns the device run ID, or nil for the local path.
     @discardableResult
     func startSelectedRun(for store: EvaluationStore) throws -> UUID? {
         guard !isBusy(for: store) else {
@@ -234,6 +241,7 @@ extension DeveloperRunnerStore {
         return try runSelectedSuite(on: runnerID, featureID: featureID)
     }
 
+    /// Returns the local run blocker or the first connection, feature, or suite issue preventing the selected device run.
     func runIssue(for store: EvaluationStore) -> String? {
         guard selectedRunnerID != nil else { return store.runBlocker }
         guard let runner = selectedRunner, runner.state == .connected else { return "Reconnect the selected device to run this suite." }

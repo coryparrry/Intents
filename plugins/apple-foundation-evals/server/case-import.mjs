@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+/** Parses bounded CSV rows with escaped quotes and unique headers, rejecting malformed quoting or column counts. */
 function csv(text) {
   const rows = []; let row = []; let cell = ''; let quoted = false; let closed = false;
   for (let i = 0; i < text.length; i++) {
@@ -21,6 +22,7 @@ function csv(text) {
   if (!header?.length || header.some((item) => !item) || new Set(header).size !== header.length) throw new Error('CSV requires unique non-empty column names');
   return rows.filter((row) => row.some((item) => item.trim())).map((row) => { if (row.length !== header.length) throw new Error('CSV row has incorrect column count'); return Object.fromEntries(header.map((name, index) => [name, row[index]])); });
 }
+/** Parses JSON, JSONL, or CSV into one to 100 cases using optional column mapping; preserves extra JSON fields only for app-format cases. */
 export function importCases({ format, text, mapping }, appFormat) {
   if (typeof text !== 'string' || Buffer.byteLength(text) > 5000000) throw new Error('Case import exceeds the app 5 MB text file limit');
   if (!['json', 'jsonl', 'csv'].includes(format)) throw new Error('Unknown case import format');

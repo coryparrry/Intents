@@ -7,6 +7,7 @@ struct SelectionActionDescriptor<Selection: Hashable>: Identifiable {
 
     var id: Selection { option }
 
+    /// Builds one accessibility action per distinct option, replacing blank titles and suffixing duplicate labels without collisions.
     static func make(
         options: [Selection],
         title: (Selection) -> String
@@ -60,6 +61,7 @@ private struct SelectionActionsModifier<Selection: Hashable>: ViewModifier {
     @Binding var selection: Selection
     let title: (Selection) -> String
 
+    /// Adds labeled selection actions that update the bound value only while the source view is enabled.
     func body(content: Content) -> some View {
         let actions = SelectionActionDescriptor.make(options: options, title: title)
         content.accessibilityActions {

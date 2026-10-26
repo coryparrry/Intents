@@ -8,6 +8,7 @@ enum EvaluationReviewError: LocalizedError {
 
 /// Pure workflow shared by native review and agent proposals. Never changes run scores.
 enum EvaluationReviewWorkflow {
+    /// Collects reviewable samples for one suite in newest-run order, omitting sources whose digest cannot be encoded.
     static func samples(runs: [EvaluationRun], suiteID: UUID) -> [EvaluationReviewSample] {
         runs.filter { $0.suiteID == suiteID }.sorted {
             ($0.historySequence ?? 0, $0.startedAt) > ($1.historySequence ?? 0, $1.startedAt)
@@ -19,10 +20,14 @@ enum EvaluationReviewWorkflow {
         }
     }
 
+    /// Hashes immutable source evidence and context while excluding selected or reassessed judgments.
+    /// Legacy runs also bind their recorded instructions, cases and attachments; encoding failures propagate.
     static func sourceDigest(run: EvaluationRun, sample: EvaluationSampleResult) throws -> String {
         try sourceDigest(run: run, sample: sample, bindLegacyInputs: true)
     }
 
+    /// Computes a canonical source digest, optionally binding legacy inputs for migration compatibility.
+    /// Captured evidence snapshots keep their existing digest representation.
     private static func sourceDigest(run: EvaluationRun, sample: EvaluationSampleResult, bindLegacyInputs: Bool) throws -> String {
         struct Source: Encodable {
             var runID: UUID
@@ -63,6 +68,8 @@ enum EvaluationReviewWorkflow {
         }
         var upgradedReferences: [EvaluationRegressionSource: String] = [:]
         var changed = false
+        /// Upgrades an unversioned annotation when its unique source is available, rebinding only a matching legacy digest.
+        /// Tracks changed regression references so judge examples can follow the migrated review.
         func upgraded(_ annotation: EvaluationReviewAnnotation) -> EvaluationReviewAnnotation {
             guard annotation.sourceDigestVersion == nil,
                   let pair = digests["\(annotation.runID)/\(annotation.sampleID)"] else { return annotation }
@@ -92,11 +99,14 @@ enum EvaluationReviewWorkflow {
         return changed ? candidate : nil
     }
 
+    /// Requires matching run, sample and source digest identities and rejects an explicitly invalid captured-evidence digest.
     static func isCurrent(_ annotation: EvaluationReviewAnnotation, sample: EvaluationReviewSample) -> Bool {
         annotation.runID == sample.run.id && annotation.sampleID == sample.sample.id
             && annotation.sourceDigest == sample.sourceDigest && sample.run.subjectEvidence?.hasValidDigest != false
     }
 
+    /// Normalizes a current annotation and validates verdict evidence, required note and tag limits.
+    /// Throws for stale sources or semantic verdicts on incomplete captures.
     static func validated(_ annotation: EvaluationReviewAnnotation, sample: EvaluationReviewSample) throws -> EvaluationReviewAnnotation {
         guard isCurrent(annotation, sample: sample) else { throw EvaluationReviewError.invalid("The saved source evidence changed. Review this output again.") }
         guard annotation.verdict == .needsEvidence || sample.sample.hasCompleteSubjectEvidenceForJudging else {
@@ -116,10 +126,13 @@ enum EvaluationReviewWorkflow {
         return result
     }
 
+    /// Collapses whitespace and lowercases a failure tag for consistent grouping.
     static func normalizedTag(_ tag: String) -> String {
         tag.split(whereSeparator: \.isWhitespace).joined(separator: " ").lowercased()
     }
 
+    /// Validates and appends a review, moving updates to the end so they become the sample's current annotation.
+    /// Throws for identity reuse with different evidence or a new annotation beyond the suite limit.
     static func save(_ annotation: EvaluationReviewAnnotation, sample: EvaluationReviewSample, state: inout EvaluationReviewState) throws {
         let validated = try validated(annotation, sample: sample)
         if let index = state.annotations.firstIndex(where: { $0.id == validated.id }) {
@@ -136,6 +149,7 @@ enum EvaluationReviewWorkflow {
         }
     }
 
+    /// Adds a uniquely identified pending proposal with validated source evidence, enforcing the per-suite proposal limit.
     static func propose(_ proposal: EvaluationReviewProposal, sample: EvaluationReviewSample, state: inout EvaluationReviewState) throws {
         guard proposal.status == .pending, !state.proposals.contains(where: { $0.id == proposal.id }),
               state.proposals.count < 1_000 else { throw EvaluationReviewError.invalid("Proposal IDs must be new and the suite can hold up to 1,000 proposals.") }
@@ -144,6 +158,8 @@ enum EvaluationReviewWorkflow {
         state.proposals.append(proposed)
     }
 
+    /// Accepts or rejects one pending proposal; acceptance saves a current annotation before changing proposal status.
+    /// Throws when the proposal is no longer pending or its accepted evidence is invalid.
     static func decideProposal(id: UUID, accept: Bool, sample: EvaluationReviewSample, state: inout EvaluationReviewState) throws {
         guard let index = state.proposals.firstIndex(where: { $0.id == id }), state.proposals[index].status == .pending else {
             throw EvaluationReviewError.invalid("This proposal is no longer pending.")
@@ -159,6 +175,7 @@ enum EvaluationReviewWorkflow {
         state.proposals[index].status = accept ? .accepted : .rejected
     }
 
+    /// Groups current human-confirmed failures by tag, ordered by frequency and then tag text.
     static func patterns(samples: [EvaluationReviewSample], state: EvaluationReviewState) -> [EvaluationFailurePattern] {
         var groups: [String: [EvaluationReviewSample]] = [:]
         for sample in samples {
@@ -191,6 +208,8 @@ enum EvaluationReviewWorkflow {
         return queue
     }
 
+    /// Creates a new regression case only from a current confirmed failure with complete, unchanged source configuration.
+    /// Validates local identities, attachments, expected text, scoring and capacity; records the originating review without mutating the suite.
     static func regression(annotation: EvaluationReviewAnnotation, sample: EvaluationReviewSample,
                            suite: EvaluationSuite, expected: String) throws -> EvaluationCase {
         guard isCurrent(annotation, sample: sample), annotation.verdict == .failed,
@@ -236,6 +255,7 @@ enum EvaluationReviewWorkflow {
         var instructions: String
         var model: EvaluationModelConfiguration
         var features: EvaluationFeatureConfiguration
+        /// Captures the instruction, model and feature configuration that determines review-source context.
         init(_ definition: EvaluationSuiteDefinition) {
             instructions = definition.instructions
             model = definition.modelConfiguration
@@ -247,6 +267,7 @@ enum EvaluationReviewWorkflow {
         var instructions: String
         var cases: [EvaluationCase]?
         var attachments: [EvaluationAttachmentTrace]
+        /// Captures recorded legacy instructions, planned cases and attachments for source-digest migration.
         init(run: EvaluationRun) {
             instructions = run.instructions
             cases = run.plannedCases ?? run.suiteDefinition?.cases
@@ -254,10 +275,13 @@ enum EvaluationReviewWorkflow {
         }
     }
 
+    /// Hashes only instruction, model and feature context to detect setup changes independently of case additions.
     private static func contextDigest(_ definition: EvaluationSuiteDefinition) throws -> String {
         try digest(Context(definition))
     }
 
+    /// Requires historical local-model and file-search identities to match the current setup before creating a regression.
+    /// Throws when the necessary execution trace is missing or differs.
     private static func validateLocalContext(run: EvaluationRun, suite: EvaluationSuite) throws {
         let usesLocalModel = suite.modelConfiguration.provider == .coreAI
             || run.suiteDefinition?.modelConfiguration.provider == .coreAI
@@ -272,6 +296,8 @@ enum EvaluationReviewWorkflow {
         }
     }
 
+    /// Validates a reviewed judge example against its original output digest and unambiguous saved assessment.
+    /// Legacy examples without a review source retain their existing validation path.
     static func validateJudgeSource(_ example: EvaluationReviewedJudgeExample, run: EvaluationRun) throws {
         guard let source = example.reviewSource else { return } // Preserve legacy correction checks.
         guard source.runID == run.id, source.sampleID == example.sampleID,
@@ -285,6 +311,7 @@ enum EvaluationReviewWorkflow {
         try validateJudgeAssessment(assessment, run: run)
     }
 
+    /// Requires the assessment to belong to the run and have unique assessment and sample identities; throws on ambiguity.
     static func validateJudgeAssessment(_ assessment: EvaluationAssessment, run: EvaluationRun) throws {
         guard assessment.runID == run.id,
               run.assessments?.count(where: { $0.id == assessment.id }) == 1,
@@ -292,9 +319,11 @@ enum EvaluationReviewWorkflow {
             throw EvaluationReviewError.invalid("The reviewed assessment has invalid or ambiguous source identities.")
         }
     }
+    /// Hashes canonical JSON bytes with SHA-256, propagating encoding errors.
     private static func digest<T: Encodable>(_ value: T) throws -> String {
         SHA256.hash(data: try CanonicalJSON.data(for: value, prettyPrinted: false)).map { String(format: "%02x", $0) }.joined()
     }
+    /// Returns a deterministic SHA-256 ordering key for reproducible review-queue shuffling.
     private static func stableOrder(_ value: String) -> String {
         SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
     }

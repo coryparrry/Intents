@@ -1,6 +1,8 @@
 import Foundation
 
 enum EvaluationAttachmentStorage {
+    /// Reads a regular local attachment within maximumBytes, selecting image or file size errors from isImage.
+    /// Checks reported size before opening and bounds the stream to detect a file that grows during reading.
     nonisolated static func readImportFile(
         at url: URL,
         isImage: Bool,
@@ -11,6 +13,7 @@ enum EvaluationAttachmentStorage {
         }
     }
 
+    /// Reads a regular local case-import file within maximumBytes, reporting the case-import size error on overflow.
     nonisolated static func readCaseImportFile(
         at url: URL,
         maximumBytes: Int
@@ -20,6 +23,8 @@ enum EvaluationAttachmentStorage {
         }
     }
 
+    /// Validates local-file metadata before a bounded read, using tooLargeError for invalid or excessive sizes.
+    /// Closes the handle after reading and propagates metadata, open, and read failures.
     private nonisolated static func readImportFile(
         at url: URL,
         maximumBytes: Int,
@@ -47,6 +52,9 @@ enum EvaluationAttachmentStorage {
         )
     }
 
+    /// Reads chunks of at most 64 KiB, allowing one overflow-detection byte beyond the limit when representable.
+    /// Rejects negative or excessive sizes, oversized returned chunks, and data beyond maximumBytes using tooLargeError.
+    /// Returns bytes read until EOF; reportedByteCount is a capacity hint and early limit check, not an exact-length guarantee.
     nonisolated static func readBoundedData(
         reportedByteCount: Int,
         maximumBytes: Int,
@@ -80,6 +88,8 @@ enum EvaluationAttachmentStorage {
         return data
     }
 
+    /// Returns a standardized storage directory only when it exists as a directory and is not itself a symlink.
+    /// Wraps inaccessible or invalid directory metadata as a persistence error.
     nonisolated static func validatedStorageDirectory(_ directory: URL) throws -> URL {
         let standardizedDirectory = directory.standardizedFileURL
         do {
@@ -101,6 +111,9 @@ enum EvaluationAttachmentStorage {
         return standardizedDirectory
     }
 
+    /// Validates an attachment-ID filename and returns a direct child of the private storage directory.
+    /// Rejects path components, control characters, symlinks, resolved escapes, and existing nonregular files.
+    /// The returned path may be absent so callers can stage a new stored attachment.
     nonisolated static func storedFileURL(
         filename: String,
         attachmentID: UUID,

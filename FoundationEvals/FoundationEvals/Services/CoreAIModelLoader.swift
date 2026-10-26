@@ -46,6 +46,7 @@ struct CoreAIModelDescriptor: Equatable, Sendable {
     let supportsReasoning: Bool
     let supportsToolCalling: Bool
 
+    /// Copies the loaded model metadata into the value used by model controls.
     init(result: CoreAIModelLoadResult) {
         modelName = result.modelName
         contextSize = result.contextSize
@@ -94,6 +95,12 @@ actor CoreAIModelLoader {
     private var cachedModel: CachedModel?
     private var latestRequestedKey: ResourceIdentity?
 
+    /// Loads validated resources eagerly, reusing a model only while its resource fingerprint matches.
+    ///
+    /// Cancellation cancels this caller's load. Concurrent requests load independently, and only
+    /// results matching the latest requested resource identity replace the cache. The returned
+    /// value retains security-scoped folder access.
+    /// - Throws: Resource-access or model-loading errors, or `CancellationError`.
     func load(configuration: EvaluationCoreAIConfiguration) async throws -> CoreAIModelLoadResult {
         try Task.checkCancellation()
         let resolved = try Self.resolveResources(configuration)
@@ -155,6 +162,8 @@ actor CoreAIModelLoader {
         return result
     }
 
+    /// Resolves a bookmark or expanded path, starts scoped access, and validates the canonical folder.
+    /// - Throws: A configuration error when the path is empty, missing, not a folder, or its bookmark is stale.
     private static func resolveResources(
         _ configuration: EvaluationCoreAIConfiguration
     ) throws -> (url: URL, securityScopedAccess: CoreAISecurityScopedAccess) {
@@ -196,6 +205,7 @@ actor CoreAIModelLoader {
         return (canonicalURL, access)
     }
 
+    /// Resolves the configured folder and fingerprints its files while security-scoped access is retained.
     nonisolated static func resourceIdentity(
         for configuration: EvaluationCoreAIConfiguration
     ) throws -> ResourceIdentity {
@@ -205,6 +215,7 @@ actor CoreAIModelLoader {
         }
     }
 
+    /// Combines the canonical resource URL with a fingerprint of its regular files for cache identity.
     private nonisolated static func resourceIdentity(for url: URL) throws -> ResourceIdentity {
         ResourceIdentity(
             resourceURL: url,
@@ -212,6 +223,10 @@ actor CoreAIModelLoader {
         )
     }
 
+    /// Returns sorted metadata stamps for every regular file below the resource folder.
+    ///
+    /// Includes file identity and status-change time so replacements can invalidate the cache
+    /// without relying solely on modification dates. Propagates inspection errors and cancellation.
     nonisolated static func resourceFingerprint(for url: URL) throws -> [ResourceStamp] {
         let keys: Set<URLResourceKey> = [
             .isRegularFileKey,
@@ -253,6 +268,7 @@ actor CoreAIModelLoader {
         return fingerprint.sorted { $0.relativePath < $1.relativePath }
     }
 
+    /// Reads nanosecond file status-change time, throwing a POSIX error if `stat` fails.
     private nonisolated static func statusChangeTime(for url: URL) throws -> FileStatusChangeTime {
         var metadata = stat()
         let (result, errorCode) = url.withUnsafeFileSystemRepresentation { path -> (Int32, Int32) in
@@ -278,11 +294,13 @@ fileprivate final class CoreAISecurityScopedAccess: @unchecked Sendable {
     private let url: URL
     private let isAccessing: Bool
 
+    /// Starts security-scoped access and remembers whether a matching stop is required.
     init(url: URL) {
         self.url = url
         self.isAccessing = url.startAccessingSecurityScopedResource()
     }
 
+    /// Ends security-scoped access only when this instance successfully started it.
     deinit {
         if isAccessing {
             url.stopAccessingSecurityScopedResource()

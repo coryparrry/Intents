@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 
+/// Confusion counts partitioned by review split and scoring-contract digest; rates are nil when their human-label denominator is empty.
 struct EvaluationJudgeCalibrationGroup: Identifiable, Sendable {
     var partition: EvaluationJudgeCheckPartition
     var contractDigest: String
@@ -18,6 +19,7 @@ struct EvaluationJudgeCalibrationGroup: Identifiable, Sendable {
 }
 
 extension EvaluationJudgeCheckReport {
+    /// Groups checks by partition and canonical scoring digest, counting missing contracts, errors, and nonscored labels as unavailable.
     var calibrationGroups: [EvaluationJudgeCalibrationGroup] {
         var groups: [String: EvaluationJudgeCalibrationGroup] = [:]
         for result in results {

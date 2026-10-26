@@ -1,7 +1,9 @@
 import Foundation
 
 protocol MCPServerLifecycle: Sendable {
+    /// Starts the listener and returns when startup succeeds; throws when it cannot become ready.
     func start() async throws
+    /// Stops the listener and waits for its shutdown work to finish.
     func stop() async
 }
 
@@ -28,6 +30,8 @@ final class FoundationEvalsMCPRuntime {
     private var isClosing = false
     weak var settingsController: MCPSettingsController?
 
+    /// Connects an evaluation store and shared controls to an injectable server factory. Creates
+    /// default app controls when none are supplied.
     init(
         store: EvaluationStore,
         control: EvaluationAppControl? = nil,
@@ -46,6 +50,9 @@ final class FoundationEvalsMCPRuntime {
         self.serverFactory = serverFactory
     }
 
+    /// Starts one authenticated store-backed server and associates callbacks with its generation.
+    /// Rejects starts during shutdown or an existing lifecycle, clears failed startup state, and throws
+    /// if that generation stops before startup completes.
     func start(_ configuration: CodexMCPConfiguration) async throws {
         guard !isClosing else { throw MCPServerError.stoppedAfterReady(nil) }
         guard server == nil, serverGeneration == nil, stopping == nil else { throw MCPServerError.alreadyRunning }
@@ -77,6 +84,8 @@ final class FoundationEvalsMCPRuntime {
         }
     }
 
+    /// Stops the current server and waits for a shared teardown task, preventing a new start until
+    /// draining finishes. Repeated calls join the same teardown.
     func stop() async {
         let drain: (id: UUID, task: Task<Void, Never>)
         if let stopping {
@@ -95,6 +104,8 @@ final class FoundationEvalsMCPRuntime {
         if stopping?.id == drain.id { stopping = nil }
     }
 
+    /// Closes mutation entry points, stops the server, and drains runner, App Intent, production,
+    /// evaluation, and MCP tasks before termination.
     func prepareForTermination() async {
         isClosing = true
         store.beginClosing()
@@ -107,6 +118,8 @@ final class FoundationEvalsMCPRuntime {
         await control.mcp.closeAndWait()
     }
 
+    /// Clears only the stopped server's current generation and reports its failure to settings,
+    /// ignoring callbacks from older instances.
     private func serverDidStop(generation: UUID, error: MCPServerError) {
         guard serverGeneration == generation else { return }
         serverGeneration = nil

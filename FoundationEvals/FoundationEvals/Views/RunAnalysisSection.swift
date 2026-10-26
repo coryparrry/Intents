@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum RunBaselineSelection {
+    /// Chooses the newest earlier compatible run from the same suite as the default comparison baseline.
     static func defaultID(for run: EvaluationRun, candidates: [EvaluationRun]) -> UUID? {
         candidates
             .filter { $0.id != run.id && $0.suiteID == run.suiteID && $0.startedAt < run.startedAt }
@@ -16,6 +17,7 @@ struct RunAnalysisSection: View {
     @State private var selectedBaselineID: UUID?
     private let externalSelection: Binding<UUID?>?
 
+    /// Captures the run and baseline candidates, retaining an optional external selection binding and seeding a compatible local default.
     init(run: EvaluationRun, baselineRuns: [EvaluationRun], selection: Binding<UUID?>? = nil) {
         self.run = run
         self.baselineRuns = baselineRuns
@@ -109,6 +111,7 @@ private struct RunAnalysisHeader: View {
         }
     }
 
+    /// Returns the run comparison display name for the baseline picker.
     private func baselineLabel(_ run: EvaluationRun) -> String {
         run.comparisonDisplayName
     }
@@ -151,17 +154,20 @@ private struct RunAnalysisMetrics: View {
         }
     }
 
+    /// Formats recorded latency in abbreviated seconds and milliseconds, using a dash when absent.
     private func latency(_ milliseconds: Double?) -> String {
         guard let milliseconds else { return "—" }
         return Duration.milliseconds(milliseconds)
             .formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated))
     }
 
+    /// Formats the token total, using a dash when no request has recorded usage and some usage is unavailable.
     private func tokenTotal(_ usage: EvaluationTokenSummary) -> String {
         if usage.requestCount == 0 && usage.usageUnavailableSampleCount > 0 { return "—" }
         return usage.totalTokens.formatted()
     }
 
+    /// Describes input, output, and reasoning token counts alongside unavailable evidence, or explains fully unavailable failed-request usage.
     private func tokenDetail(_ usage: EvaluationTokenSummary) -> String {
         if usage.requestCount == 0 && usage.usageUnavailableSampleCount > 0 {
             return "Usage unavailable for \(usage.usageUnavailableSampleCount) failed requests"
@@ -411,6 +417,7 @@ private struct ComparisonSummary: View {
         }
     }
 
+    /// Formats a fractional difference as signed whole percentage points.
     private func signedPercentagePoints(_ value: Double) -> String {
         let points = (value * 100).formatted(.number.precision(.fractionLength(0)).sign(strategy: .always()))
         return "\(points) percentage points"
@@ -460,6 +467,7 @@ private struct CaseComparisonRow: View {
         .font(.callout)
     }
 
+    /// Combines the pass percentage and scored counts, disclosing the planned count when evidence is incomplete.
     private func rate(_ rate: EvaluationScoredRate?) -> String {
         guard let rate else { return "—" }
         let percent = rate.passRate?.formatted(.percent.precision(.fractionLength(0))) ?? "—"

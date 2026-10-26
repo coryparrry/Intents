@@ -79,6 +79,7 @@ struct SampleTraceSection: View {
         }
     }
 
+    /// Displays saved reference-tool call outcomes and metadata while explicitly noting omitted queries and passages.
     private func toolSection(_ toolCalls: [EvaluationToolCallTrace]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Reference tool activity")
@@ -110,12 +111,14 @@ struct SampleTraceSection: View {
         .workspaceInset(radius: 8)
     }
 
+    /// Summarizes matched files, output character count, and any recorded tool-call duration.
     private func toolDetail(_ call: EvaluationToolCallTrace) -> String {
         let files = call.matchedFiles.isEmpty ? "no matched files" : call.matchedFiles.joined(separator: ", ")
         let duration = call.durationMilliseconds.map { " · \(Self.milliseconds($0))" } ?? ""
         return "\(files) · \(call.outputCharacterCount) output characters\(duration)"
     }
 
+    /// Formats a duration as whole milliseconds.
     private static func milliseconds(_ value: Double) -> String {
         "\(value.formatted(.number.precision(.fractionLength(0)))) ms"
     }

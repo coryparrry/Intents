@@ -18,6 +18,15 @@ def job(name):
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def test_changes_installs_coverage_parsers_before_python_tests(self):
+        workflow = job("changes")
+        node = workflow.index("uses: actions/setup-node@")
+        install = workflow.index("run: npm ci --prefix Tools/DocstringCoverage")
+        tests = workflow.index("run: python3 script/ci_run_tests.py python")
+        self.assertLess(node, install)
+        self.assertLess(install, tests)
+        self.assertIn("cache-dependency-path: Tools/DocstringCoverage/package-lock.json", workflow[node:install])
+
     def test_required_checks_are_real_workers_and_one_terminal_gate(self):
         jobs = re.findall(r"(?m)^  ([\w-]+):$", WORKFLOW.split("jobs:\n", 1)[1])
         self.assertEqual(set(jobs), {

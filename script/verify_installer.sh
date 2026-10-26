@@ -22,6 +22,7 @@ xcrun stapler validate "$dmg"
 spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
 mountpoint="$(mktemp -d "${TMPDIR:-/tmp}/foundation-installer-check.XXXXXX")"
 mounted=false
+# Retry detaching the verification mount three times, remove its empty mountpoint, and report cleanup failure without hiding an earlier failure.
 cleanup() {
   result=$?
   if [[ "$mounted" == true ]]; then

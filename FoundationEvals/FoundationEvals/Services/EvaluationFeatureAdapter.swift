@@ -6,6 +6,7 @@ protocol EvaluationFeatureAdapter: Sendable {
     var displayName: String { get }
     var environment: EvaluationEnvironment { get }
     var developerExecution: EvaluationDeveloperExecution? { get }
+    /// Executes one text case and returns captured output and usage, throwing when application execution fails.
     func evaluate(_ input: EvaluationFeatureInput) async throws -> EvaluationFeatureOutput
 }
 
@@ -46,6 +47,12 @@ protocol EvaluationFeatureAdapterTerminalError: Error {
 }
 
 actor EvaluationFeatureAdapterRunner {
+    /// Runs adapter cases sequentially, applying deterministic scoring and field assertions to captured responses.
+    ///
+    /// Awaits `progress` after each recorded sample and rechecks cancellation after callbacks.
+    /// Cancellation stops dispatch; output arriving after cancellation is retained as an error.
+    /// Terminal adapter failures stop the batch with their declared reason, while other failures
+    /// produce an error sample and allow later cases to run.
     func run(
         id: UUID = UUID(),
         projectID: UUID? = nil,
@@ -89,7 +96,7 @@ actor EvaluationFeatureAdapterRunner {
                             status: .error,
                             rationale: nil,
                             usage: output.usage,
-                            duration: milliseconds(since: clock),
+                            duration: clock.evaluationMilliseconds(to: .now),
                             errorCategory: "lateAfterCancellation",
                             errorMessage: "The app returned after cancellation was requested.",
                             structuredFeatureEvidence: output.structuredEvidence
@@ -121,7 +128,7 @@ actor EvaluationFeatureAdapterRunner {
                         ),
                         rationale: score.rationale,
                         usage: output.usage,
-                        duration: milliseconds(since: clock),
+                        duration: clock.evaluationMilliseconds(to: .now),
                         fieldAssertionResults: assertionResults,
                         structuredFeatureEvidence: output.structuredEvidence
                     )
@@ -138,7 +145,7 @@ actor EvaluationFeatureAdapterRunner {
                             status: .error,
                             rationale: nil,
                             usage: .init(),
-                            duration: milliseconds(since: clock),
+                            duration: clock.evaluationMilliseconds(to: .now),
                             errorCategory: "featureAdapterFailure",
                             errorMessage: error.localizedDescription
                         )
@@ -155,7 +162,7 @@ actor EvaluationFeatureAdapterRunner {
                         status: .error,
                         rationale: nil,
                         usage: .init(),
-                        duration: milliseconds(since: clock),
+                        duration: clock.evaluationMilliseconds(to: .now),
                         errorCategory: "featureAdapterFailure",
                         errorMessage: error.localizedDescription
                     )
@@ -167,7 +174,7 @@ actor EvaluationFeatureAdapterRunner {
                         status: .error,
                         rationale: nil,
                         usage: .init(),
-                        duration: milliseconds(since: clock),
+                        duration: clock.evaluationMilliseconds(to: .now),
                         errorCategory: "featureAdapterFailure",
                         errorMessage: error.localizedDescription
                     )
@@ -214,6 +221,7 @@ actor EvaluationFeatureAdapterRunner {
         )
     }
 
+    /// Builds a sample with the original prompt as its effective prompt and no model-judge evidence.
     private func sample(
         evaluationCase: EvaluationCase,
         repetition: Int,
@@ -251,11 +259,5 @@ actor EvaluationFeatureAdapterRunner {
             fieldAssertionResults: fieldAssertionResults.isEmpty ? nil : fieldAssertionResults,
             structuredFeatureEvidence: structuredFeatureEvidence
         )
-    }
-
-    private func milliseconds(since start: ContinuousClock.Instant) -> Double {
-        let duration = ContinuousClock.now - start
-        return Double(duration.components.seconds) * 1_000
-            + Double(duration.components.attoseconds) / 1_000_000_000_000_000
     }
 }

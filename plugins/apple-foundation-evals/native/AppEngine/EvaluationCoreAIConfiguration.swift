@@ -15,6 +15,7 @@ struct EvaluationCoreAIConfiguration: Codable, Equatable, Sendable {
         !resourcesPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Saves the selected resource path and a security-scoped bookmark, balancing temporary access even if bookmark creation throws.
     mutating func selectResources(at url: URL) throws {
         let accessed = url.startAccessingSecurityScopedResource()
         defer {
@@ -32,6 +33,7 @@ struct EvaluationCoreAIConfiguration: Codable, Equatable, Sendable {
         resourcesBookmark = bookmark
     }
 
+    /// Removes both the configured resource path and its saved access bookmark.
     mutating func clearResources() {
         resourcesPath = ""
         resourcesBookmark = nil

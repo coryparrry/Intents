@@ -26,10 +26,13 @@ struct ReviewJSONField: Identifiable {
     var path: String
     var value: String
     var id: String { path }
+    /// Flattens JSON objects or arrays into deterministic JSON-pointer field previews, returning nil for other input.
+    /// Traversal is capped at eight levels and 100 values, with a limit notice appended when the value cap is reached.
     static func fields(text: String) -> [Self]? {
         guard let data = text.data(using: .utf8), let root = try? JSONSerialization.jsonObject(with: data),
               root is [String: Any] || root is [Any] else { return nil }
         var result: [Self] = []
+        /// Visits sorted object keys or array elements, escaping pointer paths and collecting bounded leaf-value previews.
         func visit(_ value: Any, path: String, depth: Int) {
             guard result.count < 100 else { return }
             if depth < 8, let object = value as? [String: Any], !object.isEmpty {

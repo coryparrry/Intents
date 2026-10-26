@@ -22,6 +22,7 @@ final class MacIntentOwnedCommand {
     private let signalGroup: (pid_t, Int32) -> Int32
     var hasUnresolvedResources: Bool { child != nil }
 
+    /// Configures bounded cleanup intervals and optional child-ownership, group-presence, and signal probes for command execution.
     init(cleanupGrace: Duration = .seconds(1), observeChild: ((pid_t) -> ChildObservation)? = nil,
          probeGroup: ((pid_t) -> Presence)? = nil, signalGroup: ((pid_t, Int32) -> Int32)? = nil) {
         self.cleanupGrace = cleanupGrace
@@ -30,6 +31,7 @@ final class MacIntentOwnedCommand {
         self.signalGroup = signalGroup ?? { kill(-$0, $1) }
     }
 
+    /// Requests cooperative interruption; the active execution path performs owned process-group cleanup.
     func cancel() { cancelled = true }
 
     /// waitid(WNOWAIT) preserves the child PID as a lifetime anchor. Once it
@@ -54,6 +56,9 @@ final class MacIntentOwnedCommand {
         return true
     }
 
+    /// Spawns one owned process session, monitors exit/cancellation/timeout, and verifies group cleanup before returning its status.
+    /// Uncertain ownership is retained and blocks another execution instead of granting authority to signal a reused group.
+    /// Throws on invalid launch, lost ownership, incomplete cleanup, timeout, or cancellation.
     func execute(executable: URL, arguments: [String], directory: URL,
                  environment: [String: String], log: FileHandle, timeout: Double,
                  standardOutput: FileHandle? = nil) async throws -> Int32 {
@@ -97,6 +102,8 @@ final class MacIntentOwnedCommand {
         } onCancel: { Task { @MainActor in self.cancel() } }
     }
 
+    /// Escalates SIGINT, SIGTERM, and SIGKILL only while positive unreaped-child ownership authorizes the group signal.
+    /// Waits through bounded cleanup intervals and returns false if absence cannot be verified.
     private func stopAndDrain() async -> Bool {
         guard let pid = child?.pid else { return true }
         for signal in [SIGINT, SIGTERM, SIGKILL] {
@@ -127,6 +134,7 @@ final class MacIntentOwnedCommand {
         return confirmReleased()
     }
 
+    /// Observes a retired child group until absence or the cleanup deadline without signaling a potentially reused group number.
     private func settleRetiredGroup(until deadline: ContinuousClock.Instant) async -> Bool {
         guard child?.anchorRetired == true else { return false }
         // Descendant zombies may briefly keep a group visible after leader
@@ -139,6 +147,7 @@ final class MacIntentOwnedCommand {
         return confirmReleased()
     }
 
+    /// Updates the retained child status using an unreaped-child observation and permanently records lost ownership.
     private func refreshOwnership() -> Bool {
         guard let child, !child.anchorRetired, !child.ownershipLost else { return false }
         switch observeChild(child.pid) {
@@ -148,6 +157,7 @@ final class MacIntentOwnedCommand {
         }
     }
 
+    /// Uses nonreaping `waitid` to classify the owned child as running, exited with a status, or no longer verifiably owned.
     private static func observe(_ pid: pid_t) -> ChildObservation {
         var info = siginfo_t()
         var result: Int32 = -1
@@ -165,11 +175,14 @@ final class MacIntentOwnedCommand {
         }
     }
 
+    /// Probes a process group without signaling it, treating only ESRCH as proven absence.
     private static func presence(_ group: pid_t) -> Presence {
         if kill(-group, 0) == 0 { return .present }
         return errno == ESRCH ? .absent : .unknown
     }
 
+    /// Starts a new process session with explicit working directory, standard streams, signal defaults, arguments, and environment.
+    /// Rejects invalid paths and NUL-containing arguments/environment entries; POSIX setup or spawn failures propagate.
     private func spawn(executable: URL, arguments: [String], directory: URL,
                        environment: [String: String], output: FileHandle, error: FileHandle) throws -> pid_t {
         guard executable.isFileURL, directory.isFileURL,
@@ -205,6 +218,7 @@ final class MacIntentOwnedCommand {
         return pid
     }
 
+    /// Converts a nonzero POSIX return code to an NSError using that returned status.
     private func checked(_ status: Int32) throws {
         guard status == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(status)) }
     }

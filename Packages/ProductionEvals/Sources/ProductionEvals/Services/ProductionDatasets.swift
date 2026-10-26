@@ -1,6 +1,13 @@
 import Foundation
 
 extension ProductionStorage {
+    /// Validates JSONL examples and publishes immutable example bytes, offsets, and a content-addressed manifest.
+    /// Duplicate example IDs, sources crossing partitions, oversized data, and unconfirmed production data are rejected.
+    /// - Parameters:
+    ///   - productionData: Whether the source requires explicit redaction confirmation.
+    ///   - redactionConfirmed: Caller confirmation required when `productionData` is true.
+    /// - Returns: The published dataset, or a compatible existing revision for an identical import.
+    /// - Throws: Validation, decoding, integrity, or file-system errors before publication completes.
     public func importDataset(from file: URL, name: String, version: String, sampling: ProductionSampling = .curated,
                               productionData: Bool = false, redactionConfirmed: Bool = false) throws -> ProductionDataset {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 200,
@@ -60,11 +67,16 @@ extension ProductionStorage {
             return dataset
         }
     }
+    /// Loads published dataset manifests in descending creation order, excluding staging directories.
+    /// - Throws: File-system errors or invalid dataset identity/index evidence.
     public func datasets() throws -> [ProductionDataset] {
         try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("Datasets"), includingPropertiesForKeys: nil)
             .filter { !$0.lastPathComponent.hasPrefix(".") }.map { try loadDataset($0.lastPathComponent) }
             .sorted { $0.createdAt > $1.createdAt }
     }
+    /// Loads a manifest and checks its revision, example count, partition totals, and index length.
+    /// - Parameter verifyFiles: Also rehashes example and offset bytes when true.
+    /// - Throws: Integrity errors for changed identity or bytes, plus decoding and file errors.
     public func loadDataset(_ revision: String, verifyFiles: Bool = false) throws -> ProductionDataset {
         let folder = try datasetDirectory(revision)
         let value = try ProductionCodec.read(ProductionDataset.self, from: folder.appendingPathComponent("manifest.json"), maximumBytes: 100_000)
@@ -82,6 +94,7 @@ extension ProductionStorage {
         }
         return value
     }
+    /// Computes the current dataset identity from an encoded field array and the legacy newline-delimited identity for compatibility.
     private static func datasetRevisions(_ value: ProductionDataset) throws -> (current: String, legacy: String) {
         let fields = [value.name, value.version, value.sampling.rawValue, String(value.productionData),
                       value.dataDigest, value.indexDigest, String(value.count),
@@ -89,6 +102,7 @@ extension ProductionStorage {
         return (try ProductionCodec.digest(ProductionCodec.encode(["production-dataset-v2"] + fields)),
                 ProductionCodec.digest(Data(fields.joined(separator: "\n").utf8)))
     }
+    /// Rejects examples with missing identifiers or prompt, or fields that exceed the persisted record bounds.
     static func validate(_ example: ProductionExample) throws {
         guard !example.id.isEmpty, example.id.utf8.count <= 200, !example.sourceID.isEmpty, example.sourceID.utf8.count <= 200,
               !example.prompt.isEmpty, example.prompt.utf8.count <= 64_000, (example.expected?.utf8.count ?? 0) <= 64_000,
@@ -104,13 +118,18 @@ public final class ProductionDatasetReader {
     private let data: FileHandle
     private let index: FileHandle
     public let dataset: ProductionDataset
+    /// Opens indexed example data after verifying the published dataset and both file digests.
+    /// - Throws: Dataset integrity, decoding, or file-opening errors.
     public init(storage: ProductionStorage, revision: String) throws {
         dataset = try storage.loadDataset(revision, verifyFiles: true)
         let folder = try storage.datasetDirectory(revision)
         data = try FileHandle(forReadingFrom: folder.appendingPathComponent("examples.jsonl"))
         index = try FileHandle(forReadingFrom: folder.appendingPathComponent("offsets.bin"))
     }
+    /// Closes both example and offset handles when the reader is released.
     deinit { try? data.close(); try? index.close() }
+    /// Reads and validates the example at a zero-based position using its eight-byte offset entry.
+    /// - Throws: An invalid-position error or an integrity error for missing or oversized indexed data, plus I/O and decoding errors.
     public func example(at position: Int) throws -> ProductionExample {
         guard (0..<dataset.count).contains(position) else { throw ProductionFailure.invalid("Example index is out of range.") }
         try index.seek(toOffset: UInt64(position * 8))
@@ -129,6 +148,8 @@ public final class ProductionDatasetReader {
 }
 
 enum ProductionLineReader {
+    /// Streams JSONL data one bounded record at a time to `consume`.
+    /// Propagates file errors, record-size errors, and errors thrown by the consumer.
     static func forEach(_ url: URL, maximumLineBytes: Int = 262_144, consume: (Data) throws -> Void) throws {
         let input = try FileHandle(forReadingFrom: url); defer { try? input.close() }
         var pending = Data()

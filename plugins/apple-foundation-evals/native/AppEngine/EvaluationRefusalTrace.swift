@@ -12,6 +12,7 @@ struct EvaluationRefusalTrace: Codable, Equatable, Sendable {
     var explanationFailureMessage: String?
     var explanationWasTruncated: Bool
 
+    /// Captures bounded explanation evidence only for Foundation Models refusal errors; returns nil for other failures.
     static func capture(
         from error: any Error,
         timeout: Duration = generationTimeout,
@@ -30,6 +31,7 @@ struct EvaluationRefusalTrace: Codable, Equatable, Sendable {
         }
     }
 
+    /// Generates refusal explanation evidence with the default sleep-based deadline and caller cancellation handling.
     static func captureExplanation(
         timeout: Duration = generationTimeout,
         maximumCharacters: Int = maximumExplanationCharacters,
@@ -45,6 +47,8 @@ struct EvaluationRefusalTrace: Codable, Equatable, Sendable {
         )
     }
 
+    /// Races explanation generation against an injected deadline without waiting for a losing operation to cooperate with cancellation.
+    /// Trims and bounds successful text, and records empty, failed, timed-out, or cancelled generation as failure evidence.
     static func captureExplanation(
         timeout: Duration,
         maximumCharacters: Int = maximumExplanationCharacters,
@@ -115,6 +119,7 @@ struct EvaluationRefusalTrace: Codable, Equatable, Sendable {
         }
     }
 
+    /// Creates a failed explanation trace with a bounded diagnostic and no explanation text.
     private static func failed(_ message: String) -> Self {
         Self(
             explanation: nil,
@@ -124,6 +129,7 @@ struct EvaluationRefusalTrace: Codable, Equatable, Sendable {
         )
     }
 
+    /// Limits saved generation-failure diagnostics to the configured character budget.
     private static func boundedFailureMessage(_ message: String) -> String {
         String(message.prefix(maximumFailureMessageCharacters))
     }
@@ -159,6 +165,7 @@ private final class EvaluationRefusalExplanationRace: @unchecked Sendable {
         return true
     }
 
+    /// Registers the race tasks under the lock, cancelling them immediately if an outcome already won.
     func install(tasks: [Task<Void, Never>]) {
         lock.lock()
         if resolvedOutcome != nil {
@@ -170,6 +177,7 @@ private final class EvaluationRefusalExplanationRace: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// Accepts only the first outcome, cancels the competing tasks, and resumes an installed continuation exactly once.
     func resolve(_ outcome: EvaluationRefusalExplanationOutcome) {
         let continuation: CheckedContinuation<EvaluationRefusalExplanationOutcome, Never>?
         let tasks: [Task<Void, Never>]

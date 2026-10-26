@@ -36,6 +36,7 @@ keychain_list="$(security list-keychains -d user)"
 while IFS= read -r existing_keychain; do
   existing_keychains+=("$existing_keychain")
 done < <(printf '%s\n' "$keychain_list" | sed 's/^[[:space:]]*"//; s/"[[:space:]]*$//')
+# Restore the user keychain search list, delete the temporary signing keychain and workspace, and fail if search-list restoration fails.
 cleanup() {
   result=$?
   security list-keychains -d user -s "${existing_keychains[@]}" || result=1

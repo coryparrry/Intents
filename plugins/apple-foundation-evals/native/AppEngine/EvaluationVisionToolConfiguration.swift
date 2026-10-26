@@ -18,6 +18,7 @@ struct EvaluationVisionToolConfiguration: Codable, Equatable, Sendable {
         return names
     }
 
+    /// Creates enabled native OCR and barcode tool instances without wrapping them, preserving Foundation Models' image-history binding.
     func makeTools() -> [any Tool] {
         // Foundation Models binds session history to the registered native tool instance.
         // Wrapping these tools leaves their ImageReference resolver with an empty history.
@@ -31,6 +32,7 @@ struct EvaluationVisionToolConfiguration: Codable, Equatable, Sendable {
         return tools
     }
 
+    /// Creates a call and output boundary for enabled vision tools, or returns nil when both tools are disabled.
     func boundary(
         limiter: EvaluationToolCallLimiter,
         tokenCounter: any EvaluationToolOutputTokenCounting = EvaluationSystemPromptTokenCounter()
@@ -54,6 +56,7 @@ struct EvaluationBuiltinToolBoundary: LanguageModelSession.DynamicProfileModifie
     let limiter: EvaluationToolCallLimiter
     let tokenCounter: any EvaluationToolOutputTokenCounting
 
+    /// Attaches pre-call and post-output validation hooks to the supplied dynamic profile.
     func body(content: Content) -> some LanguageModelSession.DynamicProfile {
         content
             .onToolCall { call in
@@ -64,11 +67,14 @@ struct EvaluationBuiltinToolBoundary: LanguageModelSession.DynamicProfileModifie
             }
     }
 
+    /// Charges recognized built-in tool calls against the shared sample limit while ignoring unrelated tools.
     func validateToolCall(_ call: Transcript.ToolCall) async throws {
         guard toolNames.contains(call.toolName) else { return }
         try await limiter.beginCall()
     }
 
+    /// Counts recognized tool output as prompt segments and rejects output above the token budget.
+    /// Attachments and unknown segment types fail because their output cost cannot be bounded here.
     func validateToolOutput(
         call: Transcript.ToolCall,
         output: Transcript.ToolOutput
@@ -86,6 +92,7 @@ struct EvaluationBuiltinToolBoundary: LanguageModelSession.DynamicProfileModifie
         }
     }
 
+    /// Converts text and structured output into countable prompt segments, throwing for attachments or unsupported segment types.
     static func promptSegments(for output: Transcript.ToolOutput) throws -> [Prompt] {
         try output.segments.map { segment in
             switch segment {
@@ -104,6 +111,7 @@ struct EvaluationBuiltinToolBoundary: LanguageModelSession.DynamicProfileModifie
 
 @available(macOS 27.0, *)
 protocol EvaluationToolCallLimiting: Sendable {
+    /// Reserves one tool call or throws when the implementation's shared limit has been exhausted.
     func beginCall() async throws
 }
 
@@ -112,6 +120,7 @@ actor EvaluationToolCallLimiter: EvaluationToolCallLimiting {
     private let maximumCalls: Int
     private var callCount = 0
 
+    /// Clamps the sample call budget between zero and the recorder's global maximum.
     init(maximumCalls: Int) {
         self.maximumCalls = min(
             max(0, maximumCalls),
@@ -119,6 +128,7 @@ actor EvaluationToolCallLimiter: EvaluationToolCallLimiting {
         )
     }
 
+    /// Consumes one call from the actor-isolated budget, throwing before increment when the limit is reached.
     func beginCall() async throws {
         guard callCount < maximumCalls else {
             throw EvaluationBoundedToolError.callLimitReached(maximum: maximumCalls)
@@ -141,6 +151,7 @@ struct EvaluationBoundedTool<Wrapped: Tool>: Tool {
     private let limiter: EvaluationToolCallLimiter
     private let tokenCounter: any EvaluationToolOutputTokenCounting
 
+    /// Preserves the wrapped tool's registration schema and shares the injected call limiter and output token counter.
     init(
         tool: Wrapped,
         limiter: EvaluationToolCallLimiter,
@@ -155,6 +166,7 @@ struct EvaluationBoundedTool<Wrapped: Tool>: Tool {
         self.tokenCounter = tokenCounter
     }
 
+    /// Reserves a call before execution, then counts the returned output and rejects output above the token limit.
     @concurrent
     func call(arguments: Wrapped.Arguments) async throws -> Wrapped.Output {
         try await limiter.beginCall()
@@ -172,11 +184,13 @@ struct EvaluationBoundedTool<Wrapped: Tool>: Tool {
 
 @available(macOS 27.0, *)
 protocol EvaluationToolOutputTokenCounting: Sendable {
+    /// Counts the tokens represented by an output so callers can enforce the tool-output budget.
     func tokenCount<Output: PromptRepresentable>(for output: Output) async throws -> Int
 }
 
 @available(macOS 27.0, *)
 struct EvaluationSystemPromptTokenCounter: EvaluationToolOutputTokenCounting {
+    /// Uses the default system model to count a prompt-representable tool output.
     func tokenCount<Output: PromptRepresentable>(for output: Output) async throws -> Int {
         try await SystemLanguageModel.default.tokenCount(for: output)
     }

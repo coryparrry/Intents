@@ -4,18 +4,6 @@ import FoundationEvalsDeveloper
 #endif
 import Observation
 
-enum EvaluationRunTarget: Hashable, Identifiable, Sendable {
-    case local
-    case runner(UUID)
-
-    var id: String {
-        switch self {
-        case .local: "local"
-        case .runner(let id): "runner:\(id.uuidString)"
-        }
-    }
-}
-
 @MainActor
 @Observable
 final class DeveloperRunnerStore {
@@ -27,8 +15,9 @@ final class DeveloperRunnerStore {
     @ObservationIgnored private let evaluationStore: EvaluationStore
     @ObservationIgnored private var isClosing = false
     @ObservationIgnored private var runTasks: [UUID: Task<Void, Never>] = [:]
-    @ObservationIgnored private var snapshotTasks: [UUID: Task<EvaluationRun, Error>] = [:]
 
+    /// Creates a main-actor runner coordinator using workspace-local identity and trust storage.
+    /// Optional desktop ID and client override the persisted identity and default browsing client.
     init(
         evaluationStore: EvaluationStore,
         desktopID: UUID? = nil,
@@ -57,26 +46,22 @@ final class DeveloperRunnerStore {
         client.pendingPairingChallenges
     }
 
-    var runTargets: [EvaluationRunTarget] {
-        [.local] + runners.filter { $0.state == .connected }.map { .runner($0.id) }
-    }
-
     var isBrowsing: Bool { client.isBrowsing }
     var lastError: String? { client.lastError }
 
+    /// Starts runner discovery unless the store has closed admission.
     func start() {
         guard !isClosing else { return }
         client.startBrowsing()
     }
 
+    /// Requests cancellation of owned runs and shuts down the runner client.
+    /// Executing ownership remains until tracked work finishes; closeAndWait also joins that work.
     func stop() {
         for task in runTasks.values {
             task.cancel()
         }
-        for task in snapshotTasks.values {
-            task.cancel()
-        }
-        if runTasks.isEmpty && snapshotTasks.isEmpty {
+        if runTasks.isEmpty {
             executingRunID = nil
         }
         client.shutdown()
@@ -86,10 +71,8 @@ final class DeveloperRunnerStore {
     func closeAndWait() async {
         isClosing = true
         let runs = Array(runTasks.values)
-        let snapshots = Array(snapshotTasks.values)
         stop()
         for task in runs { await task.value }
-        for task in snapshots { _ = try? await task.value }
     }
 
     /// Connects to a discovered endpoint. Pairing remains incomplete until the
@@ -99,23 +82,29 @@ final class DeveloperRunnerStore {
         try client.connect(to: runnerID)
     }
 
+    /// Disconnects the endpoint to abandon its current pairing attempt.
     func cancelPairing(with runnerID: UUID) {
         client.disconnect(runnerID)
     }
 
+    /// Trusts a runner using its displayed pairing code, throwing if closing or client verification/storage fails.
     func trustRunner(_ runnerID: UUID, pairingCode: String) throws {
         guard !isClosing else { throw EvaluationStoreError.resourceConflict("Developer runners are closing.") }
         try client.trustRunner(runnerID, pairingCode: pairingCode)
     }
 
+    /// Disconnects the runner without removing its saved trust.
     func disconnect(_ runnerID: UUID) {
         client.disconnect(runnerID)
     }
 
+    /// Removes saved trust for a runner, propagating client persistence errors.
     func forgetTrust(for runnerID: UUID) throws {
         try client.forgetTrust(for: runnerID)
     }
 
+    /// Starts the selected canonical suite on a connected runner feature and returns its tracking ID.
+    /// Rejects concurrent execution or unsupported features; captures the suite revision before dispatch and publishes terminal status.
     @discardableResult
     func runSelectedSuite(
         on runnerID: UUID,
@@ -173,81 +162,20 @@ final class DeveloperRunnerStore {
         return runID
     }
 
+    /// Cancels owned work for the run and immediately publishes cancellation-requested detail in its UI status.
     func cancelRun(_ runID: UUID) {
         runTasks[runID]?.cancel()
-        snapshotTasks[runID]?.cancel()
         activeRuns[runID]?.phase = .cancelled
         activeRuns[runID]?.detail = "Cancellation requested."
     }
 
-    /// Runs a frozen suite against an explicitly selected runner and feature.
-    /// The supplied adapter may use the negotiated, expectation-free subject
-    /// input. This method does not read or update the UI's selected suite.
-    func runFeatureSnapshot(
-        id: UUID,
-        projectID: UUID,
-        suite: EvaluationSuite,
-        expectedRevision: String,
-        runnerID: UUID,
-        featureID: String,
-        executionOwnerID: UUID? = nil,
-        adapter: any EvaluationFeatureAdapter
-    ) async throws -> EvaluationRun {
-        guard !isClosing,
-              executingRunID == nil else {
-            throw EvaluationStoreError.resourceConflict("Another developer runner execution is active.")
-        }
-        guard let runner = runners.first(where: { $0.id == runnerID && $0.state == .connected }) else {
-            throw DeveloperExecutionFailure(code: .disconnected, message: "Connect the runner before starting a run.")
-        }
-        guard runner.features.contains(where: { $0.id == featureID }) else {
-            throw DeveloperExecutionFailure(
-                code: .featureNotFound,
-                message: "The selected feature is not available on this runner."
-            )
-        }
-        executingRunID = id
-        activeRuns[id] = .init(
-            id: id, runnerID: runnerID, featureID: featureID, phase: .preparing,
-            completedSamples: 0, totalSamples: suite.cases.count * suite.repetitions
-        )
-        let evaluationStore = self.evaluationStore
-        let task = Task<EvaluationRun, Error> { @MainActor [weak self] in
-            try await evaluationStore.runFeatureAdapterSnapshot(
-                id: id, projectID: projectID, suite: suite,
-                expectedRevision: expectedRevision,
-                executionOwnerID: executionOwnerID, adapter: adapter
-            ) { [weak self] completed, total in
-                await self?.updateProgress(runID: id, completed: completed, total: total)
-            }
-        }
-        snapshotTasks[id] = task
-        activeRuns[id]?.phase = .dispatching
-        defer {
-            snapshotTasks[id] = nil
-            if executingRunID == id { executingRunID = nil }
-        }
-        do {
-            let run = try await withTaskCancellationHandler {
-                try await task.value
-            } onCancel: {
-                task.cancel()
-            }
-            projectCompletion(.success(run), for: id)
-            return run
-        } catch is CancellationError {
-            projectCompletion(.failure(CancellationError()), for: id)
-            throw CancellationError()
-        } catch {
-            projectCompletion(.failure(error), for: id)
-            throw error
-        }
-    }
-
+    /// Returns the most recently projected status for a tracked developer run, or nil for an unknown ID.
     func status(for runID: UUID) -> DeveloperRunStatus? {
         activeRuns[runID]
     }
 
+    /// Retains main-actor execution until the operation finishes and then clears ownership.
+    /// Requires no existing executing run and ignores new work after closing admission.
     func startTrackedExecution(
         runID: UUID,
         operation: @escaping @MainActor @Sendable () async -> Void
@@ -268,6 +196,7 @@ final class DeveloperRunnerStore {
         runTasks[runID] = task
     }
 
+    /// Publishes progress only for the executing run and does not overwrite an already cancelled UI phase.
     private func updateProgress(runID: UUID, completed: Int, total: Int) {
         guard executingRunID == runID,
               activeRuns[runID]?.phase != .cancelled else { return }
@@ -276,6 +205,7 @@ final class DeveloperRunnerStore {
         activeRuns[runID]?.totalSamples = total
     }
 
+    /// Projects terminal evidence or failure into the tracked run's status without changing task ownership.
     private func projectCompletion(_ result: Result<EvaluationRun, Error>, for runID: UUID) {
         Self.projectCompletion(result, status: &activeRuns[runID])
     }
@@ -315,6 +245,7 @@ final class DeveloperRunnerStore {
         }
     }
 
+    /// Maps cancellation, deadline, and disconnect failures to distinct UI phases; other codes become failed.
     private static func phase(for code: DeveloperExecutionErrorCode) -> DeveloperRunPhase {
         switch code {
         case .cancelled: .cancelled
@@ -324,6 +255,8 @@ final class DeveloperRunnerStore {
         }
     }
 
+    /// Loads a saved desktop UUID or generates one and attempts to persist it.
+    /// A storage failure still returns the generated session identity.
     private static func loadOrCreateDesktopID(at url: URL) -> UUID {
         if let value = try? String(contentsOf: url, encoding: .utf8),
            let id = UUID(uuidString: value.trimmingCharacters(in: .whitespacesAndNewlines)) {

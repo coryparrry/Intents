@@ -20,12 +20,22 @@ public actor DeveloperProductionCapture {
     private let sanitizer: @Sendable (String) throws -> String
     private var enabled = false
     private let maximumFileBytes: UInt64
+    /// Configures disabled local capture with a pseudonymization key and caller-supplied sanitizer.
+    /// - Parameters:
+    ///   - sourceKey: At least 32 bytes used to HMAC event and source identifiers.
+    ///   - metadataKeys: Allowed metadata keys, limited to 12.
+    ///   - maximumFileBytes: Retained JSONL byte ceiling, at least 262,144 bytes.
+    /// - Throws: `CaptureError.invalidConfiguration` if a configuration bound is invalid.
     public init(file: URL, sourceKey: Data, metadataKeys: Set<String>, maximumFileBytes: UInt64 = 50_000_000, sanitizer: @escaping @Sendable (String) throws -> String) throws {
         guard sourceKey.count >= 32, metadataKeys.count <= 12, maximumFileBytes >= 262_144 else { throw CaptureError.invalidConfiguration }
         self.maximumFileBytes = maximumFileBytes
         self.file = file; self.sourceKey = SymmetricKey(data: sourceKey); self.metadataKeys = metadataKeys; self.sanitizer = sanitizer
     }
+    /// Changes whether subsequent calls may append sanitized records to the local file.
     public func setEnabled(_ enabled: Bool) { self.enabled = enabled }
+    /// Sanitizes permitted fields, pseudonymizes identifiers, and appends one synchronized JSONL record under a file lock.
+    /// - Returns: `false` when capture is disabled; `true` after the record is written.
+    /// - Throws: Sanitization or file errors, or a capture error for invalid record sizes, locking failure, or exhausted retention.
     @discardableResult
     public func record(eventID: String, sourceID: String, prompt: String, output: String, feedback: String? = nil,
                        metadata: [String: String] = [:]) throws -> Bool {
@@ -37,6 +47,7 @@ public actor DeveloperProductionCapture {
         guard !eventID.isEmpty, !sourceID.isEmpty, !sanitizedPrompt.isEmpty, sanitizedPrompt.utf8.count <= 64_000,
               sanitizedOutput.utf8.count <= 64_000, (sanitizedFeedback?.utf8.count ?? 0) <= 4_000,
               permitted.allSatisfy({ !$0.key.isEmpty && $0.key.count <= 80 && $0.value.count <= 200 }) else { throw CaptureError.oversizedRecord }
+        /// Produces a keyed SHA-256 identifier so repeated event or source values share a local pseudonym.
         func pseudonym(_ value: String) -> String {
             HMAC<SHA256>.authenticationCode(for: Data(value.utf8), using: sourceKey).map { String(format: "%02x", $0) }.joined()
         }

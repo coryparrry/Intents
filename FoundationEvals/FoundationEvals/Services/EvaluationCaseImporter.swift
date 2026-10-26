@@ -37,6 +37,8 @@ struct EvaluationCaseImportPreview: Sendable {
 }
 
 enum EvaluationCaseImporter {
+    /// Reads bounded import columns from the CSV header or the union of JSONL object keys.
+    /// Throws for oversized files, invalid encoding or records, invalid CSV headers or an empty file.
     static func columns(in data: Data, format: EvaluationCaseImportFormat) throws -> [String] {
         try validateFileSize(data)
         switch format {
@@ -53,6 +55,8 @@ enum EvaluationCaseImporter {
         }
     }
 
+    /// Builds a bounded row preview while counting all valid rows and retaining line-specific validation issues.
+    /// Throws for structural parsing, mapping or file-size failures; the display limit does not suppress row validation.
     static func preview(
         data: Data,
         format: EvaluationCaseImportFormat,
@@ -78,6 +82,8 @@ enum EvaluationCaseImporter {
         }
     }
 
+    /// Creates up to the requested number of cases only after the entire bounded import has no validation issues.
+    /// Throws on parsing, mapping or row validation failure; returned cases receive new identities.
     static func cases(
         data: Data,
         format: EvaluationCaseImportFormat,
@@ -108,6 +114,7 @@ enum EvaluationCaseImporter {
         }
     }
 
+    /// Validates the CSV header and mapping, collects malformed-row issues and retains at most the display limit.
     private static func csvPreview(
         data: Data,
         mapping: EvaluationCaseImportMapping,
@@ -138,6 +145,7 @@ enum EvaluationCaseImporter {
         )
     }
 
+    /// Validates JSONL mappings and string-or-null fields, retaining row issues even for columns that are not mapped.
     private static func jsonLinesPreview(
         data: Data,
         mapping: EvaluationCaseImportMapping,
@@ -171,6 +179,8 @@ enum EvaluationCaseImporter {
         )
     }
 
+    /// Validates a mapped prompt and expected answer, counts valid rows and appends only within the preview limit.
+    /// Blank names receive a source-line fallback; issues retain the original source line.
     private static func append(
         object: [String: String],
         line: Int,
@@ -203,6 +213,7 @@ enum EvaluationCaseImporter {
         }
     }
 
+    /// Requires every selected prompt, name and expected column to exist, throwing for the first missing mapping.
     private static func validate(mapping: EvaluationCaseImportMapping, columns: [String]) throws {
         guard columns.contains(mapping.promptColumn) else {
             throw EvaluationCaseImportError.missingColumn(mapping.promptColumn)
@@ -215,12 +226,14 @@ enum EvaluationCaseImporter {
         }
     }
 
+    /// Rejects files above the shared text-import byte limit before decoding them.
     private static func validateFileSize(_ data: Data) throws {
         guard data.count <= EvaluationStore.maximumTextFileBytes else {
             throw EvaluationCaseImportError.fileTooLarge(maximumBytes: EvaluationStore.maximumTextFileBytes)
         }
     }
 
+    /// Trims CSV header names and requires nonempty unique columns, throwing for invalid or duplicate names.
     private static func validatedColumns(_ columns: [String]) throws -> [String] {
         let trimmed = columns.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         guard !trimmed.isEmpty, trimmed.allSatisfy({ !$0.isEmpty }) else {
@@ -239,6 +252,8 @@ enum EvaluationCaseImporter {
         }
     }
 
+    /// Parses UTF-8 CSV with quoted fields, escaped quotes and source-line tracking.
+    /// Optional bounds cap data rows or stop after header discovery; an unclosed quoted field throws.
     private static func csvRows(
         _ data: Data,
         maximumDataRows: Int? = nil,
@@ -302,6 +317,8 @@ enum EvaluationCaseImporter {
         return rows
     }
 
+    /// Appends a CSV row unless it is a blank data row, enforcing the data-row cap.
+    /// Returns whether the requested early-stop row count has been reached.
     private static func appendCSVRow(
         _ row: CSVRow,
         to rows: inout [CSVRow],
@@ -321,6 +338,8 @@ enum EvaluationCaseImporter {
         var object: [String: Any]
     }
 
+    /// Parses nonblank UTF-8 lines as JSON objects with original line numbers, enforcing the record cap.
+    /// Throws for invalid JSON, non-object records or too many records.
     private static func jsonLineRecords(_ data: Data, maximumRecords: Int) throws -> [JSONLineRecord] {
         let text = try utf8Text(data)
         var records: [JSONLineRecord] = []
@@ -349,10 +368,12 @@ enum EvaluationCaseImporter {
 
     // Swift treats CRLF as one extended grapheme cluster, so testing only
     // Character("\n") misses Windows record separators.
+    /// Recognizes LF, CRLF and bare CR as record separators, including Swift's combined CRLF character.
     private static func isRecordNewline(_ character: Character) -> Bool {
         character == "\n" || character == "\r\n" || character == "\r"
     }
 
+    /// Decodes UTF-8 and removes a leading byte-order mark; throws when the input encoding is invalid.
     private static func utf8Text(_ data: Data) throws -> String {
         guard var text = String(data: data, encoding: .utf8) else {
             throw EvaluationCaseImportError.notUTF8

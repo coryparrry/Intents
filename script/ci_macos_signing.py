@@ -29,10 +29,12 @@ class SigningError(Exception):
 
 class Interrupted(Exception):
     def __init__(self, number):
+        """Retain the received signal number so the signed command can return the corresponding shell exit status."""
         self.number = number
 
 
 def configuration(environment):
+    """Validate the team and required secrets, decode a nonempty P12 of at most one megabyte, and raise fixed non-secret signing errors."""
     team = environment.get("CI_MAC_SIGNING_TEAM", "")
     encoded = environment.get("CI_MAC_CERTIFICATE_P12_BASE64", "")
     password = environment.get("CI_MAC_CERTIFICATE_PASSWORD", "")
@@ -49,6 +51,7 @@ def configuration(environment):
 
 def security(arguments, environment):
     # Never expose subprocess exceptions, stdout, stderr or password-bearing argv.
+    """Run the macOS security tool with a 30-second timeout, returning stdout and replacing subprocess failures with non-secret diagnostics."""
     try:
         result = subprocess.run(["/usr/bin/security", *arguments], env=environment,
                                 capture_output=True, text=True, timeout=30, check=False)
@@ -60,6 +63,7 @@ def security(arguments, environment):
 
 
 def development_identity(output):
+    """Require exactly one valid Apple Development identity in security output and return its uppercase SHA-1 fingerprint."""
     entries = [line for line in output.splitlines() if re.match(r"^\s*\d+\)", line)]
     if len(entries) != 1 or not re.search(r"(?m)^\s*1 valid identities found\s*$", output):
         raise SigningError("Temporary keychain must contain exactly one valid Apple Development signing identity.")
@@ -72,6 +76,7 @@ def development_identity(output):
 def verify_certificate_team(output, fingerprint, team, environment):
     # The CN suffix identifies a developer/certificate, not its signing team.
     # Inspect public leaf metadata only; never export a private key or identity.
+    """Inspect bounded public PEM certificates with OpenSSL and require the selected fingerprint to have exactly the configured subject OU."""
     certificates = PUBLIC_CERTIFICATE.findall(output)
     if (len(output) > 1024 * 1024 or not 1 <= len(certificates) <= 16
             or PUBLIC_CERTIFICATE.sub("", output).strip()):
@@ -100,6 +105,7 @@ def verify_certificate_team(output, fingerprint, team, environment):
 def wait_for_exit(child):
     # Observe exit without reaping: the leader reserves its process-group ID
     # until cleanup has sent its final signal to all same-group descendants.
+    """Observe child exit without reaping so its process-group ID remains reserved until descendant cleanup completes."""
     while True:
         waitid = getattr(os, "waitid", None)
         if waitid is None:
@@ -133,6 +139,7 @@ class _DarwinSiginfo(ctypes.Structure):
 
 
 def _darwin_waitid(pid):
+    """Use Darwin waitid through ctypes to observe child status without reaping, retry interrupted calls, and raise other OS errors."""
     libc = ctypes.CDLL(None, use_errno=True)
     waitid = libc.waitid
     waitid.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.POINTER(_DarwinSiginfo), ctypes.c_int]
@@ -149,6 +156,7 @@ def _darwin_waitid(pid):
 
 
 def stop_child(child, grace_seconds=20):
+    """Terminate the unreaped child process group, wait the grace period, force-kill descendants, and reject unconfirmed cleanup."""
     if child is None:
         return
     if child.returncode is not None:
@@ -179,6 +187,7 @@ def stop_child(child, grace_seconds=20):
 
 
 def run_signed(command, environment=None):
+    """Create an isolated development keychain, execute a credential-scrubbed child session, then restore keychains, signals, and temporary files; cleanup failure forces failure."""
     source = dict(os.environ if environment is None else environment)
     team, certificate, password = configuration(source)
     clean = {key: value for key, value in source.items() if key not in CREDENTIAL_KEYS}
@@ -194,6 +203,7 @@ def run_signed(command, environment=None):
     handlers = {}
 
     def interrupt(number, _frame):
+        """Convert SIGTERM or SIGINT into an interruption carrying the signal number so the outer cleanup still runs."""
         raise Interrupted(number)
 
     try:
@@ -260,6 +270,7 @@ def run_signed(command, environment=None):
 
 
 def main(argv=None):
+    """Require a child command after optional --, run it with temporary signing, and return a fixed-diagnostic failure for signing errors."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     arguments = parser.parse_args(argv)

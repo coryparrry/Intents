@@ -5,12 +5,17 @@ import Foundation
 private let maximumReviewBytes = 1_048_576
 
 extension ProductionStorage {
+    /// Locates the append-only review audit keyed by job and stable request UUID.
     func reviewURL(jobID: UUID, requestID: UUID) -> URL {
         root.appendingPathComponent("Reviews/\(jobID.uuidString)-\(requestID.uuidString).jsonl")
     }
+    /// Resolves the current assignment, semantic outcome, reconciliation, and disagreement from a consistent review audit.
+    /// - Throws: Invalid audit history, decoding errors, or file-system errors.
     public func review(jobID: UUID, requestID: UUID) throws -> ProductionReviewResolution {
         try transaction { try readReview(jobID: jobID, requestID: requestID) }
     }
+    /// Reduces validated audit events using the latest reconciliation/adjudication and each subsequent reviewer label.
+    /// Conflicting current labels resolve to `needsEvidence`; absent history yields an empty resolution.
     func readReview(jobID: UUID, requestID: UUID) throws -> ProductionReviewResolution {
         let url = reviewURL(jobID: jobID, requestID: requestID)
         var events: [ProductionReviewEvent] = []
@@ -33,6 +38,10 @@ extension ProductionStorage {
         return .init(assignee: assignee, outcome: outcome, disagreement: conflict,
                      response: events.last { $0.action == .reconcile }?.reconciledResponse, events: events)
     }
+    /// Validates and durably appends one review event for a committed result under the store transaction.
+    /// Assignment controls adjudication/reconciliation authority; uncertain actions require verified response reconciliation before semantic labels.
+    /// Reconciled cost evidence is published before ledger settlement for recovery.
+    /// - Throws: Invalid action, reviewer, result identity, duplicate event, full history, or oversized evidence, plus storage errors.
     public func appendReview(jobID: UUID, slot: Int, event: ProductionReviewEvent) throws {
         try transaction {
             let job = try loadJob(jobID), value = try chunk(job, index: slot / job.configuration.chunkSize)

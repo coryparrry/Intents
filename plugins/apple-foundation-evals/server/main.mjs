@@ -8,9 +8,12 @@ await app.init();
 let pending = Buffer.alloc(0), discarding = false, ending = false;
 const tasks = new Set();
 let shutdownPromise;
+/** Writes one newline-delimited JSON-RPC response to the MCP transport. */
 const send = (message) => process.stdout.write(JSON.stringify(message) + '\n');
+/** Sends a JSON-RPC error associated with the request identity, or null for transport errors. */
 const error = (id, code, message) => send({ jsonrpc: '2.0', id, error: { code, message } });
 
+/** Validates and dispatches a JSON-RPC request; notifications receive no response and tool failures become MCP error content. */
 async function request(message) {
   const requestId = message?.id;
   const hasId = Object.hasOwn(message || {}, 'id');
@@ -52,6 +55,7 @@ async function request(message) {
     send({ jsonrpc: '2.0', id: requestId, result });
   } catch (failure) { error(requestId, -32602, failure.message); }
 }
+/** Parses one bounded nonblank request line and tracks its asynchronous dispatch for shutdown draining. */
 function line(buffer) {
   if (!buffer.toString('utf8').trim()) return;
   if (buffer.length > MAX_REQUEST_BYTES) { error(null, -32600, 'Request exceeds 65 MiB limit'); return; }
@@ -74,6 +78,7 @@ process.stdin.on('data', (chunk) => {
     }
   }
 });
+/** Memoizes transport shutdown, admits a final buffered request, and waits for all request tasks and app cleanup before pausing input. */
 function shutdown() {
   if (shutdownPromise) return shutdownPromise;
   ending = true;

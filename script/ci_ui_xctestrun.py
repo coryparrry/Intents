@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 def ui_targets(document: dict) -> list[dict]:
+    """Validate supported descriptor formats and enabled configurations, returning unambiguous FoundationEvalsUITests targets or raising ValueError."""
     metadata = document.get("__xctestrun_metadata__", {"FormatVersion": 1})
     if not isinstance(metadata, dict) or type(metadata.get("FormatVersion")) is not int or metadata["FormatVersion"] not in (1, 2):
         raise ValueError("Unsupported or malformed xctestrun format version")
@@ -50,6 +51,7 @@ def ui_targets(document: dict) -> list[dict]:
 
 
 def prepare_ui_xctestrun(products: Path) -> Path:
+    """Require one regular full descriptor and the expected built app identity, repair only the known UI app-path alias, and preserve plist encoding."""
     candidates = sorted(products.glob("FoundationEvals_macosx*.xctestrun"))
     if len(candidates) != 1:
         raise ValueError(f"Expected one full FoundationEvals descriptor, found {len(candidates)}")

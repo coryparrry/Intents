@@ -9,11 +9,13 @@ enum TelemetryOperation: String, Codable, Sendable {
     case mcpStart = "mcp_start", mcpInstall = "mcp_install", mcpStop = "mcp_stop"
 }
 
+/// Fixed diagnostic categories that avoid carrying free-form failure messages.
 enum TelemetryFailure: String, Codable, Sendable {
     case unexpected, cancelled, timeout, network, permission, storage, validation
     case modelUnavailable = "model_unavailable", generation, provider, judge, build
     case deviceUnavailable = "device_unavailable", evidence, testFailure = "test_failure"
 
+    /// Maps cancellation and known storage/network error domains to fixed categories without inspecting error descriptions.
     static func classify(_ error: any Error) -> Self {
         if error is CancellationError { return .cancelled }
         if let error = error as? EvaluationStoreError {
@@ -39,6 +41,7 @@ enum TelemetryFailure: String, Codable, Sendable {
         return .unexpected
     }
 
+    /// Classifies runtime failure evidence with cancellation taking precedence; failed assertions alone do not count as runtime failures.
     static func evaluationFailure(results: [EvaluationSampleResult], cancelled: Bool) -> Self? {
         if cancelled { return .cancelled }
         if let category = results.compactMap(\.errorCategory).first { return evaluationCategory(category) }
@@ -48,6 +51,7 @@ enum TelemetryFailure: String, Codable, Sendable {
         return nil
     }
 
+    /// Maps known evaluation error-category strings to the fixed telemetry vocabulary, using unexpected for unknown categories.
     static func evaluationCategory(_ category: String) -> Self {
         switch category {
         case "cancelled": .cancelled
@@ -76,6 +80,7 @@ enum TelemetryScreen: String, Sendable, CaseIterable {
     case overview, evaluations, batchRuns = "batch_runs", traces, appIntentTesting = "app_intent_testing", suite, run
     case mcpSettings = "mcp_settings", judgeSettings = "judge_settings", privacySettings = "privacy_settings"
 
+    /// Maps navigation destinations to fixed screen categories without including selected run IDs.
     init(selection: SidebarSelection) {
         switch selection {
         case .overview: self = .overview
@@ -93,6 +98,7 @@ enum TelemetryFeature: String, Sendable, CaseIterable {
     case evaluation
     case suiteSaved = "suite_saved", mcpStarted = "mcp_started", mcpInstalled = "mcp_installed"
 
+    /// Maps supported operations to feature-use events, returning nil for operations outside that usage vocabulary.
     init?(operation: TelemetryOperation) {
         switch operation {
         case .evaluation: self = .evaluation
@@ -104,6 +110,7 @@ enum TelemetryFeature: String, Sendable, CaseIterable {
     }
 }
 
+/// Typed usage and diagnostic events whose payloads use fixed categories and generated correlation IDs.
 enum TelemetryEvent: Sendable {
     case appOpened, firstUse
     case screen(TelemetryScreen)
@@ -114,6 +121,7 @@ enum TelemetryEvent: Sendable {
 
     var isDiagnostic: Bool { Self.isDiagnostic(name: name) }
 
+    /// Identifies the fixed diagnostic event names that require diagnostics consent.
     nonisolated static func isDiagnostic(name: String) -> Bool {
         ["foundation_evals_operation_started", "foundation_evals_operation_finished", "foundation_evals_diagnostic_issue", "$exception"].contains(name)
     }
@@ -149,6 +157,7 @@ enum TelemetryEvent: Sendable {
         }
     }
 
+    /// Checks known scalar properties against fixed categories, UUID syntax, numeric bounds, or bounded version-string characters.
     nonisolated static func isSafeProperty(_ key: String, value: Any) -> Bool {
         switch key {
         case "app": return value as? String == "intents"
@@ -173,6 +182,7 @@ enum TelemetryEvent: Sendable {
         }
     }
 
+    /// Returns the event-specific property allowlist, or nil for unknown event names.
     nonisolated static func allowedProperties(for name: String) -> Set<String>? {
         let common: Set<String> = ["app", "environment", "platform", "schema_version", "app_version", "app_build", "os_major", "os_version", "architecture", "$session_id", "$lib", "$lib_version", "$process_person_profile", "$geoip_disable"]
         switch name {

@@ -3,6 +3,8 @@ import CoreFoundation
 
 /// A successful xcodebuild exit alone does not prove that every authored test ran.
 enum MacIntentSummary {
+    /// Requires the result summary to report every authored test passed, with no skipped, failed, or expected-failure tests.
+    /// Throws when required counts are absent, malformed, or disagree with `expectedCount`.
     static func validate(_ data: Data, expectedCount: Int) throws {
         guard expectedCount > 0,
               let summary = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -20,6 +22,7 @@ enum MacIntentSummary {
         }
     }
 
+    /// Accepts only nonnegative integer JSON numbers, excluding Boolean values and nonintegral numeric text.
     private static func count(_ value: Any?) -> Int? {
         guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
               let integer = Int(number.stringValue), integer >= 0 else { return nil }

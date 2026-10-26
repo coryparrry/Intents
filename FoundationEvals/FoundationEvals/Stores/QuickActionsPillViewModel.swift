@@ -26,6 +26,7 @@ final class QuickActionsPillViewModel {
         let busyLabel: String
     }
 
+    /// Creates a main-actor rewrite session using the supplied streaming provider or the default rewrite service.
     init(
         generate: @escaping QuickActionsRewriteStreamProvider = QuickActionsRewriteService.stream
     ) {
@@ -47,6 +48,8 @@ final class QuickActionsPillViewModel {
         return begin(.init(id: action.id, prompt: nil, busyLabel: action.busyLabel), source: source)
     }
 
+    /// Starts an idle session from a nonempty trimmed custom prompt and returns its terminal-state task.
+    /// Returns nil when the prompt is empty or another session phase owns the pill.
     @discardableResult
     func submit(source: String) -> Task<Void, Never>? {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -54,6 +57,8 @@ final class QuickActionsPillViewModel {
         return begin(.init(id: "prompt", prompt: trimmed, busyLabel: "Editing"), source: source)
     }
 
+    /// Starts another revision from a completed result's retained request using the supplied current source.
+    /// Returns nil without a result/request or when source validation fails.
     @discardableResult
     func retry(source: String) -> Task<Void, Never>? {
         guard phase == .result, let request else { return nil }
@@ -85,6 +90,8 @@ final class QuickActionsPillViewModel {
         phase = .idle
     }
 
+    /// Captures nonempty source and starts a generation-bound streaming rewrite, returning its task.
+    /// Publishes only for the current generation; completion enters result, while cancellation or error clears busy state.
     private func begin(_ request: QuickActionsPillRequest, source: String) -> Task<Void, Never>? {
         let trimmedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedSource.isEmpty else {

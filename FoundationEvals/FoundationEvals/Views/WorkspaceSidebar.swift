@@ -196,6 +196,7 @@ struct WorkspaceSidebar: View {
         .accessibilityLabel("Choose project")
     }
 
+    /// Runs a sidebar workspace action and exposes any localized failure through the shared store notice.
     private func perform(_ action: () throws -> Void) {
         do { try action() } catch { store.notice = error.localizedDescription }
     }

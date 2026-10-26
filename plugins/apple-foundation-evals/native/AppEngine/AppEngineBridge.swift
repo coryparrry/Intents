@@ -25,6 +25,7 @@ enum AppEngineBridge {
         var value: EvaluationLiveResponse
         var runID: UUID? = nil
     }
+    /// Writes a newline-delimited JSON event to stderr, silently dropping values that cannot be encoded.
     static func event<T: Encodable>(_ value: T) {
         guard var data = try? CanonicalJSON.data(for: value, prettyPrinted: false) else { return }
         data.append(10)
@@ -34,6 +35,7 @@ enum AppEngineBridge {
     struct Validation: Encodable { var valid: Bool; var issue: String?; var revision: String }
     struct AnalysisRequest: Decodable { var run: EvaluationRun }
 
+    /// Reports standalone on-device capabilities, combining model readiness with the capabilities declared by the selected system model.
     static func capabilities(available: Bool, reason: String?) -> [String: CapabilityAvailability] {
         let supported = EvaluationModelConfiguration().systemModel.capabilities
         var values: [String: CapabilityAvailability] = [:]
@@ -64,6 +66,8 @@ enum AppEngineBridge {
         var analysis: EvaluationRunAnalysis
     }
 
+    /// Validates and executes a standalone suite, returning the authoritative app run, its analysis, and compatibility results.
+    /// Throws for invalid configuration, changed suite revisions, or image references that fail admission; optional progress events go to stderr.
     static func evaluate(_ data: Data) async throws -> Output {
         let request = try CanonicalJSON.decode(Request.self, from: data)
         if let issue = AppEngineValidation.validationIssue(for: request.suite, includeModelReadiness: false) {
@@ -113,6 +117,8 @@ enum AppEngineBridge {
             appRun: run, analysis: EvaluationRunAnalysis(run: run))
     }
 
+    /// Resolves image inputs in attachment order after checking matching labels, readable regular files, size limits, and saved SHA-256 digests.
+    /// Throws on missing inputs or any file mismatch before generation begins.
     static func resolveImages(suite: EvaluationSuite, inputs: [ImageInput]) throws -> [ImageEvaluationInput] {
         let images = inputs
         guard images.count == suite.attachments.filter({ $0.kind == .image }).count else {
@@ -143,6 +149,7 @@ enum AppEngineBridge {
         return images.map { ImageEvaluationInput(label: $0.label, url: $0.url) }
     }
 
+    /// Hashes canonical suite settings and attachment identities, including extracted text, to bind execution to the saved suite revision.
     static func revision(for suite: EvaluationSuite) throws -> String {
         let payload = SuiteRevisionPayload(
             id: suite.id,

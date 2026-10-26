@@ -10,6 +10,8 @@ enum MCPJSONValue: Codable, Equatable, Sendable {
     case array([MCPJSONValue])
     case object([String: MCPJSONValue])
 
+    /// Decodes a JSON value, trying signed and unsigned integers before floating point to preserve
+    /// integer precision where supported. Unsupported representations propagate a decoding error.
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() {
@@ -31,6 +33,7 @@ enum MCPJSONValue: Codable, Equatable, Sendable {
         }
     }
 
+    /// Encodes the associated JSON value through a single-value container; encoder failures propagate.
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
@@ -55,16 +58,22 @@ enum MCPJSONValue: Codable, Equatable, Sendable {
         return value
     }
 
+    /// Converts an Encodable value to the MCP JSON representation through Foundation JSON encoding and
+    /// decoding.
     static func encode<T: Encodable & Sendable>(_ value: T) throws -> MCPJSONValue {
         let data = try JSONEncoder().encode(value)
         return try JSONDecoder().decode(MCPJSONValue.self, from: data)
     }
 
+    /// Decodes this JSON representation into the requested type using Foundation's default JSON coding
+    /// conventions.
     func decode<T: Decodable & Sendable>(_ type: T.Type) throws -> T {
         let data = try JSONEncoder().encode(self)
         return try JSONDecoder().decode(type, from: data)
     }
 
+    /// Returns compact JSON with sorted object keys and unescaped slashes. Throws on encoding failure
+    /// or an invalid UTF-8 conversion.
     func jsonText() throws -> String {
         let data = try JSONEncoder.sorted.encode(self)
         guard let text = String(data: data, encoding: .utf8) else {
@@ -92,6 +101,8 @@ struct MCPHTTPRequest: Sendable {
     var headers: [String: String]
     var body: Data
 
+    /// Normalizes the HTTP method to uppercase and header keys to lowercase while retaining the
+    /// supplied body and path. Header keys must remain unique after normalization.
     init(method: String, path: String = "/mcp", headers: [String: String] = [:], body: Data = Data()) {
         self.method = method.uppercased()
         self.path = path
@@ -99,6 +110,7 @@ struct MCPHTTPRequest: Sendable {
         self.body = body
     }
 
+    /// Looks up a request header without regard to the case of its name.
     subscript(header name: String) -> String? { headers[name.lowercased()] }
 }
 
@@ -107,6 +119,7 @@ struct MCPHTTPResponse: Sendable {
     var headers: [String: String]
     var body: Data?
 
+    /// Builds a bodyless response with security headers and an optional Allow header.
     static func empty(_ status: Int, allow: String? = nil) -> Self {
         var headers = securityHeaders
         if let allow { headers["Allow"] = allow }

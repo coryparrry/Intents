@@ -2,6 +2,7 @@ import * as React from "react"
 import { cn } from "cn"
 import { Label as LabelPrimitive } from "radix-ui"
 
+/** Composes the Radix form label with disabled styling inherited from its group or peer control. */
 function Label({
   className,
   ...props

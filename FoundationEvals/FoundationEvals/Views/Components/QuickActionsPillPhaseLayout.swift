@@ -10,6 +10,7 @@ struct QuickActionsPillPhaseLayout: Layout {
         set { position = newValue }
     }
 
+    /// Interpolates the measured width between the three phase views, using the tallest ideal height unless one is proposed.
     func sizeThatFits(
         proposal: ProposedViewSize,
         subviews: Subviews,
@@ -29,6 +30,7 @@ struct QuickActionsPillPhaseLayout: Layout {
         return CGSize(width: width, height: proposal.height ?? idealHeight)
     }
 
+    /// Centers each of the three phase views in the bounds using its phase-specific width.
     func placeSubviews(
         in bounds: CGRect,
         proposal: ProposedViewSize,
@@ -50,6 +52,7 @@ struct QuickActionsPillPhaseLayout: Layout {
         }
     }
 
+    /// Reserves the full width for editing and caps the other phase widths at their ideal sizes.
     private func phaseWidths(
         availableWidth: CGFloat,
         subviews: Subviews
@@ -61,6 +64,7 @@ struct QuickActionsPillPhaseLayout: Layout {
         ]
     }
 
+    /// Uses a finite proposed width, falling back to the editing view ideal width when the proposal is unbounded.
     private func resolvedWidth(
         for proposal: ProposedViewSize,
         subviews: Subviews

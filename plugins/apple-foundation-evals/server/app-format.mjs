@@ -1,18 +1,24 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { SPOTLIGHT_DEFAULTS, PROFILE_DEFAULTS } from './app-defaults.mjs';
 import { APP_SUITE_SCHEMA, DRAFT_APP_SUITE_SCHEMA, validateSchema } from './app-schema.mjs';
+/** Detects application-format fields so validation can select the app or legacy suite contract. */
 export const isAppSuite = (value) => ['version', 'criteria', 'scoringMode', 'modelConfiguration', 'features', 'attachments', 'judgeConfiguration', 'releasePolicy'].some((key) => value[key] !== undefined) || value.cases?.some((item) => item.conversation !== undefined || item.fieldAssertions !== undefined);
+/** Copies defined, non-null properties so omitted Codable options retain their defaults. */
 const clean = (value) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== null));
 export const MODEL_DEFAULTS = { provider: 'onDevice', reasoningLevel: 'automatic', samplingMode: 'automatic', temperatureEnabled: false, temperature: 0.7, seedEnabled: false, seed: 42, topK: 40, probabilityThreshold: 0.9, maximumResponseTokens: 1024, referenceMode: 'inline', contextPolicy: 'fitReferences', maximumToolCalls: 2 };
+/** Rejects names that cannot be used as generated schema or tool identifiers. */
 function identifier(value, label) { if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) throw new Error(`${label} must be an identifier`); }
+/** Recursively fills field and enum defaults, using generateId for missing identities. */
 function fields(items = [], generateId = randomUUID) {
   return (items || []).map((value) => ({ id: generateId(), description: '', isOptional: false, enumValues: [], constraints: { stringPattern: '' }, referenceName: '', representNilExplicitlyInGeneratedContent: false, ...clean(value), constraints: { stringPattern: '', ...clean(value.constraints || {}) }, children: fields(value.children, generateId), enumValues: (value.enumValues || []).map((item) => ({ id: generateId(), ...item })) }));
 }
+/** Rejects invalid field structure, duplicate identities or names, undefined references, and reference cycles. */
 function schemaCheck(items, definitions = []) {
   const ids = new Set(); let count = 0;
   const names = new Set(definitions.map((item) => item.name));
   if (names.size !== definitions.length) throw new Error('Schema definition names must be unique');
   const refs = new Map();
+  /** Checks a schema tree against the shared 32-node/four-level budget; only object children may be optional. */
   const visit = (list, depth = 1, optional = true, definitionName = null) => {
     const siblingNames = new Set();
     for (const field of list) {
@@ -34,14 +40,17 @@ function schemaCheck(items, definitions = []) {
   };
   visit(items); for (const item of definitions) visit([item], 1, false, item.name);
   const active = new Set(); const visited = new Set();
+  /** Traverses definition references and rejects a back edge while reusing completed checks. */
   const cycle = (name) => { if (active.has(name)) throw new Error('Schema references contain a cycle'); if (visited.has(name)) return; active.add(name); for (const ref of refs.get(name) || []) cycle(ref); active.delete(name); visited.add(name); };
   for (const name of names) cycle(name);
 }
+/** Clones defaults and recursively overlays non-null object properties, replacing arrays as complete values. */
 function withDefaults(defaults, value) {
   const result = structuredClone(defaults);
   for (const [key, item] of Object.entries(clean(value || {}))) result[key] = item && typeof item === 'object' && !Array.isArray(item) && result[key] && typeof result[key] === 'object' && !Array.isArray(result[key]) ? withDefaults(result[key], item) : item;
   return result;
 }
+/** Validates and normalizes an app suite with generated identities and native defaults. Draft mode permits incomplete editor content but retains size, identity, and integrity checks. */
 export function appSuite(value, generateId = randomUUID, { draft = false } = {}) {
   const schema = draft ? DRAFT_APP_SUITE_SCHEMA : APP_SUITE_SCHEMA;
   validateSchema(value, schema, 'suite', schema);
@@ -126,27 +135,34 @@ export function appSuite(value, generateId = randomUUID, { draft = false } = {})
   if (Buffer.byteLength(JSON.stringify(result)) > 1024 * 1024) throw new Error('Suite exceeds the 1 MiB limit');
   return result;
 }
+/** Recursively sorts object keys while retaining array order for stable definition hashing. */
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
   return value;
 }
+/** Hashes canonical definition content, excluding revision, update time, and project ownership metadata. */
 export function revision(suite) {
   const { revision: old, updatedAt, projectId, ...definition } = suite;
   return createHash('sha256').update(JSON.stringify(canonical(definition))).digest('hex');
 }
+/** Removes private process ownership and attaches the canonical revision of the remaining public evidence. */
+export function publicRecord({ ownerPid, ...record }) { return { ...record, revision: revision(record) }; }
+/** Removes local metadata and app compatibility aliases while retaining legacy sampling settings. */
 export function portableSuite(suite) {
   const { projectId, revision: old, updatedAt, temperature, maxTokens, ...definition } = suite;
   if (!isAppSuite(suite)) return { ...definition, temperature, maxTokens };
   definition.cases = definition.cases.map(({ scoring, ...item }) => item);
   return definition;
 }
+/** Requires exactly one structured value or bounded JSON string and returns its parsed import value. */
 export function parseImport(args, key) {
   if ((args[key] === undefined) === (args.json === undefined)) throw new Error(`Supply exactly one of ${key} or json`);
   if (args[key] !== undefined) return args[key];
   if (typeof args.json !== 'string' || Buffer.byteLength(args.json) > 32 * 1024 * 1024) throw new Error('Import exceeds size limit');
   try { return JSON.parse(args.json); } catch { throw new Error('Import must be valid JSON'); }
 }
+/** Projects a native sample into the plugin result shape, preserving raw evidence and any decodable transcript entries. */
 export function sampleEnvelope(sample, cases = []) {
   const transcript = sample.featureTrace?.transcript;
   let entries = [];
@@ -155,6 +171,7 @@ export function sampleEnvelope(sample, cases = []) {
 }
 
 // Match the app's effectiveResults projection while keeping original subject/judge evidence.
+/** Projects the selected or latest assessment onto results without replacing original subject evidence; missing selected samples become unscored. */
 export function applyAssessment(run, results) {
   if (!run) return results;
   const selected = run.selectedAssessmentID ? run.assessments?.find((item) => item.id?.toLowerCase() === run.selectedAssessmentID.toLowerCase()) : run.assessments?.at(-1);
@@ -170,6 +187,7 @@ export function applyAssessment(run, results) {
 
 // Flat envelopes use ISO strings. Native Codable traces may use seconds since
 // 2001; normalize that explicitly rather than relying on Date.parse coercion.
+/** Returns a validated ISO UTC timestamp; apple accepts finite seconds since 2001 for native Codable exports. */
 export function importedTimestamp(value, { apple = false } = {}) {
   if (apple && typeof value === 'number' && Number.isFinite(value)) {
     const date = new Date((value + 978307200) * 1000);
@@ -182,9 +200,12 @@ export function importedTimestamp(value, { apple = false } = {}) {
   return new Date(time).toISOString();
 }
 
+/** Rejects malformed native sample status/scores, duplicate identities, and invalid assessment associations; returns the original evidence. */
 export function validateAppEvidence(run) {
   if (!run || typeof run !== 'object' || !Array.isArray(run.results)) throw new Error('App run requires sample evidence');
+  /** Validates a labeled evidence UUID and returns its lowercase identity for association checks. */
   const validId = (value, label) => { if (typeof value !== 'string') throw new Error(`${label} must be a UUID`); validateSchema(value, { type: 'string', format: 'uuid' }, label); return value.toLowerCase(); };
+  /** Requires a supported sample status and constrains any present app rubric score to an integer from 1 through 4. */
   const score = (sample) => { if (!['passed', 'failed', 'unscored', 'error'].includes(sample.status)) throw new Error('Invalid app evidence status'); if (sample.score != null && (!Number.isInteger(sample.score) || sample.score < 1 || sample.score > 4)) throw new Error('App rubric score must be an integer from 1 to 4 or null'); };
   const sampleIds = new Set(); const keys = new Set();
   for (const sample of run.results) {

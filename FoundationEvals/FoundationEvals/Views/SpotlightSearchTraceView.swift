@@ -128,6 +128,7 @@ private struct SpotlightTraceMetrics: View {
         trace.itemResultCount + trace.scoredItemResultCount + trace.groupedItemResultCount
     }
 
+    /// Displays a labeled, number-formatted Spotlight result count.
     private func metric(_ label: LocalizedStringResource, value: Int) -> some View {
         LabeledContent(label) {
             Text(value, format: .number)

@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Keeps a two-line example label inside the checkbox's mouse hit region.
 struct PromptImprovementCheckboxStyle: ToggleStyle {
+    /// Makes the complete example row toggle its bound value while exposing native checkbox accessibility.
     func makeBody(configuration: Configuration) -> some View {
         Button {
             configuration.isOn.toggle()

@@ -7,12 +7,15 @@ struct EvaluationBuiltinToolTrace: Identifiable, Codable, Equatable, Sendable {
     var argumentsJSON: String
     var output: String?
 
+    /// Extracts only recognized vision-tool calls and their matching outputs from a transcript.
     static func visionTools<Entries: Sequence>(
         from entries: Entries
     ) -> [EvaluationBuiltinToolTrace] where Entries.Element == Transcript.Entry {
         tools(from: entries, names: EvaluationVisionToolConfiguration.knownToolNames)
     }
 
+    /// Pairs selected transcript tool calls with later outputs by call ID, retaining bounded arguments and output evidence.
+    /// Calls without a matching output remain in the returned trace with nil output.
     static func tools<Entries: Sequence>(
         from entries: Entries,
         names: Set<String>
@@ -63,6 +66,7 @@ struct EvaluationBuiltinToolTrace: Identifiable, Codable, Equatable, Sendable {
         return traces
     }
 
+    /// Formats captured calls and available outputs as judge evidence, or returns nil when no calls were captured.
     static func evidenceText(for traces: [EvaluationBuiltinToolTrace]) -> String? {
         guard !traces.isEmpty else { return nil }
         return traces.enumerated().map { index, trace in
@@ -80,6 +84,7 @@ struct EvaluationBuiltinToolTrace: Identifiable, Codable, Equatable, Sendable {
 
 @available(macOS 27.0, *)
 private extension String {
+    /// Returns the longest whole-character prefix that fits the UTF-8 byte budget.
     func boundedVisionEvidence(to maximumBytes: Int) -> String {
         guard utf8.count > maximumBytes else { return self }
         var bytes = 0

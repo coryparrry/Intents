@@ -130,16 +130,19 @@ struct JudgeConnectionsSettingsView: View {
         } message: { Text("The connection and its saved API key will be removed from this Mac.") }
     }
 
+    /// Starts an unsaved local-judge draft, clears credentials and feedback, and selects the new draft.
     private func startNew() {
         draft = Self.newConnection()
         apiKey = ""
         message = nil
         selectedID = draft.id
     }
+    /// Creates a local-compatible judge draft with the default loopback endpoint and portable generation policy.
     private static func newConnection() -> EvaluationJudgeConnection {
         .init(id: UUID(), name: "Local judge", kind: .localCompatible,
               baseURL: "http://127.0.0.1:11434/v1", modelID: "", generationPolicy: .portable)
     }
+    /// Updates the draft endpoint and default connection name for the newly selected provider, clearing prior feedback.
     private func applyPreset(from old: EvaluationJudgeConnectionKind, to new: EvaluationJudgeConnectionKind) {
         switch new {
         case .openRouter:
@@ -154,6 +157,8 @@ struct JudgeConnectionsSettingsView: View {
         }
         message = nil
     }
+    /// Persists the draft and any newly entered API key, then reloads the saved connection and clears the credential field.
+    /// Failures remain visible without discarding the draft.
     private func save() {
         do {
             try store.saveJudgeConnection(draft, apiKey: apiKey.isEmpty ? nil : apiKey)
@@ -163,6 +168,8 @@ struct JudgeConnectionsSettingsView: View {
             message = "Connection saved. Check it before using it for a run."
         } catch { message = error.localizedDescription }
     }
+    /// Starts a main-actor task to check the draft connection, then refreshes saved status and transfers the store notice into local feedback.
+    /// The view shows a checking state until completion and retains no task cancellation handle.
     private func check() {
         isChecking = true
         message = nil

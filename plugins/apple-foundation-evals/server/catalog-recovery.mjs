@@ -3,9 +3,12 @@ import { id } from './validation.mjs';
 
 export const RECOVERY_KINDS = ['suites', 'runs', 'experiments', 'baselines', 'corrections', 'projects'];
 const removable = new Set(['suites', 'runs', 'experiments', 'baselines', 'corrections']);
+/** Hashes exact saved bytes for recovery export and deletion conflict checks. */
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
+/** Returns bounded display text or an empty fallback for non-string record metadata. */
 const text = (value, maximum = 160) => typeof value === 'string' ? value.slice(0, maximum) : '';
 
+/** Returns a bounded identity page with byte revisions and removal eligibility, rejecting invalid cursors or a cursor beyond the changed catalog. */
 export async function recoveryPage(app, kind, cursor = '0', limit = 25) {
   if (!RECOVERY_KINDS.includes(kind) || !/^(0|[1-9][0-9]{0,3})$/.test(cursor) || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('Invalid catalog recovery page');
   const names = await app.store.recordNames(kind);
@@ -24,10 +27,12 @@ export async function recoveryPage(app, kind, cursor = '0', limit = 25) {
   const next = offset + records.length;
   return { kind, records, totalRecords: names.length, nextCursor: next < names.length ? String(next) : null, pageLimit: limit };
 }
+/** Builds a recovery workspace response with its first record page and explicit export/remove tool names. */
 export async function recoveryResponse(app, kind, message) {
   return { page: 'catalogRecovery', message, catalogRecovery: await recoveryPage(app, kind),
     recoveryTools: { list: 'eval_catalog_recovery', export: 'eval_catalog_export_chunk', remove: 'eval_catalog_remove' } };
 }
+/** Handles paged recovery, revision-checked byte export, and confirmed deletion; removals hold the inference lease before taking record locks. */
 export async function recoveryDispatch(app, name, args) {
   if (name === 'eval_catalog_recovery') return recoveryResponseForPage(app, args);
   if (!['eval_catalog_export_chunk', 'eval_catalog_remove'].includes(name)) return undefined;
@@ -51,6 +56,7 @@ export async function recoveryDispatch(app, name, args) {
       recordRevision: args.recordRevision, filename: `${args.kind}-${key}.json` };
   }
 }
+/** Requires unchanged bytes, confirmation, inactive committed evidence, and no dependent experiment runs before transactional deletion. */
 async function removeRecord(app, args, key) {
   const { value, bytes } = await app.store.readRecord(args.kind, key);
   if (digest(bytes) !== args.recordRevision) throw new Error('Record changed; refresh catalog recovery before exporting or removing it');
@@ -64,6 +70,7 @@ async function removeRecord(app, args, key) {
   await app.store.delete(args.kind, key, args.kind === 'suites' ? value.revision : undefined, args.recordRevision);
   return { deleted: true, kind: args.kind, recordId: key };
 }
+/** Rejects pending paired-run evidence unless its owning experiment has committed it for public access. */
 async function requirePublishedRun(app, kind, value) {
   if (kind !== 'runs' || value.publicationState !== 'pending') return;
   try {
@@ -73,6 +80,7 @@ async function requirePublishedRun(app, kind, value) {
     throw new Error('Paired experiment evidence has not been committed. Export the saved bytes, then reopen the workspace after the experiment finishes or its interrupted evidence is recovered.', { cause });
   }
 }
+/** Builds a recovery response for the requested cursor and page limit without silently omitting saved identities. */
 async function recoveryResponseForPage(app, args) {
   return { page: 'catalogRecovery', message: 'Records remain saved. Export needed evidence before explicitly removing records to reduce the workspace size.',
     catalogRecovery: await recoveryPage(app, args.kind, args.cursor ?? '0', args.limit ?? 25),

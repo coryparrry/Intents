@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, mkdtemp, rm, lstat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Script } from 'node:vm';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -27,6 +27,15 @@ test('distribution includes runnable manifests, native source and skills while e
     const list = spawnSync('unzip', ['-Z1', archive], { encoding: 'utf8' }); assert.equal(list.status, 0, list.stderr);
     const files = list.stdout.split('\n');
     for (const file of ['.codex-plugin/plugin.json', '.mcp.json', 'plugin.json', 'mcp.json', 'server/main.mjs', 'scripts/launch.mjs', 'samples/starter-suite.json', 'native/RunnerCore.swift', 'native/FoundationModelsRunner.swift', 'ui/app.html', 'ui/vendor/MCP-EXTENSIONS-LICENSE', 'skills/foundation-evals/SKILL.md', 'skills/evaluation-traces/SKILL.md']) assert.ok(files.includes(`apple-foundation-evals/${file}`), `Missing ${file}`);
+    // The repository map is test input only; installed plugins contain all native sources locally.
+    const shared = JSON.parse(await readFile(join(root, '../../script/shared_app_sources.json'), 'utf8'));
+    const sharedNativePaths = Object.keys(shared).map(canonical => {
+      assert.ok(canonical.startsWith('plugins/apple-foundation-evals/native/AppEngine/'));
+      return canonical.slice('plugins/apple-foundation-evals/'.length);
+    });
+    assert.equal(sharedNativePaths.length, 24);
+    for (const path of sharedNativePaths) assert.equal(files.filter(file => file === `apple-foundation-evals/${path}`).length, 1, `Missing or repeated shared source ${path}`);
+    assert.ok(!files.includes('apple-foundation-evals/native/AppEngine/EvaluationCaseImporter.swift'));
     assert.ok(!files.some(file => /(^|\/)(tests|runs|suites|cache|node_modules)\/|WORKLOG|preview\.mjs|package\.mjs/.test(file)));
     assert.ok(!files.some(file => file.includes('../') || file.startsWith('/')));
     const manifest = JSON.parse(spawnSync('unzip', ['-p', archive, 'apple-foundation-evals/plugin.json'], { encoding: 'utf8' }).stdout);
@@ -39,6 +48,15 @@ test('distribution includes runnable manifests, native source and skills while e
     assert.ok(files.includes(`apple-foundation-evals/${server.args[0].slice(2)}`));
     const extracted = spawnSync('unzip', ['-q', archive, '-d', join(temp, 'installed')], { encoding: 'utf8' }); assert.equal(extracted.status, 0, extracted.stderr);
     const installed = join(temp, 'installed', 'apple-foundation-evals');
+    for (const path of sharedNativePaths) {
+      const installedPath = join(installed, path);
+      const stat = await lstat(installedPath);
+      assert.ok(stat.isFile() && !stat.isSymbolicLink(), `Shared source must be a regular installed file: ${path}`);
+      assert.deepEqual(await readFile(installedPath), await readFile(join(root, path)), `Installed shared source differs: ${path}`);
+    }
+    // Loading the extracted launcher discovers its native source closure without repository access or compilation.
+    const installedLauncher = await import(pathToFileURL(join(installed, 'scripts/launch.mjs')).href);
+    assert.equal(typeof installedLauncher.nativeBinary, 'function');
     const initialized = spawnSync(process.execPath, server.args, {
       cwd: installed, env: { ...process.env, FOUNDATION_EVALS_PLUGIN_DATA: join(temp, 'data') }, encoding: 'utf8', timeout: 10000,
       input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'package-test', version: '1' } } }) + '\n'

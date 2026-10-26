@@ -1,4 +1,7 @@
-// Recovery shows bounded metadata only; complete records remain on disk.
+/**
+ * Builds recovery controls from bounded record metadata, leaving full records in storage.
+ * Removal stays disabled until the user acknowledges preserving evidence; export controls depend on host download support.
+ */
 export function renderCatalogRecovery({ node, button, data, canDownload = false, onPage, onRetry, onExport, onRemove }) {
   const panel = node('section', null, 'page catalog-recovery-page');
   panel.setAttribute('aria-label', 'Catalog recovery');
@@ -11,6 +14,7 @@ export function renderCatalogRecovery({ node, button, data, canDownload = false,
   for (const kind of ['suites', 'runs', 'experiments', 'baselines', 'corrections', 'projects']) {
     const option = node('option', kind); option.value = kind; option.selected = kind === page.kind; select.append(option);
   }
+  /** Requests the first recovery page for the newly selected catalog. */
   select.onchange = () => onPage(select.value, '0');
   panel.append(select);
   for (const record of page.records) {
@@ -24,6 +28,7 @@ export function renderCatalogRecovery({ node, button, data, canDownload = false,
     if (record.canRemove) {
       const label = node('label'), check = node('input'); check.type = 'checkbox';
       const remove = button('Remove this saved record', () => onRemove(page.kind, record), 'secondary', true);
+      /** Enables record removal only while the evidence-preservation acknowledgement is checked. */
       check.onchange = () => { remove.disabled = !check.checked; };
       label.append(check, node('span', 'I reviewed this record and preserved the evidence I need.'));
       row.append(label, remove);
@@ -38,6 +43,10 @@ export function renderCatalogRecovery({ node, button, data, canDownload = false,
   return panel;
 }
 
+/**
+ * Reassembles revision-bound UTF-8 export chunks, rejecting changed records, invalid offsets and output beyond 32 MiB.
+ * The record metadata supplies the expected byte count and revision for every chunk request.
+ */
 export async function exportRecoveryRecord(call, kind, record) {
   const decoder = new TextDecoder('utf-8', { fatal: true });
   let offset = 0, output = '', filename;
@@ -59,6 +68,7 @@ export async function exportRecoveryRecord(call, kind, record) {
   throw Error('Recovery export exceeded its record limit.');
 }
 
+/** Clears selected removed suites or runs and reports whether suite or experiment evidence needs refreshing. */
 export function forgetRemovedRecoveryRecord(state, kind, id) {
   if (kind === 'suites' && state.draft?.id === id) {
     state.draft = null; state.dirty = false; state.page = 'overview';
@@ -73,6 +83,7 @@ export function forgetRemovedRecoveryRecord(state, kind, id) {
 
 // Keep grid placement separate from the sidebar's user preference. Hiding a
 // grid item alone would place the content shell in the former sidebar column.
+/** Applies the recovery grid layout and hides the sidebar toggle while recovery is active. */
 export function setCatalogRecoveryLayout(document, recovering) {
   document.querySelector('.app-shell').classList.toggle('catalog-recovery', recovering);
   document.getElementById('sidebar-toggle').hidden = recovering;

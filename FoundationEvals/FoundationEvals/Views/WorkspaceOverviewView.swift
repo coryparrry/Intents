@@ -27,6 +27,7 @@ struct WorkspaceOverviewView: View {
         }
     }
 
+    /// Builds a live summary for the selected suite while preserving saved repository-change and load-error evidence; other suites use loaded summaries.
     private func summary(for record: EvaluationSuiteRecord) -> SuiteOverviewSummary? {
         if record.id == store.selectedSuiteID {
             var value = SuiteOverviewSummary(record: record, suite: store.suite, currentRevision: store.suiteRevision,
@@ -157,6 +158,7 @@ struct WorkspaceOverviewView: View {
         }
     }
 
+    /// Switches to the requested suite, opens its editor, and optionally starts a run, surfacing failures in the store notice.
     private func open(_ id: UUID, run: Bool = false) {
         do {
             if id != store.selectedSuiteID { try store.switchSuite(id: id) }
@@ -165,6 +167,7 @@ struct WorkspaceOverviewView: View {
         } catch { store.notice = error.localizedDescription }
     }
 
+    /// Switches to the suite that owns the run before opening the requested history item, surfacing failures in the store notice.
     private func openRun(_ summary: SuiteOverviewSummary, _ runID: UUID) {
         do {
             if summary.id != store.selectedSuiteID { try store.switchSuite(id: summary.id) }

@@ -85,12 +85,57 @@ struct TranscriptTraceTests {
             configuration: configuration,
             sentiment: .negative,
             issues: [.init(category: .incorrect, explanation: "The capital is Canberra.")],
-            desiredResponseText: "Canberra"
+            desiredOutput: .init(mode: .responseText, responseText: "Canberra")
         )
         let json = try JSONSerialization.jsonObject(with: data)
 
         #expect(data.isEmpty == false)
         #expect(JSONSerialization.isValidJSONObject(json))
+    }
+
+    @Test func feedbackAttachmentSupportsEveryDesiredOutputModeAndDecodesBeforeRestoring() async throws {
+        let entry = Transcript.Entry.response(Transcript.Response(
+            assetIDs: [], segments: [.text(Transcript.TextSegment(content: "Canberra"))]
+        ))
+        let transcript = Transcript(entries: [entry])
+        let trace = EvaluationTranscriptTrace.capture(transcript, outcome: .success)
+        let transcriptJSON = String(decoding: try JSONEncoder().encode(transcript), as: UTF8.self)
+        let drafts: [EvaluationFeedbackDesiredOutputDraft] = [
+            .init(),
+            .init(mode: .responseText, responseText: "  Canberra  "),
+            .init(mode: .generatedContentJSON, generatedContentJSON: #"{"answer":"Canberra"}"#),
+            .init(mode: .transcriptJSON, transcriptJSON: transcriptJSON)
+        ]
+        for draft in drafts {
+            let data = try await trace.feedbackAttachment(
+                configuration: .init(provider: .onDevice), sentiment: nil, issues: [], desiredOutput: draft
+            )
+            #expect(JSONSerialization.isValidJSONObject(try JSONSerialization.jsonObject(with: data)))
+        }
+
+        var unavailable = trace
+        unavailable.transcriptJSON = nil
+        for draft in [
+            EvaluationFeedbackDesiredOutputDraft(mode: .generatedContentJSON, generatedContentJSON: "not-json"),
+            EvaluationFeedbackDesiredOutputDraft(mode: .transcriptJSON, transcriptJSON: "{")
+        ] {
+            do {
+                _ = try await unavailable.feedbackAttachment(
+                    configuration: .init(provider: .onDevice), sentiment: nil, issues: [], desiredOutput: draft
+                )
+                Issue.record("Expected desired-output decoding to fail")
+            } catch {
+                #expect(!(error is EvaluationTranscriptArchiveError))
+            }
+        }
+
+        // Foundation Models accepts partial generated content; an incomplete object still reaches archive restoration.
+        await #expect(throws: EvaluationTranscriptArchiveError.self) {
+            try await unavailable.feedbackAttachment(
+                configuration: .init(provider: .onDevice), sentiment: nil, issues: [],
+                desiredOutput: .init(mode: .generatedContentJSON, generatedContentJSON: "{")
+            )
+        }
     }
 
     @Test func coreAIFeedbackExportReportsMissingModelResources() async {
@@ -107,7 +152,7 @@ struct TranscriptTraceTests {
                 configuration: configuration,
                 sentiment: .negative,
                 issues: [],
-                desiredResponseText: nil
+                desiredOutput: .init()
             )
         }
     }

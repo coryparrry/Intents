@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 class OrderToolHandler(BaseHTTPRequestHandler):
     def do_POST(self):
+        """Accept bounded POST /tool JSON for lookupOrder, return fixed status by order ID, and send 400 for malformed tool requests."""
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if self.path != "/tool" or not 0 < length <= 16_384:

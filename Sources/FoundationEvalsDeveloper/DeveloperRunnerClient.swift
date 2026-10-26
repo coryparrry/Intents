@@ -4,6 +4,7 @@ import Observation
 
 final class DeveloperPeerBox: @unchecked Sendable {
     let peer: MCPeerID
+    /// Retains a Multipeer peer identity for transfer into main-actor delegate work.
     init(_ peer: MCPeerID) { self.peer = peer }
 }
 
@@ -19,9 +20,24 @@ private struct DeveloperClientCandidate {
     var reconnectWasRejected = false
 }
 
-private final class DeveloperClientSessionDelegate: NSObject, MCSessionDelegate, @unchecked Sendable {
-    weak var owner: DeveloperRunnerClient?
+/// Receives nearby transport callbacks after the shared delegate reaches the main actor.
+@MainActor
+protocol DeveloperSessionOwner: AnyObject, Sendable {
+    /// Applies the peer's latest transport connection state.
+    func peerChanged(_ peer: DeveloperPeerBox, state: MCSessionState)
 
+    /// Handles message bytes delivered by the peer's transport connection.
+    func received(_ data: Data, from peer: DeveloperPeerBox)
+}
+
+// MultipeerConnectivity invokes callbacks on its own queues. The weak owner is
+// assigned on MainActor before transport starts and is never changed afterward.
+// Callbacks transfer immutable data and the retained peer identity to MainActor;
+// each task captures the owner weakly so queued work cannot extend its lifetime.
+final class DeveloperSessionDelegate: NSObject, MCSessionDelegate, @unchecked Sendable {
+    weak var owner: (any DeveloperSessionOwner)?
+
+    /// Forwards transport state changes to the owner on the main actor.
     func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
         let peer = DeveloperPeerBox(peerID)
         Task { @MainActor [weak owner] in
@@ -29,6 +45,7 @@ private final class DeveloperClientSessionDelegate: NSObject, MCSessionDelegate,
         }
     }
 
+    /// Forwards received message bytes and peer identity to the owner on the main actor.
     func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
         let peer = DeveloperPeerBox(peerID)
         Task { @MainActor [weak owner] in
@@ -36,6 +53,7 @@ private final class DeveloperClientSessionDelegate: NSObject, MCSessionDelegate,
         }
     }
 
+    /// Ignores incoming streams because this protocol uses encoded data messages.
     func session(
         _ session: MCSession,
         didReceive stream: InputStream,
@@ -43,6 +61,7 @@ private final class DeveloperClientSessionDelegate: NSObject, MCSessionDelegate,
         fromPeer peerID: MCPeerID
     ) {}
 
+    /// Ignores resource-transfer progress because this protocol does not use resources.
     func session(
         _ session: MCSession,
         didStartReceivingResourceWithName resourceName: String,
@@ -50,6 +69,7 @@ private final class DeveloperClientSessionDelegate: NSObject, MCSessionDelegate,
         with progress: Progress
     ) {}
 
+    /// Ignores resource-transfer completion because this protocol does not use resources.
     func session(
         _ session: MCSession,
         didFinishReceivingResourceWithName resourceName: String,
@@ -62,6 +82,7 @@ private final class DeveloperClientSessionDelegate: NSObject, MCSessionDelegate,
 private final class DeveloperClientBrowserDelegate: NSObject, MCNearbyServiceBrowserDelegate, @unchecked Sendable {
     weak var owner: DeveloperRunnerClient?
 
+    /// Extracts the advertised runner ID and forwards discovery to the main-actor client.
     func browser(
         _ browser: MCNearbyServiceBrowser,
         foundPeer peerID: MCPeerID,
@@ -74,6 +95,7 @@ private final class DeveloperClientBrowserDelegate: NSObject, MCNearbyServiceBro
         }
     }
 
+    /// Forwards the loss of a discoverable endpoint to the main-actor client.
     func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
         let box = DeveloperPeerBox(peerID)
         Task { @MainActor [weak owner] in
@@ -81,6 +103,7 @@ private final class DeveloperClientBrowserDelegate: NSObject, MCNearbyServiceBro
         }
     }
 
+    /// Copies the browsing error description into main-actor client state.
     func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: any Error) {
         let detail = error.localizedDescription
         Task { @MainActor [weak owner] in
@@ -108,18 +131,22 @@ private struct DeveloperDesktopTrustState: Codable {
 struct DeveloperIntentionalDisconnects {
     private var peers: Set<MCPeerID> = []
 
+    /// Marks a peer as intentionally disconnecting until its callback is consumed or forgotten.
     mutating func begin(for peer: MCPeerID) {
         peers.insert(peer)
     }
 
+    /// Removes the peer's intentional-disconnect marker and reports whether one existed.
     mutating func consume(for peer: MCPeerID) -> Bool {
         peers.remove(peer) != nil
     }
 
+    /// Drops any intentional-disconnect marker for an endpoint that left discovery.
     mutating func forget(_ peer: MCPeerID) {
         peers.remove(peer)
     }
 
+    /// Clears intentional-disconnect bookkeeping during session teardown.
     mutating func removeAll() {
         peers.removeAll()
     }
@@ -139,7 +166,7 @@ public final class DeveloperRunnerClient {
     @ObservationIgnored private let trustStoreURL: URL?
     @ObservationIgnored private let peerID: MCPeerID
     @ObservationIgnored private let session: MCSession
-    @ObservationIgnored private let sessionDelegate: DeveloperClientSessionDelegate
+    @ObservationIgnored private let sessionDelegate: DeveloperSessionDelegate
     @ObservationIgnored private let browserDelegate: DeveloperClientBrowserDelegate
     @ObservationIgnored private let browser: MCNearbyServiceBrowser
     @ObservationIgnored private var selectedCandidatePeerByRunnerID: [UUID: MCPeerID] = [:]
@@ -153,6 +180,13 @@ public final class DeveloperRunnerClient {
     @ObservationIgnored private var continuations: [UUID: CheckedContinuation<DeveloperFeatureExecutionResult, any Error>] = [:]
     @ObservationIgnored private var timeoutTasks: [UUID: Task<Void, Never>] = [:]
 
+    /// Creates the desktop transport and loads saved runner trust when it can be decoded.
+    /// Browsing starts only when ``startBrowsing()`` is called. Trust data that cannot be read or
+    /// decoded is ignored.
+    /// - Parameters:
+    ///   - desktopID: Stable desktop identity used in pairing and reconnect proofs.
+    ///   - displayName: Local peer label, shortened to fit the transport name limit.
+    ///   - trustStoreURL: Optional JSON receipt file; `nil` keeps trust only in memory.
     public init(
         desktopID: UUID,
         displayName: String = "Intents",
@@ -161,7 +195,7 @@ public final class DeveloperRunnerClient {
         self.desktopID = desktopID
         self.trustStoreURL = trustStoreURL
         peerID = MCPeerID(displayName: developerPeerDisplayName(displayName, id: desktopID))
-        sessionDelegate = DeveloperClientSessionDelegate()
+        sessionDelegate = DeveloperSessionDelegate()
         browserDelegate = DeveloperClientBrowserDelegate()
         session = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .required)
         browser = MCNearbyServiceBrowser(peer: peerID, serviceType: developerRunnerServiceType)
@@ -178,6 +212,8 @@ public final class DeveloperRunnerClient {
         browser.delegate = browserDelegate
     }
 
+    /// Starts nearby runner discovery once and clears the previous browsing error.
+    /// Saved trusted runners may reconnect automatically when discovered.
     public func startBrowsing() {
         guard !isBrowsing else { return }
         browser.startBrowsingForPeers()
@@ -185,12 +221,16 @@ public final class DeveloperRunnerClient {
         lastError = nil
     }
 
+    /// Stops nearby discovery without disconnecting the current transport session.
     public func stopBrowsing() {
         guard isBrowsing else { return }
         browser.stopBrowsingForPeers()
         isBrowsing = false
     }
 
+    /// Stops discovery, disconnects the transport and clears connection/authentication state.
+    /// Pending executions fail with `disconnected`, their timers are cancelled, and listed
+    /// runners become disconnected. Saved trust remains available for a later connection.
     public func shutdown() {
         stopBrowsing()
         session.disconnect()
@@ -218,6 +258,12 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Invites all discoverable candidate endpoints for a runner into the encrypted transport.
+    /// Return means invitations were submitted; pairing and authentication finish asynchronously.
+    /// - Parameters:
+    ///   - runnerID: Runner to connect, identified by its discovery snapshot.
+    ///   - timeout: Transport invitation timeout in seconds.
+    /// - Throws: `disconnected` if no endpoint is discoverable or another runner is active.
     public func connect(to runnerID: UUID, timeout: TimeInterval = 20) throws {
         let peers = try prepareConnection(to: runnerID)
         for peer in peers {
@@ -244,6 +290,8 @@ public final class DeveloperRunnerClient {
         return peers
     }
 
+    /// Claims the active runner and candidate invitations, starts the authentication timeout,
+    /// and publishes the runner's connecting state before the transport is invited.
     private func beginConnecting(to runnerID: UUID, peers: [MCPeerID]) {
         activeRunnerID = runnerID
         connectingPeers.formUnion(peers)
@@ -254,6 +302,14 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Submits code-derived pairing proofs on this runner's connected, unexpired candidates.
+    /// A matching receipt is opened and saved asynchronously when it arrives; successful return
+    /// does not itself confirm pairing. The code is retained while the receipt is pending.
+    /// - Parameters:
+    ///   - runnerID: Runner currently offering a pairing challenge.
+    ///   - pairingCode: Out-of-band code displayed by the runner app.
+    /// - Throws: `untrustedPeer` if no active connected challenge exists, or the send error
+    ///   if every candidate's pairing request failed to send.
     public func trustRunner(_ runnerID: UUID, pairingCode: String) throws {
         let candidates = candidatesByPeer.compactMap { peer, candidate -> (DeveloperPeerBox, DeveloperPairingChallenge)? in
             guard candidate.runnerID == runnerID,
@@ -293,6 +349,9 @@ public final class DeveloperRunnerClient {
         if sendFailures.count == candidates.count, let failure = sendFailures.first { throw failure }
     }
 
+    /// Disconnects this runner, clears its authentication and fails pending executions.
+    /// For an active runner it also asks the peer to disconnect and closes the shared transport.
+    /// - Parameter runnerID: Runner to disconnect; unknown or already inactive runners have no effect.
     public func disconnect(_ runnerID: UUID) {
         guard activeRunnerID == runnerID || selectedCandidatePeerByRunnerID[runnerID] != nil || authenticatedPeersByRunnerID[runnerID] != nil else { return }
         guard activeRunnerID == runnerID else {
@@ -311,6 +370,10 @@ public final class DeveloperRunnerClient {
         markDisconnected(runnerID: runnerID, detail: "Disconnected by the user.")
     }
 
+    /// Removes saved trust and pending pairing state, clears candidate secure sessions,
+    /// and marks the runner as requiring pairing again.
+    /// - Parameter runnerID: Runner whose trust should be removed.
+    /// - Throws: A persistence error after the in-memory trust has already been removed.
     public func forgetTrust(for runnerID: UUID) throws {
         guard candidatesByPeer.values.contains(where: { $0.runnerID == runnerID })
                 || trustByRunnerID[runnerID] != nil else { return }
@@ -327,6 +390,16 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Sends an execution over an authenticated connection and awaits its correlated result.
+    /// Remote feature failures are returned in the result. Transport failures, local cancellation
+    /// and the desktop timeout throw; cancellation and timeout also attempt a remote cancel.
+    /// - Parameters:
+    ///   - request: Invocation with a request ID unique among this client's pending executions.
+    ///   - runnerID: Trusted runner whose snapshot is connected.
+    ///   - timeout: Desktop wait limit, independent of the request's runner-side deadline.
+    /// - Returns: The runner's terminal result, which may contain a feature failure.
+    /// - Throws: `disconnected` when no authenticated connection exists, a send error, or a
+    ///   local `cancelled`/`deadlineExceeded` execution failure.
     public func execute(
         _ request: DeveloperFeatureExecutionRequest,
         on runnerID: UUID,
@@ -371,6 +444,11 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Attempts remote cooperative cancellation and finishes the local pending request as cancelled.
+    /// - Parameters:
+    ///   - requestID: Execution identity used to route the cancel and pending continuation.
+    ///   - runID: Run whose published phase becomes cancelled.
+    ///   - runnerID: Runner to receive the cancel if it still has an authenticated peer.
     public func cancel(requestID: UUID, runID: UUID, runnerID: UUID) {
         if authenticatedPeersByRunnerID[runnerID] != nil {
             try? sendAuthenticated(.cancel(requestID: requestID), runnerID: runnerID)
@@ -382,6 +460,8 @@ public final class DeveloperRunnerClient {
         )
     }
 
+    /// Records a discovered endpoint, supplies a placeholder or saved identity, and invites
+    /// trusted candidates automatically when no different runner owns the session.
     func found(_ box: DeveloperPeerBox, runnerID advertisedRunnerID: UUID?) {
         let endpoint = box.peer.displayName
         let runnerID = advertisedRunnerID ?? candidatesByPeer[box.peer]?.runnerID ?? UUID()
@@ -430,6 +510,8 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Marks an endpoint undiscoverable, retaining connected or in-flight candidates.
+    /// Evicts an otherwise unused candidate and releases failed connection ownership if needed.
     func lostPeer(_ box: DeveloperPeerBox) {
         intentionalDisconnects.forget(box.peer)
         guard let runnerID = candidatesByPeer[box.peer]?.runnerID else { return }
@@ -442,6 +524,8 @@ public final class DeveloperRunnerClient {
         releaseFailedConnectionIfNeeded(runnerID)
     }
 
+    /// Updates connection state from transport callbacks, retaining discoverable endpoints
+    /// after failed invitations so an explicit retry remains possible.
     func peerChanged(_ box: DeveloperPeerBox, state: MCSessionState) {
         guard let runnerID = candidatesByPeer[box.peer]?.runnerID else { return }
         switch state {
@@ -481,7 +565,10 @@ public final class DeveloperRunnerClient {
         }
     }
 
-    fileprivate func received(_ data: Data, from box: DeveloperPeerBox) {
+    /// Decodes compatible envelopes and advances pairing, saved-trust and secure-message handling.
+    /// Only authenticated payloads reach normal result handling; malformed or unauthenticated
+    /// messages are ignored or recorded as connection errors.
+    func received(_ data: Data, from box: DeveloperPeerBox) {
         guard var runnerID = candidatesByPeer[box.peer]?.runnerID else { return }
         let envelope: DeveloperRunnerEnvelope
         do {
@@ -617,11 +704,14 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Publishes a browser startup failure and clears the browsing flag.
     fileprivate func browserFailed(_ detail: String) {
         isBrowsing = false
         lastError = detail
     }
 
+    /// Checks the secure runner greeting before selecting its peer, then handles correlated
+    /// results and disconnects from that authenticated peer. Competing candidates are evicted.
     private func handleAuthenticated(
         _ message: DeveloperAuthenticatedMessage,
         from box: DeveloperPeerBox,
@@ -684,6 +774,8 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Seals a desktop-to-runner message and reliably sends it to the authenticated peer.
+    /// Throws when the peer or cipher is missing, or when sealing/transport fails.
     private func sendAuthenticated(_ message: DeveloperAuthenticatedMessage, runnerID: UUID) throws {
         guard let peer = authenticatedPeersByRunnerID[runnerID] else {
             throw DeveloperExecutionFailure(code: .disconnected, message: "The runner connection closed.")
@@ -696,6 +788,8 @@ public final class DeveloperRunnerClient {
         candidatesByPeer[peer.peer]?.secureSession = cipher
     }
 
+    /// JSON-encodes an envelope for reliable data transport to a still-connected peer.
+    /// Throws `disconnected` for a closed peer, otherwise propagates encoding or send errors.
     private func send(_ envelope: DeveloperRunnerEnvelope, to box: DeveloperPeerBox) throws {
         let peer = box.peer
         guard
@@ -705,6 +799,8 @@ public final class DeveloperRunnerClient {
         try session.send(JSONEncoder().encode(envelope), toPeers: [peer], with: .reliable)
     }
 
+    /// Expires a still-pending request, attempts remote cancellation and publishes a timed-out phase.
+    /// Completes the local wait with `deadlineExceeded`; late timer firings have no effect.
     private func timeout(
         request: DeveloperFeatureExecutionRequest,
         runnerID: UUID
@@ -724,18 +820,22 @@ public final class DeveloperRunnerClient {
         )
     }
 
+    /// Cancels the request timer and resumes its pending continuation once with the result.
     private func finish(requestID: UUID, returning result: DeveloperFeatureExecutionResult) {
         timeoutTasks[requestID]?.cancel()
         timeoutTasks[requestID] = nil
         continuations.removeValue(forKey: requestID)?.resume(returning: result)
     }
 
+    /// Cancels the request timer and resumes its pending continuation once with an error.
     private func finish(requestID: UUID, throwing error: any Error) {
         timeoutTasks[requestID]?.cancel()
         timeoutTasks[requestID] = nil
         continuations.removeValue(forKey: requestID)?.resume(throwing: error)
     }
 
+    /// Clears the runner's authentication and pairing state, marks its running statuses
+    /// disconnected, and fails all client continuations with the supplied connection detail.
     private func markDisconnected(runnerID: UUID, detail: String) {
         if let peer = authenticatedPeersByRunnerID[runnerID]?.peer {
             candidatesByPeer[peer]?.secureSession = nil
@@ -762,6 +862,8 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Maps cancellation, deadline and disconnect failures to their matching run phases;
+    /// other failure codes, including a missing code, map to failed.
     private func phase(for code: DeveloperExecutionErrorCode?) -> DeveloperRunPhase {
         switch code {
         case .cancelled: .cancelled
@@ -771,18 +873,22 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Replaces the runner's snapshot by ID and restores localized display-name ordering.
     private func upsertRunner(_ snapshot: DeveloperRunnerSnapshot) {
         runners.removeAll { $0.id == snapshot.id }
         runners.append(snapshot)
         runners.sort { $0.identity.displayName.localizedStandardCompare($1.identity.displayName) == .orderedAscending }
     }
 
+    /// Mutates an existing runner snapshot and refreshes its last-seen timestamp.
     private func updateRunner(_ id: UUID, update: (inout DeveloperRunnerSnapshot) -> Void) {
         guard let index = runners.firstIndex(where: { $0.id == id }) else { return }
         update(&runners[index])
         runners[index].lastSeen = Date()
     }
 
+    /// Binds an endpoint to a handshake's runner ID unless another peer is authenticated for it.
+    /// Removes obsolete placeholder identity and promotes remaining old candidates when rebinding.
     private func bindCandidate(_ box: DeveloperPeerBox, to runnerID: UUID) -> Bool {
         if let authenticated = authenticatedPeersByRunnerID[runnerID], authenticated.peer != box.peer {
             return false
@@ -810,6 +916,7 @@ public final class DeveloperRunnerClient {
         return true
     }
 
+    /// Starts one 60-second authentication timer while no peer is authenticated.
     private func startUnauthenticatedSessionTimeoutIfNeeded() {
         guard unauthenticatedSessionTimeoutTask == nil,
               authenticatedPeersByRunnerID.isEmpty else { return }
@@ -824,6 +931,8 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Disconnects an unauthenticated session, retaining discoverable endpoints for retry
+    /// while clearing challenge, cipher, pairing and invitation ownership state.
     private func resetUnauthenticatedSession() {
         let runnerIDs = Set(candidatesByPeer.values.map(\.runnerID))
         session.disconnect()
@@ -847,6 +956,8 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Releases the active runner after its last invitation and transport connection fail,
+    /// then marks it disconnected so another runner can use the session.
     private func releaseFailedConnectionIfNeeded(_ runnerID: UUID) {
         guard activeRunnerID == runnerID,
               authenticatedPeersByRunnerID[runnerID] == nil,
@@ -858,6 +969,7 @@ public final class DeveloperRunnerClient {
         markDisconnected(runnerID: runnerID, detail: "The connection failed. Reconnect to try again.")
     }
 
+    /// Removes a candidate endpoint and promotes another connected endpoint if it was selected.
     private func evictCandidate(_ box: DeveloperPeerBox, runnerID: UUID) {
         candidatesByPeer[box.peer] = nil
         if selectedCandidatePeerByRunnerID[runnerID] == box.peer {
@@ -866,6 +978,7 @@ public final class DeveloperRunnerClient {
         }
     }
 
+    /// Evicts other endpoints for an authenticated runner while retaining the chosen peer.
     private func evictCompetingCandidates(for runnerID: UUID, keeping peer: MCPeerID) {
         let competingPeers = candidatesByPeer.compactMap { candidatePeer, candidate in
             candidate.runnerID == runnerID && candidatePeer != peer ? candidatePeer : nil
@@ -876,6 +989,7 @@ public final class DeveloperRunnerClient {
         selectedCandidatePeerByRunnerID[runnerID] = peer
     }
 
+    /// Selects another connected candidate for a runner that has no authenticated peer.
     private func promoteCandidate(for runnerID: UUID, excluding peer: MCPeerID) {
         guard authenticatedPeersByRunnerID[runnerID] == nil else { return }
         guard let candidatePeer = candidatesByPeer.first(where: { candidatePeer, candidate in
@@ -886,6 +1000,7 @@ public final class DeveloperRunnerClient {
         selectedCandidatePeerByRunnerID[runnerID] = candidatePeer
     }
 
+    /// Clears all pending pairing challenges, requested codes and session IDs for this runner.
     private func clearPairingState(for runnerID: UUID) {
         let peers = candidatesByPeer.compactMap { peer, candidate in
             candidate.runnerID == runnerID ? peer : nil
@@ -898,6 +1013,8 @@ public final class DeveloperRunnerClient {
         pendingPairingChallenges[runnerID] = nil
     }
 
+    /// Atomically writes desktop trust receipts when a store URL is configured.
+    /// Creates the parent directory and attempts owner-only permissions; encoding or write errors propagate.
     private func persistTrust() throws {
         guard let trustStoreURL else { return }
         try FileManager.default.createDirectory(
@@ -913,3 +1030,5 @@ public final class DeveloperRunnerClient {
         )
     }
 }
+
+extension DeveloperRunnerClient: DeveloperSessionOwner {}

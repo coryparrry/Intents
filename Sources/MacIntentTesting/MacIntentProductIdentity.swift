@@ -7,6 +7,8 @@ public struct MacIntentProductIdentity: Codable, Equatable, Sendable {
     public let bundlePath: String
     public let sha256: String
 
+    /// Hashes sorted bundle entries, regular-file bytes, directory names, and internal symlink targets into a build identity.
+    /// Rejects external links, unsupported file types, read-time file changes, and bundles exceeding file/byte limits.
     static func capture(_ app: URL) throws -> Self {
         let root = app.standardizedFileURL.resolvingSymlinksInPath()
         let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]
@@ -58,6 +60,7 @@ public struct MacIntentProductIdentity: Codable, Equatable, Sendable {
         return .init(bundlePath: root.path, sha256: digest.map { String(format: "%02x", $0) }.joined())
     }
 
+    /// Recaptures the selected bundle and throws if its path or content digest differs from this identity.
     func validate() throws {
         guard try Self.capture(URL(fileURLWithPath: bundlePath)) == self else {
             throw MacIntentTestingError("The selected app changed. Reload its catalog before testing this build.")
@@ -70,6 +73,8 @@ public struct MacIntentProductIdentity: Codable, Equatable, Sendable {
 struct MacIntentCodeIdentity {
     private let requirement: SecRequirement
 
+    /// Validates signed application code and constructs a requirement accepting the captured hashes of supported architecture slices.
+    /// Throws when signing validation or requirement creation fails.
     init(appURL: URL) throws {
         var code: SecStaticCode?
         guard SecStaticCodeCreateWithPath(appURL as CFURL, [], &code) == errSecSuccess, let code,
@@ -96,6 +101,8 @@ struct MacIntentCodeIdentity {
         self.requirement = requirement
     }
 
+    /// Validates the live process against the selected signed architecture hashes using kernel-held code identity.
+    /// Throws when the process cannot be inspected or no longer meets the captured requirement.
     func validate(processIdentifier: Int32) throws {
         var code: SecCode?
         let lookup = SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid as String: processIdentifier] as CFDictionary, [], &code)

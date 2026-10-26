@@ -4,6 +4,8 @@ import MacIntentTesting
 
 @main
 struct NativeTestsMain {
+    /// Runs help, catalog discovery, or native tests; emits structured JSON and preserves issued-case mappings before execution.
+    /// Uses exit 1 for a failed/cancelled native attempt and exit 2 for invalid arguments or setup failures.
     @MainActor static func main() async {
         do {
             let options = try NativeTestsOptions(Array(CommandLine.arguments.dropFirst()))
@@ -35,11 +37,13 @@ struct NativeTestsMain {
         }
     }
 
+    /// Creates the pretty, sorted-key JSON encoder shared by CLI output and issued-case evidence.
     private static func encoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return encoder
     }
+    /// Writes one JSON value followed by a newline to standard output and propagates encoding failures.
     private static func emit(_ value: some Encodable) throws {
         FileHandle.standardOutput.write(try encoder().encode(value) + Data("\n".utf8))
     }

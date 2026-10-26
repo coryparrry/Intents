@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 def github_json(*args):
+    """Run gh with checked status and decode its captured standard output as JSON."""
     result = subprocess.run(["gh", *args], check=True, capture_output=True, text=True)
     return json.loads(result.stdout)
 
@@ -36,6 +37,7 @@ def optional_github_api(endpoint):
 
 
 def check_baseline():
+    """Read the live main release manifest and publish readiness only for a published release or a missing release with no surviving tag."""
     repository = os.environ["GITHUB_REPOSITORY"]
     # Read the same live main manifest that Release Please uses, even on reruns.
     manifest = github_json(
@@ -76,6 +78,7 @@ def check_baseline():
 
 def dispatch_ci():
     # No-op action runs omit both pr and prs. Parse only at runtime, with an empty default.
+    """Validate Release Please PR output and dispatch ci.yml once per distinct nonempty head branch through gh."""
     prs = json.loads(os.environ.get("RELEASE_PRS") or "[]")
     if not isinstance(prs, list):
         raise ValueError("Release Please PR output must be an array")
@@ -102,6 +105,7 @@ def dispatch_ci():
 
 
 def main():
+    """Dispatch either live baseline readiness validation or CI workflow creation for generated release PRs."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("check-baseline", "dispatch-ci"))
     args = parser.parse_args()

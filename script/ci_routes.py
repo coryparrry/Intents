@@ -14,6 +14,9 @@ except ModuleNotFoundError:
     from script.ci_native_tests import CI_EXCLUDED_UI_TESTS
 
 ROOT = Path(__file__).resolve().parents[1]
+# Canonical plugin files also compile directly into the desktop app. Retain their
+# former app paths as logical ownership keys for native and UI test selection.
+SHARED_APP_SOURCES = json.loads((ROOT / "script/shared_app_sources.json").read_text())
 APP = "FoundationEvals/FoundationEvals/"
 TESTS = "FoundationEvals/FoundationEvalsTests/"
 UI_TESTS = "FoundationEvals/FoundationEvalsUITests/"
@@ -132,6 +135,7 @@ ALL_UI_GROUPS = set(UI_BASELINE) | set(UI_FEATURE_TESTS)
 
 
 def app_ui_groups(relative):
+    """Map known app sources to owning UI groups, return no groups for service-only changes, and return None for unclassified app sources."""
     if relative in UI_APP_GROUPS:
         return UI_APP_GROUPS[relative]
     if relative == "Services/EvaluationRunner.swift" or relative.startswith("Services/EvaluationRunner+"):
@@ -218,6 +222,7 @@ PYTHON_DEPENDENCIES = {
     ".github/workflows/release.yml": RELEASE_VALIDATION,
 }
 FULL_COVERAGE_PATHS = {
+    "script/shared_app_sources.json",
     ".github/workflows/ci.yml",
     ".github/workflows/ui-stability.yml",
     "script/ci_routes.py",
@@ -255,6 +260,7 @@ METADATA_PATHS = {
 
 
 def python_test_inventory(root=ROOT):
+    """Discover top-level script test modules beneath root, excluding the separate macOS-only inventory."""
     return {
         ".".join(path.relative_to(root).with_suffix("").parts)
         for path in (root / "script/tests").glob("test_*.py")
@@ -262,10 +268,12 @@ def python_test_inventory(root=ROOT):
 
 
 def standalone_plugin_path(path):
+    """Recognize standalone plugin sources and metadata that belong to the dedicated plugin workflow."""
     return path.startswith("plugins/apple-foundation-evals/") or path in STANDALONE_PLUGIN_METADATA
 
 
 def production_package_runtime(path):
+    """Identify production package runtime paths while excluding tests, documentation, licenses, and notices."""
     if not path.startswith(PRODUCTION_PACKAGE):
         return False
     relative = path.removeprefix(PRODUCTION_PACKAGE)
@@ -277,6 +285,7 @@ def production_package_runtime(path):
 
 
 def package_test_suites(path, root):
+    """Select explicitly declared Swift test suites from an existing source file, falling back to the whole package for ambiguous or missing files."""
     source = root / path
     if not path.endswith(".swift") or not source.is_file():
         return {"*"}
@@ -286,6 +295,7 @@ def package_test_suites(path, root):
 
 
 def package_ui_groups(path):
+    """Map known package source prefixes to affected app UI groups, using an empty set for sources without UI ownership and None otherwise."""
     if path.startswith("Sources/MacIntentTesting/"):
         return set()
     if path.startswith("Sources/FoundationEvalsDeveloper/"):
@@ -296,6 +306,7 @@ def package_ui_groups(path):
 
 
 def ordinary_ui_classes(root=ROOT):
+    """Discover XCTestCase subclasses under UI sources and omit suites requiring explicit runtime opt-in."""
     return {
         suite
         for source in (root / UI_TESTS).rglob("*.swift")
@@ -304,11 +315,13 @@ def ordinary_ui_classes(root=ROOT):
 
 
 def ui_duration(selector):
+    """Estimate selector duration from recorded timings, using the suite or method fallback when no measurement exists."""
     kind = "method" if selector.count("/") == 2 else "suite"
     return UI_TIMINGS["seconds"].get(selector, UI_TIMINGS["fallback_seconds"][kind])
 
 
 def ui_matrix(groups, extra_classes=(), targeted=False, root=ROOT):
+    """Exclude manual fixtures, expand mixed suites, deduplicate selectors, and deterministically balance feature groups across at most three duration-weighted UI shards."""
     catalog = {**UI_BASELINE, **UI_FEATURE_TESTS}
     selections = {
         name: {test for test in (catalog[name] if targeted or name not in UI_BASELINE else UI_BASELINE[name])
@@ -370,6 +383,7 @@ def ui_matrix(groups, extra_classes=(), targeted=False, root=ROOT):
 
 
 def changed_ui_classes(paths, root):
+    """Collect XCTestCase class names from existing changed Swift UI test files while ignoring removed or unrelated paths."""
     classes = set()
     for path in paths or ():
         if path.startswith(UI_TESTS) and path.endswith(".swift") and (root / path).is_file():
@@ -378,12 +392,14 @@ def changed_ui_classes(paths, root):
 
 
 def with_matrices(plan, groups=(), extra_classes=(), targeted=False, root=ROOT):
+    """Attach UI shards to the mutable plan and disable its UI flag when selection produces no runnable shard."""
     plan["ui_matrix"] = ui_matrix(groups, extra_classes, targeted, root) if plan["ui"] else []
     plan["ui"] = bool(plan["ui_matrix"])
     return plan
 
 
 def full_coverage(reason, root=ROOT, extra_classes=(), extra_groups=()):
+    """Build the conservative ordinary coverage plan including discovered tests and UI classes, with the supplied fallback reason."""
     return with_matrices({
         "full_coverage": True,
         "native": True,
@@ -399,6 +415,7 @@ def full_coverage(reason, root=ROOT, extra_classes=(), extra_groups=()):
 
 
 def coverage_plan(paths, root=ROOT):
+    """Route changed paths to dependent portable, native, and UI checks, falling back to full coverage for unavailable history or unclassified dependencies."""
     extra_classes = changed_ui_classes(paths, root)
     affected_groups = set()
     # Gather affected feature classes before any full-coverage early return.
@@ -559,7 +576,14 @@ def coverage_plan(paths, root=ROOT):
 
 
 def coverage(paths, root=ROOT):
+    """Route shared canonical sources through their app owners, then select native suites while excluding plugin-only and nonruntime package paths."""
+    shared = {SHARED_APP_SOURCES[path] for path in paths or () if path in SHARED_APP_SOURCES}
+    if shared:
+        paths = list(dict.fromkeys([*paths, *sorted(shared)]))
     plan = coverage_plan(paths, root)
+    if shared:
+        plan["python_tests"] = sorted(set(plan["python_tests"]) | {"script.tests.test_shared_app_sources"})
+        plan["reasons"].append("Shared plugin engine sources also build the app and run their native, UI, and source-membership checks.")
     full_native = plan.get("full_coverage", False) or any(production_package_runtime(path) for path in paths or ())
     native_paths = None if paths is None else [
         path for path in paths
@@ -571,6 +595,7 @@ def coverage(paths, root=ROOT):
 
 
 def changed_paths(event_name, event, root):
+    """Validate event SHAs and read NUL-separated Git diff paths, returning None for unsupported events, malformed identities, or failed history lookup."""
     try:
         if event_name == "pull_request":
             pull = event["pull_request"]
@@ -611,6 +636,7 @@ def changed_paths(event_name, event, root):
 
 
 def main():
+    """Read the Actions event, force full ordinary coverage for main pushes, and append selected outputs and coverage explanations to GitHub files."""
     try:
         event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
     except (ValueError, OSError):

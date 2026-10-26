@@ -118,29 +118,26 @@ private struct SchemaFieldCollectionEditor: View {
         }
     }
 
+    /// Appends a field appropriate to the editor role only while field-count and schema-depth limits permit it.
     private func addField() {
         guard fields.count < maximumFields,
               depth <= EvaluationFeatureConfiguration.maximumSchemaDepth else { return }
         let field: EvaluationSchemaField
         switch role {
         case .property:
-            field = EvaluationSchemaField(name: uniqueName(prefix: "field"))
+            field = EvaluationSchemaField(name: firstAvailableNumberedName(prefix: "field", existing: Set(fields.map(\.name))))
         case .definition:
-            field = EvaluationSchemaField(name: uniqueName(prefix: "Definition"), type: .object)
+            field = EvaluationSchemaField(
+                name: firstAvailableNumberedName(prefix: "Definition", existing: Set(fields.map(\.name))), type: .object
+            )
         case .unionChoice:
-            field = EvaluationSchemaField(name: uniqueName(prefix: "choice"))
+            field = EvaluationSchemaField(name: firstAvailableNumberedName(prefix: "choice", existing: Set(fields.map(\.name))))
         case .arrayItem:
             field = EvaluationSchemaField(name: "item")
         }
         fields.append(field)
     }
 
-    private func uniqueName(prefix: String) -> String {
-        let existing = Set(fields.map(\.name))
-        return (1...).lazy
-            .map { "\(prefix)\($0)" }
-            .first { !existing.contains($0) }!
-    }
 }
 
 private struct SchemaFieldRow: View {
@@ -403,7 +400,9 @@ private struct SchemaEnumValuesEditor: View {
                     .font(.callout.weight(.semibold))
                 Spacer()
                 Button("Add Value", systemImage: "plus") {
-                    values.append(EvaluationSchemaEnumValue(value: uniqueValue()))
+                    values.append(EvaluationSchemaEnumValue(
+                        value: firstAvailableNumberedName(prefix: "value", existing: Set(values.map(\.value)))
+                    ))
                 }
                 .disabled(values.count >= EvaluationSchemaField.maximumEnumValues)
             }
@@ -421,12 +420,6 @@ private struct SchemaEnumValuesEditor: View {
         }
     }
 
-    private func uniqueValue() -> String {
-        let existing = Set(values.map(\.value))
-        return (1...).lazy
-            .map { "value\($0)" }
-            .first { !existing.contains($0) }!
-    }
 }
 
 private struct SchemaReferenceEditor: View {

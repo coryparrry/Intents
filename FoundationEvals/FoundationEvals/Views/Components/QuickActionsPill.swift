@@ -173,6 +173,7 @@ struct QuickActionsPill: View {
         }
     }
 
+    /// Lays out the primary actions after a separator, optionally showing their icons without visible titles.
     private func primaryActionsRow(iconOnly: Bool) -> some View {
         HStack(spacing: 0) {
             separator
@@ -193,6 +194,7 @@ struct QuickActionsPill: View {
         .accessibilityLabel("Send prompt")
     }
 
+    /// Binds the prompt field to focus state and routes keyboard submission through the guarded submit action.
     private func promptField(maxWidth: CGFloat) -> some View {
         TextField(labels.placeholder, text: $prompt)
             .focused($isFocused)
@@ -242,6 +244,7 @@ struct QuickActionsPill: View {
         .scale(scale: 0.97).combined(with: .opacity)
     }
 
+    /// Displays a combined accessible progress indicator for the current processing phase.
     private func processingControls(label: String) -> some View {
         HStack(spacing: 8) {
             ProgressView()
@@ -290,6 +293,7 @@ struct QuickActionsPill: View {
             .accessibilityHidden(true)
     }
 
+    /// Builds an enabled-state-aware action button that clears text focus before invoking the host callback.
     private func actionButton(_ action: QuickActionsPillAction, iconOnly: Bool = false) -> some View {
         Button {
             isFocused = false
@@ -316,12 +320,14 @@ struct QuickActionsPill: View {
         .opacity(action.isEnabled ? 1 : 0.35)
     }
 
+    /// Submits only a nonempty prompt in the idle phase, releasing focus before calling the host.
     private func submit() {
         guard hasPrompt, phase == .idle else { return }
         isFocused = false
         onSubmit()
     }
 
+    /// Clears the bound prompt and collapses the editor while releasing keyboard focus.
     private func clearPrompt() {
         prompt = ""
         isFocused = false

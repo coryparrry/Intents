@@ -54,11 +54,6 @@ private struct RunTrendPanel: View {
 
     private var trend: RunTrendSummary { RunTrendSummary(runs: runs) }
 
-    private var selected: RunTrendSummary.Point? {
-        guard let hovered else { return nil }
-        return trend.points.first { $0.label == hovered }
-    }
-
     var body: some View {
         HStack(alignment: .top, spacing: 40) {
             VStack(alignment: .leading, spacing: 6) {
@@ -142,6 +137,7 @@ private struct RunTrendPanel: View {
         .accessibilityLabel("Pass rate trend")
     }
 
+    /// Colors runs with errors or interrupted execution as warnings, then distinguishes unavailable, perfect, and failing pass rates.
     private func color(for run: EvaluationRun) -> Color {
         if run.errorCount > 0 || run.cancelled || run.stoppedEarly { return WorkspaceStyle.warning }
         guard let rate = run.passRate else { return .secondary.opacity(0.4) }
@@ -163,6 +159,7 @@ struct RunTrendSummary {
     let delta: Double?
     let comparisonCaption: String
 
+    /// Builds trend points from the most recent twelve supplied runs and computes the latest-versus-previous percentage-point change when both are scored.
     init(runs: [EvaluationRun]) {
         let recent = Array(runs.prefix(12))
         recentCount = recent.count

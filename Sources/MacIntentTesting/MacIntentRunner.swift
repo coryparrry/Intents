@@ -9,13 +9,20 @@ public final class MacIntentRunner {
     private var unresolvedSubject: NSRunningApplication?
     private var running = false
     private var cancelled = false
+    /// Creates a serial native runner that retains unresolved process ownership between runs.
     public init() {}
 
+    /// Requests cancellation of the active run and owned command while allowing resource cleanup to finish.
     public func cancel() {
         cancelled = true
         command.cancel()
     }
 
+    /// Generates, signs, and executes native App Intents tests against the selected installed build, retaining logs and result evidence.
+    /// Requires an unchanged catalog/build identity, a stopped subject app, compatible Xcode, and matching signing team.
+    /// Only the explicitly launched subject is closed; unresolved command/host resources prevent another run.
+    /// - Returns: A verdict with evidence paths, selected product identity, and frozen authored cases. Execution/setup failures after evidence setup are captured in a failed result.
+    /// - Throws: Early validation, setup, cancellation, or file errors before result capture is established.
     public func run(catalog: MacIntentCatalog, cases: [MacIntentTestCase],
                     configuration: MacIntentRunConfiguration) async throws -> MacIntentRunResult {
         guard !running else { throw MacIntentTestingError("A Mac intent test run is already active.") }
@@ -199,20 +206,25 @@ public final class MacIntentRunner {
         return result
     }
 
+    /// Compares application paths after standardization and symlink resolution.
     static func sameApplicationPath(_ lhs: URL, _ rhs: URL) -> Bool {
         lhs.standardizedFileURL.resolvingSymlinksInPath().path == rhs.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
+    /// Extracts the first TeamIdentifier value from codesign diagnostic output.
     static func signingTeam(in output: String) -> String? {
         output.split(whereSeparator: \.isNewline).first { $0.hasPrefix("TeamIdentifier=") }
             .map { String($0.dropFirst("TeamIdentifier=".count)) }
     }
 
+    /// Throws when either the runner cancellation flag or the current task requests cancellation.
     private func checkCancellation() throws {
         if cancelled { throw CancellationError() }
         try Task.checkCancellation()
     }
 
+    /// Requests termination of the subject launched by this run, then force-terminates after a grace interval if needed.
+    /// Uses detached waits so caller cancellation does not skip cleanup.
     private func close(_ app: NSRunningApplication) async {
         guard !app.isTerminated else { return }
         app.terminate()
@@ -226,6 +238,7 @@ public final class MacIntentRunner {
         }
     }
 
+    /// Rejects testing while any copy of the selected bundle identifier is running, preserving pre-existing app work.
     static func requireStoppedSubject(bundleIdentifier: String, isRunning: ((String) -> Bool)? = nil) throws {
         let present = isRunning?(bundleIdentifier) ?? NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).contains { !$0.isTerminated }
         guard !present else {
@@ -233,6 +246,8 @@ public final class MacIntentRunner {
         }
     }
 
+    /// Checks the launched process timestamp, resolved bundle path, exclusive running copy, signed code identity, and unchanged bundle bytes.
+    /// Throws if result evidence can no longer be tied to the selected process and build.
     private func validateSubject(_ app: NSRunningApplication, launchedAt: Date?, identity: MacIntentProductIdentity,
                                  code: MacIntentCodeIdentity?) throws {
         guard !app.isTerminated, let launchedAt, app.launchDate == launchedAt,
@@ -246,6 +261,7 @@ public final class MacIntentRunner {
         try identity.validate()
     }
 
+    /// Checks that every generated host/runner identifier has no live application and clears the retained list only after release.
     private func generatedHostsReleased() -> Bool {
         let released = unresolvedHostBundleIDs.allSatisfy { identifier in
             NSRunningApplication.runningApplications(withBundleIdentifier: identifier).allSatisfy(\.isTerminated)
@@ -254,6 +270,7 @@ public final class MacIntentRunner {
         return released
     }
 
+    /// Waits the full two-second host-settlement interval before checking release, including when the caller was cancelled.
     private func waitForGeneratedHosts() async -> Bool {
         // Observe the complete settlement interval: a daemon may still be
         // completing a runner launch just after xcodebuild has exited.
@@ -263,6 +280,7 @@ public final class MacIntentRunner {
         return generatedHostsReleased()
     }
 
+    /// Lists the generated host, test bundle, and runner bundle identifiers associated with one run token.
     static func generatedHostBundleIdentifiers(_ identifier: String) -> [String] {
         let tests = "dev.intents.testing.tests.\(identifier)"
         return ["dev.intents.testing.host.\(identifier)", tests, tests + ".xctrunner", tests + "-Runner"]
@@ -283,6 +301,7 @@ public final class MacIntentRunner {
                                  environment: environment, log: log, timeout: timeout)
     }
 
+    /// Removes the run-local DerivedData directory and appends cleanup errors to the retained log.
     private func discardBuildIntermediates(in directory: URL, log: FileHandle) {
         let derivedData = directory.appendingPathComponent("DerivedData", isDirectory: true)
         do {
@@ -294,6 +313,7 @@ public final class MacIntentRunner {
         }
     }
 
+    /// Checks runner/task cancellation and forwards the command to the owned-session executor.
     func execute(executable: URL, arguments: [String], directory: URL,
                          environment: [String: String], log: FileHandle, timeout: Double,
                          standardOutput: FileHandle? = nil) async throws -> Int32 {
@@ -327,17 +347,20 @@ final class MacIntentSubjectLifetime {
         private var observation = Observation()
         private var sealed: Observation?
 
+        /// Pins the observation ledger to the selected process identifier and launch timestamp.
         init(processIdentifier: Int32, launchedAt: Date) {
             self.processIdentifier = processIdentifier
             self.launchedAt = launchedAt
         }
 
+        /// Records a process event under the ledger lock unless observation has already been sealed.
         func record(processIdentifier: Int32, launchedAt: Date?, terminated: Bool) {
             lock.withLock {
                 recordUnlocked(processIdentifier: processIdentifier, launchedAt: launchedAt, terminated: terminated)
             }
         }
 
+        /// Snapshots a matching bundle notification under the ledger lock and ignores unrelated or post-cutoff events.
         func record(_ notification: Notification, bundleIdentifier: String, terminated: Bool,
                     snapshot: @Sendable (Notification) -> ApplicationSnapshot?) {
             lock.withLock {
@@ -347,6 +370,7 @@ final class MacIntentSubjectLifetime {
             }
         }
 
+        /// Marks a different process/launch timestamp as replacement, or records termination of the selected lifetime.
         private func recordUnlocked(processIdentifier: Int32, launchedAt: Date?, terminated: Bool) {
             guard sealed == nil else { return }
             if processIdentifier != self.processIdentifier || launchedAt != self.launchedAt {
@@ -356,7 +380,9 @@ final class MacIntentSubjectLifetime {
             }
         }
 
+        /// Returns the sealed observation when available, otherwise the current synchronized lifetime evidence.
         func snapshot() -> Observation { lock.withLock { sealed ?? observation } }
+        /// Freezes and returns the current observation once so events after the local cutoff cannot change the verdict.
         func seal() -> Observation {
             lock.withLock {
                 if sealed == nil { sealed = observation }
@@ -369,10 +395,13 @@ final class MacIntentSubjectLifetime {
     private var observers: [NSObjectProtocol] = []
     private var observationCenter: NotificationCenter?
 
+    /// Creates lifetime tracking tied to the explicitly launched subject process and its observed launch date.
     init(processIdentifier: Int32, launchedAt: Date) {
         ledger = Ledger(processIdentifier: processIdentifier, launchedAt: launchedAt)
     }
 
+    /// Installs synchronous launch/termination observers for the subject bundle and records currently live copies.
+    /// Optional notification and snapshot adapters support controlled observation sources.
     func startObserving(bundleIdentifier: String, center: NotificationCenter? = nil,
                         applicationSnapshot: (@Sendable (Notification) -> ApplicationSnapshot?)? = nil) {
         let center = center ?? NSWorkspace.shared.notificationCenter
@@ -390,35 +419,42 @@ final class MacIntentSubjectLifetime {
         }
     }
 
+    /// Copies bundle, process, and launch identity from the application carried by a workspace notification.
     nonisolated private static func applicationSnapshot(_ notification: Notification) -> ApplicationSnapshot? {
         guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return nil }
         return .init(bundleIdentifier: app.bundleIdentifier, processIdentifier: app.processIdentifier, launchedAt: app.launchDate)
     }
 
+    /// Removes installed notification observers and releases the observation center.
     func stopObserving() {
         for observer in observers { observationCenter?.removeObserver(observer) }
         observers.removeAll()
         observationCenter = nil
     }
 
+    /// Records a launch identity so another process or launch timestamp invalidates subject continuity.
     func observeLaunch(processIdentifier: Int32, launchedAt: Date?) {
         ledger.record(processIdentifier: processIdentifier, launchedAt: launchedAt, terminated: false)
     }
 
+    /// Records termination evidence for the selected process lifetime or detects a different lifetime.
     func observeTermination(processIdentifier: Int32, launchedAt: Date?) {
         ledger.record(processIdentifier: processIdentifier, launchedAt: launchedAt, terminated: true)
     }
 
+    /// Rejects a report when accumulated notifications or current process state show another copy of the subject.
     func validateNoReplacement(hasOtherRunningCopy: Bool) throws {
         try Self.validateNoReplacement(ledger.snapshot(), hasOtherRunningCopy: hasOtherRunningCopy)
     }
 
+    /// Throws if the supplied observation saw replacement or the final running-copy check found another subject.
     private static func validateNoReplacement(_ observation: Observation, hasOtherRunningCopy: Bool) throws {
         guard !observation.replaced, !hasOtherRunningCopy else {
             throw MacIntentTestingError("Another copy of the test app ran during this test. Its result cannot be bound to the selected process.")
         }
     }
 
+    /// Yields through the main queue so already queued workspace events can contribute to completion evidence.
     func deliverPendingObservations() async {
         // isTerminated can update before the corresponding workspace event is
         // delivered. Give already queued events a delivery turn before reading
@@ -428,6 +464,8 @@ final class MacIntentSubjectLifetime {
         }
     }
 
+    /// Keeps event observation active during detached product validation, then seals evidence on the main queue and removes observers.
+    /// Throws if hashing fails or accumulated/final state detects a replacement; the cutoff describes local delivery only.
     func finishObserving(afterProductValidation: @escaping @Sendable () throws -> Void,
                          hasOtherRunningCopy: @escaping @MainActor @Sendable () -> Bool) async throws {
         // Keep the main run loop available to receive workspace events during
@@ -445,6 +483,8 @@ final class MacIntentSubjectLifetime {
         try Self.validateNoReplacement(final.0, hasOtherRunningCopy: final.1)
     }
 
+    /// Validates authored-test counts, unchanged product, and subject continuity before accepting completion.
+    /// A terminated subject needs its own observed termination; a live subject must pass the supplied live-identity check.
     func validateCompletion(subjectTerminated: Bool, hasOtherRunningCopy: Bool,
                             summary: Data, expectedCount: Int,
                             validateLiveSubject: () throws -> Void,

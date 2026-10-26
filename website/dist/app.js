@@ -17,6 +17,7 @@ const viewMotion = createViewMotion();
 let userPaused = false;
 try { userPaused = localStorage.getItem('intents-motion-paused') === 'true'; } catch { /* Preferences are optional. */ }
 
+/** Render the requested symbol from the local SVG sprite with a caller-supplied CSS class. */
 const icon = (name, className = 'icon') => `<svg class="${className}" aria-hidden="true"><use href="/assets/icons.svg#${name}"/></svg>`;
 const passed = '<span class="check-circle" aria-hidden="true">✓</span>';
 
@@ -25,6 +26,7 @@ new ResizeObserver(([entry]) => {
   app.style.transform = !mobilePreview.matches ? `scale(${Math.round(entry.contentRect.width) / 1400})` : '';
 }).observe(viewport);
 
+/** Render the recorded evaluation report shell with current filters and escaped search text, leaving rows and details for renderResults. */
 function reportMarkup() {
   return `<div class="report-screen">
     <div class="native-title-row"><div><p class="native-date">Thursday 17 September at 5:34 pm</p><h2 class="native-title">Conversation behaviour</h2></div><span class="native-complete">${passed} Completed</span></div>
@@ -40,6 +42,7 @@ function reportMarkup() {
   </div>`;
 }
 
+/** Apply current filters, preserve or replace selection, and update escaped recorded response details and filter accessibility state. */
 function renderResults() {
   const shown = filterCases(cases, filter, query);
   const current = resolveSelection(shown, selectedCase);
@@ -58,6 +61,7 @@ function renderResults() {
   });
 }
 
+/** Render the saved trace summary and expanded-time-scale containers using the current span-collapse state. */
 function traceMarkup() {
   const metrics = [['Outcome','Passed'],['Workflow','18.39 s'],['Subject request','9.38 s'],['Subject tokens','1,138'],['First content','442 ms']];
   return `<div class="trace-screen"><div class="trace-native-header"><p class="native-date">Workflow trace</p><h2 class="native-title">Conversation behaviour</h2><p class="native-model">On-device · AFM 3 Core Advanced　 ◇ AI rubric　 · 17 Sep at 5:34 pm　 · 3 / 3 samples</p><div class="trace-metrics">${metrics.map(([label,value]) => `<div class="trace-metric">${label}<b>${value}</b></div>`).join('')}</div></div>
@@ -65,6 +69,7 @@ function traceMarkup() {
     <div class="trace-native-body"><div class="trace-waterfall"><p class="trace-scale-note">Expanded time scale · Short steps spaced apart · Exact durations shown</p><div class="trace-columns"><span>Span</span><span>Start</span><span class="trace-ruler"><span>0.0 ms</span><span>6.52 s</span><span>18.39 s</span></span><span style="text-align:right">Duration</span></div><div id="trace-rows"></div></div><aside class="trace-inspector" id="trace-inspector" aria-label="Span details"></aside></div></div>`;
 }
 
+/** Render visible recorded spans and update the selected span inspector with exact timings and retained usage. */
 function renderSpans() {
   document.querySelector('#trace-rows').innerHTML = spans.map((span,index) => collapsed && index > 0 ? '' : `<button class="trace-row ${selectedSpan === index ? 'selected' : ''}" data-span="${index}" aria-pressed="${selectedSpan === index}" style="--depth:${span.depth};--span-color:${span.color};--start:${span.x}%;--length:${span.width}%"><span class="trace-name">${icon(span.icon)}${esc(span.name)}</span><span class="trace-start">+${span.start}</span><span class="trace-track"><i></i></span><span class="trace-duration">${span.duration}</span></button>`).join('');
   const selected = spans[selectedSpan];
@@ -72,10 +77,12 @@ function renderSpans() {
   document.querySelector('#trace-inspector').innerHTML = `<h4>${icon(selected.icon)}${esc(selected.name)}</h4><div class="inspector-status"><span>Succeeded</span><b>${selected.duration}</b></div><div class="inspector-tabs"><span class="active">Details</span><span>Input / Output</span><span>Transcript</span></div><h5>TIMING</h5><dl>${timing.map(([label,value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl><p>Elapsed time measured by the app on a monotonic clock. Nested durations overlap and must not be added together.</p><h5>SUBJECT SESSION USAGE</h5><dl><div><dt>Input</dt><dd>729</dd></div><div><dt>Cached input</dt><dd>0</dd></div><div><dt>Output</dt><dd>409</dd></div><div><dt>Reasoning</dt><dd>0</dd></div></dl><p>Framework-reported usage. Includes recorded setup turns in the subject session. AI judge usage is separate.</p><dl><div><dt>AI judge tokens</dt><dd>2,514</dd></div></dl><h5>METADATA</h5><dl><div><dt>Model</dt><dd>On-device · AFM 3 Core Advanced</dd></div><div><dt>Case</dt><dd>Latest preference wins</dd></div></dl>`;
 }
 
+/** Render the illustrative Mac App Intent contract and its runner requirements and qualification limits. */
 function macIntentMarkup() {
   return `<div class="native-mac-intent-header"><span class="native-icon-box">${icon('workflow')}</span><div><h3>Mac App Intent tests</h3><p>Development source · illustrative JSON check</p></div></div><div class="mac-intent-native-content"><section class="native-panel mac-intent-native-card"><h4>${icon('list-checks')}Choose a compiled action</h4><p>The catalog comes from the installed Mac app’s compiled metadata. Discovery is best effort.</p><dl class="mac-intent-native-form"><div><dt>Mac app</dt><dd>Example.app · installed and registered</dd></div><div><dt>Action</dt><dd>EchoIntent</dd></div><div><dt>Inputs JSON</dt><dd><code>{"message":"Hello"}</code></dd></div><div><dt>Expected JSON</dt><dd><code>"Hello"</code></dd></div></dl></section><section class="native-panel mac-intent-native-card"><h4>${icon('list-checks')}Native runner requirements</h4><p>Apple AppIntentsTesting runs in a generated macOS UI-test target. The subject app and runner must share an Apple development team.</p><details class="native-disclosure"><summary>Setup and evidence limits</summary><p>Requires Xcode 27+, macOS 27+, a normally installed and registered Mac app, and matching signing teams. Unsupported metadata or parameter types may be unavailable. Live runner reliability remains unqualified. This workflow does not verify Siri.</p></details></section><p class="native-mac-intent-quiet-note">Illustrative source contract, not a recorded invocation or a feature of the published 1.4.0 download.</p></div>`;
 }
 
+/** Switch among recognized demo views, refresh navigation and announcements, optionally restore focus, and animate only when motion is enabled. */
 function setView(next, moveFocus = false) {
   if (!['report','trace','mac-intent'].includes(next)) return;
   const isInitialRender = !screen.hasChildNodes();
@@ -149,8 +156,11 @@ document.addEventListener('click', async event => {
   if (copyButton) {
     await copyCurrentResponse({
       text: cases.find(item => item.id === selectedCase).response,
+      /** Write the selected recorded response through the browser clipboard API. */
       writeText: text => navigator.clipboard.writeText(text),
+      /** Suppress asynchronous clipboard feedback after its originating copy control leaves the document. */
       isCurrent: () => copyButton.isConnected,
+      /** Update the live copy label and accessibility announcement with success or manual-copy guidance. */
       onResult: copied => {
         copyButton.querySelector('span').textContent = copied ? 'Copied' : 'Select text to copy';
         announcement.textContent = copied ? 'Response copied.' : 'Clipboard unavailable. Select the response text to copy it.';
@@ -183,8 +193,10 @@ for (const [id,next] of [['explore-trace','trace'],['explore-mac-intents','mac-i
   });
 }
 
+/** Combine the system reduced-motion preference with the persisted user pause choice. */
 function motionDisabled() { return media.matches || userPaused; }
 
+/** Revert previous page motion, update the pause control, and create scroll-driven animations only when supported and permitted. */
 function configureMotion() {
   motionContext?.revert();
   motionContext = undefined;
@@ -204,7 +216,9 @@ function configureMotion() {
     gsap.utils.toArray('.reveal').forEach(element => gsap.from(element,{y:24,opacity:0,duration:.85,ease:'power2.out',scrollTrigger:{trigger:element,start:'top 94%',once:true},clearProps:'transform,opacity'}));
     gsap.from('.mini-span i',{scaleX:0,duration:1.15,stagger:.16,ease:'power3.inOut',scrollTrigger:{trigger:'.trace-card',start:'top 82%',once:true},clearProps:'transform'});
     const playhead = gsap.fromTo('.timeline-playhead',{x:0,opacity:0},{x:160,opacity:.65,duration:3.6,repeat:-1,repeatDelay:1.7,ease:'none',paused:true});
-    ScrollTrigger.create({trigger:'.trace-card',start:'top bottom',end:'bottom top',onToggle:self => self.isActive ? playhead.play() : playhead.pause()});
+    ScrollTrigger.create({trigger:'.trace-card',start:'top bottom',end:'bottom top',
+      /** Play the trace playhead only while its card is active in the viewport. */
+      onToggle:self => self.isActive ? playhead.play() : playhead.pause()});
     gsap.fromTo('.source-mark',{y:8},{y:-8,duration:3,repeat:-1,yoyo:true,ease:'sine.inOut',scrollTrigger:{trigger:'.source-mark',start:'top bottom',end:'bottom top',toggleActions:'play pause play pause'}});
   });
 }

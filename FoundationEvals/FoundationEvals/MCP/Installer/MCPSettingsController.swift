@@ -6,6 +6,7 @@ struct MCPServerControl: Sendable {
     let start: @MainActor @Sendable (CodexMCPConfiguration) async throws -> Void
     let stop: @MainActor @Sendable () async throws -> Void
 
+    /// Wraps main-actor asynchronous server start and stop operations for the settings controller.
     init(
         start: @escaping @MainActor @Sendable (CodexMCPConfiguration) async throws -> Void,
         stop: @escaping @MainActor @Sendable () async throws -> Void
@@ -83,6 +84,9 @@ final class MCPSettingsController {
     private(set) var isBusy = false
     var notice: String?
 
+    /// Sets up connector dependencies and the Codex configuration directory, detects legacy-port
+    /// migration, and refreshes installation state. Existing-credential-only mode skips preference
+    /// migration and installation inspection.
     init(
         serverControl: MCPServerControl,
         userDefaults: UserDefaults = .standard,
@@ -118,6 +122,8 @@ final class MCPSettingsController {
         URL(string: "http://127.0.0.1:\(CodexMCPConfiguration.defaultPort)/mcp")!
     }
 
+    /// Starts the connector with the current credential unless another settings action is busy. Records
+    /// telemetry and exposes failures through notice instead of throwing.
     func startServer() async {
         guard !isBusy else { return }
         let diagnostic = telemetry?.begin(.mcpStart)
@@ -137,6 +143,9 @@ final class MCPSettingsController {
         }
     }
 
+    /// Writes or updates the Codex entry, clears legacy-port migration state, then starts the
+    /// connector. Reports configuration and startup outcomes separately; existing-credential-only mode
+    /// refuses configuration changes.
     func installOrUpdateCodex() async {
         guard !existingCredentialOnly else { notice = MCPSettingsAccessError.configurationReadOnly.localizedDescription; return }
         guard !isBusy else { return }
@@ -176,6 +185,9 @@ final class MCPSettingsController {
         }
     }
 
+    /// Removes the managed Codex entry, stops the connector, and deletes its stored credential in that
+    /// order. Updates notices and installation state on failure; existing-credential-only mode refuses
+    /// removal.
     func removeFromCodex() async {
         guard !existingCredentialOnly else { notice = MCPSettingsAccessError.configurationReadOnly.localizedDescription; return }
         guard !isBusy else { return }
@@ -205,11 +217,14 @@ final class MCPSettingsController {
         }
     }
 
+    /// Copies the fixed loopback endpoint to the general pasteboard and sets a confirmation notice.
     func copyEndpoint() {
         copyToPasteboard(endpoint.absoluteString)
         notice = "MCP endpoint copied."
     }
 
+    /// Copies the credential-bearing manual TOML snippet, creating a credential if needed.
+    /// Existing-credential-only mode refuses the action; credential errors become a safe notice.
     func copyManualConfiguration() async {
         guard !existingCredentialOnly else { notice = MCPSettingsAccessError.configurationReadOnly.localizedDescription; return }
         do {
@@ -220,10 +235,13 @@ final class MCPSettingsController {
         }
     }
 
+    /// Records the latest admitted connection time for display.
     func recordConnection(at date: Date = .now) {
         lastConnection = date
     }
 
+    /// Marks an active or starting connector as failed and clears its remembered configuration. Ignores
+    /// failures reported after settings have moved to another state.
     func recordServerFailure(_ error: MCPServerError) {
         guard serverState == .starting || serverState == .running else { return }
         serverState = .failed
@@ -231,6 +249,9 @@ final class MCPSettingsController {
         notice = safeDescription(for: error)
     }
 
+    /// Reads the managed block, stored credential, and file permissions to classify installation state.
+    /// Migration or inspection errors require attention; existing-credential-only mode skips
+    /// inspection.
     func refreshInstallationState() {
         guard !existingCredentialOnly else { return }
         do {
@@ -254,6 +275,9 @@ final class MCPSettingsController {
         }
     }
 
+    /// Builds the fixed-port configuration using the existing credential or loading/creating one
+    /// according to access mode. Throws when read-only startup has no credential or validation/storage
+    /// fails.
     private func currentConfiguration() throws -> CodexMCPConfiguration {
         let credential: String
         if existingCredentialOnly {
@@ -267,6 +291,8 @@ final class MCPSettingsController {
         return try CodexMCPConfiguration(port: CodexMCPConfiguration.defaultPort, credential: credential)
     }
 
+    /// Reuses a running server with identical configuration or stops it before starting a changed
+    /// configuration. Restores running state if stop fails and records failed state if start throws.
     private func startServer(using configuration: CodexMCPConfiguration) async throws {
         if serverState == .running {
             guard runningConfiguration != configuration else { return }
@@ -296,12 +322,15 @@ final class MCPSettingsController {
         configurationDirectory
     }
 
+    /// Replaces the general pasteboard contents with a plain-text value.
     private func copyToPasteboard(_ value: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(value, forType: .string)
     }
 
+    /// Returns localized descriptions for recognized connector errors and a generic message for other
+    /// failures, avoiding arbitrary error detail in settings notices.
     private func safeDescription(for error: Error) -> String {
         switch error {
         case let error as CodexMCPInstallerError:

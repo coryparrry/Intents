@@ -17,6 +17,7 @@ extension EvaluationModelConfiguration {
         )
     }
 
+    /// Resolves the requested tool-calling mode, allowing tools in automatic mode only when tools are configured.
     func toolCallingMode(hasTools: Bool) -> GenerationOptions.ToolCallingMode {
         switch customizationSettings.toolCalling {
         case .automatic: hasTools ? .allowed : .disallowed
@@ -55,6 +56,8 @@ extension EvaluationModelConfiguration {
         }
     }
 
+    /// Allocates the input ceiling after reserving response, tool-output, and optional same-model judge capacity.
+    /// An explicit shared tool reserve replaces separately computed tool reserves; the configured input cap can further reduce the returned limit.
     func contextAllocation(
         contextSize: Int,
         includesModelJudge: Bool,

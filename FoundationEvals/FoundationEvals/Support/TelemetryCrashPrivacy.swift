@@ -3,6 +3,7 @@ import CoreFoundation
 
 /// Reconstruct native error payloads instead of forwarding exception descriptions.
 enum TelemetryCrashPrivacy {
+    /// Rebuilds supported fatal-crash payloads from bounded exceptions and referenced debug images, returning nil if no exception survives.
     nonisolated static func properties(_ raw: [String: Any]) -> [String: Any]? {
         guard raw["$exception_level"] as? String == "fatal",
               let exceptions = raw["$exception_list"] as? [[String: Any]],
@@ -21,6 +22,7 @@ enum TelemetryCrashPrivacy {
         return result
     }
 
+    /// Accepts known unhandled native mechanisms, replaces free-form messages and unknown types, and retains only bounded sanitized frames.
     nonisolated private static func exception(_ raw: [String: Any]) -> [String: Any]? {
         guard let mechanism = raw["mechanism"] as? [String: Any],
               let kind = mechanism["type"] as? String,
@@ -41,6 +43,7 @@ enum TelemetryCrashPrivacy {
         return safe
     }
 
+    /// Retains validated instruction/image/symbol addresses and optional in-app status, omitting names, paths, and other frame fields.
     nonisolated private static func frame(_ raw: [String: Any]) -> [String: Any]? {
         guard let instruction = address(raw["instruction_addr"]) else { return nil }
         var safe: [String: Any] = ["instruction_addr": instruction, "platform": "apple"]
@@ -51,6 +54,7 @@ enum TelemetryCrashPrivacy {
         return safe
     }
 
+    /// Retains validated Mach-O UUID, size, load addresses, and known architecture while replacing the module filename.
     nonisolated private static func image(_ raw: [String: Any]) -> [String: Any]? {
         guard raw["type"] as? String == "macho", let load = address(raw["image_addr"]),
               let id = (raw["debug_id"] as? String).flatMap(UUID.init(uuidString:)),
@@ -65,6 +69,7 @@ enum TelemetryCrashPrivacy {
         return safe
     }
 
+    /// Normalizes a bounded hexadecimal UInt64 address to lowercase, returning nil for malformed values.
     nonisolated private static func address(_ value: Any?) -> String? {
         guard let value = value as? String, value.hasPrefix("0x"), (3...18).contains(value.count),
               value.dropFirst(2).allSatisfy({ $0.isASCII && $0.isHexDigit }),

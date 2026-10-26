@@ -2,6 +2,8 @@ import CryptoKit
 import Foundation
 
 enum EvaluationWorkspaceStatePersistence {
+    /// Loads canonical suite JSON and optionally checks its workspace identity.
+    /// Missing storage returns no suite; unreadable or mismatched bytes are backed up when possible, with a write blocker if preservation fails.
     static func loadSuite(from directory: URL, expectedSuiteID: UUID? = nil)
         -> (suite: EvaluationSuite?, notice: String?, persistenceBlocker: String?) {
         let url = directory.appending(path: "suite.json")
@@ -27,6 +29,8 @@ enum EvaluationWorkspaceStatePersistence {
     private static let suitePreservationBlocker =
         "The saved suite could not be preserved. Resolve the storage conflict and reopen the app before saving workspace changes."
 
+    /// Loads local approvals and reviews, returning empty state for missing or unreadable storage.
+    /// Optionally preserves unreadable bytes and reports a blocker when that preservation fails; missing migrated state produces a recovery notice.
     static func loadSuiteLocalState(
         from url: URL,
         preserveUnreadable: Bool = true
@@ -60,6 +64,8 @@ enum EvaluationWorkspaceStatePersistence {
         }
     }
 
+    /// Loads judge metadata or returns an empty list and recovery notice when unreadable bytes cannot be decoded.
+    /// Attempts to preserve damaged metadata before later replacement.
     static func loadJudgeConnections(
         from url: URL
     ) -> (connections: [EvaluationJudgeConnection], notice: String?) {
@@ -95,6 +101,8 @@ enum EvaluationWorkspaceStatePersistence {
         }
     }
 
+    /// Preserves original bytes in a digest-named regular backup without changing the source.
+    /// Reuses an identical nonsymlink backup; returns its filename on success or nil for unreadable/conflicting storage.
     private static func preserveUnreadableFile(at url: URL, prefix: String) -> String? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()

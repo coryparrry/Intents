@@ -13,6 +13,8 @@ public struct ProductionBaselineApproval: Codable, Sendable {
 
 extension ProductionStorage {
     // Caller holds the store transaction. Approval history is retained with exported job evidence.
+    /// Reads the last approval after validating the bounded JSONL history against the frozen job and evidence-digest format.
+    /// The caller must hold the store transaction; absent history returns `nil`.
     func readBaselineApproval(_ job: ProductionJob) throws -> ProductionBaselineApproval? {
         let file = jobDirectory(job.id).appendingPathComponent("baseline-approvals.jsonl")
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
@@ -32,6 +34,12 @@ extension ProductionStorage {
         }
         return last
     }
+    /// Appends explicit approval only for complete, eligible evidence whose job and evidence revisions still match.
+    /// - Parameters:
+    ///   - expectedJobRevision: Frozen job revision the reviewer inspected.
+    ///   - expectedEvidenceRevision: Current report evidence revision the reviewer inspected.
+    ///   - note: Nonblank review explanation of at most 4,000 UTF-8 bytes.
+    /// - Throws: Invalid/stale/ineligible evidence, full approval history, or storage errors.
     public func approveBaseline(jobID: UUID, expectedJobRevision: String,
                                 expectedEvidenceRevision: String, note: String) throws -> ProductionBaselineApproval {
         guard !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, note.utf8.count <= 4_000 else {

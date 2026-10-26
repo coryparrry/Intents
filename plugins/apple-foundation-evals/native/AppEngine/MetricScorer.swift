@@ -8,6 +8,8 @@ struct MetricScore: Equatable, Sendable {
 
 @available(macOS 27.0, *)
 enum MetricScorer {
+    /// Scores exact text after trimming surrounding whitespace, or checks a case- and diacritic-insensitive expected substring.
+    /// Blank expectations fail these modes; review and model-judge modes remain unscored for their later scoring stages.
     static func evaluate(mode: ScoringMode, expected: String, response: String) -> MetricScore {
         switch mode {
         case .review, .modelJudge:

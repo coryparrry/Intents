@@ -21,6 +21,7 @@ import {
 import { Overview } from "./overview";
 import { Cases } from "./cases";
 const roots = new Map<Element, Root>();
+/** Unmounts and removes the tracked React root for a target element when one exists. */
 export function unmountUI(target: Element) {
   const root = roots.get(target);
   if (root) {
@@ -28,6 +29,11 @@ export function unmountUI(target: Element) {
     roots.delete(target);
   }
 }
+/**
+ * Mounts or updates the requested workspace component in a root owned by the target element.
+ * Case and overview keys follow draft or project identity so their local React state resets on navigation.
+ * @param kind One of sidebar, actions, tabs, breadcrumb, overview or cases.
+ */
 export function mountUI(kind: string, target: Element, ctx: Context) {
   let root = roots.get(target);
   if (!root) {
@@ -59,6 +65,10 @@ export function mountUI(kind: string, target: Element, ctx: Context) {
     </TooltipProvider>,
   );
 }
+/**
+ * Hosts a legacy DOM-rendered dialog body inside the React dialog shell and returns it with a close method.
+ * Closing dispatches the legacy close event, removes the root and host, and lets the shell restore opener focus.
+ */
 export function libraryDialog(title: string, renderBody: (body: any) => void) {
   const opener = document.activeElement as HTMLElement | null;
   const openerLabel = opener?.getAttribute("aria-label");
@@ -67,6 +77,7 @@ export function libraryDialog(title: string, renderBody: (body: any) => void) {
   const body: any = document.createElement("div");
   body.className = "legacy-view dialog-body";
   let closed = false;
+  /** Closes the dialog once, dispatching the legacy close event before unmounting its React root and removing the host. */
   body.close = () => {
     if (closed) return;
     closed = true;

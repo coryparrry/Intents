@@ -47,6 +47,7 @@ struct EvaluationJudgeToolEvidence: Codable, Equatable, Sendable {
     var text: String?
     var unavailableReason: String? = nil
 
+    /// Returns captured judge evidence after checking its format version, availability marker, and UTF-8 size limit; throws when replay is unsafe.
     func validatedText() throws -> String? {
         guard formatVersion == 1 else {
             throw EvidenceError.unavailable("The saved judge tool evidence format is unsupported.")
@@ -58,6 +59,8 @@ struct EvaluationJudgeToolEvidence: Codable, Equatable, Sendable {
         return text
     }
 
+    /// Joins nonempty evidence sections in reference, custom-tool, and built-in-tool order.
+    /// Oversized evidence is marked unavailable rather than truncated or replaced, preserving the audit boundary.
     static func capture(reference: String?, custom: String?, builtin: String?) -> Self {
         let parts = [reference, custom, builtin].compactMap { $0 }.filter { !$0.isEmpty }
         let text = parts.isEmpty ? nil : parts.joined(separator: "\n\n")

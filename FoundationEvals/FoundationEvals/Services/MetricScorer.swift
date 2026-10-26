@@ -6,6 +6,8 @@ struct MetricScore: Equatable, Sendable {
 }
 
 enum MetricScorer {
+    /// Scores exact text after trimming, or searches required text ignoring case and diacritics.
+    /// Missing required text fails; review and model-judge modes remain unscored for later assessment.
     static func evaluate(mode: ScoringMode, expected: String, response: String) -> MetricScore {
         switch mode {
         case .review, .modelJudge:

@@ -4,6 +4,8 @@ import CoreFoundation
 extension MacIntentCatalog {
     /// Compiled metadata is a best-effort discovery index, not proof that the
     /// system runtime can invoke an action. Apple does not expose iterable definitions.
+    /// - Returns: Discovered actions bound to a captured identity of the compiled native Mac app.
+    /// - Throws: Invalid bundle, unavailable/unsupported metadata, changed build evidence, or file-read errors.
     public static func load(appURL: URL) throws -> MacIntentCatalog {
         let appURL = appURL.standardizedFileURL.resolvingSymlinksInPath()
         guard appURL.pathExtension == "app",
@@ -29,6 +31,7 @@ extension MacIntentCatalog {
         return .init(bundleIdentifier: identifier, appURL: appURL, actions: decoded.actions, productIdentity: identity)
     }
 
+    /// Parses version-one compiled action metadata, rejecting malformed actions, parameters, duplicates, or an empty catalog.
     static func decode(data: Data, bundleIdentifier: String, appURL: URL) throws -> MacIntentCatalog {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let version = root["version"] as? NSNumber, CFGetTypeID(version) != CFBooleanGetTypeID(), version == 1,
@@ -70,7 +73,9 @@ extension MacIntentCatalog {
         return .init(bundleIdentifier: bundleIdentifier, appURL: appURL, actions: actions)
     }
 
+    /// Extracts the localization key used as a metadata title when that object is present.
     private static func title(_ raw: Any?) -> String? { (raw as? [String: Any])?["key"] as? String }
+    /// Maps supported integral primitive type identifiers to scalar Swift types and labels other metadata unsupported.
     private static func typeName(_ raw: [String: Any]) -> String {
         guard raw.count == 1, let primitive = raw["primitive"] as? [String: Any],
               let wrapper = primitive["wrapper"] as? [String: Any],

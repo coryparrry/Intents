@@ -6,12 +6,15 @@ public struct ProductionCommandContext: Codable, Sendable {
     public var kind = "command"
     public var executableDigest: String
     public var settings: Data?
+    /// Freezes an executable digest and optional opaque settings into a command execution context.
     public init(executableDigest: String, settings: Data? = nil) { self.executableDigest = executableDigest; self.settings = settings }
 }
 
 public struct ProductionCommandExecutor: Sendable {
     public let executable: URL
     public let executableDigest: String
+    /// Requires an absolute executable regular file, resolves its path, and captures its digest for later identity checks.
+    /// - Throws: Invalid executable configuration or file inspection/read errors.
     public init(executable: URL) throws {
         guard executable.path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: executable.path),
               (try executable.resourceValues(forKeys: [.isRegularFileKey])).isRegularFile == true else {
@@ -20,6 +23,9 @@ public struct ProductionCommandExecutor: Sendable {
         self.executable = executable.resolvingSymlinksInPath()
         self.executableDigest = try ProductionCodec.fileDigest(self.executable)
     }
+    /// Checks the frozen executable identity and exchanges a request and response through private temporary files.
+    /// Cancellation requests child termination; output monitoring cancels children exceeding 512 KiB, and diagnostics are discarded.
+    /// - Throws: Identity mismatches, process/file errors, nonzero exit, invalid output size, or response decoding errors.
     public func execute(_ request: ProductionRequest) async throws -> ProductionResponse {
         let context = try ProductionCodec.decode(ProductionCommandContext.self, request.configuration.executionContext)
         guard context.kind == "command", context.executableDigest == executableDigest,
@@ -60,6 +66,7 @@ private final class ProductionChildProcess: @unchecked Sendable {
     let process = Process()
     private let lock = NSLock()
     private var cancelled = false
+    /// Launches the child unless cancellation already won, waits off the calling executor, and returns its termination status.
     func run() async throws -> Int32 {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
@@ -74,6 +81,7 @@ private final class ProductionChildProcess: @unchecked Sendable {
             }
         }
     }
+    /// Records cancellation, requests child termination, and schedules a kill if that process is still running one second later.
     func cancel() {
         lock.lock(); cancelled = true
         if process.isRunning { process.terminate() }; lock.unlock()

@@ -1,4 +1,5 @@
 // Standard MCP Apps host context: initialization and partial theme updates.
+/** Applies partial host theme, CSS-variable and font updates while retaining values omitted from the context. */
 export function applyHostContext(context, document) {
   if (!context || typeof context !== 'object') return;
   const root = document.documentElement;

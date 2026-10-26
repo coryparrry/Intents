@@ -40,6 +40,7 @@ struct Options {
     var endpoint = URL(string: "http://127.0.0.1:17873/mcp")!
     var credentialFile: URL?
 
+    /// Parse the check command and unique valued options, rejecting missing targets, unknown options, or invalid IDs, timeout, and endpoint values.
     init(arguments: [String]) throws {
         if arguments == ["--help"] || arguments == ["-h"] {
             print(Self.help)
@@ -112,6 +113,7 @@ struct Options {
 }
 
 enum MCPCredential {
+    /// Recognize localhost, IPv6 loopback, and literal IPv4 addresses in 127/8 without resolving hostnames.
     static func isLiteralLoopback(_ host: String) -> Bool {
         if ["localhost", "::1", "[::1]"].contains(host) { return true }
         var address = in_addr()
@@ -119,6 +121,7 @@ enum MCPCredential {
             && UInt32(bigEndian: address.s_addr) >> 24 == 127
     }
 
+    /// Read at most 4096 bytes through one nonsymlink descriptor after checking regular-file type, current ownership, and private permissions.
     static func readCredentialFile(_ file: URL) throws -> Data {
         let message = "The credential file must be owned by you, readable only by you, a regular file, and at most 4096 bytes."
         // Nonblocking open also prevents a substituted FIFO from hanging before
@@ -147,6 +150,7 @@ enum MCPCredential {
         throw CLIError.usage(message)
     }
 
+    /// Load a bounded printable token from a private file, environment, or the default connector Keychain entry; require HTTPS for remote destinations.
     static func load(for endpoint: URL, file: URL?) throws -> String {
         let host = endpoint.host?.lowercased() ?? ""
         let isLoopback = isLiteralLoopback(host)
@@ -195,6 +199,7 @@ enum MCPCredential {
 
 /// Authentication must never be forwarded to a redirected endpoint.
 final class MCPRedirectPolicy: NSObject, URLSessionTaskDelegate {
+    /// Reject every redirect so an authenticated request cannot forward its credential to a redirected destination.
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest,
@@ -209,13 +214,16 @@ final class MCPClient {
     private let session = URLSession(configuration: .ephemeral, delegate: MCPRedirectPolicy(), delegateQueue: nil)
     private var nextID = 1
 
+    /// Validate and load the credential for this endpoint before storing it for authenticated requests.
     init(endpoint: URL, credentialFile: URL?) throws {
         credential = try MCPCredential.load(for: endpoint, file: credentialFile)
         self.endpoint = endpoint
     }
 
+    /// Invalidate the ephemeral session and cancel any outstanding tasks when the client is released.
     deinit { session.invalidateAndCancel() }
 
+    /// Negotiate the supported MCP protocol using an initialize request without a protocol-version header.
     func initialize() throws {
         _ = try request(method: "initialize", params: [
             "protocolVersion": "2025-06-18",
@@ -224,6 +232,7 @@ final class MCPClient {
         ], includeVersion: false)
     }
 
+    /// Invoke a tool and return its structured content, throwing when the result is absent or the tool reports an error.
     func call(tool: String, arguments: [String: Any]) throws -> [String: Any] {
         let response = try request(method: "tools/call", params: ["name": tool, "arguments": arguments])
         guard let result = response["result"] as? [String: Any],
@@ -237,6 +246,7 @@ final class MCPClient {
         return content
     }
 
+    /// Send a sequential authenticated JSON-RPC POST, wait synchronously for the session task, and throw for transport, HTTP, JSON, or RPC errors.
     private func request(method: String, params: [String: Any], includeVersion: Bool = true) throws -> [String: Any] {
         let id = nextID
         nextID += 1
@@ -277,10 +287,12 @@ final class MCPClient {
     }
 }
 
+/// Standardize a filesystem path for repository-root matching without resolving symbolic links.
 func normalizedPath(_ value: String) -> String {
     URL(fileURLWithPath: value).standardizedFileURL.path
 }
 
+/// Resolve one project by ID, name, or standardized repository path and one suite by ID or name; reject missing, ambiguous, or malformed catalogs.
 func resolveTargets(_ content: [String: Any], projectInput: String, suiteInput: String) throws -> (String, String) {
     guard let projects = content["projects"] as? [[String: Any]] else {
         throw CLIError.protocolFailure("The app returned no project catalog.")
@@ -314,6 +326,7 @@ func resolveTargets(_ content: [String: Any], projectInput: String, suiteInput: 
     return (projectID, suiteID)
 }
 
+/// Start or resume the supplied run ID, report changed progress, and poll for its release outcome until the wait deadline; timeout leaves the app run active.
 func runCheck(_ options: Options) throws -> Int32 {
     let client = try MCPClient(endpoint: options.endpoint, credentialFile: options.credentialFile)
     try client.initialize()
@@ -355,6 +368,7 @@ func runCheck(_ options: Options) throws -> Int32 {
     throw CLIError.transport("Timed out waiting for run \(options.runID.uuidString). The run continues in the app.")
 }
 
+/// Dispatch check or help from process arguments and reject unsupported commands with usage guidance.
 func run() throws -> Int32 {
     let arguments = Array(CommandLine.arguments.dropFirst())
     guard let command = arguments.first else { throw CLIError.usage(Options.help) }

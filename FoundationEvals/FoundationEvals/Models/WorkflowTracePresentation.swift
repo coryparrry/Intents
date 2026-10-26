@@ -19,6 +19,7 @@ struct WorkflowTraceNode: Identifiable {
         return end.isFinite ? end : nil
     }
 
+    /// Uses span token metadata first, falling back to attributable sample, judge, or legacy evaluation-turn usage; otherwise nil.
     func usage(in result: EvaluationSampleResult, measured: Bool) -> EvaluationUsage? {
         if let input = metadata["inputTokens"].flatMap(Int.init), let output = metadata["outputTokens"].flatMap(Int.init) {
             return EvaluationUsage(inputTokens: input, cachedInputTokens: Int(metadata["cachedInputTokens"] ?? "0") ?? 0,
@@ -47,6 +48,7 @@ struct WorkflowTracePresentation {
     let hasMeasuredOffsets: Bool
     let extentMilliseconds: Double
 
+    /// Projects measured spans or legacy durations, adds untimed built-in tool records, and removes duplicate node identities.
     init(result: EvaluationSampleResult) {
         hasMeasuredOffsets = !(result.workflowTrace?.spans.isEmpty ?? true)
         var projected: [WorkflowTraceNode]
@@ -79,6 +81,7 @@ struct WorkflowTracePresentation {
         extentMilliseconds = max(nodes.compactMap(\.endMilliseconds).max() ?? 0, 1)
     }
 
+    /// Flattens the trace hierarchy around collapsed nodes while keeping orphaned and cyclic imports inspectable.
     func visibleRows(collapsed: Set<String>) -> [Row] {
         let knownIDs = Set(nodes.map(\.id))
         var children: [String: [WorkflowTraceNode]] = [:]
@@ -92,6 +95,7 @@ struct WorkflowTracePresentation {
         }
         var visited = Set<String>()
         var rows: [Row] = []
+        /// Visits each node once, preserving descendant structure even when an ancestor hides its rows.
         func visit(_ node: WorkflowTraceNode, depth: Int, visible: Bool) {
             guard visited.insert(node.id).inserted else { return }
             let descendants = children[node.id] ?? []
@@ -106,16 +110,19 @@ struct WorkflowTracePresentation {
         return rows
     }
 
+    /// Formats valid durations in milliseconds or seconds and uses a dash for absent or invalid measurements.
     static func duration(_ value: Double?) -> String {
         guard let value = value.flatMap(validTime) else { return "—" }
         if value >= 1_000 { return "\((value / 1_000).formatted(.number.precision(.fractionLength(2)))) s" }
         return "\(value.formatted(.number.precision(.fractionLength(value < 10 ? 1 : 0)))) ms"
     }
 
+    /// Accepts only finite, nonnegative timeline values.
     private static func validTime(_ value: Double) -> Double? {
         value.isFinite && value >= 0 ? value : nil
     }
 
+    /// Projects legacy durations and tool records without inventing start offsets or assigning tools to an unknown generation turn.
     private static func legacyNodes(_ result: EvaluationSampleResult) -> [WorkflowTraceNode] {
         var nodes = [WorkflowTraceNode(
             id: "sample", kind: .sample, title: result.caseName,

@@ -7,12 +7,17 @@ export const APP_SETUP_PAGES = [
   ['output','Structured output','Response shape & fields','schema'],['profile','Session profile','Instructions between turns','profile'],
   ['performance','Performance','Streaming & prewarming','clock']
 ];
+/** Initializes missing model configuration from legacy draft values and returns the editable configuration. */
 function appModelDefaults(draft) {
   return draft.modelConfiguration ||= { provider:'onDevice', reasoningLevel:'automatic', samplingMode:'automatic', temperatureEnabled:false, temperature:draft.temperature ?? .7, seedEnabled:false, seed:42, topK:40, probabilityThreshold:.9, maximumResponseTokens:draft.maxTokens || 1024, referenceMode:'inline', contextPolicy:'fitReferences', maximumToolCalls:2, customization:{ saveFullTranscript:true } };
 }
+/** Initializes missing tool, output, profile and performance settings on the draft. */
 function appFeatureDefaults(draft) { return draft.features ||= { tools:[], outputFields:[], outputSchemaDefinitions:[], profile:{enabled:false}, prewarm:false, streamResponse:false }; }
+/** Builds sampling controls against ordinary or prefixed configuration keys, exposing enabled overrides. */
 function appSamplingControls(ctx, config, prefix = '') {
-  const result = ctx.node('div',null,'form-stack'), key = name => prefix ? `${prefix}${name[0].toUpperCase()}${name.slice(1)}` : name;
+  const result = ctx.node('div',null,'form-stack'),
+  /** Maps a sampling-setting name to its prefixed variant for after-tool configuration. */
+  key = name => prefix ? `${prefix}${name[0].toUpperCase()}${name.slice(1)}` : name;
   result.append(appSelect(ctx,'Sampling',config,key('samplingMode'),[['automatic','Automatic'],['greedy','Greedy'],['topK','Top-K'],['probability','Random · probability']],ctx.renderMain));
   if (config[key('samplingMode')] === 'topK') result.append(appNumber(ctx,'Top-K',config,key('topK'),1,1000));
   if (config[key('samplingMode')] === 'probability') result.append(appNumber(ctx,'Probability threshold',config,key('probabilityThreshold'),.01,1,.01));
@@ -22,6 +27,7 @@ function appSamplingControls(ctx, config, prefix = '') {
   if (config[key('seedEnabled')]) result.append(appNumber(ctx,'Seed',config,key('seed'),0,Number.MAX_SAFE_INTEGER));
   return result;
 }
+/** Builds shared-reference controls that remove attachments from the draft or open the reference importer. */
 function appReferenceSection(ctx) {
   const draft = ctx.state.draft, contents = ctx.node('div',null,'disclosure-body'), references = draft.attachments ||= [];
   for (const attachment of references) {
@@ -32,6 +38,7 @@ function appReferenceSection(ctx) {
   contents.append(ctx.button('Add reference files…',ctx.addReferences,'secondary'));
   return appDisclosure(ctx,'Reference files','Optional · Add documents or images shared by every case',contents,'references');
 }
+/** Builds suite scoring controls and exposes rubric requirements only for model judging. */
 function appScoringSection(ctx) {
   const draft = ctx.state.draft;
   const scoringMode = draft.scoringMode || 'review';
@@ -41,15 +48,19 @@ function appScoringSection(ctx) {
   const section = appSection(ctx,'Scoring','Define what a good answer means for every case.',controls,'file');
   return section;
 }
+/** Initializes release policy settings and builds threshold, baseline and critical-case controls. */
 function appReleaseSection(ctx) {
   const draft = ctx.state.draft, policy = draft.releasePolicy ||= {required:false,criticalCaseIDs:[],maximumErrorCount:0,requireApprovedBaseline:false,maximumPassRateRegression:0}, contents = ctx.node('div',null,'disclosure-body');
   contents.append(appToggle(ctx,'Require release checks',policy,'required'),appNumber(ctx,'Maximum errors',policy,'maximumErrorCount',0,100),appNumber(ctx,'Maximum average latency (ms)',policy,'maximumAverageLatencyMilliseconds',0,3600000,1,true),appToggle(ctx,'Require an approved baseline',policy,'requireApprovedBaseline'),appNumber(ctx,'Maximum pass-rate regression',policy,'maximumPassRateRegression',0,1,.01));
   contents.append(ctx.node('h3','Critical cases'));
   for (const test of draft.cases) {
-    const selection = {selected:policy.criticalCaseIDs.includes(test.id)}, control = appToggle({...ctx,changed:() => { policy.criticalCaseIDs = selection.selected ? [...new Set([...policy.criticalCaseIDs,test.id])] : policy.criticalCaseIDs.filter(id => id !== test.id); ctx.changed(); }},test.name || test.id,selection,'selected'); contents.append(control);
+    const selection = {selected:policy.criticalCaseIDs.includes(test.id)}, control = appToggle({...ctx,
+    /** Synchronizes a critical-case toggle into the release policy without duplicate case identifiers. */
+    changed:() => { policy.criticalCaseIDs = selection.selected ? [...new Set([...policy.criticalCaseIDs,test.id])] : policy.criticalCaseIDs.filter(id => id !== test.id); ctx.changed(); }},test.name || test.id,selection,'selected'); contents.append(control);
   }
   return appDisclosure(ctx,'Release requirements','Pass thresholds, baseline and latency limits',contents,'release-policy');
 }
+/** Builds custom-tool, built-in vision and Spotlight settings, initializing missing nested configuration. */
 function appToolsSection(ctx) {
   const features = appFeatureDefaults(ctx.state.draft), model = appModelDefaults(ctx.state.draft), settings = model.customization ||= {saveFullTranscript:true}; features.tools ||= [];
   const controls = [appSelect(ctx,'Tool calling',settings,'toolCalling',[['automatic','Automatic'],['allowed','Allowed'],['required','Required'],['disallowed','Disallowed']]),appNumber(ctx,'Maximum tool calls',model,'maximumToolCalls',1,4)];
@@ -70,10 +81,12 @@ function appToolsSection(ctx) {
   const search = appSection(ctx,'Spotlight search','Search local indexed files and inspect the recorded tool evidence.',[appToggle(ctx,'Enable Spotlight search',spotlight,'enabled',ctx.renderMain),...(spotlight.enabled ? appSpotlightControls(ctx,spotlight) : [])],'search');
   return [section,builtins,search];
 }
+/** Builds guided-response field and reusable-definition editors against initialized output settings. */
 function appOutputSection(ctx) {
   const features = appFeatureDefaults(ctx.state.draft), model = appModelDefaults(ctx.state.draft), customization = model.customization ||= {saveFullTranscript:true}; features.outputFields ||= [];features.outputSchemaDefinitions ||= [];
   return [appSection(ctx,'Response shape','Define a guided response with typed fields.',[appSelect(ctx,'Schema in prompt',customization,'schemaPrompt',[['included','Include schema'],['automatic','Framework default'],['omitted','Omit schema']]),appToggle(ctx,'Represent nil explicitly in generated content',features,'outputRepresentNilExplicitlyInGeneratedContent'),appSchemaEditor(ctx,features.outputFields)],'schema'),appSection(ctx,'Reusable definitions','Reference named types from your output fields.',[appSchemaEditor(ctx,features.outputSchemaDefinitions,'Definitions')],'schema')];
 }
+/** Builds optional session-profile controls for instructions and generation settings after tool calls. */
 function appProfileSection(ctx) {
   const features = appFeatureDefaults(ctx.state.draft), profile = features.profile ||= {enabled:false};
   const controls = [appToggle(ctx,'Enable session profile',profile,'enabled',ctx.renderMain)];
@@ -81,16 +94,19 @@ function appProfileSection(ctx) {
   if(profile.enabled && profile.afterToolReasoningLevel==='custom')controls.push(ctx.field('Custom reasoning after a tool call',profile.afterToolCustomReasoning || '',value=>profile.afterToolCustomReasoning=value));
   return appSection(ctx,'Session profile','Change instructions and generation settings between tool calls.',controls,'profile');
 }
+/** Builds on-device generation, context-budget, repetition and reference-handling controls. */
 function appModelSection(ctx) {
   const draft=ctx.state.draft,model=appModelDefaults(draft),customization=model.customization ||= {saveFullTranscript:true};
   const controls=[appSelect(ctx,'Provider',model,'provider',[['onDevice','On device']]),appSelect(ctx,'Use case',customization,'useCase',[['general','General'],['contentTagging','Content tagging']]),appSelect(ctx,'Guardrails',customization,'guardrails',[['standard','Default'],['permissiveContentTransformations','Permissive text transformations']]),appSelect(ctx,'Reasoning',model,'reasoningLevel',[['automatic','Automatic'],['light','Light'],['moderate','Moderate'],['deep','Deep'],['custom','Custom']],ctx.renderMain),appSamplingControls(ctx,model),appNumber(ctx,'Maximum response tokens',model,'maximumResponseTokens',128,4096),appNumber(ctx,'Maximum input tokens',model,'maximumInputTokens',512,32768,1,true),appNumber(ctx,'Repetitions',draft,'repetitions',1,5),appSelect(ctx,'Reference files',model,'referenceMode',[['inline','Include in prompt'],['lookupTool','Search with a tool']]),appSelect(ctx,'Context policy',model,'contextPolicy',[['fitReferences','Fit reference content'],['requireFullInput','Require full input']])];
   if(model.reasoningLevel==='custom')controls.push(ctx.field('Custom reasoning preset',customization.customReasoning || '',value=>customization.customReasoning=value));
   return appSection(ctx,'Model & generation','Configure Apple’s on-device model and the workload.',controls,'cpu');
 }
+/** Builds streaming, prewarm and transcript-retention controls against the draft model settings. */
 function appPerformanceSection(ctx) {
   const features=appFeatureDefaults(ctx.state.draft),model=appModelDefaults(ctx.state.draft),customization=model.customization ||= {saveFullTranscript:true};
   return appSection(ctx,'Performance','Measure streaming, prewarming and session evidence.',[appToggle(ctx,'Stream responses',features,'streamResponse'),appToggle(ctx,'Prewarm session',features,'prewarm'),ctx.field('Prewarm prefix',customization.prewarmPrefix || '',value => customization.prewarmPrefix=value),appNumber(ctx,'Prewarm lead time (seconds)',customization,'prewarmLeadSeconds',0,10,.1),appToggle(ctx,'Save full session transcript',customization,'saveFullTranscript'),appSelect(ctx,'Transcript after an error',customization,'transcriptErrorPolicy',[['automatic','Framework default'],['preserve','Preserve failed request'],['revert','Revert failed request']])],'clock');
 }
+/** Builds legacy suite settings or the selected application-format setup page without converting flat suites. */
 export function renderNativeSetup(ctx) {
   if (!isAppSuiteFormat(ctx.state.draft)) {
     const draft = ctx.state.draft;
@@ -123,11 +139,16 @@ export function renderNativeSetup(ctx) {
   layout.append(nav,content);return layout;
 }
 
+/** Initializes Spotlight sources and guidance, then builds controls for enabled sources and contact identity. */
 function appSpotlightControls(ctx, config) {
-  const controls=[], attributes=(object,label)=>{
+  const controls=[],
+  /** Builds fetched-attribute preset toggles and custom names for a search source or guidance adapter. */
+  attributes=(object,label)=>{
     object.fetchedAttributes ||= {presets:[],customAttributeNames:[]};const container=ctx.node('div',null,'disclosure-body');
     const presets=['identifier','displayName','title','subject','contentDescription','textContent','keywords','contentType','path','contentURL','authorNames','recipientNames','creator','contentCreationDate','contentModificationDate','addedDate','lastUsedDate','fileSize','pageCount','duration'];
-    for(const key of presets){const checkbox=ctx.node('label',null,'toggle-control'),input=ctx.node('input');input.type='checkbox';input.checked=object.fetchedAttributes.presets.includes(key);input.onchange=()=>{object.fetchedAttributes.presets=input.checked?[...object.fetchedAttributes.presets,key]:object.fetchedAttributes.presets.filter(value=>value!==key);ctx.changed();};checkbox.append(input,ctx.node('span',key));container.append(checkbox);}container.append(ctx.field('Custom attributes (one per line)',object.fetchedAttributes.customAttributeNames.join('\n'),value=>object.fetchedAttributes.customAttributeNames=value.split('\n').filter(Boolean),true,'compact-editor'));return appDisclosure(ctx,label,'Attributes returned with search results.',container,label);
+    for(const key of presets){const checkbox=ctx.node('label',null,'toggle-control'),input=ctx.node('input');input.type='checkbox';input.checked=object.fetchedAttributes.presets.includes(key);
+    /** Adds or removes the selected fetched-attribute preset and marks the suite changed. */
+    input.onchange=()=>{object.fetchedAttributes.presets=input.checked?[...object.fetchedAttributes.presets,key]:object.fetchedAttributes.presets.filter(value=>value!==key);ctx.changed();};checkbox.append(input,ctx.node('span',key));container.append(checkbox);}container.append(ctx.field('Custom attributes (one per line)',object.fetchedAttributes.customAttributeNames.join('\n'),value=>object.fetchedAttributes.customAttributeNames=value.split('\n').filter(Boolean),true,'compact-editor'));return appDisclosure(ctx,label,'Attributes returned with search results.',container,label);
   };
   config.fileSource ||= {enabled:false,folderPath:'',maximumResults:10};config.coreSpotlightSource ||= {enabled:false,allowMail:false,maximumResults:10};config.guidance ||= {mode:'complete',focusedDomain:'documents',outputFormat:'structured'};config.contactIdentity ||= {enabled:false};config.pipeline ||= {deduplicateItems:true};
   const files=config.fileSource,index=config.coreSpotlightSource,guidance=config.guidance,identity=config.contactIdentity;

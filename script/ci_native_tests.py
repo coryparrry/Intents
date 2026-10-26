@@ -20,6 +20,7 @@ CI_EXCLUDED_UI_TESTS = {}
 
 
 def test_command(products, selection, result, iterations=1):
+    """Validate native test identifiers and iterations, select or repair the built descriptor, and construct a signing-disabled xcodebuild shard with UI timeout limits."""
     if not isinstance(selection, list) or not selection:
         raise ValueError("Native test selection must be a nonempty array")
     pattern = r"FoundationEvals(?:UI)?Tests(?:/[A-Za-z_][A-Za-z0-9_]*(?:/[A-Za-z_][A-Za-z0-9_]*)?)?"
@@ -88,6 +89,7 @@ def verify_native_selection(document, selection):
     passed = set()
 
     def visit(node):
+        """Traverse validated result dictionaries and collect passed FoundationEvalsTests identifiers decoded from result URLs."""
         if not isinstance(node, dict):
             raise ValueError("Malformed native test result node")
         if node.get("nodeType") == "Test Case" and node.get("result") == "Passed":
@@ -124,6 +126,7 @@ def run_logged(command, log):
 
 
 def main():
+    """Run the environment-selected shard with a retained log, reject skipped or absent UI passes, and validate native passes from xcresulttool output."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--products", type=Path, required=True)
     parser.add_argument("--result", type=Path, required=True)

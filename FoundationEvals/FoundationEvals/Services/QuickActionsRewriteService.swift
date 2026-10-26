@@ -23,6 +23,7 @@ enum QuickActionsPromptCatalog {
         .init(id: "tone", title: "Change tone", systemImage: "face.smiling", busyLabel: "Changing tone")
     ]
 
+    /// Returns editing instructions for the selected action, using the general clarity rewrite for an unknown action ID.
     static func instructions(for id: String) -> String {
         switch id {
         case "shorten":
@@ -40,6 +41,9 @@ enum QuickActionsPromptCatalog {
 }
 
 enum QuickActionsRewriteService {
+    /// Streams revised prompt snapshots at roughly 100-millisecond intervals and always publishes the final nonempty response.
+    /// Uses the on-device model with tools disabled; unavailability, generation failures and cancellation finish the stream with an error.
+    /// Terminating the consumer cancels the underlying generation task.
     static func stream(
         request: QuickActionsPillRequest,
         source: String

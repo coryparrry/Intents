@@ -2,6 +2,8 @@ import Foundation
 
 extension ProductionStorage {
     // Caller holds the store lock. Reconciled totals settle only the outstanding unknown attempts.
+    /// Reconstructs settled costs from attempt checkpoints and reconciled review responses for outstanding reservations.
+    /// The caller holds the store lock; the returned control value is not persisted by this read.
     func auditedCostControl(_ job: ProductionJob) throws -> ProductionControl {
         var value = try control(job)
         for (key,_) in value.costReservations {
@@ -22,6 +24,8 @@ extension ProductionStorage {
         }
         return value
     }
+    /// Reserves the configured per-attempt allowance before execution when the job has a cost ceiling.
+    /// An existing reservation is retained; admission fails when the ceiling or unknown-cost reservation limit is reached.
     func reserveCost(_ job: ProductionJob, requestID: UUID, slot: Int, attempt: Int) throws {
         guard let ceiling = job.configuration.maximumCost, let allowance = job.configuration.maximumCostPerAttempt else { return }
         try transaction {
@@ -38,6 +42,8 @@ extension ProductionStorage {
         }
     }
     // The attempt journal is published before settlement. Recovery consumes it exactly once via the reservation key.
+    /// Publishes attempt cost evidence before settling matching reservations, then clears the checkpoint after ledger persistence.
+    /// Requires an unexpired matching chunk lease and attempt number so recovery cannot settle foreign work.
     func checkpointCost(_ job: ProductionJob, index: Int, token: UUID, slot: Int, attempt: Int,
                         cost: Double?, accumulatedCost: Double, unknown: Bool) throws {
         try transaction {

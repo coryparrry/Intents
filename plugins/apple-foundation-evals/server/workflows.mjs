@@ -1,19 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import { id, nativeResult, suite } from './validation.mjs';
-import { applyAssessment, portableSuite, revision, sampleEnvelope, validateAppEvidence } from './app-format.mjs';
+import { applyAssessment, portableSuite, revision, publicRecord, sampleEnvelope, validateAppEvidence } from './app-format.mjs';
 import { health, saveSuite } from './workspace.mjs';
 import { imageInputs } from './references.mjs';
 
+/** Compares string identities case-insensitively and rejects non-string matches. */
 const equalID = (left, right) => typeof left === 'string' && typeof right === 'string' && left.toLowerCase() === right.toLowerCase();
+/** Converts native seconds since 2001 or an ISO date string to milliseconds for approval ordering. */
 const timestamp = (value) => typeof value === 'number' ? (value + 978307200) * 1000 : Date.parse(value);
-const publicRecord = ({ ownerPid, ...record }) => ({ ...record, revision: revision(record) });
+/** Rejects a supplied expected revision when the current public record no longer matches it. */
 const conflict = (record, expected) => { if (expected !== undefined && expected !== publicRecord(record).revision) throw new Error('Revision conflict: reload the current evidence before changing it'); };
+/** Rejects workflow admission while an evaluation or transient native operation is active locally. */
 const requireIdle = (app) => { if (app.active || app.transientController) throw new Error('An evaluation is already active'); };
+/** Requires an object workflow response and raises its bounded failure message when native execution reports failure. */
 const nativeValue = (value) => {
   if (!value || typeof value !== 'object') throw new Error('Invalid native workflow response');
   if (value.status === 'failed' && value.error) throw new Error(String(typeof value.error === 'object' ? value.error.message || 'Native workflow failed' : value.error).slice(0, 4096));
   return value;
 };
+/** Loads committed app-format run evidence and rejects developer, remote-provider, or remote-judge evidence for local workflows. */
 async function readRun(app, key) {
   const run = await app.readPublicRun(id(key, 'runId'));
   if (!run.appRun) throw new Error('This workflow requires saved app-format evaluation evidence');
@@ -22,9 +27,7 @@ async function readRun(app, key) {
   if (evidence.developerExecution || evidence.execution?.configuration?.provider && evidence.execution.configuration.provider !== 'onDevice' || evidence.assessments?.some((item) => item.judge?.mode === 'connection')) throw new Error('Only local on-device evaluation evidence is supported');
   return run;
 }
-async function optional(app, kind, key) {
-  try { return await app.store.read(kind, key); } catch (error) { if (/not found$/.test(error.message)) return null; throw error; }
-}
+/** Runs a workflow under an exclusive cancellable inference lease and clears transient ownership after the guardian exits. */
 async function native(app, request) {
   requireIdle(app);
   const key = randomUUID(); const controller = new AbortController();
@@ -38,28 +41,34 @@ async function native(app, request) {
     if (app.transientController === controller) app.transientController = null;
   }
 }
+/** Returns the newest unrevoked baseline approval for a suite, or null when none exists. */
 async function baselineFor(app, suiteId) {
   const approvals = (await app.store.list('baselines')).filter((item) => equalID(item.suiteId, suiteId) && !item.revokedAt);
   return approvals.sort((a, b) => timestamp(b.approvedAt) - timestamp(a.approvedAt))[0] || null;
 }
+/** Returns public experiment evidence, available paired runs, and explicit identities for any missing run records. */
 async function experimentView(app, record) {
   const runIDs = record.experiment.runIDs || [];
-  const runs = await Promise.all(runIDs.map((key) => optional(app, 'runs', id(key))));
+  const runs = await Promise.all(runIDs.map((key) => app.store.readOptional('runs', id(key))));
   return { experiment: publicRecord(record), summary: record.summary || null, runs: runs.filter(Boolean).map(publicRecord), missingRunIds: runIDs.filter((_key, index) => !runs[index]) };
 }
+/** Validates native experiment evidence against its frozen suite and produces a terminal plugin run with assessment projection and normalized dates. */
 function runRecord(raw, source) {
   validateAppEvidence(raw);
   const results = raw.results.map((item) => sampleEnvelope(item, source.cases));
   const status = raw.cancelled ? 'cancelled' : raw.terminationReason || raw.results.some((item) => item.status === 'error') ? 'failed' : 'completed';
   nativeResult({ status: status === 'completed' ? status : 'failed', results, appRun: raw }, source);
+  /** Converts native numeric Codable dates to ISO strings while leaving string timestamps for validation. */
   const date = (value) => typeof value === 'number' ? new Date((value + 978307200) * 1000).toISOString() : value;
   const startedAt = date(raw.startedAt); const finishedAt = date(raw.completedAt);
   if (!Number.isFinite(Date.parse(startedAt)) || !Number.isFinite(Date.parse(finishedAt))) throw new Error('Experiment runs require valid timestamps');
   return { id: id(raw.id), suiteId: source.id, projectId: source.projectId, suite: source, suiteRevision: source.revision || revision(source), status, startedAt, finishedAt, durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)), results: applyAssessment(raw, results), appRun: raw };
 }
+/** Captures bounded paired progress, releases native ownership, then publishes both complete runs through the experiment commit record; retains partial outputs for failed-publication recovery. */
 async function executeExperiment(app, record, source, controller, lockId) {
   let terminal; let progress = Promise.resolve();
   const [currentRunID, candidateRunID] = record.plannedRunIDs;
+  /** Queues validated variant sample progress and deduplicates identities; live-response updates stay in memory until later persistence. */
   const onEvent = (event) => {
     if (!['sample', 'liveResponse'].includes(event.event)) return;
     progress = progress.then(async () => {
@@ -85,7 +94,7 @@ async function executeExperiment(app, record, source, controller, lockId) {
     candidate.projectId = source.projectId; candidate.revision = revision(candidate);
     const currentRun = { ...runRecord(value.current, source), experimentId: record.id, publicationState: 'pending' }; const candidateRun = { ...runRecord(value.candidate, candidate), experimentId: record.id, publicationState: 'pending' };
     if (!equalID(currentRun.id, currentRunID) || !equalID(candidateRun.id, candidateRunID) || !equalID(currentRun.appRun.suiteID, source.id) || !equalID(candidateRun.appRun.suiteID, source.id)) throw new Error('Experiment run identities do not match the frozen suite');
-    if (await optional(app, 'runs', currentRun.id) || await optional(app, 'runs', candidateRun.id)) throw new Error('Experiment run identity already exists');
+    if (await app.store.readOptional('runs', currentRun.id) || await app.store.readOptional('runs', candidateRun.id)) throw new Error('Experiment run identity already exists');
     const cancelled = controller.signal.aborted || currentRun.status === 'cancelled' || candidateRun.status === 'cancelled';
     const incomplete = currentRun.status !== 'completed' || candidateRun.status !== 'completed';
     terminal = cancelled || incomplete
@@ -96,6 +105,7 @@ async function executeExperiment(app, record, source, controller, lockId) {
     terminal = { record: { ...record, status: controller.signal.aborted ? 'cancelled' : 'failed', finishedAt: new Date().toISOString(), error: error.message.slice(0, 4096) }, runs: [] };
   }
   if (app.active?.runId === lockId) app.active.finishing = true;
+  /** Retains both native outputs and the original frozen experiment in a failed record suitable for recovery. */
   const failedPublication = (error) => ({ ...terminal.record, experiment: record.experiment,
     ...(terminal.runs.length ? { partialRuns: terminal.runs.map((run) => run.appRun) } : {}),
     status: 'failed', finishedAt: new Date().toISOString(), error: `Could not save paired experiment evidence: ${error.message}` });
@@ -121,6 +131,7 @@ async function executeExperiment(app, record, source, controller, lockId) {
     throw error;
   } finally { if (app.active?.runId === lockId) app.active = null; }
 }
+/** Loads an eligible baseline and asks native release checks to evaluate completed evidence against the current suite policy. */
 async function releaseReport(app, source, run, baselineRunId) {
   const approved = await baselineFor(app, source.id);
   const baseline = baselineRunId ? await readRun(app, baselineRunId) : approved ? await readRun(app, approved.runID) : null;
@@ -131,6 +142,7 @@ async function releaseReport(app, source, run, baselineRunId) {
   const result = await native(app, { operation: 'release-check', projectID: source.projectId, suite: portableSuite(source), ...(run?.status === 'completed' ? { run: run.appRun } : {}), ...(baseline?.status === 'completed' ? { baseline: baseline.appRun } : {}), ...(approved ? { approvedBaseline: approved } : {}) });
   return { ...result, health: run ? health(run, source) : null };
 }
+/** Routes experiment, assessment, correction, baseline, analysis, and release workflows with ownership/revision checks and persisted evidence effects; returns undefined for other tools. */
 export async function workflowDispatch(app, name, args) {
   switch (name) {
     case 'eval_create_experiment': {
@@ -139,7 +151,7 @@ export async function workflowDispatch(app, name, args) {
       if (args.expectedRevision !== undefined && args.expectedRevision !== source.revision) throw new Error('Suite revision conflict: reload before freezing an experiment');
       const experiment = await native(app, { operation: 'create-experiment', suite: portableSuite(source), name: args.name, candidateInstructions: args.candidateInstructions });
       const record = { id: id(experiment.id, 'experiment id'), suiteId: source.id, projectId: source.projectId, sourceRevision: source.revision, experiment, status: 'ready', createdAt: new Date().toISOString() };
-      if (await optional(app, 'experiments', record.id)) throw new Error('Experiment identity already exists');
+      if (await app.store.readOptional('experiments', record.id)) throw new Error('Experiment identity already exists');
       await app.store.write('experiments', record);
       return experimentView(app, record);
     }
@@ -216,7 +228,7 @@ export async function workflowDispatch(app, name, args) {
       const appRun = { ...run.appRun, selectedAssessmentID: selected.id };
       const saved = { ...run, appRun, results: applyAssessment(appRun, run.results) };
       await app.store.write('runs', saved, { expectedRevision: publicRecord(run).revision });
-      return { run: publicRecord(saved), health: health(saved, await optional(app, 'suites', saved.suiteId)) };
+      return { run: publicRecord(saved), health: health(saved, await app.store.readOptional('suites', saved.suiteId)) };
     }
     case 'eval_correct_judgment': {
       requireIdle(app);
@@ -276,7 +288,7 @@ export async function workflowDispatch(app, name, args) {
       const analysis = await native(app, { operation: 'analyze-run', run: run.appRun });
       const baseline = args.baselineRunId ? await readRun(app, args.baselineRunId) : null;
       const comparison = baseline ? await native(app, { operation: 'compare-runs', current: run.appRun, baseline: baseline.appRun }) : undefined;
-      return { runId: run.id, analysis, ...(comparison ? { comparison } : {}), health: health(run, await optional(app, 'suites', run.suiteId)), revision: publicRecord(run).revision, corrections: (await app.store.list('corrections')).filter((item) => equalID(item.runID, run.id)) };
+      return { runId: run.id, analysis, ...(comparison ? { comparison } : {}), health: health(run, await app.store.readOptional('suites', run.suiteId)), revision: publicRecord(run).revision, corrections: (await app.store.list('corrections')).filter((item) => equalID(item.runID, run.id)) };
     }
     default: return undefined;
   }

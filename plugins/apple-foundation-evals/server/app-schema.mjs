@@ -1,10 +1,15 @@
 // Wire names follow the application's Codable evaluation models.
+/** Builds a string schema with character bounds; minLength defaults to allowing empty text. */
 export const text = (maxLength = 16384, minLength = 0) => ({ type: 'string', maxLength, minLength });
+/** Builds a closed object schema with explicit properties and required keys. */
 export const obj = (properties = {}, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 export const uuid = { type: 'string', format: 'uuid' };
 const boolean = { type: 'boolean' };
+/** Builds a string schema restricted to the supplied wire values. */
 const enumeration = (...values) => ({ type: 'string', enum: values });
+/** Builds an inclusive numeric range, optionally requiring integer values. */
 const number = (minimum, maximum, integer = false) => ({ type: integer ? 'integer' : 'number', minimum, maximum });
+/** Builds an item schema with a bounded array length and no minimum count. */
 const array = (items, maxItems = 100) => ({ type: 'array', items, maxItems });
 const sampling = enumeration('automatic', 'greedy', 'topK', 'probability');
 const errorPolicy = enumeration('automatic', 'preserve', 'revert');
@@ -28,6 +33,7 @@ export const SUITE_SCHEMA = { ...obj({ id: uuid, name: text(160, 1), version: te
 // The shared tool envelope also accepts legacy flat suites; native app suites have a tighter limit.
 export const APP_SUITE_SCHEMA = { ...SUITE_SCHEMA, properties: { ...SUITE_SCHEMA.properties, repetitions: number(1, 5, true) } };
 
+/** Checks the supported schema subset and throws a path-specific error. Null values are accepted for Codable optionals; root resolves recursive field references. */
 export function validateSchema(value, schema, path = 'suite', root = SUITE_SCHEMA) {
   if (value === null) return; // Codable optional fields accept explicit null.
   if (schema.$ref) schema = root.$defs.field;
@@ -48,6 +54,7 @@ export function validateSchema(value, schema, path = 'suite', root = SUITE_SCHEM
   else if (['number', 'integer'].includes(schema.type) && (typeof value !== 'number' || !Number.isFinite(value) || (schema.type === 'integer' && !Number.isInteger(value)) || value < (schema.minimum ?? -Infinity) || value > (schema.maximum ?? Infinity))) throw new Error(`${path} must be a valid ${schema.type}`);
 }
 
+/** Recursively copies a schema while relaxing minimum text lengths and item counts for incomplete editor drafts. */
 export function draftSchema(schema) { if (Array.isArray(schema)) return schema.map(draftSchema); if (!schema || typeof schema !== 'object') return schema; return Object.fromEntries(Object.entries(schema).map(([key, value]) => [key, ['minLength', 'minItems'].includes(key) ? 0 : draftSchema(value)])); }
 export const DRAFT_SUITE_SCHEMA = draftSchema(SUITE_SCHEMA);
 export const DRAFT_APP_SUITE_SCHEMA = draftSchema(APP_SUITE_SCHEMA);

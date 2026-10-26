@@ -34,6 +34,8 @@ final class ProductionWorkspaceStore {
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var refreshID = UUID()
     @ObservationIgnored private let capturedExecutor: ProductionExecutor
+    /// Opens production storage beneath root and retains the captured-output executor.
+    /// Storage initialization failure leaves storage unavailable and publishes its error on the main actor.
     init(root: URL, capturedExecutor: @escaping ProductionExecutor = ProductionStorage.capturedResponse) {
         self.capturedExecutor = capturedExecutor
         do { storage = try ProductionStorage(root: root.appendingPathComponent("ProductionEvals")) }
@@ -104,6 +106,8 @@ final class ProductionWorkspaceStore {
             if selectedJobID == id && pane == .jobs { progress = value }
         } catch { if !isClosing, runningJobID == id { self.error = error.localizedDescription } }
     }
+    /// Selects a record belonging to the current batch and returns a task loading its example and review off the main actor.
+    /// Returns nil for unavailable admission or mismatched batch identity and ignores superseded detail completions.
     @discardableResult
     func selectRecord(_ record: ProductionRecord) -> Task<Void, Never>? {
         guard !isClosing, let job = selectedJob, let storage else { return nil }
@@ -129,6 +133,8 @@ final class ProductionWorkspaceStore {
         }
     }
 
+    /// Runs a storage operation off the main actor, then delivers completed and refresh on the main actor.
+    /// Returns nil when closing or storage is absent; admitted work is tracked for shutdown and errors are published.
     @discardableResult
     func perform<T: Sendable>(_ operation: @escaping @Sendable (ProductionStorage) throws -> T,
                               completed: @escaping @MainActor (T) -> Void = { _ in }) -> Task<Void, Never>? {
@@ -142,6 +148,8 @@ final class ProductionWorkspaceStore {
             } catch { self.error = error.localizedDescription }
         }
     }
+    /// Tracks an admitted main-actor operation until completion so shutdown can drain its storage work.
+    /// Returns an empty task instead of admitting new work after closing.
     @discardableResult
     private func trackOperation(_ operation: @escaping @MainActor @Sendable () async -> Void) -> Task<Void, Never> {
         guard !isClosing else { return Task {} }
@@ -167,9 +175,13 @@ final class ProductionWorkspaceStore {
         for task in operations { await task.value }
     }
 
+    /// Schedules dataset import with version, sampling, production-data flag, and redaction confirmation passed to storage.
+    /// Completion refreshes workspace lists; failures publish through error.
     func importDataset(file: URL, name: String, version: String, sampling: ProductionSampling, productionData: Bool, confirmed: Bool) {
         perform { try $0.importDataset(from: file, name: name, version: version, sampling: sampling, productionData: productionData, redactionConfirmed: confirmed) }
     }
+    /// Snapshots draft cases into a temporary JSONL dataset and imports it through tracked storage work.
+    /// Captures the draft before dispatch and attempts temporary-file cleanup when import finishes.
     func snapshotDataset(store: EvaluationStore) {
         let suite = store.draftSuite
         perform { storage in
@@ -185,6 +197,8 @@ final class ProductionWorkspaceStore {
             return try storage.importDataset(from: file, name: suite.name, version: suite.version)
         }
     }
+    /// Freezes verified native execution setup and scoring digests into a production configuration.
+    /// Copies release gates and marks HTTP model/tool execution as potentially side-effecting; snapshot or encoding errors propagate.
     func nativeConfiguration(store: EvaluationStore) throws -> ProductionJobConfiguration {
         let context = try store.productionSnapshot(), data = try ProductionCodec.encode(context)
         struct Scoring: Codable { var mode: ScoringMode; var criteria: String; var judge: EvaluationJudgeConfiguration; var features: EvaluationFeatureConfiguration }
@@ -200,6 +214,8 @@ final class ProductionWorkspaceStore {
         configuration.gate.maximumPassRateRegression = policy.maximumPassRateRegression
         return configuration
     }
+    /// Creates a batch using frozen native setup and the supplied dataset, targets, budgets, baseline, and cohort gates.
+    /// Pass-rate inputs are percentages and budgetHours is converted to seconds; successful storage completion selects the new job.
     func createJob(store: EvaluationStore, dataset: String, name: String, repetitions: Int, passRate: Double,
                    timeout: Double, budgetHours: Double, baseline: UUID?, targets: [ProductionTarget],
                    requiredCohortKey: String, requiredCohortValue: String, cohortPassRate: Double) throws {
@@ -221,6 +237,7 @@ final class ProductionWorkspaceStore {
         guard let id = jobID ?? selectedJobID, let job = jobs.first(where: { $0.id == id }) else { return }
         perform({ try $0.createJob(name: job.name + " · repeat", datasetRevision: job.datasetRevision, configuration: job.configuration) }, completed: { self.select($0.id) })
     }
+    /// Creates and selects a captured-output review job for the supplied dataset revision.
     func createCaptured(_ dataset: ProductionDataset) {
         perform({ try $0.createCapturedJob(name: dataset.name + " · captured review", datasetRevision: dataset.revision) }, completed: { self.select($0.id) })
     }
@@ -233,6 +250,7 @@ final class ProductionWorkspaceStore {
             completed()
         })
     }
+    /// Schedules a pause change using the supplied schedule's digest as the expected revision, reporting conflicts through error.
     func setSchedulePaused(_ schedule: ProductionSchedule, paused: Bool) {
         perform { storage in
             let expectedRevision = try ProductionCodec.digest(ProductionCodec.encode(schedule))
@@ -240,6 +258,8 @@ final class ProductionWorkspaceStore {
             try storage.saveSchedule(updated, expectedRevision: expectedRevision)
         }
     }
+    /// Verifies the frozen job revision off the main actor, then admits local execution before unpausing storage.
+    /// Returns the tracked resume task and publishes admission or revision errors on the main actor.
     @discardableResult
     func resume(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool) -> Task<Void, Never> {
         trackOperation { [self] in
@@ -254,16 +274,19 @@ final class ProductionWorkspaceStore {
             } catch { self.error = error.localizedDescription }
         }
     }
+    /// Schedules baseline approval bound to the report's job and evidence revisions; does nothing without evidence revision.
     func approveBaseline(_ report: ProductionReport, note: String) {
         guard let evidence = report.evidenceRevision else { return }
         perform { try $0.approveBaseline(jobID: report.job.id, expectedJobRevision: report.job.revision,
                                        expectedEvidenceRevision: evidence, note: note) }
     }
+    /// Starts the selected production job locally and publishes admission errors, leaving unavailable selections unchanged.
     func run(store: EvaluationStore, externalDisclosureApproved: Bool) {
         guard let job = selectedJob else { return }
         do { try start(job: job, store: store, externalDisclosureApproved: externalDisclosureApproved) }
         catch { self.error = error.localizedDescription }
     }
+    /// Requests cancellation only when jobID matches the current local execution.
     func interrupt(jobID: UUID) { if jobID == runningJobID { runTask?.cancel() } }
     /// Admits and starts a matching native or captured worker; completion releases ownership before loading its final audit.
     func start(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool, resuming: Bool = false) throws {
@@ -320,6 +343,8 @@ final class ProductionWorkspaceStore {
             throw error
         }
     }
+    /// Schedules a review event for the selected record, splitting comma-separated tags and including a verified response for reconciliation.
+    /// Assignment stores an assignee; other actions use the applicable review outcome. Missing selection is a no-op.
     func appendReview(action: ProductionReviewAction, reviewer: String, assignee: String, outcome: ProductionOutcome,
                       note: String, tags: String, verifiedOutput: String, verifiedCost: Double?) {
         guard let jobID = selectedJobID, let record = selectedRecord else { return }

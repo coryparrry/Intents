@@ -88,6 +88,7 @@ enum EvaluationJudgeValidationError: Error, LocalizedError, Equatable, Sendable 
 enum EvaluationJudge {
     // Required named fields make coverage part of constrained decoding. The model
     // supplies evidence; the application owns requirement identity and ordering.
+    /// Builds required constrained assessment fields for one through four rubric requirements, throwing for unsupported criterion counts.
     static func schema(criterionCount: Int) throws -> GenerationSchema {
         guard (1...4).contains(criterionCount) else {
             throw EvaluationJudgeValidationError.invalidCriteria
@@ -114,6 +115,7 @@ enum EvaluationJudge {
         )
     }
 
+    /// Extracts one assessment per required numbered field, rejecting invalid counts or missing and undecodable assessment content.
     static func verdict(from content: GeneratedContent, criterionCount: Int) throws -> EvaluationJudgeVerdict {
         guard (1...4).contains(criterionCount) else {
             throw EvaluationJudgeValidationError.invalidCriteria
@@ -133,6 +135,8 @@ enum EvaluationJudge {
         return EvaluationJudgeVerdict(checks: checks)
     }
 
+    /// Validates rubric coverage, scores, rationale, grounded comparisons, and strict whole-response equality before aggregating a judgment.
+    /// Throws when any comparison contradicts the actual response or other judgment evidence is invalid.
     static func validate(
         verdict: EvaluationJudgeVerdict,
         criteria: [String],
@@ -149,6 +153,7 @@ enum EvaluationJudge {
         return aggregate(checks: checks)
     }
 
+    /// Orders requirement checks, uses the lowest score as the overall score, and joins numbered rationales.
     static func aggregate(checks: [EvaluationJudgeCriterionTrace]) -> EvaluationValidatedJudgment {
         let ordered = checks.sorted { $0.criterionIndex < $1.criterionIndex }
         return EvaluationValidatedJudgment(
@@ -158,6 +163,8 @@ enum EvaluationJudge {
         )
     }
 
+    /// Builds application-computed exact-comparison facts for one corrective judge attempt.
+    /// Requires otherwise grounded checks and at least one contradiction with strict response equality, throwing when no correction is justified.
     static func correctionEvidence(
         verdict: EvaluationJudgeVerdict,
         criteria: [String],
@@ -197,6 +204,7 @@ enum EvaluationJudge {
         var actualMatches: Bool
     }
 
+    /// Validates one scored, explained check per rubric requirement and grounds each exact comparison in that requirement or the full verified reference.
     private static func groundedChecks(
         verdict: EvaluationJudgeVerdict,
         criteria: [String],

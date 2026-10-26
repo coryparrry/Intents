@@ -5,6 +5,8 @@ import Darwin
 /// The installed app's existing runner can serve frozen native-suite jobs without MCP or a visible window.
 @MainActor enum ProductionNativeWorkerCommand {
     static var scratchDirectory: URL?
+    /// Creates a private worker scratch directory and optionally copies a bounded judge-connection file into it.
+    /// Throws for a missing or nonabsolute configuration argument, excessive file size or filesystem failure.
     static func prepareScratch() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("native-eval-worker-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -18,14 +20,19 @@ import Darwin
         }
         return directory
     }
+    /// Removes the worker scratch directory if available, then exits the process with the supplied status.
     static func finish(_ code: Int32) -> Never {
         if let scratchDirectory { try? FileManager.default.removeItem(at: scratchDirectory) }
         exit(code)
     }
     static var isRequested: Bool { ProcessInfo.processInfo.arguments.contains("--production-worker-store") }
+    /// Runs eligible frozen native jobs from command-line storage, optionally polling schedules until cancellation.
+    /// Honors job controls and releases execution ownership; a selected job prints its report and exits with its outcome code.
+    /// Fatal setup or selected-job failures are written to stderr and exit with status 30.
     static func run(store: EvaluationStore) async {
         do {
             let arguments = ProcessInfo.processInfo.arguments
+            /// Reads the value following a required command-line flag and rejects a missing value or another flag.
             func value(_ flag: String) throws -> String {
                 guard let index = arguments.firstIndex(of: flag), arguments.indices.contains(index+1), !arguments[index+1].hasPrefix("--") else {
                     throw ProductionFailure.invalid("Missing \(flag)")

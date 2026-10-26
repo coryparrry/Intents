@@ -27,6 +27,7 @@ enum WorkspaceStyle {
     static let pageMotion: Animation = .smooth(duration: 0.35)
     static let stateMotion: Animation = .snappy(duration: 0.28)
 
+    /// Creates an appearance-aware color that resolves to the supplied light or dark RGB components.
     private static func adaptive(light: (CGFloat, CGFloat, CGFloat), dark: (CGFloat, CGFloat, CGFloat)) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             let rgb = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
@@ -36,6 +37,7 @@ enum WorkspaceStyle {
 }
 
 extension View {
+    /// Clips content to a rounded workspace surface and adds its noninteractive border.
     func workspaceSurface(radius: CGFloat = WorkspaceStyle.panelRadius) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return clipShape(shape)
@@ -43,11 +45,7 @@ extension View {
             .overlay { shape.strokeBorder(WorkspaceStyle.border, lineWidth: 1).allowsHitTesting(false) }
     }
 
-    /// Liquid Glass for controls that float above content, never for the content itself.
-    func workspaceGlass(in shape: some Shape = Capsule(), interactive: Bool = false) -> some View {
-        glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
-    }
-
+    /// Adds a rounded recessed background using the workspace inset color.
     func workspaceInset(radius: CGFloat = WorkspaceStyle.controlRadius) -> some View {
         background(WorkspaceStyle.inset, in: .rect(cornerRadius: radius, style: .continuous))
     }
@@ -102,6 +100,7 @@ struct WorkspacePill: View {
     let symbol: String?
     let color: Color
 
+    /// Creates a colored status badge with an optional symbol.
     init(_ title: String, symbol: String? = nil, color: Color) {
         self.title = title
         self.symbol = symbol
@@ -143,6 +142,7 @@ struct WorkspaceMetaLabel: View {
     let text: String
     let symbol: String
 
+    /// Creates a text-and-symbol metadata item.
     init(_ text: String, symbol: String) {
         self.text = text
         self.symbol = symbol
@@ -162,6 +162,7 @@ struct WorkspaceFlowLayout: Layout {
     var spacing: CGFloat = 12
     var lineSpacing: CGFloat = 6
 
+    /// Measures wrapped rows at the proposed width, including spacing between rows.
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
         let width = rows.map(\.width).max() ?? 0
@@ -169,6 +170,7 @@ struct WorkspaceFlowLayout: Layout {
         return CGSize(width: width, height: height)
     }
 
+    /// Places items in wrapped rows, vertically centering each item within its row.
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var y = bounds.minY
         for row in arrange(width: bounds.width, subviews: subviews) {
@@ -188,6 +190,7 @@ struct WorkspaceFlowLayout: Layout {
         var height: CGFloat = 0
     }
 
+    /// Groups ideal-sized subviews into rows without splitting an item, wrapping when the next item exceeds the width.
     private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
         var rows: [Row] = []
         var current = Row()
@@ -213,6 +216,7 @@ struct WorkspacePageHeader<Accessory: View>: View {
     let subtitle: String?
     @ViewBuilder let accessory: Accessory
 
+    /// Creates a page header with optional eyebrow and subtitle, evaluating its accessory builder once.
     init(_ title: String, eyebrow: String? = nil, subtitle: String? = nil, @ViewBuilder accessory: () -> Accessory) {
         self.title = title
         self.eyebrow = eyebrow
@@ -242,6 +246,7 @@ struct WorkspacePageHeader<Accessory: View>: View {
 }
 
 extension WorkspacePageHeader where Accessory == EmptyView {
+    /// Creates a page header without an accessory view.
     init(_ title: String, eyebrow: String? = nil, subtitle: String? = nil) {
         self.init(title, eyebrow: eyebrow, subtitle: subtitle) { EmptyView() }
     }
@@ -253,6 +258,7 @@ struct WorkspaceSectionTitle<Accessory: View>: View {
     let count: Int?
     @ViewBuilder let accessory: Accessory
 
+    /// Creates a section title with an optional count, evaluating its accessory builder once.
     init(_ title: String, count: Int? = nil, @ViewBuilder accessory: () -> Accessory) {
         self.title = title
         self.count = count
@@ -273,6 +279,7 @@ struct WorkspaceSectionTitle<Accessory: View>: View {
 }
 
 extension WorkspaceSectionTitle where Accessory == EmptyView {
+    /// Creates a section title without an accessory view.
     init(_ title: String, count: Int? = nil) {
         self.init(title, count: count) { EmptyView() }
     }
@@ -309,6 +316,7 @@ struct WorkspacePanelHeader<Accessory: View>: View {
     let count: Int?
     @ViewBuilder let accessory: Accessory
 
+    /// Creates a panel header with an optional count, evaluating its accessory builder once.
     init(_ title: String, count: Int? = nil, @ViewBuilder accessory: () -> Accessory) {
         self.title = title
         self.count = count
@@ -331,6 +339,7 @@ struct WorkspacePanelHeader<Accessory: View>: View {
 }
 
 extension WorkspacePanelHeader where Accessory == EmptyView {
+    /// Creates a panel header without an accessory view.
     init(_ title: String, count: Int? = nil) {
         self.init(title, count: count) { EmptyView() }
     }
@@ -388,6 +397,7 @@ struct WorkspaceNotice<Accessory: View>: View {
     let message: String
     @ViewBuilder let accessory: Accessory
 
+    /// Creates a notice of the supplied kind with its message and optional title, evaluating the accessory builder once.
     init(_ kind: Kind, title: String? = nil, message: String, @ViewBuilder accessory: () -> Accessory) {
         self.kind = kind
         self.title = title
@@ -420,6 +430,7 @@ struct WorkspaceNotice<Accessory: View>: View {
 }
 
 extension WorkspaceNotice where Accessory == EmptyView {
+    /// Creates a notice without an accessory view.
     init(_ kind: Kind, title: String? = nil, message: String) {
         self.init(kind, title: title, message: message) { EmptyView() }
     }
@@ -547,6 +558,7 @@ struct WorkspaceEmptyState: View {
 }
 
 struct WorkspaceRowButtonStyle: ButtonStyle {
+    /// Wraps the button configuration in the workspace row interaction treatment.
     func makeBody(configuration: Configuration) -> some View {
         WorkspaceRowButton(configuration: configuration)
     }

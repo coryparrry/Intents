@@ -67,10 +67,12 @@ print(String(decoding: data, as: UTF8.self))
 
 
 def adequate(viewport):
+    """Check measured desktop width and height against the 1600 by 1000 UI hit-testing minimum."""
     return viewport['width'] >= MIN_WIDTH and viewport['height'] >= MIN_HEIGHT
 
 
 def select_mode(modes):
+    """Choose the smallest adequate logical display mode, breaking ties by dimensions, backing pixels, and mode ID."""
     eligible = [mode for mode in modes if adequate(mode)]
     return min(eligible, key=lambda mode: (
         mode['width'] * mode['height'], mode['width'], mode['height'],
@@ -80,10 +82,12 @@ def select_mode(modes):
 
 class NativeDisplay:
     def __init__(self, directory):
+        """Write the CoreGraphics Swift probe into the caller-owned temporary directory for later subprocess execution."""
         self.source = Path(directory) / 'display.swift'
         self.source.write_text(NATIVE_SOURCE)
 
     def _run(self, *arguments):
+        """Execute the Swift display probe with a 30-second timeout and decode JSON, raising RuntimeError on nonzero probe status."""
         result = subprocess.run(
             ['xcrun', 'swift', str(self.source), *arguments],
             capture_output=True, text=True, timeout=30,
@@ -93,13 +97,16 @@ class NativeDisplay:
         return json.loads(result.stdout)
 
     def probe(self):
+        """Read current logical display bounds and available modes without requesting a display change."""
         return self._run()
 
     def apply(self, mode):
+        """Request a session-scoped CoreGraphics mode by ID and return the probe result after the helper settles."""
         return self._run(str(mode['id']))
 
 
 def prepare_display(display, tool=VMWARE_TOOL, run=subprocess.run, sleep=time.sleep):
+    """Measure and prepare an adequate desktop using CoreGraphics then an installed VMware tool, raising if a fresh probe still fails the minimum."""
     before = display.probe()
     if adequate(before):
         return {'method': 'already adequate', 'before': before, 'after': before}
@@ -133,6 +140,7 @@ def prepare_display(display, tool=VMWARE_TOOL, run=subprocess.run, sleep=time.sl
 
 
 def main():
+    """Restrict display changes to macOS Actions, support local inspection, and clean up the temporary Swift probe after printing JSON evidence."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inspect', action='store_true', help='Read display bounds and modes without changing them.')
     args = parser.parse_args()

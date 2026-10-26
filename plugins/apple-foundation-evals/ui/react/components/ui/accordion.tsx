@@ -5,6 +5,7 @@ import { cn } from "cn"
 import { Accordion as AccordionPrimitive } from "radix-ui"
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 
+/** Composes Radix accordion state and keyboard behavior in a full-width vertical layout. */
 function Accordion({
   className,
   ...props
@@ -18,6 +19,7 @@ function Accordion({
   )
 }
 
+/** Groups a trigger and collapsible panel, separating adjacent items with a border. */
 function AccordionItem({
   className,
   ...props
@@ -31,6 +33,7 @@ function AccordionItem({
   )
 }
 
+/** Renders a keyboard-accessible heading trigger with icons that follow its expanded state. */
 function AccordionTrigger({
   className,
   children,
@@ -54,6 +57,7 @@ function AccordionTrigger({
   )
 }
 
+/** Animates the Radix panel while applying caller classes to its padded inner content. */
 function AccordionContent({
   className,
   children,

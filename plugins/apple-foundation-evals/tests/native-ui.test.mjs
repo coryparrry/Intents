@@ -3,7 +3,34 @@ import assert from 'node:assert/strict';
 import { createDraftAutosave } from '../ui/autosave.js';
 import { caseTitle,resultTitle } from '../ui/presentation.js';
 import { nativeScore } from '../ui/native-results.js';
-import { canKeepRevision,promptRewriteRequest,watchPromptPreview } from '../ui/workflows.js';
+import { nativeRewritePrompt,promptRewriteRequest,watchPromptPreview } from '../ui/workflows.js';
+import { newAppSuite } from '../ui/native-suite.js';
+
+/** Opens the real writing workflow around a delayed model response and records its visible actions and draft effects. */
+async function rewriteFixture(t) {
+ const original = { id: 'case', prompt: 'Only JSON' }, owner = { id: 'suite', cases: [original] };
+ const state = { draft: owner }, buttons = new Map(), calls = [];
+ let complete, body, changes = 0, renders = 0;
+ const response = new Promise(resolve => { complete = resolve; });
+ /** Supplies DOM-style content and close events without mounting the unrelated workspace shell. */
+ function element(tag, text = '') {
+  const node = new EventTarget();
+  Object.assign(node, { tag, textContent: text, children: [], value: '', append(...children) { this.children.push(...children); }, setAttribute() {}, close() { this.closed = true; this.dispatchEvent(new Event('close')); } });
+  return node;
+ }
+ const ctx = { state, node: element, newSuite: newAppSuite, active: () => false,
+  dialog(_title, render) { body = element('dialog'); render(body); },
+  button(text, action, _style, disabled) { const node = element('button', text); Object.assign(node, { action, disabled }); buttons.set(text, node); return node; },
+  call(name, args) { calls.push({ name, args }); return name === 'eval_preview_response' ? response : Promise.resolve({}); },
+  changed() { changes++; }, renderMain() { renders++; },
+ };
+ await nativeRewritePrompt(ctx, original, 'grammar');
+ const pending = buttons.get('Preview').action();
+ t.after(async () => { complete({ response: 'Revised JSON' }); await pending; body.close(); });
+ return { state, owner, original, buttons, body, calls, effects: () => ({ changes, renders }),
+  async finish() { complete({ response: '  Revised JSON  ' }); await pending; },
+ };
+}
 test('autosave serializes snapshots and retains typing during an in-flight save',async()=>{
  const draft={id:'suite',name:'first'},saved=[],resolvers=[],states=[];
  const queue=createDraftAutosave({read:()=>draft,save:snapshot=>{saved.push(snapshot);return new Promise(resolve=>resolvers.push(resolve));},applied:(current,response)=>{current.revision=response.revision;},status:status=>states.push(status),error:error=>{throw error;},delay:10000});
@@ -17,9 +44,35 @@ test('display retains named cases despite native uppercase UUIDs and app scoring
  const id='6AA53269-2571-4005-B40D-25BC14D518FD',run={suite:{cases:[{id:id.toLowerCase(),name:'Keep preference'}]}};
  assert.equal(caseTitle({id,name:'Latest preference wins'}),'Latest preference wins');assert.equal(resultTitle(run,{caseId:id}),'Keep preference');assert.equal(resultTitle(run,{caseId:id,appSample:{caseName:'Original case name'}}),'Original case name');assert.equal(nativeScore({score:3,scoreScale:'appRubric'}),'3/4');assert.equal(nativeScore({score:1}),'1');
 });
-test('writing tools preserve app instructions and reject changed source on Keep',()=>{
- assert.match(promptRewriteRequest('Only JSON','grammar'),/without changing its requirements or meaning/);assert.match(promptRewriteRequest('Only JSON','prompt','Keep the keys'),/Keep the keys\n\nOriginal evaluation prompt:\nOnly JSON$/);assert.equal(canKeepRevision('new','old'),false);assert.equal(canKeepRevision('old','old'),true);
+test('writing tools preserve app instructions and keep a revision on its original case',async t=>{
+ assert.match(promptRewriteRequest('Only JSON','grammar'),/without changing its requirements or meaning/);assert.match(promptRewriteRequest('Only JSON','prompt','Keep the keys'),/Keep the keys\n\nOriginal evaluation prompt:\nOnly JSON$/);
+ const f = await rewriteFixture(t);
+ assert.equal(f.buttons.get('Keep').disabled, true);
+ await f.finish();
+ assert.equal(f.buttons.get('Keep').disabled, false);
+ f.buttons.get('Keep').action();
+ assert.equal(f.original.prompt, 'Revised JSON');
+ assert.deepEqual(f.effects(), { changes: 1, renders: 1 });
+ assert.equal(f.body.closed, true);
+ assert.equal(f.calls[0].args.suite.features.streamResponse, true);
 });
+
+for (const change of ['suite object', 'case object', 'suite identity', 'prompt text', 'prompt type']) {
+ test(`writing revision rejects changed ${change} while the model response is pending`, async t => {
+  const f = await rewriteFixture(t);
+  if (change === 'suite object') f.state.draft = { ...f.owner };
+  else if (change === 'case object') f.owner.cases = [{ ...f.original }];
+  else if (change === 'suite identity') f.owner.id = 'another-suite';
+  else if (change === 'prompt text') f.original.prompt = 'New user edit';
+  else f.original.prompt = new String(f.original.prompt);
+  const prompt = f.original.prompt;
+  await f.finish();
+  assert.throws(() => f.buttons.get('Keep').action(), /prompt changed/);
+  assert.equal(f.original.prompt, prompt);
+  assert.deepEqual(f.effects(), { changes: 0, renders: 0 });
+  assert.equal(f.body.closed, undefined);
+ });
+}
 test('native app sample envelope and full Apple transcript document retain readable evidence',async()=>{
  const {transcriptEntries}=await import('../ui/presentation.js');
  const result={caseId:'case',score:4,trace:{appSample:{caseName:'Native case'},transcript:[{type:'FoundationModels.Transcript',transcript:{entries:[{role:'user',contents:[{text:'Only apple'}]},{role:'response',contents:[{text:'apple'}]}]}}]}};

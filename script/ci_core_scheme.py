@@ -7,6 +7,7 @@ SCHEMES = Path("FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes
 
 
 def create_core_scheme(source, destination):
+    """Remove exactly one UI testable and write the CI scheme, raising ValueError if expected UI or retained core targets are absent."""
     tree = ET.parse(source)
     testables = tree.find("TestAction/Testables")
     if testables is None:

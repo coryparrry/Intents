@@ -2,6 +2,7 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { formatOutput } from "./format-output.mjs";
 
+/** Collect bundled dependency licenses and recorded shadcn provenance, then write normalized UI notices; propagate missing or invalid metadata errors. */
 export async function writeUILicenses(root, result) {
   const directories = new Set([
     "node_modules/tw-animate-css",

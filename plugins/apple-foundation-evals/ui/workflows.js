@@ -1,15 +1,25 @@
 // Native evaluation workflows share the same frozen suite and evidence contracts.
+/** Builds the model request for a writing-tool action, including a custom editing request when supplied. */
 export function promptRewriteRequest(source,action,editingRequest='') {
   const instructions={shorten:'Rewrite the evaluation prompt below to say the same thing in fewer words. Preserve every requirement, constraint, and expected output detail. Return only the revised prompt.',tone:'Rewrite the evaluation prompt below with a clear, direct tone while preserving every requirement, constraint, and expected output detail. Return only the revised prompt.',grammar:'Fix the spelling, grammar, and punctuation of the evaluation prompt below without changing its requirements or meaning. Return only the revised prompt.',prompt:'Revise the evaluation prompt below according to the editing request. Preserve every requirement that the request does not ask to change. Return only the revised prompt.',rewrite:'Rewrite the evaluation prompt below for clarity and precision. Preserve every requirement, constraint, and expected output detail. Return only the revised prompt.'};
   return `${instructions[action] || instructions.rewrite}\n\n${editingRequest ? editingRequest+'\n\n' : ''}Original evaluation prompt:\n${source}`;
 }
-export function canKeepRevision(current,original) { return current===original; }
+/**
+ * Polls one preview without overlapping reads and forwards live text only for its matching preview identifier.
+ * Read failures are ignored; finishing only stops polling, while closing also asks the caller to cancel the preview.
+ */
 export function watchPromptPreview({previewId,readStatus,cancel,onResponse,schedule=setInterval,unschedule=clearInterval}) {
   let stopped=false,polling=false;
+  /** Reads preview status once and forwards matching live text unless stopped, allowing a later poll after read failure. */
   const poll=async()=>{if(stopped || polling)return;polling=true;try{const {preview}=await readStatus();const text=typeof preview?.liveResponse==='string'?preview.liveResponse:preview?.liveResponse?.text;if(!stopped && preview?.id===previewId && typeof text==='string')onResponse(text);}catch{}finally{polling=false;}};
   const timer=schedule(poll,300);
-  return {poll,finish(){stopped=true;unschedule(timer);},close(){if(stopped)return Promise.resolve();stopped=true;unschedule(timer);return cancel(previewId);}};
+  return {poll,
+  /** Stops preview polling after completion without issuing a cancellation. */
+  finish(){stopped=true;unschedule(timer);},
+  /** Stops preview polling and cancels its identifier once, returning the cancellation result. */
+  close(){if(stopped)return Promise.resolve();stopped=true;unschedule(timer);return cancel(previewId);}};
 }
+/** Opens a streamed writing preview that can be kept only while its original suite, case and prompt still match. */
 export async function nativeRewritePrompt(ctx,test,action) {
   const original=test.prompt,owner=ctx.state.draft,suiteId=owner.id;
   ctx.dialog('Writing tools',el=>{
@@ -17,11 +27,17 @@ export async function nativeRewritePrompt(ctx,test,action) {
     el.addEventListener('close',()=>{closed=true;watcher?.close().catch(()=>{});});
     const request=ctx.node('textarea');request.setAttribute('aria-label','Editing request');request.placeholder='Describe how to revise this prompt.';request.hidden=action!=='prompt';
     const preview=ctx.node('pre','Choose Preview to generate a revision.','content-well'),actions=ctx.node('div',null,'actions');
-    const keep=ctx.button('Keep',()=>{if(ctx.state.draft!==owner || !owner.cases.includes(test) || ctx.state.draft?.id!==suiteId || !canKeepRevision(test.prompt,original))throw Error('The prompt changed while this revision was being generated. Generate a new revision before keeping it.');test.prompt=preview.textContent;ctx.changed();ctx.renderMain();el.close();},'primary',true);
+    const keep=ctx.button('Keep',()=>{if(ctx.state.draft!==owner || !owner.cases.includes(test) || ctx.state.draft?.id!==suiteId || test.prompt!==original)throw Error('The prompt changed while this revision was being generated. Generate a new revision before keeping it.');test.prompt=preview.textContent;ctx.changed();ctx.renderMain();el.close();},'primary',true);
     const generate=ctx.button('Preview',async()=>{
       generate.disabled=true;keep.disabled=true;preview.textContent='Revising with Apple Foundation Models…';
       const previewId=crypto.randomUUID();
-      watcher=watchPromptPreview({previewId,readStatus:()=>ctx.call('eval_preview_status'),cancel:id=>ctx.call('eval_cancel_preview',{previewId:id}),onResponse:text=>{if(text)preview.textContent=text;}});
+      watcher=watchPromptPreview({previewId,
+      /** Reads the current preview status through the workspace tool transport. */
+      readStatus:()=>ctx.call('eval_preview_status'),
+      /** Cancels the preview identified by the watcher through the workspace tool transport. */
+      cancel:id=>ctx.call('eval_cancel_preview',{previewId:id}),
+      /** Replaces preview text when a nonempty live response is received. */
+      onResponse:text=>{if(text)preview.textContent=text;}});
       try {
         const suite=ctx.newSuite(ctx.state.projectId);suite.instructions='You revise test-case prompts for an evaluation workbench. Return only the revised prompt text, with no preamble or explanation.';suite.scoringMode='review';suite.features.streamResponse=true;suite.modelConfiguration.maximumResponseTokens=1024;suite.modelConfiguration.customization.toolCalling='disallowed';
         const result=await ctx.call('eval_preview_response',{suite,prompt:promptRewriteRequest(original,action,request.value),previewId});
@@ -33,6 +49,7 @@ export async function nativeRewritePrompt(ctx,test,action) {
     actions.append(generate,keep,ctx.button('Discard',()=>el.close(),'secondary'));el.append(request,preview,actions);
   });
 }
+/** Opens an instruction comparison dialog and creates an experiment only after saving its still-selected draft. */
 export function createInstructionExperiment(ctx) {
   const owner = ctx.state.draft;
   ctx.dialog('Compare instructions', el => {
@@ -51,9 +68,11 @@ export function createInstructionExperiment(ctx) {
       }, 'primary'));
   });
 }
+/** Renders experiment status, summary and controls while guarding response application with suite and experiment ownership. */
 export function renderExperiment(ctx,parent) {
   const record=ctx.state.experiment;if(!record)return;
   const owner=ctx.state.draft;
+  /** Checks that an experiment response still owns the original draft, record selection and request scope. */
   const current=request=>ctx.scope.current(request) && ctx.state.draft===owner && ctx.state.experiment?.id===record.id;const panel=ctx.node('section',null,'surface experiment-panel');panel.append(ctx.panelHeader(record.name || record.experiment?.name || 'Instruction experiment'));
   const body=ctx.node('div',null,'panel-content');body.append(ctx.node('p',`Status: ${record.status}`,'hint'));const decisionLabels={keepCurrent:'Keep current',adoptCandidate:'Adopt candidate',collectMoreEvidence:'Collect more evidence',inconclusive:'Inconclusive'};if(record.experiment?.decision)body.append(ctx.node('p','Decision: '+(decisionLabels[record.experiment.decision] || record.experiment.decision),'hint'));
   if(!['completed','running'].includes(record.status))body.append(ctx.button('Run experiment',async()=>{const request=ctx.scope.capture('experiment-selection');await ctx.flush();if(!current(request))return;const result=await ctx.call('eval_run_experiment',{experimentId:record.id});ctx.trackExperiment(result.experiment);if(!current(request))return;ctx.state.experiment=result.experiment;ctx.state.experimentSummary=result.summary;await ctx.refresh();if(current(request))ctx.renderMain();},'primary',ctx.active()));
@@ -62,6 +81,10 @@ export function renderExperiment(ctx,parent) {
   if(ctx.state.experimentSummary){const summary=ctx.state.experimentSummary,metrics=ctx.node('div',null,'summary-cells');for(const [label,value] of [['Improved cases',summary.improvedCaseIDs.length],['Regressed cases',summary.regressedCaseIDs.length],['Case coverage',summary.distinctCaseCoverage],['Repetitions',summary.repetitionsPerCase],['Current median latency',ctx.duration(summary.currentMedianLatencyMilliseconds)],['Candidate median latency',ctx.duration(summary.candidateMedianLatencyMilliseconds)]])metrics.append(ctx.metric(label,value));body.append(metrics,ctx.node('p',summary.explanation,'hint'));const table=ctx.node('table',null,'data-table');for(const [label,ids] of [['Improved',summary.improvedCaseIDs],['Regressed',summary.regressedCaseIDs],['Unchanged',summary.unchangedCaseIDs]]){const row=ctx.node('tr');row.append(ctx.node('th',label),ctx.node('td',ids.map(id=>ctx.state.draft.cases.find(item=>item.id.toLowerCase()===id.toLowerCase())?.name || id).join(', ') || 'None'));table.append(row);}body.append(table);if(summary.confidenceInterval)body.append(ctx.node('p','Confidence interval: '+JSON.stringify(summary.confidenceInterval),'hint'));}
   if(record.status==='completed'){const decisions=ctx.node('div',null,'actions');for(const [decision,label] of [['keepCurrent','Keep current'],['adoptCandidate','Adopt candidate'],['collectMoreEvidence','More evidence'],['inconclusive','Inconclusive']])decisions.append(ctx.button(label,async()=>{const request=ctx.scope.capture('experiment-selection');if(!current(request))return;const result=await ctx.mutateSuite(()=>ctx.call('eval_decide_experiment',{experimentId:record.id,decision,expectedRevision:record.revision}),owner);if(!result || !current(request))return;ctx.trackExperiment(result.experiment);ctx.state.experiment=result.experiment;await ctx.refresh();if(current(request))ctx.render();},decision==='adoptCandidate'?'primary':'secondary'));body.append(decisions);}panel.append(body);parent.append(panel);
 }
+/**
+ * Opens a correction dialog tied to the selected assessment sample and saved run revision.
+ * Missing assessment evidence is rejected before opening; submission rechecks ownership and preserves the original judgment.
+ */
 export function nativeCorrectJudgment(ctx,run,result) {
   const sample=result.appSample || result.trace?.appSample;
   if(!sample?.id)throw Error('This older result has no application sample identity.');
@@ -76,6 +99,7 @@ export function nativeCorrectJudgment(ctx,run,result) {
   if(!statuses.includes(assessed.status))throw Error('The selected assessment outcome is unavailable. Reload the run before correcting it.');
   const target={runId:run.id,sampleId:sample.id,assessmentId:assessment.id,expectedRevision:run.revision};
   const owner=ctx.scope.capture();
+  /** Checks that the correction still owns the selected run and the exact revision captured by the dialog. */
   const current=()=>ctx.scope.current(owner) && ctx.state.run?.id===target.runId && ctx.state.run?.revision===target.expectedRevision;
   ctx.dialog('Human correction',el=>{
     const status=ctx.node('select');status.setAttribute('aria-label','Corrected outcome');
@@ -94,10 +118,13 @@ export function nativeCorrectJudgment(ctx,run,result) {
     },'primary'));
   });
 }
+/** Opens baseline approval for the run and selected assessment, flushing draft saves before the approval request. */
 export async function nativeApproveBaseline(ctx,run) {
   ctx.dialog('Approve baseline',el=>{const note=ctx.node('textarea');note.setAttribute('aria-label','Baseline note');el.append(ctx.node('p','Approval is tied to this completed run, its selected assessment, saved suite revision and scoring contract.','hint'),note,ctx.button('Approve baseline',async()=>{const request=ctx.scope.capture();await ctx.flush();if(!ctx.scope.current(request))return;await ctx.call('eval_approve_baseline',{runId:run.id,...run.appRun?.selectedAssessmentID?{assessmentId:run.appRun.selectedAssessmentID}:{},note:note.value});el.close();if(!ctx.scope.current(request))return;ctx.notice('Baseline approved for this suite.');ctx.renderMain();},'primary'));});
 }
+/** Loads a release report and opens it only if the same run view still owns the request. */
 export async function nativeReleaseReport(ctx,run) {const request=ctx.scope.capture();const result=await ctx.call('eval_release_report',{runId:run.id});if(!ctx.scope.current(request) || ctx.state.run?.id!==run.id)return;ctx.dialog('Release report',el=>el.append(ctx.node('pre',result.markdown || JSON.stringify(result.report,null,2),'content-well')));}
+/** Loads run analysis and displays recorded coverage, usage, comparison and corrections only for the current run view. */
 export async function nativeAnalyzeRun(ctx,run) {
  const request=ctx.scope.capture();
  const result=await ctx.call('eval_analyze_run',{runId:run.id}),analysis=result.analysis;

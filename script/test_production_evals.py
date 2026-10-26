@@ -14,18 +14,21 @@ assertions = 0
 
 
 def check(condition, message):
+    """Assert one CLI integration expectation and increment the shared assertion count after success."""
     global assertions
     assert condition, message
     assertions += 1
 
 
 def call(command, *arguments, expected=0):
+    """Run the CLI against the isolated fixture store with a 30-second timeout, assert the expected exit status, and decode nonempty JSON output."""
     result = subprocess.run([str(binary), command, '--storage', str(store), *map(str, arguments)], capture_output=True, text=True, timeout=30)
     check(result.returncode == expected, f'{command}: exit {result.returncode}, expected {expected}; {result.stderr}')
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
 def check_worker_limit_case(name, first_count, cost_cap=None, explicit_job=False):
+    """Create counted executor and dataset fixtures, run bounded cross-job work, and assert committed outputs and process invocations under optional budget failures."""
     counter = root / f'{name}-calls.jsonl'
     program = root / f'{name}-worker.py'
     program.write_text('#!/usr/bin/python3\nimport json,sys\n'
@@ -37,6 +40,7 @@ def check_worker_limit_case(name, first_count, cost_cap=None, explicit_job=False
     program.chmod(0o700)
 
     def dataset(label, count):
+        """Write deterministic fixture JSONL into the temporary test root and import it, returning the saved dataset revision."""
         path = root / f'{name}-{label}.jsonl'
         path.write_text(''.join(json.dumps({'id': str(i), 'prompt': 'fixture'}) + '\n' for i in range(count)))
         return call('import', '--file', path, '--name', f'{name}-{label}', '--version', '1')['revision']

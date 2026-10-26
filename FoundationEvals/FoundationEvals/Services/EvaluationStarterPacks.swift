@@ -26,6 +26,7 @@ enum EvaluationStarterPack: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Creates a fresh editable suite for the selected starter pack, with independent case and suite identities.
     func makeSuite() -> EvaluationSuite {
         switch self {
         case .structuredExtraction: structuredExtractionSuite()
@@ -34,6 +35,7 @@ enum EvaluationStarterPack: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Builds receipt examples with generated JSON fields and deterministic value assertions; review-mode assertions supply scores.
     private func structuredExtractionSuite() -> EvaluationSuite {
         var suite = EvaluationSuite()
         suite.name = "Receipt extraction"
@@ -87,6 +89,7 @@ enum EvaluationStarterPack: String, CaseIterable, Identifiable, Sendable {
         return suite
     }
 
+    /// Builds rubric-scored reference-answer examples covering supported claims, unknown information and evidence boundaries.
     private func groundedAnswersSuite() -> EvaluationSuite {
         var suite = EvaluationSuite()
         suite.name = "Grounded product answers"
@@ -123,6 +126,7 @@ enum EvaluationStarterPack: String, CaseIterable, Identifiable, Sendable {
         return suite
     }
 
+    /// Builds multi-turn rubric examples for preference changes, corrections and retention of compatible constraints.
     private func conversationSuite() -> EvaluationSuite {
         var suite = EvaluationSuite()
         suite.name = "Conversation behaviour"

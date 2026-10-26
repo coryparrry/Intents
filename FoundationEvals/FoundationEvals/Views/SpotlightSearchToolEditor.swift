@@ -169,6 +169,7 @@ private struct SpotlightContactValuesEditor: View {
                 < EvaluationSpotlightSearchConfiguration.maximumIdentityValuesPerKind
     }
 
+    /// Appends the validated normalized identity value when capacity permits, then clears the entry field.
     private func addValue() {
         guard canAddValue else { return }
         values.append(normalizedNewValue)
@@ -415,6 +416,7 @@ private struct SpotlightGuidanceOptionEditor: View {
     let label: LocalizedStringResource
     @Binding var selection: EvaluationSpotlightGuidanceOption
 
+    /// Creates a labeled guidance picker connected to the supplied selection binding.
     init(
         _ label: LocalizedStringResource,
         selection: Binding<EvaluationSpotlightGuidanceOption>
@@ -515,6 +517,7 @@ private struct SpotlightAttributeSelectionEditor: View {
             && selection.count < EvaluationSpotlightSearchConfiguration.maximumFetchAttributes
     }
 
+    /// Binds preset membership, preventing duplicate additions or additions beyond the fetch-attribute limit while allowing removals.
     private func binding(for attribute: EvaluationSpotlightAttributePreset) -> Binding<Bool> {
         Binding(
             get: { selection.presets.contains(attribute) },
@@ -532,6 +535,7 @@ private struct SpotlightAttributeSelectionEditor: View {
         )
     }
 
+    /// Appends the validated trimmed custom attribute when capacity permits, then clears the entry field.
     private func addCustomAttribute() {
         guard canAddCustomAttribute else { return }
         selection.customAttributeNames.append(trimmedCustomAttributeName)

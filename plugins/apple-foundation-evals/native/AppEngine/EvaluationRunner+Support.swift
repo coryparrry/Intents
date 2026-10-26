@@ -15,6 +15,7 @@ extension EvaluationRunner {
         "customProviderError",
     ]
 
+    /// Reports whether a failure category requires stopping subsequent samples in the batch.
     static func stopsBatch(for category: String?) -> Bool {
         category.map(batchStoppingErrorCategories.contains) == true
     }
@@ -33,6 +34,7 @@ extension EvaluationRunner {
         }
     }
 
+    /// Projects SDK usage totals into saved input, cached-input, output, and reasoning token counts.
     static func usage(from usage: LanguageModelSession.Usage) -> EvaluationUsage {
         EvaluationUsage(
             inputTokens: usage.input.totalTokenCount,
@@ -42,6 +44,7 @@ extension EvaluationRunner {
         )
     }
 
+    /// Joins nonblank text from reasoning entries, returning nil when no reasoning text is present.
     static func reasoningText<S: Sequence>(from entries: S) -> String? where S.Element == Transcript.Entry {
         let text = entries.flatMap { entry -> [String] in
             guard case .reasoning(let reasoning) = entry else { return [] }
@@ -54,6 +57,7 @@ extension EvaluationRunner {
         return text.isEmpty ? nil : text
     }
 
+    /// Merges built-in tool traces by call ID, preserving order and replacing an existing trace only when a newly observed output fills a missing output.
     static func mergingBuiltinToolCalls(
         _ existing: [EvaluationBuiltinToolTrace],
         with additions: [EvaluationBuiltinToolTrace]
@@ -76,12 +80,7 @@ extension EvaluationRunner {
         return merged
     }
 
-    static func milliseconds(since instant: ContinuousClock.Instant) -> Double {
-        let duration = instant.duration(to: .now)
-        return Double(duration.components.seconds) * 1_000
-            + Double(duration.components.attoseconds) / 1_000_000_000_000_000
-    }
-
+    /// Returns a user-facing model readiness issue, or nil when the on-device model is available.
     static func unavailableMessage(for availability: SystemLanguageModel.Availability) -> String? {
         switch availability {
         case .available:
@@ -97,6 +96,7 @@ extension EvaluationRunner {
         }
     }
 
+    /// Maps cancellation, admission, transcript, transport, tool, session, and model failures to saved error categories and explanatory messages.
     static func traceError(_ error: Error) -> (category: String, message: String) {
         if error is CancellationError || Task.isCancelled {
             return ("cancelled", "The evaluation was cancelled.")
@@ -171,26 +171,7 @@ extension EvaluationRunner {
         return (category, modelError.localizedDescription)
     }
 
-    private static func customProviderCategory(for code: String) -> String {
-        let normalized = code
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .filter(\.isLetter)
-        return switch normalized {
-        case "cancelled", "canceled": "cancelled"
-        case "ratelimited": "rateLimited"
-        case "quotalimitreached", "quotaexceeded": "quotaLimitReached"
-        case "networkfailure", "networkerror", "connectionerror": "networkFailure"
-        case "serviceunavailable": "serviceUnavailable"
-        case "modelunavailable", "modelnotfound": "modelUnavailable"
-        case "modelassetsunavailable": "modelAssetsUnavailable"
-        case "timeout", "timedout": "timeout"
-        case "contextsizeexceeded": "contextSizeExceeded"
-        case "invalidconfiguration": "invalidConfiguration"
-        default: "customProviderError"
-        }
-    }
-
+    /// Appends bounded schema and debug details to an unsupported-generation-guide message when those details are available.
     private static func unsupportedGenerationGuideMessage(
         localizedDescription: String,
         context: LanguageModelError.UnsupportedGenerationGuide
@@ -207,6 +188,7 @@ extension EvaluationRunner {
         return parts.joined(separator: " ")
     }
 
+    /// Creates a zero-duration, empty-response error sample for a case rejected before generation.
     static func errorResult(
         evaluationCase: EvaluationCase,
         repetition: Int,

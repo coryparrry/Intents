@@ -4,6 +4,7 @@ import Foundation
 struct TelemetryPendingCrashReports: Sendable {
     let directory: URL
 
+    /// Derives the reporter cache directory from the bundle identifier, replacing slashes in its final path component.
     nonisolated init(cacheDirectory: URL, bundleIdentifier: String) {
         directory = cacheDirectory.appendingPathComponent("com.plausiblelabs.crashreporter.data", isDirectory: true)
             .appendingPathComponent(bundleIdentifier.replacingOccurrences(of: "/", with: "_"), isDirectory: true)
@@ -20,11 +21,13 @@ struct TelemetryPendingCrashReports: Sendable {
         return Self(cacheDirectory: cache, bundleIdentifier: identifier)
     }
 
+    /// Creates the reporter directory and requests owner-only permissions; filesystem failures propagate.
     nonisolated func prepare() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700])
     }
 
+    /// Best-effort removes the reporter directory; after successful removal the pinned native handler cannot write there until preparation.
     nonisolated func discard() {
         // Removing the parent also prevents the process-lifetime native hook from
         // writing another report while consent is off (the handler never mkdirs).

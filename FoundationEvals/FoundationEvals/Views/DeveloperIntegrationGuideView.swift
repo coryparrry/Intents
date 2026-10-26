@@ -43,6 +43,7 @@ struct DeveloperIntegrationGuideView: View {
         .frame(width: 730, height: 690)
     }
 
+    /// Builds a numbered integration step with explanatory text and caller-supplied content.
     private func step<Content: View>(_ number: Int, title: String, detail: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -54,6 +55,7 @@ struct DeveloperIntegrationGuideView: View {
         }
     }
 
+    /// Displays selectable integration code with a button that replaces the general pasteboard contents with that code.
     private func code(_ value: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {

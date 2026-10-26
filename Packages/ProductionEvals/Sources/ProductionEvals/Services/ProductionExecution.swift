@@ -4,9 +4,13 @@ public typealias ProductionExecutor = @Sendable (ProductionRequest) async throws
 
 public struct ProductionBatchRunner: Sendable {
     public let storage: ProductionStorage
+    /// Uses the supplied local store for chunk claims, attempt journals, and durable result commits.
     public init(storage: ProductionStorage) { self.storage = storage }
     /// Returns the number of newly committed responses. Another worker may still own remaining chunks.
     /// onCommit runs after each durable result, including progress before a later error.
+    /// Attempts are journaled before execution; interrupted side effects require evidence instead of automatic replay.
+    /// A timeout or cancellation during executor waiting pauses the job and records uncertain/error evidence before further work; cancellation is then rethrown.
+    /// - Throws: Job, budget, lease, or persistence errors, or cancellation. Ordinary executor failures become recorded responses.
     public func run(jobID: UUID, worker: ProductionWorker, maximumResponses: Int = .max,
                     onCommit: (@Sendable () -> Void)? = nil,
                     execute: @escaping ProductionExecutor) async throws -> Int {
@@ -114,6 +118,7 @@ public struct ProductionBatchRunner: Sendable {
 
 public struct ProductionTransientFailure: Error, LocalizedError, Sendable {
     public let message: String
+    /// Marks an executor failure as eligible for configured retries by retaining its localized explanation.
     public init(_ message: String) { self.message = message }
     public var errorDescription: String? { message }
 }

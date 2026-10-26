@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Makes the entire disclosure row a native button, including its visible label.
 struct PromptImprovementDisclosureStyle: DisclosureGroupStyle {
+    /// Makes the full heading toggle expansion and displays the content only while expanded.
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {

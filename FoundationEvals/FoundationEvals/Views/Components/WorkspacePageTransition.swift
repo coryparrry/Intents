@@ -13,6 +13,7 @@ private struct WorkspacePageTransition<Value: Equatable>: ViewModifier {
         let appearance: Bool
     }
 
+    /// Animates changed page content with a fade and vertical offset, honoring Reduce Motion and optional appearance animation.
     func body(content: Content) -> some View {
         content.keyframeAnimator(initialValue: CGFloat(1), trigger: Change(value: value, appearance: appearance)) { page, progress in
             page
@@ -27,6 +28,7 @@ private struct WorkspacePageTransition<Value: Equatable>: ViewModifier {
 }
 
 extension View {
+    /// Applies the workspace page transition when the supplied value changes, optionally including first appearance.
     func workspacePageTransition<Value: Equatable>(value: Value, animatesOnAppearance: Bool = false) -> some View {
         modifier(WorkspacePageTransition(value: value, animatesOnAppearance: animatesOnAppearance))
     }

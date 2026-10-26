@@ -4,6 +4,8 @@ import CoreFoundation
 /// Builds a small native UI-test bundle. User text is always a Swift string
 /// literal or a validated numeric scalar, never executable source or YAML.
 enum MacIntentSource {
+    /// Generates native test source for 1–100 uniquely identified cases using catalog-validated parameters and scalar expectations.
+    /// Throws for unknown actions, missing/unknown inputs, oversized JSON, unsupported types, or invalid scalar values.
     static func tests(catalog: MacIntentCatalog, cases: [MacIntentTestCase]) throws -> String {
         guard !cases.isEmpty, cases.count <= 100, Set(cases.map(\.id)).count == cases.count else {
             throw MacIntentTestingError("Supply 1–100 test cases with unique IDs.")
@@ -67,17 +69,21 @@ enum MacIntentSource {
         """
     }
 
+    /// Produces a quoted Swift string literal with interpolation markers, control characters, and backslashes escaped.
     static func literal(_ value: String) -> String {
         // String(reflecting:) emits Swift's quoted/escaped representation,
         // including interpolation markers, backslashes, and control characters.
         String(reflecting: value)
     }
 
+    /// Parses JSON including scalar fragments and wraps parse failures in a native-testing explanation.
     private static func parseJSON(_ text: String) throws -> Any {
         do { return try JSONSerialization.jsonObject(with: Data(text.utf8), options: [.fragmentsAllowed]) }
         catch { throw MacIntentTestingError("Invalid JSON: \(error.localizedDescription)") }
     }
 
+    /// Converts an exactly typed JSON scalar to a Swift literal expression without numeric or Boolean coercion.
+    /// Throws for unsupported output types, null/structured values, or values outside the supported numeric range.
     private static func scalar(_ value: Any, type: String, context: String) throws -> String {
         let number = value as? NSNumber
         let boolean = number.map { CFGetTypeID($0) == CFBooleanGetTypeID() } ?? false
@@ -98,6 +104,7 @@ enum MacIntentSource {
         throw MacIntentTestingError("\(context) must be a JSON \(type) scalar; null, arrays, objects, and coercions are not supported.")
     }
 
+    /// Encodes the generated host/UI-test project as JSON accepted by XcodeGen, keeping signing settings as data.
     static func project(configuration: MacIntentRunConfiguration, identifier: String) throws -> Data {
         // XcodeGen accepts JSON as YAML; JSONEncoder prevents setting injection.
         let settings: [String: Any] = [
@@ -124,6 +131,7 @@ enum MacIntentSource {
         return try JSONSerialization.data(withJSONObject: spec, options: [.prettyPrinted, .sortedKeys])
     }
 
+    /// Builds macOS test arguments with serial execution, bounded test timeouts, and explicit evidence/derived-data paths.
     static func xcodebuildArguments(project: URL, result: URL, derivedData: URL) -> [String] {
         ["test", "-project", project.path, "-scheme", "MacIntentRun", "-destination", "platform=macOS",
          "-parallel-testing-enabled", "NO",

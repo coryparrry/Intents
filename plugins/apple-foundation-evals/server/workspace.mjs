@@ -5,6 +5,7 @@ import { addReferenceFile, exportReferences, importReferences } from './referenc
 import { importCases } from './case-import.mjs';
 import { SPOTLIGHT_DEFAULTS } from './app-defaults.mjs';
 const DEFAULT_PROJECT_ID = '00000000-0000-4000-8000-000000000001';
+/** Seeds a default project when needed and transactionally fills missing suite/run ownership metadata from current saved records. */
 export async function initProjects(app) {
   if (!(await app.store.recordNames('projects')).length) await app.store.write('projects', { id: DEFAULT_PROJECT_ID, name: 'My evaluations', description: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   const projects = await app.store.list('projects', ({ id }) => ({ id }));
@@ -12,20 +13,20 @@ export async function initProjects(app) {
   for await (const saved of app.store.scan('suites')) if (!saved.projectId || !saved.revision) await app.store.migrateSuite(saved.id, app.defaultProjectId);
   for await (const run of app.store.scan('runs')) if (!run.projectId && run.status !== 'running') await app.store.migrateRun(run.id, app.defaultProjectId);
 }
+/** Resolves an explicit or default project UUID and requires the owning project record to exist. */
 async function project(app, value) { const projectId = id(value || app.defaultProjectId, 'projectId'); await app.store.read('projects', projectId); return projectId; }
-async function existing(app, kind, key) {
-  try { return await app.store.read(kind, key); } catch (error) { if (/not found$/.test(error.message)) return null; throw error; }
-}
+/** Normalizes an editor draft, resets imported Spotlight authorization, verifies project ownership, and transactionally saves against the supplied or embedded revision. */
 export async function saveSuite(app, args, { imported = false } = {}) {
   const value = args.suite;
   const saved = suite(value?.formatVersion === 1 ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'formatVersion')) : value, randomUUID, { draft: true });
   // Imported configuration cannot authorize access to this Mac's indexed data.
   if (imported && isAppSuite(saved)) saved.features.spotlightSearch = structuredClone(SPOTLIGHT_DEFAULTS);
-  const old = await existing(app, 'suites', saved.id);
+  const old = await app.store.readOptional('suites', saved.id);
   const expected = args.expectedRevision ?? value.revision;
   saved.projectId = await project(app, args.projectId || saved.projectId || old?.projectId);
   return { suite: await app.store.saveSuite(saved, expected) };
 }
+/** Reports suite freshness and selected-assessment availability without changing saved run or judge evidence. */
 export function health(run, saved) {
   const sourceRevision = run.suiteRevision || (run.suite ? revision(run.suite) : null);
   const staleEvidence = !saved || !sourceRevision || sourceRevision !== (saved.revision || revision(saved));
@@ -33,12 +34,14 @@ export function health(run, saved) {
   const selected = appRun?.assessments?.find((assessment) => assessment.id?.toLowerCase() === appRun.selectedAssessmentID?.toLowerCase()) || (!appRun?.selectedAssessmentID ? appRun?.assessments?.at(-1) : null);
   return { staleEvidence, suiteMissing: !saved, currentAssessment: staleEvidence ? 'stale' : run.status !== 'completed' ? 'incomplete' : appRun?.selectedAssessmentID && !selected ? 'missing' : selected?.samples?.some((item) => item.errorCategory || item.errorMessage) ? 'error' : 'current', suiteRevision: sourceRevision, currentSuiteRevision: saved?.revision || null, ...(selected ? { assessmentId: selected.id } : {}) };
 }
+/** Returns a project's suite/run counts, current and stale evidence totals, and latest public run per suite. */
 export async function overview(app, projectId) {
   const owner = await project(app, projectId);
   const suites = (await app.store.list('suites', ({ id, name, revision, projectId, cases }) => ({ id, name, revision, projectId, caseCount: cases.length }))).filter((item) => item.projectId === owner);
   const summaries = await app.runs(owner);
   return { project: await app.store.read('projects', owner), suiteCount: suites.length, runCount: summaries.length, activeRuns: summaries.filter((run) => run.status === 'running').length, currentSuites: summaries.filter((run) => run.status === 'completed' && !run.health.staleEvidence).reduce((set, run) => set.add(run.suiteId), new Set()).size, staleRuns: summaries.filter((run) => run.health.staleEvidence).length, suites: suites.map((item) => ({ id: item.id, name: item.name, revision: item.revision, caseCount: item.caseCount, latestRun: summaries.find((run) => run.suiteId === item.id) || null })), runs: summaries };
 }
+/** Handles project edits, suite/case/reference imports and exports, and trace analysis; returns undefined for tools owned by other dispatchers. */
 export async function workspaceDispatch(app, name, args) {
   switch (name) {
     case 'eval_list_projects': return { projects: await app.store.list('projects') };
@@ -81,14 +84,16 @@ export async function workspaceDispatch(app, name, args) {
       if (caseIds && new Set(caseIds).size !== caseIds.length) throw new Error('caseIds must be unique strings');
       const ids = new Set(caseIds || run.results.map((item) => item.caseId));
       if ([...ids].some((key) => !run.results.some((item) => item.caseId === key))) throw new Error('Unknown case in run');
-      return { runId: run.id, health: health(run, await existing(app, 'suites', run.suiteId)), cases: run.results.filter((item) => ids.has(item.caseId)).map((result) => ({ ...result, appSample: result.appSample || result.trace?.appSample || null })), assessments: run.appRun?.assessments || [] };
+      return { runId: run.id, health: health(run, await app.store.readOptional('suites', run.suiteId)), cases: run.results.filter((item) => ids.has(item.caseId)).map((result) => ({ ...result, appSample: result.appSample || result.trace?.appSample || null })), assessments: run.appRun?.assessments || [] };
     }
     default: return undefined;
   }
 }
+/** Derives a conservative terminal status from native cancellation, termination reason, and sample errors. */
 function importedAppRunStatus(run) {
   return run.cancelled ? 'cancelled' : run.terminationReason || run.results?.some((sample) => sample.status === 'error') ? 'failed' : 'completed';
 }
+/** Validates local terminal trace identity, timestamps, suite snapshots, and sample evidence. persist=false returns the parsed view without writes; persistence creates evidence without overwriting an existing run. */
 async function importRun(app, args, { persist = true } = {}) {
   let value = object(parseImport(args, 'run'), 'run'); value = value.run || value;
   const evidence = value.appRun || value;
@@ -116,7 +121,7 @@ async function importRun(app, args, { persist = true } = {}) {
     validateAppEvidence(value);
     const suiteId = id(value.suiteID, 'suiteId');
     if (args.suiteId !== undefined && id(args.suiteId, 'suiteId') !== suiteId) throw new Error('App run suite identity does not match the requested suite');
-    let snapshot = await existing(app, 'suites', suiteId);
+    let snapshot = await app.store.readOptional('suites', suiteId);
     const definition = value.suiteDefinition;
     if (definition) snapshot = suite(Object.fromEntries(Object.entries({ ...definition, attachments: definition.attachments || snapshot?.attachments?.filter((item) => value.attachments?.some((evidence) => evidence.name === item.name && evidence.sha256 === item.sha256 && evidence.kind === item.kind)) || value.attachments?.filter((item) => typeof item.text === 'string') || [] }).filter(([key]) => key !== 'formatVersion')), randomUUID);
     if (snapshot && snapshot.id !== suiteId) throw new Error('Run suite identity does not match its definition');
@@ -133,6 +138,6 @@ async function importRun(app, args, { persist = true } = {}) {
     const finishedAt = importedTimestamp(value.completedAt, { apple: true });
     saved = { id: id(value.id, 'run id'), suiteId, projectId: await project(app, args.projectId || snapshot.projectId), suite: snapshot, suiteRevision: revision(snapshot), status, startedAt, finishedAt, durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)), model: value.environment?.model, results, appRun: value, importedAt: new Date().toISOString() };
   }
-  if (persist && await existing(app, 'runs', saved.id)) throw new Error('A run with this id already exists; imports never overwrite evidence');
+  if (persist && await app.store.readOptional('runs', saved.id)) throw new Error('A run with this id already exists; imports never overwrite evidence');
   if (persist) await app.store.write('runs', saved, { createOnly: true }); const { ownerPid, ...publicRun } = saved; return { run: publicRun };
 }

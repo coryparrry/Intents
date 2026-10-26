@@ -100,6 +100,7 @@ struct WorkflowSampleInspector: View {
     @State private var selection: String?
     @State private var collapsed: Set<String> = []
 
+    /// Captures the sample and run and derives the workflow presentation used for navigation and span details.
     init(result: EvaluationSampleResult, run: EvaluationRun) {
         self.result = result
         self.run = run
@@ -266,12 +267,14 @@ private struct WorkflowWaterfall: View {
         }
     }
 
+    /// Moves selection through visible rows by the requested offset, clamping at either end and ignoring an empty trace.
     private func moveSelection(by offset: Int) {
         guard !rows.isEmpty else { return }
         let current = rows.firstIndex(where: { $0.id == selection }) ?? 0
         selection = rows[min(max(current + offset, 0), rows.count - 1)].id
     }
 
+    /// Builds a span label that selects and toggles collapse for parent spans, with an accessible expand/collapse action label.
     @ViewBuilder
     private func spanLabel(_ row: WorkflowTracePresentation.Row) -> some View {
         if row.hasChildren {
@@ -289,6 +292,7 @@ private struct WorkflowWaterfall: View {
         }
     }
 
+    /// Displays the span title, status symbol, and collapse indicator with depth-based indentation capped at eight levels.
     private func spanLabelContent(_ row: WorkflowTracePresentation.Row) -> some View {
         HStack(spacing: 6) {
             Image(systemName: collapsed.contains(row.id) ? "chevron.right" : "chevron.down")

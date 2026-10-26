@@ -155,11 +155,13 @@ private struct DeveloperDeviceRow: View {
         }
     }
 
+    /// Attempts to trust the runner with the entered code, exposing any failure and clearing the code after the attempt.
     private func pair() {
         perform { try runners.trustRunner(runner.id, pairingCode: pairingCode) }
         pairingCode = ""
     }
 
+    /// Runs a synchronous device action, clearing the previous error on success or showing the localized failure.
     private func perform(_ action: () throws -> Void) {
         do { try action(); error = nil } catch { self.error = error.localizedDescription }
     }
@@ -188,8 +190,4 @@ extension DeveloperRunnerConnectionState {
         case .incompatible: "Update required"
         }
     }
-}
-
-extension DeveloperRunPhase {
-    var isInProgress: Bool { self == .preparing || self == .dispatching || self == .running }
 }

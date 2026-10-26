@@ -11,39 +11,48 @@ actor EvaluationProfileRecorder {
     private var events: [String] = []
     private(set) var transitioned = false
 
+    /// Appends an activation event to the actor-isolated profile history.
     func recordActivation(_ profileName: String) {
         events.append("Activated profile: \(profileName)")
     }
 
+    /// Appends a deactivation event for the named profile to the recorded history.
     func recordDeactivation(_ profileName: String) {
         events.append("Deactivated profile: \(profileName)")
     }
 
+    /// Records which profile received a prompt for later feature-trace inspection.
     func recordPrompt(_ profileName: String) {
         events.append("Prompt received: \(profileName)")
     }
 
+    /// Records the profile that received reasoning without capturing reasoning content.
     func recordReasoning(_ profileName: String) {
         events.append("Reasoning received: \(profileName)")
     }
 
+    /// Records a requested tool's name without persisting its arguments.
     func recordToolCall(toolName: String) {
         events.append("Tool call requested: \(toolName)")
     }
 
+    /// Records receipt of a tool output by tool name without persisting its content.
     func recordToolOutput(toolName: String) {
         events.append("Tool output received: \(toolName)")
     }
 
+    /// Records which profile received a model response.
     func recordResponse(_ profileName: String) {
         events.append("Response received: \(profileName)")
     }
 
+    /// Marks the after-tool transition as reached and records activation of the derived after-tool profile.
     func recordTransition(_ profileName: String) {
         transitioned = true
         recordActivation("\(profileName) · after tool")
     }
 
+    /// Returns the currently recorded profile events in arrival order.
     func snapshot() -> [String] {
         events
     }
@@ -134,6 +143,8 @@ struct EvaluationDynamicProfile: LanguageModelSession.DynamicProfile {
         }
     }
 
+    /// Creates a two-phase profile session, starting after-tool when restored history already contains tool output.
+    /// Applies an optional tool boundary and model-only history projection while retaining the supplied session history.
     static func makeSession(
         model: some LanguageModel,
         instructions: String,

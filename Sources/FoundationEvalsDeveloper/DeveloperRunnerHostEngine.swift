@@ -8,6 +8,9 @@ public actor DeveloperTrustStore {
     private let fileURL: URL?
     private var tokensByDesktopID: [UUID: String]
 
+    /// Loads desktop trust tokens from an optional JSON file, falling back to empty trust
+    /// if the file cannot be read or decoded.
+    /// - Parameter fileURL: Persistence location, or `nil` for an in-memory trust store.
     public init(fileURL: URL? = nil) {
         self.fileURL = fileURL
         if let fileURL,
@@ -19,20 +22,33 @@ public actor DeveloperTrustStore {
         }
     }
 
+    /// Returns the saved trust token for a desktop, or `nil` when it has no stored trust.
+    /// - Parameter desktopID: Identity presented by the desktop during authentication.
     public func token(for desktopID: UUID) -> String? {
         tokensByDesktopID[desktopID]
     }
 
+    /// Stores or replaces a desktop's token, then persists the updated trust set.
+    /// - Parameters:
+    ///   - desktopID: Desktop authorized by this token.
+    ///   - token: Shared secret used for reconnect proofs and session-key derivation.
+    /// - Throws: A persistence error; the in-memory token has already been updated.
     public func trust(desktopID: UUID, token: String) throws {
         tokensByDesktopID[desktopID] = token
         try persist()
     }
 
+    /// Removes a desktop's saved token, then persists the updated trust set.
+    /// Existing authenticated engine connections are not closed by this store operation.
+    /// - Parameter desktopID: Desktop whose future token lookup should fail.
+    /// - Throws: A persistence error after the in-memory entry has been removed.
     public func revoke(desktopID: UUID) throws {
         tokensByDesktopID[desktopID] = nil
         try persist()
     }
 
+    /// Atomically writes the trust set if configured and attempts owner-only file permissions.
+    /// Parent-directory creation, encoding and write errors propagate to the caller.
     private func persist() throws {
         guard let fileURL else { return }
         try FileManager.default.createDirectory(
@@ -78,6 +94,11 @@ public actor DeveloperRunnerHostEngine {
     private var requestIDsByConnection: [String: Set<UUID>] = [:]
     private var secureSessions: [String: DeveloperSessionCipher] = [:]
 
+    /// Creates a transport-independent runner host with app identity, feature dispatch and trust.
+    /// - Parameters:
+    ///   - identity: App-reported runner identity sent in handshake messages.
+    ///   - registry: Registry that admits, executes and cancels app-owned features.
+    ///   - trustStore: Tokens used to authenticate reconnecting desktops.
     public init(
         identity: DeveloperRunnerIdentity,
         registry: DeveloperFeatureRegistry,
@@ -88,6 +109,13 @@ public actor DeveloperRunnerHostEngine {
         self.trustStore = trustStore
     }
 
+    /// Replaces any pairing session with a newly generated out-of-band code and nonce.
+    /// This creates presentation state; the transport must deliver challenges to connected peers.
+    /// - Parameters:
+    ///   - endpoint: Display label presented alongside the pairing code.
+    ///   - duration: Pairing lifetime; expiration uses its whole-second component.
+    ///   - now: Clock value used to calculate expiry.
+    /// - Returns: Advertising state containing the code, endpoint and expiry.
     public func beginPairing(
         endpoint: String,
         duration: Duration = .seconds(300),
@@ -101,6 +129,8 @@ public actor DeveloperRunnerHostEngine {
         )
     }
 
+    /// Creates a fresh pairing session with a caller-supplied code for deterministic tests.
+    /// Resets invalid-attempt throttling and the last paired-desktop presentation state.
     func beginPairingForTesting(
         endpoint: String,
         duration: Duration = .seconds(300),
@@ -122,11 +152,15 @@ public actor DeveloperRunnerHostEngine {
         return .advertising(code: session.code, endpoint: endpoint, expiresAt: session.expiresAt)
     }
 
+    /// Discards the pairing session and paired-desktop presentation without revoking saved trust.
     public func stopPairing() {
         pairingSession = nil
         pairedDesktopID = nil
     }
 
+    /// Returns current pairing presentation, expiring and removing a session when needed.
+    /// - Parameter now: Clock value used to test expiry.
+    /// - Returns: Advertising, paired or idle state; an observed expiry returns `expired`.
     public func pairingState(now: Date = Date()) -> DeveloperPairingPresentationState {
         guard let session = pairingSession else {
             if let pairedDesktopID { return .paired(desktopID: pairedDesktopID) }
@@ -139,6 +173,11 @@ public actor DeveloperRunnerHostEngine {
         return .advertising(code: session.code, endpoint: session.endpoint, expiresAt: session.expiresAt)
     }
 
+    /// Issues and records a five-minute reconnect challenge for a transport connection.
+    /// - Parameters:
+    ///   - connectionID: Transport-owned identity used to scope authentication and execution ownership.
+    ///   - now: Clock value used to date the challenge and check pairing availability.
+    /// - Returns: A reconnect challenge, plus a pairing challenge when pairing is active.
     public func connectionOpened(id connectionID: String, now: Date = Date()) -> [DeveloperRunnerEnvelope] {
         let reconnect = DeveloperReconnectChallenge(
             runner: identity,
@@ -169,6 +208,8 @@ public actor DeveloperRunnerHostEngine {
         return connectionOpened(id: connectionID, now: now)
     }
 
+    /// Clears a connection's authentication, challenge and cipher and cancels its owned requests.
+    /// - Parameter connectionID: Transport identity previously passed to ``connectionOpened(id:now:)``.
     public func connectionClosed(id connectionID: String) async {
         authenticatedConnections[connectionID] = nil
         reconnectChallenges[connectionID] = nil
@@ -176,10 +217,18 @@ public actor DeveloperRunnerHostEngine {
         await cancelRequests(for: connectionID)
     }
 
+    /// Returns the desktop authenticated on a connection, or `nil` before authentication or after closure.
     public func authenticatedDesktopID(for connectionID: String) -> UUID? {
         authenticatedConnections[connectionID]
     }
 
+    /// Admits a wire envelope and waits for any accepted execution before returning responses.
+    /// Handshake messages are handled directly; execution and cancellation require a secure session.
+    /// - Parameters:
+    ///   - envelope: Decoded protocol envelope received from the connection.
+    ///   - connectionID: Transport identity that owns authentication and request cancellation.
+    ///   - now: Clock used for pairing admission; reconnect authentication uses its own current-time default.
+    /// - Returns: Responses to send on this connection, possibly empty when input is ignored.
     public func handle(
         _ envelope: DeveloperRunnerEnvelope,
         connectionID: String,
@@ -189,6 +238,9 @@ public actor DeveloperRunnerHostEngine {
         return await resolve(action, connectionID: connectionID)
     }
 
+    /// Checks protocol compatibility and admits a handshake or encrypted message.
+    /// Returns an execution task separately so transports can keep accepting cancellation
+    /// while the app operation is still running; plaintext execution is rejected.
     func accept(
         _ envelope: DeveloperRunnerEnvelope,
         connectionID: String,
@@ -219,6 +271,8 @@ public actor DeveloperRunnerHostEngine {
         }
     }
 
+    /// Returns immediate responses or awaits an admitted feature and seals its result.
+    /// Suppresses a completed result if connection teardown already removed request ownership.
     func resolve(
         _ action: DeveloperHostTransportAction,
         connectionID: String
@@ -233,6 +287,9 @@ public actor DeveloperRunnerHostEngine {
         }
     }
 
+    /// Checks the code proof, session expiry and retry throttle before establishing trust.
+    /// Invalid proofs wait two seconds between attempts and cancel pairing after five failures.
+    /// Success persists a new token, creates the secure session and returns a sealed receipt and hello.
     private func pair(
         _ request: DeveloperPairingRequest,
         connectionID: String,
@@ -352,6 +409,8 @@ public actor DeveloperRunnerHostEngine {
         ]
     }
 
+    /// Validates a fresh reconnect challenge and desktop token proof, then establishes the cipher
+    /// and returns a secure runner hello. Invalid trust produces a challenge-correlated rejection.
     private func authenticate(
         _ hello: DeveloperDesktopHello,
         connectionID: String,
@@ -398,6 +457,9 @@ public actor DeveloperRunnerHostEngine {
         return [helloEnvelope]
     }
 
+    /// Authenticates ordered desktop traffic and enforces request ownership per connection.
+    /// Ignores same-connection duplicate IDs, rejects cross-connection collisions, and accepts
+    /// cancellation only for requests owned by this connection. Invalid secure input is ignored.
     private func handleSecure(
         _ envelope: DeveloperSecureEnvelope,
         connectionID: String
@@ -442,6 +504,8 @@ public actor DeveloperRunnerHostEngine {
         }
     }
 
+    /// Seals the next runner-to-desktop message and saves its advanced cipher state.
+    /// Returns `nil` when no secure session exists or encoding/encryption fails.
     private func secureEnvelope(
         _ message: DeveloperAuthenticatedMessage,
         connectionID: String
@@ -452,6 +516,8 @@ public actor DeveloperRunnerHostEngine {
         return DeveloperRunnerEnvelope(message: .secure(secure))
     }
 
+    /// Removes this connection's request ownership and requests cooperative registry cancellation.
+    /// Removing ownership also prevents later operation completions from producing a response.
     private func cancelRequests(for connectionID: String) async {
         let requestIDs = requestIDsByConnection.removeValue(forKey: connectionID) ?? []
         for requestID in requestIDs {
@@ -459,6 +525,8 @@ public actor DeveloperRunnerHostEngine {
         }
     }
 
+    /// Builds a plaintext protocol/handshake failure using the supplied identity for both
+    /// request and run IDs, because no admitted feature request is available.
     private func failureEnvelope(
         requestID: UUID,
         code: DeveloperExecutionErrorCode,
@@ -474,6 +542,7 @@ public actor DeveloperRunnerHostEngine {
         )))
     }
 
+    /// Builds a plaintext execution rejection preserving the request's IDs and feature key.
     private func resultFailure(
         _ request: DeveloperFeatureExecutionRequest,
         code: DeveloperExecutionErrorCode,

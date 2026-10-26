@@ -180,6 +180,7 @@ struct RunSummaryDashboard: View {
         .summaryCard()
     }
 
+    /// Displays a labeled outcome count with its status color.
     private func outcomeRow(_ title: LocalizedStringKey, count: Int, color: Color) -> some View {
         HStack(spacing: 8) {
             WorkspaceStatusDot(color: color, size: 7)
@@ -190,6 +191,7 @@ struct RunSummaryDashboard: View {
         .font(.callout)
     }
 
+    /// Displays a prominent metric with its label and optional supporting detail.
     private func metric(_ value: String, label: LocalizedStringKey, detail: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(value)
@@ -213,6 +215,7 @@ struct RunSummaryDashboard: View {
 }
 
 private extension View {
+    /// Applies the shared padded surface and flexible alignment used by dashboard summary cards.
     func summaryCard() -> some View {
         padding(18)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

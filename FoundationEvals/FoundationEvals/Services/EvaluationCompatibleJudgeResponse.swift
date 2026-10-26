@@ -36,7 +36,9 @@ struct EvaluationCompatibleJudgeCompletion: Decodable, Sendable {
     struct Choice: Decodable, Sendable {
         struct Message: Decodable, Sendable {
             var content: String?
+            /// Creates a completion message while preserving absent text as nil.
             init(content: String?) { self.content = content }
+            /// Decodes either string content or concatenated text parts; unrecognized content remains absent.
             init(from decoder: Decoder) throws {
                 let container = try decoder.container(keyedBy: CodingKeys.self)
                 if let text = try? container.decode(String.self, forKey: .content) {
@@ -59,6 +61,7 @@ struct EvaluationCompatibleJudgeCompletion: Decodable, Sendable {
         var promptTokens: Int?
         var completionTokens: Int?
         var cost: Double?
+        /// Decodes usage fields independently so malformed accounting stays unavailable without discarding verdict evidence.
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             promptTokens = try? container.decodeIfPresent(Int.self, forKey: .promptTokens)
@@ -85,12 +88,15 @@ struct EvaluationCompatibleJudgeCompletion: Decodable, Sendable {
     var model: String?
     var provider: String?
     var usage: Usage?
+    /// Creates a completion envelope with the observed choices, provider identity and optional usage.
     init(choices: [Choice], model: String?, provider: String?, usage: Usage?) {
         self.choices = choices
         self.model = model
         self.provider = provider
         self.usage = usage
     }
+    /// Rejects explicit provider errors before decoding completion choices and optional identity metadata.
+    /// Malformed usage is ignored independently of the verdict payload.
     init(from decoder: Decoder) throws {
         try EvaluationCompatibleJudgeResponseDecoder.rejectProviderError(in: decoder)
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -103,6 +109,7 @@ struct EvaluationCompatibleJudgeCompletion: Decodable, Sendable {
 }
 
 enum EvaluationCompatibleJudgeResponseDecoder {
+    /// Decodes JSON or an SSE stream and rejects explicit abnormal finish reasons before returning content.
     static func decode(_ data: Data) throws -> EvaluationCompatibleJudgeCompletion {
         let trimmed = data.drop { $0 == 0x20 || $0 == 0x09 || $0 == 0x0A || $0 == 0x0D }
         if trimmed.first == 0x7B {
@@ -115,6 +122,8 @@ enum EvaluationCompatibleJudgeResponseDecoder {
         return try decodeStream(data)
     }
 
+    /// Collects SSE data events across LF, CRLF or CR separators and returns one assembled completion.
+    /// Throws on malformed or provider-failed events, retaining partial content as evidence; a DONE marker is optional.
     private static func decodeStream(_ data: Data) throws -> EvaluationCompatibleJudgeCompletion {
         guard let text = String(data: data, encoding: .utf8) else {
             throw EvaluationCompatibleJudgeResponseFailure(kind: .malformed, detail: "The stream was not valid UTF-8.")
@@ -126,6 +135,8 @@ enum EvaluationCompatibleJudgeResponseDecoder {
         var sawEvent = false
         var payloadLines: [String] = []
 
+        /// Consumes one buffered SSE event, accumulating content and final metadata while rejecting unexpected choices.
+        /// A present malformed usage value invalidates earlier accounting, and failures retain assembled content.
         func consumeEvent() throws {
             guard !payloadLines.isEmpty else { return }
             let payload = payloadLines.joined(separator: "\n")
@@ -181,6 +192,7 @@ enum EvaluationCompatibleJudgeResponseDecoder {
             model: model, provider: provider, usage: usage)
     }
 
+    /// Accepts absent finish reasons and known success reasons; throws provider or incomplete-output failures for other reasons.
     private static func validateFinishReason(_ reason: String?, content: String?) throws {
         guard let reason, !reason.isEmpty else { return }
         switch reason {
@@ -194,6 +206,7 @@ enum EvaluationCompatibleJudgeResponseDecoder {
         }
     }
 
+    /// Throws a bounded provider failure when a non-null error field is present, accepting object or string error messages.
     fileprivate static func rejectProviderError(in decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: ProviderKeys.self)
         guard container.contains(.error), try !container.decodeNil(forKey: .error) else { return }
@@ -210,6 +223,7 @@ enum EvaluationCompatibleJudgeResponseDecoder {
     private struct ProviderError: Decodable {
         var code: Int?
         var message: String?
+        /// Decodes provider error codes from integers or numeric strings and retains an optional message.
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             code = (try? container.decode(Int.self, forKey: .code))
@@ -235,6 +249,7 @@ enum EvaluationCompatibleJudgeResponseDecoder {
         var provider: String?
         var usage: EvaluationCompatibleJudgeCompletion.Usage?
         var hasUsage: Bool
+        /// Decodes one SSE chunk after rejecting provider errors, distinguishing absent usage from a malformed present value.
         init(from decoder: Decoder) throws {
             try EvaluationCompatibleJudgeResponseDecoder.rejectProviderError(in: decoder)
             let container = try decoder.container(keyedBy: CodingKeys.self)

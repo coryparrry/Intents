@@ -19,6 +19,8 @@ struct EvaluationFeatureResponse {
     var transcriptEntries: [Transcript.Entry]
     var firstContentMilliseconds: Double?
 
+    /// Generates a suite response using its model options, metadata, streaming policy, and optional output schema.
+    /// Dynamic profiles own their tool policy; structured responses are validated before being returned.
     static func generate(
         session: LanguageModelSession,
         prompt: Prompt,
@@ -81,12 +83,15 @@ struct EvaluationFeatureResponse {
                     transcriptEntries: Array(response.transcriptEntries))
     }
 
+    /// Parses generated JSON and validates it against the suite's fields, definitions, and explicit-nil policy.
     private static func validateStructuredContent(_ json: String, suite: EvaluationSuite) throws {
         try EvaluationSchemaValidator.validate(GeneratedContent(json: json), fields: suite.features.outputFields,
             definitions: suite.features.outputSchemaDefinitions,
             representNilExplicitlyInGeneratedContent: suite.features.outputRepresentNilExplicitlyInGeneratedContent)
     }
 
+    /// Consumes response snapshots with cancellation checks, throttles partial publication to 100 ms intervals, and publishes final content after successful collection.
+    /// Measures time to the first nonempty snapshot other than an empty object or null, then retains final usage and transcript entries.
     private static func collect<Content: Generable>(
         _ stream: LanguageModelSession.ResponseStream<Content>,
         text: (LanguageModelSession.ResponseStream<Content>.Snapshot) -> String,

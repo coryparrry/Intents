@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Make the full section heading clickable while keeping expanded content separate.
 struct FullWidthDisclosureStyle: DisclosureGroupStyle {
+    /// Makes the full heading toggle expansion and renders nested content with the same disclosure style.
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {

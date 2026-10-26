@@ -15,6 +15,7 @@ MAX_TIME = 4_102_444_800 * SECOND  # Reject invalid or unreasonably distant cach
 
 
 def relative_path(name):
+    """Validate a canonical relative POSIX source name, rejecting traversal, absolute paths, backslashes, and NUL bytes."""
     if not isinstance(name, str) or not name or "\\" in name or "\0" in name:
         raise ValueError("Invalid cached source path")
     path = PurePosixPath(name)
@@ -24,6 +25,7 @@ def relative_path(name):
 
 
 def tracked_files(root):
+    """Yield Git-tracked regular files beneath root while excluding every path that traverses a symlink; propagate Git failures."""
     names = subprocess.run(["git", "ls-files", "-z"], cwd=root, check=True,
                            stdout=subprocess.PIPE).stdout.decode("utf-8").split("\0")
     for name in names:
@@ -41,6 +43,7 @@ def tracked_files(root):
 
 
 def digest(path):
+    """Compute a file SHA-256 incrementally in one-megabyte blocks without loading the full file."""
     fingerprint = hashlib.sha256()
     with path.open("rb") as source:
         for block in iter(lambda: source.read(1024 * 1024), b""):
@@ -49,6 +52,7 @@ def digest(path):
 
 
 def read_manifest(path):
+    """Read and validate bounded version-one source metadata, returning an empty mapping if absent and rejecting symlinks or invalid hashes and times."""
     if path.is_symlink():
         raise ValueError("Cached source manifest must not be a symlink")
     if not path.exists():
@@ -71,6 +75,7 @@ def read_manifest(path):
 
 
 def restore(root, derived_data):
+    """Restore cached mtimes only for unchanged tracked content and separate same-second edits; return restored and changed counts."""
     entries = read_manifest(derived_data / MANIFEST)
     restored = changed = 0
     if not entries:
@@ -92,6 +97,7 @@ def restore(root, derived_data):
 
 
 def capture(root, derived_data):
+    """Hash tracked files, reject concurrent size or mtime changes, and atomically replace the cache manifest with captured metadata."""
     files = {}
     for name, path in tracked_files(root):
         before = path.stat()
@@ -108,6 +114,7 @@ def capture(root, derived_data):
 
 
 def main(argv=None):
+    """Parse restore or capture paths, reject a symlinked cache directory, perform the selected metadata operation, and print its counts."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("restore", "capture"))
     parser.add_argument("--root", type=Path, required=True)

@@ -38,6 +38,7 @@ struct AppSettingsView: View {
             if activity == .key { recordScreen() }
         }
     }
+    /// Records the active settings page only while this window is key.
     private func recordScreen() {
         guard windowActivity == .key else { return }
         telemetry.screen(selectedPage == .privacy ? .privacySettings : (selectedPage == .judges ? .judgeSettings : .mcpSettings))

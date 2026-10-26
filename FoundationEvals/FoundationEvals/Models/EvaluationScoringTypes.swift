@@ -1,5 +1,6 @@
 import Foundation
 
+/// Response scoring policies, including collect-only mode where deterministic field assertions may still assign a verdict.
 enum ScoringMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case review
     case exactMatch
@@ -53,6 +54,7 @@ enum ScoringMode: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Recorded verdict; unscored and error remain distinct from an evaluated failure.
 enum EvaluationResultStatus: String, Codable, Sendable {
     case passed
     case failed

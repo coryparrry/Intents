@@ -55,6 +55,7 @@ struct JudgeEvidenceSection: View {
         .font(.callout)
     }
 
+    /// Displays judge evidence in an expandable monospaced inset panel.
     private func evidence(_ title: String, text: String) -> some View {
         DisclosureGroup(title) {
             Text(text)

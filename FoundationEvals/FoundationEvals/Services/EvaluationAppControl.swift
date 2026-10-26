@@ -9,6 +9,8 @@ import Observation
     let runners: DeveloperRunnerStore
     let appIntentTesting = MacIntentTestingStore()
 
+    /// Creates production and runner controls rooted in the evaluation store's workspace storage,
+    /// sharing that store with authenticated app control.
     init(store: EvaluationStore) {
         self.store = store
         production = ProductionWorkspaceStore(root: store.overviewStorageDirectory)

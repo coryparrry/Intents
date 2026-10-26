@@ -3,6 +3,8 @@ import Foundation
 enum MCPDeviceTools {
   static let definitions: [MCPToolDefinition] = {
     let s = MCPControlSchema.self
+    /// Builds a runner tool through the shared schema helper, adding the mutation operation ID when
+    /// requested.
     func tool(
       _ name: String, _ description: String, _ fields: [String: MCPJSONValue] = [:],
       _ required: [String] = [], mutation: Bool = false

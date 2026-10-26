@@ -8,11 +8,14 @@ actor EvaluationPromptImprovementRunner {
     private let generate: Generator
     private let evaluate: Run
 
+    /// Injects instruction generation and suite execution so the comparison can be run with controlled dependencies.
     init(generate: @escaping Generator, evaluate: @escaping Run) {
         self.generate = generate
         self.evaluate = evaluate
     }
 
+    /// Checkpoints each comparison stage and selects an alternative using Development pass counts alone.
+    /// Held-out execution starts only after selection is frozen; invalid, incomplete or cancelled comparisons and checkpoint failures throw.
     func run(_ initial: EvaluationPromptImprovement, checkpoint: Checkpoint) async throws -> EvaluationPromptImprovement {
         if let issue = EvaluationPromptImprovementRules.validationIssue(suite: initial.source, heldOutCaseIDs: initial.heldOutCaseIDs) {
             throw EvaluationStoreError.invalidSuite(issue)
@@ -75,12 +78,14 @@ actor EvaluationPromptImprovementRunner {
         return report
     }
 
+    /// Runs a variant and tags its returned evidence with the owning improvement ID.
     private func evaluateVariant(_ suite: EvaluationSuite, improvementID: UUID) async throws -> EvaluationRun {
         var run = try await evaluate(suite)
         run.promptImprovementID = improvementID
         return run
     }
 
+    /// Rejects cancelled, incomplete, unscored or errored comparison runs before their scores can influence a recommendation.
     private func requireComplete(_ run: EvaluationRun, suite: EvaluationSuite) throws {
         try Task.checkCancellation()
         guard EvaluationPromptImprovementRules.isComplete(run, for: suite) else {

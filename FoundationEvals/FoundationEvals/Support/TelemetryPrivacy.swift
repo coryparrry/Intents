@@ -49,6 +49,7 @@ struct TelemetryCaptureEligibility {
 
 /// Pure, nonisolated filtering is safe when the SDK invokes it off the main actor.
 enum TelemetryPayloadFilter {
+    /// Allowlist-filters known events, rebuilds marked crash payloads, and forces profile processing and GeoIP off; unknown events return nil.
     nonisolated static func properties(_ properties: [String: Any], event name: String) -> [String: Any]? {
         guard let allowed = TelemetryEvent.allowedProperties(for: name) else { return nil }
         var safe = properties.filter { allowed.contains($0.key) && TelemetryEvent.isSafeProperty($0.key, value: $0.value) }
@@ -66,6 +67,7 @@ enum TelemetryPayloadFilter {
         return safe
     }
 
+    /// Builds an SDK callback gated by usage/diagnostics consent, checking crash epoch equality when an epoch is supplied and retaining valid consent markers.
     nonisolated static func beforeSend(usage: Bool, diagnostics: Bool, consentEpoch: UUID? = nil) -> @Sendable (PostHogEvent) -> PostHogEvent? {
         return { @Sendable event in
             if event.event == "$exception", let consentEpoch,

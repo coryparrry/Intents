@@ -85,6 +85,7 @@ struct CoreAIModelControls: View {
         }
     }
 
+    /// Starts an unstructured task to invoke the host asynchronous model-loading action; this view retains no cancellation handle.
     private func loadModel() {
         Task {
             await onLoad()

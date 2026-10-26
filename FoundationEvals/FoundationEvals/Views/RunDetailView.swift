@@ -19,6 +19,7 @@ private enum ResultFilter: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Tests a result against this filter, treating errors, unscored results, and judge failures as issues.
     func includes(_ result: EvaluationSampleResult) -> Bool {
         switch self {
         case .all:
@@ -58,6 +59,7 @@ struct RunDetailView: View {
     @State private var selectedPage = RunPage.report
     @State private var selectedBaselineID: UUID?
 
+    /// Captures the run and store and seeds comparison selection with the latest compatible earlier baseline.
     init(run: EvaluationRun, store: EvaluationStore, baselineRuns: [EvaluationRun]) {
         self.run = run
         self.store = store
@@ -174,6 +176,7 @@ struct RunDetailView: View {
         .accessibilityIdentifier("Run review scroll")
     }
 
+    /// Replaces filename characters outside ASCII letters, digits, underscores, and hyphens with a hyphen.
     private func safeFilename(_ value: String) -> String {
         value.replacingOccurrences(of: "[^A-Za-z0-9_-]+", with: "-", options: .regularExpression)
     }
@@ -269,6 +272,7 @@ private struct RunStatusBadge: View {
 private struct RunSectionLabel: View {
     let title: String
 
+    /// Creates a run section label with the supplied title.
     init(_ title: String) { self.title = title }
 
     var body: some View {
@@ -343,6 +347,7 @@ private struct RunConfigurationSection: View {
         }
     }
 
+    /// Summarizes requested and effective context limits, token reserves, counting evidence, and the saved context/reference policies.
     private func contextSummary(execution: EvaluationExecutionTrace) -> String {
         let configuration = execution.configuration
         let requested = configuration.maximumInputTokens.map { "\($0) tokens" } ?? "automatic"
@@ -474,7 +479,6 @@ private struct ResultsSection: View {
                         result: selectedResult,
                         scoringMode: run.scoringMode,
                         repetitions: run.repetitions,
-                        passingScore: run.judgePassingScore ?? EvaluationSuite.judgePassingScore,
                         subjectModelName: run.execution?.modelDisplayName ?? run.environment.model,
                         modelConfiguration: run.execution?.configuration
                     )
@@ -485,9 +489,11 @@ private struct ResultsSection: View {
             }
         }
         .workspaceSurface()
-        .onAppear { selectFirstResultIfNeeded() }
+        .onAppear {
+            repairEditorSelection(selectedResultID, ids: results.map(\.id)) { selectedResultID = $0 }
+        }
         .onChange(of: results.map(\.id)) { _, _ in
-            selectFirstResultIfNeeded()
+            repairEditorSelection(selectedResultID, ids: results.map(\.id)) { selectedResultID = $0 }
         }
     }
 
@@ -529,15 +535,10 @@ private struct ResultsSection: View {
         }
     }
 
+    /// Restores the all-results filter and clears the search query.
     private func clearFilters() {
         filter = .all
         searchText = ""
-    }
-
-    private func selectFirstResultIfNeeded() {
-        if selectedResultID.flatMap({ id in results.firstIndex(where: { $0.id == id }) }) == nil {
-            selectedResultID = results.first?.id
-        }
     }
 }
 
@@ -587,7 +588,6 @@ struct EvaluationResultDetail: View {
     let result: EvaluationSampleResult
     let scoringMode: ScoringMode
     let repetitions: Int
-    let passingScore: Int
     let subjectModelName: String
     let modelConfiguration: EvaluationModelConfiguration?
     @State private var hasCopiedResponse = false
@@ -597,7 +597,6 @@ struct EvaluationResultDetail: View {
             ResultCardHeader(
                 result: result,
                 repetitions: repetitions,
-                passingScore: passingScore,
                 scorerSummary: result.scorerSummary(scoringMode: scoringMode),
                 judgedByModel: scoringMode == .modelJudge && result.judgeIdentity?.requestedModelID != "none"
             )
@@ -707,6 +706,7 @@ struct EvaluationResultDetail: View {
         .textSelection(.enabled)
     }
 
+    /// Copies the selected response to the general pasteboard and marks the copy action as completed.
     private func copyResponse() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -733,7 +733,6 @@ private struct ReasoningTraceSection: View {
 struct ResultCardHeader: View {
     let result: EvaluationSampleResult
     let repetitions: Int
-    let passingScore: Int
     let scorerSummary: String
     let judgedByModel: Bool
 

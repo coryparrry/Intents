@@ -1,5 +1,6 @@
 import Foundation
 
+/// Opt-in Spotlight sources and guidance, validating narrow file scope and bounded response settings only when enabled.
 struct EvaluationSpotlightSearchConfiguration: Codable, Equatable, Sendable {
     static let maximumResultCount = 50
     static let maximumFetchAttributes = 16
@@ -17,6 +18,7 @@ struct EvaluationSpotlightSearchConfiguration: Codable, Equatable, Sendable {
     var pipeline: EvaluationSpotlightPipelineConfiguration
     var maximumResponseSize: Int
 
+    /// Creates a disabled search feature with default source, guidance, identity, pipeline, and response-size settings.
     init(
         enabled: Bool = false,
         fileSource: EvaluationSpotlightFileSourceConfiguration = .init(),
@@ -45,6 +47,7 @@ struct EvaluationSpotlightSearchConfiguration: Codable, Equatable, Sendable {
         case maximumResponseSize
     }
 
+    /// Decodes required search settings, defaulting absent contact identity and deduplication pipeline settings for older files.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try container.decode(Bool.self, forKey: .enabled)
@@ -109,6 +112,7 @@ struct EvaluationSpotlightSearchConfiguration: Codable, Equatable, Sendable {
         return pipeline.validationIssue
     }
 
+    /// Rejects canonical broad user, volume, temporary, and system scopes, including descendants of listed system directories.
     static func isDisallowedFileScope(_ url: URL) -> Bool {
         let canonicalURL = url.standardizedFileURL.resolvingSymlinksInPath()
         let path = canonicalURL.path
@@ -179,6 +183,7 @@ struct EvaluationSpotlightContactIdentityConfiguration: Codable, Equatable, Send
     var emailAddresses: [String]
     var phoneNumbers: [String]
 
+    /// Creates optional contact-identity guidance without normalizing or validating supplied names and addresses.
     init(
         enabled: Bool = false,
         displayName: String = "",
@@ -217,10 +222,12 @@ struct EvaluationSpotlightContactIdentityConfiguration: Codable, Equatable, Send
         displayName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Trims surrounding whitespace from each identity value without deduplicating or discarding entries.
     func normalized(_ values: [String]) -> [String] {
         values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     }
 
+    /// Checks a trimmed identity value for nonemptiness, character limits, and control characters.
     private static func isValidValue(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return !trimmed.isEmpty
@@ -234,6 +241,7 @@ struct EvaluationSpotlightContactIdentityConfiguration: Codable, Equatable, Send
 struct EvaluationSpotlightPipelineConfiguration: Codable, Equatable, Sendable {
     var deduplicateItems: Bool
 
+    /// Sets whether search results request item deduplication; it is off by default.
     init(deduplicateItems: Bool = false) {
         self.deduplicateItems = deduplicateItems
     }
@@ -247,6 +255,7 @@ struct EvaluationSpotlightFileSourceConfiguration: Codable, Equatable, Sendable 
     var maximumResults: Int
     var fetchedAttributes: EvaluationSpotlightAttributeSelection
 
+    /// Creates file-search settings; callers must choose a folder and validate supplied result and attribute limits.
     init(
         enabled: Bool = true,
         folderPath: String = "",
@@ -275,6 +284,7 @@ struct EvaluationCoreSpotlightSourceConfiguration: Codable, Equatable, Sendable 
     var fetchedAttributes: EvaluationSpotlightAttributeSelection
     var allowMail: Bool
 
+    /// Creates a disabled Core Spotlight source, with mail access disabled unless explicitly requested.
     init(
         enabled: Bool = false,
         maximumResults: Int = 8,
@@ -301,6 +311,7 @@ struct EvaluationSpotlightAttributeSelection: Codable, Equatable, Sendable {
     var presets: [EvaluationSpotlightAttributePreset]
     var customAttributeNames: [String]
 
+    /// Creates a fetched-attribute selection without merging presets and custom names.
     init(
         presets: [EvaluationSpotlightAttributePreset] = [],
         customAttributeNames: [String] = []
@@ -311,6 +322,7 @@ struct EvaluationSpotlightAttributeSelection: Codable, Equatable, Sendable {
 
     var count: Int { presets.count + customAttributeNames.count }
 
+    /// Validates attribute counts, duplicate entries, and trimmed custom-name bounds, returning a context-prefixed issue.
     func validationIssue(context: String) -> String? {
         guard count <= EvaluationSpotlightSearchConfiguration.maximumFetchAttributes else {
             return "\(context) can fetch at most \(EvaluationSpotlightSearchConfiguration.maximumFetchAttributes) attributes."
@@ -398,6 +410,7 @@ struct EvaluationSpotlightGuidanceConfiguration: Codable, Equatable, Sendable {
     var dynamicProfile: EvaluationSpotlightDynamicGuidanceProfile
     var outputFormat: EvaluationSpotlightOutputFormat
 
+    /// Creates focused document guidance by default, retaining optional dynamic rules for use when that mode is selected.
     init(
         mode: EvaluationSpotlightGuidanceMode = .focused,
         focusedDomain: EvaluationSpotlightContentDomain = .documents,
@@ -501,6 +514,7 @@ struct EvaluationSpotlightDynamicGuidanceProfile: Codable, Equatable, Sendable {
     var contentType: EvaluationSpotlightGuidanceOption
     var attributes: EvaluationSpotlightAttributeSelection
 
+    /// Creates dynamic guidance with text matching allowed and all other options left unspecified by default.
     init(
         textMatch: EvaluationSpotlightGuidanceOption = .allowed,
         similarityMatch: EvaluationSpotlightGuidanceOption = .unused,

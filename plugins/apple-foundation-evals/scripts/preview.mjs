@@ -9,7 +9,9 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 const root = new URL('../', import.meta.url);
 const exportsPath = join(process.env.FOUNDATION_EVALS_PLUGIN_DATA || tmpdir(), 'preview-trace-exports');
+/** Accept a bounded simple export basename with an allowed extension, rejecting unsafe names before filesystem writes. */
 const downloadName = value => { if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._ -]{0,180}\.(json|afevaltrace|afevalsuite)$/.test(value)) throw Error('Invalid export filename'); return value; };
+/** Require a UUID-shaped hexadecimal trace basename before reading preview exports. */
 const traceName = value => { if (typeof value !== 'string' || !/^[a-f0-9-]{36}\.afevaltrace$/i.test(value)) throw Error('Invalid trace filename'); return value; };
 const child = spawn(process.execPath, [fileURLToPath(new URL('server/main.mjs', root))], { stdio: ['pipe', 'pipe', 'inherit'], env: process.env });
 let sequence = 0;
@@ -18,6 +20,7 @@ createInterface({ input: child.stdout }).on('line', line => {
   const response = JSON.parse(line); const pending = requests.get(response.id);
   if (!pending) return; requests.delete(response.id); clearTimeout(pending.timer); pending.resolve(response);
 });
+/** Correlate a stdio JSON-RPC request with its child response and reject it after a three-minute timeout. */
 function rpc(message) {
   return new Promise((resolve, reject) => {
     const id = ++sequence;
@@ -32,6 +35,7 @@ const host = `<!doctype html><html><head><meta name="viewport" content="width=de
 const frame=document.querySelector('iframe');
 const options=new URLSearchParams(location.search);
 let theme=options.get('theme')==='dark'?'dark':'light';
+/** Return the current preview theme and matching host CSS variables for the embedded MCP app. */
 function hostContext(){return {theme,styles:{variables:theme==='dark'?{
  '--color-background-primary':'#212121','--color-background-secondary':'#181818','--color-background-tertiary':'#303030',
  '--color-text-primary':'#ededed','--color-text-secondary':'#a0a0a0','--color-border-primary':'#505050','--color-border-secondary':'#363636',
@@ -44,6 +48,7 @@ function hostContext(){return {theme,styles:{variables:theme==='dark'?{
 if(options.has('themeControls')){
  const control=document.createElement('button');control.textContent='Switch preview theme';
  control.style.cssText='position:fixed;bottom:8px;right:8px;padding:6px 10px;border:1px solid #888;border-radius:6px;z-index:1';
+ /** Toggle the preview theme and notify the same-origin app frame with the updated host context. */
  control.onclick=()=>{theme=theme==='dark'?'light':'dark';frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/host-context-changed',params:hostContext()},location.origin);};
  document.body.append(control);
 }
@@ -103,6 +108,7 @@ const server = createServer(async (req, res) => {
 });
 const port = Number(process.env.FOUNDATION_EVALS_PREVIEW_PORT || 4317);
 server.listen(port, '127.0.0.1', () => console.error(`Local MCP preview: http://127.0.0.1:${server.address().port}`));
+/** Stop accepting preview HTTP requests, close child input, and request MCP subprocess termination. */
 function close() { server.close(); child.stdin.end(); child.kill('SIGTERM'); }
 process.on('SIGTERM', close); process.on('SIGINT', close);
 child.on('exit', () => { server.close(); for (const pending of requests.values()) { clearTimeout(pending.timer); pending.reject(Error('MCP server exited')); } });
