@@ -17,8 +17,24 @@
 
 ## Validation before pushing
 
-- Inspect the complete PR base-to-head diff, including deletions and renames. Determine affected coverage using `script/ci_routes.py`; do not infer it from the last commit or assume all Markdown changes select the same checks. Unknown paths select full coverage, and main pushes run full ordinary coverage.
-- Run the relevant checks below before pushing. These commands are scoped checks, not substitutes for all selected hosted jobs. Reuse successful results while their inputs remain valid; rerun affected checks after changes or concrete review findings. Report any required check that cannot run and its exact prerequisite.
+- Before every push, determine coverage for the complete proposed PR diff using `script/ci_routes.py`, including uncommitted changes, new files, deletions, and renames. Record the selected Python modules, Swift suites, native tests, UI shards, and additional workflow checks. Do not choose checks from the last commit or from labels such as "docs-only." `AGENTS.md` is currently an unclassified path and selects full coverage; main pushes also run full ordinary coverage.
+- Run the always-on checks from `.github/workflows/ci.yml` and `.github/workflows/docstrings.yml` as well as every selected check. The affected-area table below adds to this baseline; it does not narrow it. The current baseline is:
+
+  ```sh
+  npm ci --prefix Tools/DocstringCoverage --ignore-scripts --no-audit --no-fund
+  python3 script/docstring_coverage.py --minimum 81
+  python3 -m unittest script.tests.test_docstring_coverage
+  go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color -ignore 'label "xcode-27" is unknown'
+  shellcheck script/*.sh
+  python3 -m compileall -q examples
+  (cd website && node --check dist/app.js && node --check dist/demo-data.mjs && node --check dist/demo-interactions.mjs && node scripts/inline-styles.mjs --check && node --test tests/*.test.mjs)
+  git diff --check
+  ```
+
+- Validate the actual proposed PR title and body as described below. Run all selected Python/macOS modules and Swift/native/UI checks using the maintained CI runners and workflow commands, including any standalone plugin or production-fixture workflow selected by its own path filters. A successful build alone is not a passing test run.
+- Treat validation as a push gate: do not commit and push a candidate with failed, missing, unfinished, or unverified required checks. Fix failures and recheck first. If a required environment or tool is unavailable, stop the push and report the exact blocker; do not use a new PR or a remote push to discover whether unchecked changes pass. An explicit user instruction can authorize an exception, which must be disclosed in the PR.
+- Reuse a completed passing check only when its relevant source, tests, build inputs, workflow configuration, and environment remain valid. Identify the source and evidence being reused and explain why the new diff does not affect it. Do not call a skipped, blocked, or pending check a reused success. Rerun affected checks after changes or concrete review findings.
+- Before pushing, record the required checks, commands, results, and any valid reused evidence. Apply this gate to the first PR push and every subsequent fix; do not wait for GitHub CI to catch locally detectable failures.
 
 | Affected area | Local verification |
 |---|---|
@@ -32,7 +48,7 @@
 | Production evaluation package or CLI | `swift test --package-path Packages/ProductionEvals -j 2`, `swift build --product intents-evals -j 2`, then `python3 script/test_production_evals.py .build/debug/intents-evals`. |
 | Standalone plugin | In `plugins/apple-foundation-evals`, run `npm ci`, `npm run typecheck`, `npm run build:ui`, `npm test`, `npm run test:native`, and `node scripts/package.mjs /tmp/apple-foundation-evals.zip`. For shared engine changes also run `python3 -m unittest script.tests.test_shared_app_sources` from the repo root and affected native app tests. |
 | Website | In `website`, run `node --check dist/app.js`, `node --check dist/demo-data.mjs`, `node --check dist/demo-interactions.mjs`, `node scripts/inline-styles.mjs --check`, and `node --test tests/*.test.mjs`; inspect rendered changes. |
-| Documentation or metadata only | Check links, examples, and `git diff --check`; validate PR release notes. Follow the actual router selection for any additional checks. |
+| Documentation or metadata only | Check links and examples and validate PR release notes, in addition to the always-on checks and actual router selection. Documentation changes do not waive selected native or UI checks. |
 
 - Build and test from the repository root unless a different directory is specified. Confirm toolchain and runtime prerequisites before starting expensive work; coordinate local builds and interactive tests with other active work. See `README.md` for native commands and signing requirements.
 - Keep resource-dependent manual qualification separate from ordinary CI. The explicit opt-ins are in `script/ci_test_policy.py`; live Core AI resource loading and Mac App Intent invocation require their documented environments. Never report them verified from compilation or fixture tests alone.
