@@ -108,6 +108,16 @@ class ChangedFunctionDocumentationTests(unittest.TestCase):
         self.write('sample.swift', source.replace('edited()', 'edited(value: Int)'))
         self.assertEqual([item.name for item in changed.changed_declarations(self.root, base)], ['edited'])
 
+    def test_inter_member_comments_do_not_change_bodyless_requirements(self):
+        """Leave undocumented legacy requirements exempt when only an unrelated comment changes."""
+        source = 'protocol P {\n func old()\n // note\n static func next()\n}\n'
+        base = self.baseline('sample.swift', source)
+        for edited in [source.replace('// note', '// updated note'),
+                       source.replace('// note', '// updated note\n\n')]:
+            with self.subTest(source=edited):
+                self.write('sample.swift', edited)
+                self.assertEqual(changed.changed_declarations(self.root, base), [])
+
     def test_invalid_base_and_parse_failures_fail_closed(self):
         """Never turn unavailable comparison evidence or malformed authored code into a pass."""
         base = self.baseline('sample.py', 'def legacy(): pass\n')

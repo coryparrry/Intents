@@ -302,13 +302,13 @@ def swift_declaration_end(tokens: list[Token], declaration: int) -> int:
                 continue
             if value in {"}", ";", "func", "init", "deinit", "subscript", "var", "let", "associatedtype", "@"}:
                 prefix = swift_prefix(tokens, index)
-                while prefix > declaration and tokens[prefix - 1].kind == "doc":
+                while prefix > declaration and tokens[prefix - 1].kind in {"doc", "comment"}:
                     prefix -= 1
                 return tokens[max(declaration, prefix - 1)].line
         parens += (value == "(") - (value == ")")
         brackets += (value == "[") - (value == "]")
         previous = token
-    return tokens[-1].line if tokens else 1
+    return previous.line
 
 
 def swift_declarations(path: str, source: str) -> list[Declaration]:
