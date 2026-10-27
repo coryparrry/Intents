@@ -8,6 +8,7 @@ from document_semantic_report import candidate_digest, connection_digest, valida
 
 class SemanticEvidenceTests(unittest.TestCase):
     def setUp(self):
+        """Prepare isolated synthetic evidence and temporary storage for each report regression."""
         self.connection = dict(id='connection', modelID='reviewer', kind='customCompatible',
                                baseURL='https://example.invalid/v1', providerOrder=[],
                                capabilities=dict(structuredOutputs=True), generationPolicy='portable')
@@ -23,6 +24,7 @@ class SemanticEvidenceTests(unittest.TestCase):
                            questionRawResponse=json.dumps(dict(requirements=question_checks)))
 
     def test_reference_approval_cannot_replace_question_only_approval(self):
+        """Verify that reference approval cannot replace question only approval."""
         for field in ['questionChecks', 'questionRawResponse']:
             changed = copy.deepcopy(self.review)
             changed.pop(field)
@@ -38,6 +40,7 @@ class SemanticEvidenceTests(unittest.TestCase):
             validate_review(changed, self.case, self.connection)
 
     def test_acceptance_is_bound_to_all_scoring_inputs(self):
+        """Verify that acceptance is bound to all scoring inputs."""
         validate_review(self.review, self.case, self.connection)
         for field in ['prompt', 'expected', 'criteriaOverride', 'documentEvidence']:
             changed = copy.deepcopy(self.case)
@@ -48,6 +51,7 @@ class SemanticEvidenceTests(unittest.TestCase):
             with self.assertRaises(AssertionError): validate_review(self.review, changed, self.connection)
 
     def test_historical_controls_require_every_result_and_exact_question_history(self):
+        """Verify that historical controls require every result and exact question history."""
         case = copy.deepcopy(self.case)
         case['documentEvidence'].update(sourceDigest='source', citations=[dict(passageID='p', quote='No autosave')])
         review = dict(self.review, candidateDigest=candidate_digest(case))
@@ -80,11 +84,13 @@ class SemanticEvidenceTests(unittest.TestCase):
             with self.assertRaises(AssertionError): validate_acceptance_controls(path, path, self.connection)
 
     def test_raw_verdict_cannot_be_relabelled_as_acceptance(self):
+        """Verify that raw verdict cannot be relabelled as acceptance."""
         changed = copy.deepcopy(self.review)
         changed['rawResponse'] = json.dumps(dict(requirements=[dict(c, score=2) for c in changed['checks']]))
         with self.assertRaises(AssertionError): validate_review(changed, self.case, self.connection)
 
     def test_every_check_must_fully_pass(self):
+        """Verify that every check must fully pass."""
         changed = copy.deepcopy(self.review)
         changed['checks'][2]['score'] = 3
         changed['rawResponse'] = json.dumps(dict(requirements=changed['checks']))
@@ -92,6 +98,7 @@ class SemanticEvidenceTests(unittest.TestCase):
         self.assertFalse(validate_review(changed, self.case, self.connection, False))
 
     def test_duplicate_indexes_and_wrong_endpoint_are_rejected(self):
+        """Verify that duplicate indexes and wrong endpoint are rejected."""
         changed = copy.deepcopy(self.review)
         changed['checks'][-1]['criterionIndex'] = 1
         changed['rawResponse'] = json.dumps(dict(requirements=changed['checks']))
@@ -100,10 +107,12 @@ class SemanticEvidenceTests(unittest.TestCase):
             validate_review(self.review, self.case, dict(self.connection, baseURL='https://other.invalid/v1'))
 
     def write_run(self, path, events):
+        """Write synthetic attempts and receipts for report-gate regression checks."""
         (path / 'runtime.json').write_text(json.dumps(dict(judgeConfiguration=self.connection)))
         (path / 'semantic-attempts.jsonl').write_text('\n'.join(json.dumps(e) for e in events))
 
     def test_missing_receipt_cannot_surface_and_missing_controls_cannot_qualify(self):
+        """Verify that missing receipt cannot surface and missing controls cannot qualify."""
         row = dict(documentID='doc', slot=0, candidate=self.case, semanticReview=self.review, outcome='surfaced')
         event = dict(batchID='doc:0', attempt=1, outcome='accepted', review=self.review, candidateDigest=self.review['candidateDigest'])
         with tempfile.TemporaryDirectory() as directory:
@@ -116,6 +125,7 @@ class SemanticEvidenceTests(unittest.TestCase):
             with self.assertRaises((AssertionError, IndexError)): semantic_metrics(path, [row])
 
     def test_provider_failure_blocks_gate_and_attempts_remain_bounded(self):
+        """Verify that provider failure blocks gate and attempts remain bounded."""
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             self.write_run(path, [dict(batchID='doc:0', attempt=1, outcome='review_error')])
@@ -126,6 +136,7 @@ class SemanticEvidenceTests(unittest.TestCase):
             with self.assertRaises(AssertionError): semantic_metrics(path, [])
 
     def test_sibling_context_cannot_be_swapped(self):
+        """Verify that sibling context cannot be swapped."""
         review = dict(self.review, reviewedQuestions=['unrelated-context'])
         row = dict(documentID='doc', slot=0, candidate=self.case, semanticReview=review, outcome='surfaced')
         event = dict(batchID='doc:0', attempt=1, outcome='accepted', review=review, candidateDigest=review['candidateDigest'])

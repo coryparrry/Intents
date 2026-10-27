@@ -5,15 +5,20 @@ final class DocumentSuiteUITests: XCTestCase {
     private var app: XCUIApplication?
     private var storage: URL?
 
+    /// Disable continuation after failure so UI assertions stop before mutating another fixture state.
     override func setUpWithError() throws { continueAfterFailure = false }
+    /// Terminate the test application and remove its isolated workspace after each UI flow.
     override func tearDownWithError() throws {
         app?.terminate()
         if let storage { try? FileManager.default.removeItem(at: storage) }
     }
 
+    /// Verify that source review and accepted-suite creation work in light appearance.
     @MainActor func testReviewAndCreateDocumentSuiteInLightMode() throws { try reviewAndCreate(style: "Light") }
+    /// Verify that source review and accepted-suite creation work in dark appearance.
     @MainActor func testReviewAndCreateDocumentSuiteInDarkMode() throws { try reviewAndCreate(style: "Dark") }
 
+    /// Verify that unchecked draft cannot be accepted without an authorized judge.
     @MainActor func testUncheckedDraftCannotBeAcceptedWithoutAnAuthorizedJudge() throws {
         let app = try openDraft(style: "Light", semanticApproved: false)
         let create = app.buttons["Create document suite"]
@@ -27,6 +32,7 @@ final class DocumentSuiteUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Authorize a semantic judge to check the edited draft."].waitForExistence(timeout: 3), app.debugDescription)
     }
 
+    /// Exercise source review, acceptance, and suite creation in the requested appearance.
     @MainActor private func reviewAndCreate(style: String) throws {
         let app = try openDraft(style: style, semanticApproved: true)
         let storage = try XCTUnwrap(self.storage)
@@ -64,6 +70,7 @@ final class DocumentSuiteUITests: XCTestCase {
         XCTAssertFalse(app.alerts.firstMatch.exists, app.debugDescription)
     }
 
+    /// Launch the application against synthetic draft storage and navigate to its document review screen.
     @MainActor private func openDraft(style: String, semanticApproved: Bool) throws -> XCUIApplication {
         let storage = try fixture(semanticApproved: semanticApproved)
         self.storage = storage
@@ -86,6 +93,7 @@ final class DocumentSuiteUITests: XCTestCase {
         return app
     }
 
+    /// Write a synthetic workspace and document draft without accessing the user workspace or credentials.
     private func fixture(semanticApproved: Bool) throws -> URL {
         let directory = try UITestStorage.makeDirectory(prefix: "document-suite")
         let projectID = UUID().uuidString
@@ -142,6 +150,7 @@ final class DocumentSuiteUITests: XCTestCase {
         return directory
     }
 
+    /// Serialize synthetic UI fixture data to its temporary destination.
     private func write(_ object: [String: Any], to url: URL) throws {
         try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]).write(to: url, options: .atomic)
     }

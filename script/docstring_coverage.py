@@ -6,8 +6,9 @@ from __future__ import annotations
 import argparse
 import ast
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -32,6 +33,8 @@ class Declaration:
     kind: str
     language: str
     documented: bool
+    start_line: int | None = None
+    end_line: int | None = None
 
 
 @dataclass(frozen=True)
@@ -45,32 +48,32 @@ class Token:
     kind: str = "code"
 
 
-def source_language(path: str) -> str | None:
+def source_language(path: str, include_tests: bool = False) -> str | None:
     """Select authored source, retaining adapted engine and published website scripts."""
     item = Path(path)
     parts = [part.lower() for part in item.parts]
     excluded = {"node_modules", ".git", ".build", ".swiftpm", "deriveddata", "build", "builds",
                 "vendor", "assets", "fixtures", "__pycache__", "coverage"}
-    if any(part in excluded or part in {"test", "tests", "uitests"} or part.endswith("tests")
+    if any(part in excluded or (not include_tests and (part in {"test", "tests", "uitests"} or part.endswith("tests")))
            for part in parts[:-1]):
         return None
     name = item.name.lower()
-    if (name.startswith("test_") and path != "script/test_production_evals.py") or re.search(
-            r"(?:[._-](?:test|tests|spec)|\.generated)\.(?:swift|py|[cm]?js|[jt]sx?)$", name):
+    if not include_tests and ((name.startswith("test_") and path != "script/test_production_evals.py") or re.search(
+            r"(?:[._-](?:test|tests|spec))\.(?:swift|py|[cm]?js|[jt]sx?)$", name)):
         return None
-    if name.endswith("tests.swift") or name.endswith(".min.js"):
+    if (not include_tests and name.endswith("tests.swift")) or re.search(r"\.generated\.(?:swift|py|[cm]?js|[jt]sx?)$", name) or name.endswith(".min.js"):
         return None
     return "Swift" if path == "script/foundation-evals" else LANGUAGES.get(item.suffix.lower())
 
 
-def git_sources(root: Path, filters: list[str]) -> list[tuple[str, str]]:
+def git_sources(root: Path, filters: list[str], include_tests: bool = False) -> list[tuple[str, str]]:
     """Inventory tracked and nonignored untracked source, optionally within path prefixes."""
     result = subprocess.run(["git", "-C", str(root), "ls-files", "--cached", "--others",
                              "--exclude-standard", "-z"], check=True, capture_output=True)
     selected = []
     normalized = [value.removeprefix("./").rstrip("/") for value in filters]
     for path in sorted(set(result.stdout.decode("utf-8").split("\0")) - {""}):
-        language = source_language(path)
+        language = source_language(path, include_tests)
         if language and (root / path).is_file() and (not normalized or any(
                 path == prefix or path.startswith(prefix + "/") for prefix in normalized)):
             selected.append((path, language))
@@ -280,6 +283,34 @@ def swift_documented(tokens: list[Token], prefix: int) -> bool:
     return documented
 
 
+def swift_declaration_end(tokens: list[Token], declaration: int) -> int:
+    """Find a Swift body or bodyless requirement without consuming the next member."""
+    parens = brackets = depth = 0
+    previous = tokens[declaration]
+    for index, token in enumerate(tokens[declaration + 1:], declaration + 1):
+        if token.kind != "code":
+            continue
+        value = token.value
+        if depth:
+            depth += (value == "{") - (value == "}")
+            if not depth:
+                return token.line
+            continue
+        if not parens and not brackets:
+            if value == "{":
+                depth = 1
+                continue
+            if value in {"}", ";", "func", "init", "deinit", "subscript", "var", "let", "associatedtype", "@"}:
+                prefix = swift_prefix(tokens, index)
+                while prefix > declaration and tokens[prefix - 1].kind == "doc":
+                    prefix -= 1
+                return tokens[max(declaration, prefix - 1)].line
+        parens += (value == "(") - (value == ")")
+        brackets += (value == "[") - (value == "]")
+        previous = token
+    return tokens[-1].line if tokens else 1
+
+
 def swift_declarations(path: str, source: str) -> list[Declaration]:
     """Count functions, operators, explicit lifecycle methods, and protocol requirements."""
     tokens = swift_tokens(source)
@@ -311,7 +342,11 @@ def swift_declarations(path: str, source: str) -> list[Declaration]:
                 continue
         prefix = swift_prefix(tokens, index)
         documented = swift_documented(tokens, prefix)
-        declarations.append(Declaration(path, token.line, name, token.value, "Swift", documented))
+        start = prefix
+        while start and tokens[start - 1].kind == "doc":
+            start -= 1
+        declarations.append(Declaration(path, token.line, name, token.value, "Swift", documented,
+                                        tokens[start].line, swift_declaration_end(tokens, index)))
     return declarations
 
 
@@ -319,7 +354,8 @@ def python_declarations(path: str, source: str) -> list[Declaration]:
     """Use Python's AST to count every sync or async function, including nested definitions."""
     tree = ast.parse(source, filename=path)
     return [Declaration(path, node.lineno, node.name, "async def" if isinstance(node, ast.AsyncFunctionDef)
-                        else "def", "Python", bool((ast.get_docstring(node) or "").strip()))
+                        else "def", "Python", bool((ast.get_docstring(node) or "").strip()),
+                        min([node.lineno] + [item.lineno for item in node.decorator_list]), node.end_lineno)
             for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
 
 
@@ -357,13 +393,26 @@ def shell_code_line(text: str, quote: str | None) -> tuple[str, str | None, list
     return "".join(code), quote, heredocs
 
 
+def shell_function_complete(source: str) -> bool:
+    """Use Bash's parse-only mode to distinguish block braces from literal shell arguments.
+
+    No source runs, and an isolated environment prevents startup-file injection.
+    Partial bodies fail syntax validation until their actual closing brace arrives.
+    """
+    result = subprocess.run(["bash", "--noprofile", "--norc", "-n"], input=source,
+                            text=True, capture_output=True, env={"PATH": os.defpath}, check=False)
+    return result.returncode == 0
+
+
 def shell_declarations(path: str, source: str) -> list[Declaration]:
     """Count named shell definitions, omitting quoted examples and actual heredoc bodies."""
     declarations = []
     comments = []
     heredocs = []
     quote = None
-    for line, text in enumerate(source.splitlines(), 1):
+    active = []
+    lines = source.splitlines()
+    for line, text in enumerate(lines, 1):
         if heredocs:
             delimiter, strip_tabs = heredocs[0]
             if (text.lstrip("\t") if strip_tabs else text) == delimiter:
@@ -379,12 +428,21 @@ def shell_declarations(path: str, source: str) -> list[Declaration]:
             documented = any(re.search(r"[A-Za-z]{2,}", comment) and not comment.startswith("!")
                              for comment in comments)
             declarations.append(Declaration(path, line, match.group(1) or match.group(2),
-                                            "function", "Shell", documented))
+                                            "function", "Shell", documented,
+                                            line - len(comments), line))
+            active.append(len(declarations) - 1)
+        completed = []
+        for index in active:
+            item = declarations[index]
+            declarations[index] = replace(item, end_line=line)
+            if "}" in code and shell_function_complete("\n".join(lines[item.line - 1:line])):
+                completed.append(index)
+        active = [index for index in active if index not in completed]
         if stripped:
             comments = []
         heredocs.extend(pending)
-    if quote is not None or heredocs:
-        raise ValueError(f"{path}: unterminated shell quote or heredoc")
+    if quote is not None or heredocs or active:
+        raise ValueError(f"{path}: unterminated shell function, quote, or heredoc")
     return declarations
 
 
@@ -400,11 +458,11 @@ def javascript_declarations(root: Path, sources: list[str]) -> list[Declaration]
     return [Declaration(**item) for item in json.loads(result.stdout)]
 
 
-def measure(root: Path, filters: list[str]) -> list[Declaration]:
+def measure(root: Path, filters: list[str], include_tests: bool = False) -> list[Declaration]:
     """Collect language-specific declarations, propagating inventory, decoding, and parse failures."""
     declarations = []
     javascript = []
-    for path, language in git_sources(root, filters):
+    for path, language in git_sources(root, filters, include_tests):
         if language in {"JavaScript", "TypeScript"}:
             javascript.append(path)
             continue

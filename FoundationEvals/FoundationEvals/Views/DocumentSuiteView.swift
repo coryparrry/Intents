@@ -12,6 +12,7 @@ struct DocumentSuiteView: View {
     @State private var rangeStart = ""
     @State private var rangeEnd = ""
 
+    /// Bind the view to the workspace store and restore its selected project document draft.
     init(store: EvaluationStore) {
         self.store = store
         _controller = State(initialValue: EvaluationDocumentDraftController(
@@ -222,6 +223,7 @@ struct DocumentSuiteView: View {
         }
     }
 
+    /// Bind a draft row by case identity so edits remain attached to the same candidate across list changes.
     private func draftDetail(index: Int) -> some View {
         let initial = controller.draft!.cases[index].evaluationCase
         let binding = Binding<EvaluationCase>(get: {
@@ -248,6 +250,7 @@ struct DocumentSuiteView: View {
         }.disabled(controller.isBusy).accessibilityIdentifier("Document draft review scroll")
     }
 
+    /// Persist accepted draft state and create the destination suite before switching workspace selection.
     private func create() {
         guard controller.persist(), let draft = controller.draft else { return }
         do {

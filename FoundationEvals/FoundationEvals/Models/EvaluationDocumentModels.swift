@@ -69,6 +69,7 @@ struct EvaluationDocumentEvidence: Codable, Hashable, Sendable {
         return nil
     }
 
+    /// Return the lowercase SHA-256 fingerprint used to bind retained source and review content.
     static func digest(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
@@ -95,6 +96,7 @@ extension EvaluationCase {
             && documentEvidence?.reviewedDigest == documentReviewDigest
     }
 
+    /// Record the current scoring-content digest so later substantive edits invalidate acceptance.
     mutating func acceptDocumentReview() {
         let digest = documentReviewDigest
         documentEvidence?.reviewedDigest = digest
@@ -118,6 +120,7 @@ extension EvaluationCase {
 }
 
 extension EvaluationSuite {
+    /// Reject suites whose retained source and case rubrics exceed the aggregate storage budget.
     static func documentContextBudgetIssue(for cases: [EvaluationCase]) -> String? {
         let retainedCharacters = cases.reduce(0) { $0 + ($1.documentEvidence?.contextText.count ?? 0)
             + ($1.criteriaOverride?.joined().count ?? 0) }
@@ -127,6 +130,7 @@ extension EvaluationSuite {
 
     var hasDocumentCases: Bool { cases.contains { $0.documentEvidence != nil } }
 
+    /// Use a case-specific rubric when present, otherwise fall back to the suite rubric.
     func effectiveCriteria(for evaluationCase: EvaluationCase) -> [String] {
         evaluationCase.criteriaOverride ?? rubricCriteria
     }
@@ -144,6 +148,7 @@ extension EvaluationSuite {
         return result
     }
 
+    /// Validate case rubrics, evidence, review requirements, and the aggregate retained-context budget.
     func documentValidationIssue(requireReview: Bool = true) -> String? {
         for evaluationCase in cases {
             if let criteria = evaluationCase.criteriaOverride,

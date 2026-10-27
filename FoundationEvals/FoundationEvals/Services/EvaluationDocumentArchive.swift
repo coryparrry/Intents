@@ -1,6 +1,7 @@
 import Foundation
 
 enum EvaluationDocumentArchive {
+    /// Export a bounded document-only suite after validating its evidence and removing provider bindings.
     static func data(for suite: EvaluationSuite) throws -> Data {
         guard !suite.cases.isEmpty, suite.cases.allSatisfy({ $0.documentEvidence != nil }) else {
             throw EvaluationStoreError.invalidSuite("This export supports suites containing only document cases. Mixed manual/document suites cannot be exported through this route.")
@@ -20,6 +21,7 @@ enum EvaluationDocumentArchive {
         return data
     }
 
+    /// Import a bounded archive into an editable draft while retaining original evidence and requiring fresh review.
     static func draft(from data: Data, projectID: UUID) throws -> EvaluationDocumentDraft {
         guard data.count <= EvaluationDocumentDraftStorage.maximumBytes else { throw EvaluationStoreError.invalidSuite("The saved document suite exceeds 5 MB.") }
         let decoded = try CanonicalJSON.decode(EvaluationSuite.self, from: data)

@@ -7,6 +7,7 @@ enum EvaluationDocumentImporter {
     static let maximumPages = 200
     static let passageCharacters = 2_200
 
+    /// Read a bounded PDF, Markdown, or UTF-8 text selection under scoped access and retain source anchors.
     static func importFile(at url: URL, selection: ClosedRange<Int>? = nil) throws -> EvaluationDocumentSource {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
@@ -62,11 +63,13 @@ enum EvaluationDocumentImporter {
         return source
     }
 
+    /// Normalize line endings and Unicode composition before splitting or matching source text.
     static func normalize(_ text: String) -> String {
         text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
             .precomposedStringWithCanonicalMapping
     }
 
+    /// Split text into bounded source passages while retaining a stable location and passage identifier.
     private static func append(text: String, location: String, prefix: String, to source: inout EvaluationDocumentSource) throws {
         try Task.checkCancellation()
         let retained = source.passages.reduce(0) { $0 + $1.text.count }
@@ -97,10 +100,12 @@ enum EvaluationDocumentImporter {
         }
     }
 
+    /// Reject imported sources whose passage count or raw text exceeds the published limits.
     private static func checkSize(_ source: EvaluationDocumentSource) throws {
         guard source.passages.count <= 512, source.passages.reduce(0, { $0 + $1.text.count }) <= maximumCharacters else { throw tooMuchText() }
     }
 
+    /// Create the actionable error used when an imported selection exceeds its supported text limits.
     private static func tooMuchText() -> EvaluationStoreError {
         .invalidSuite("The selection exceeds 128,000 characters or 512 passages. Import a smaller page/passage range; no truncated document was saved.")
     }

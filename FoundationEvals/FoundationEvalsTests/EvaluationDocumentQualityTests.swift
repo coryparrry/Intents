@@ -35,6 +35,7 @@ import Testing
         var humanReviewComplete: Bool = false
     }
 
+    /// Persist the qualification runtime identity without recording credentials.
     private func recordRuntime(directory: URL) throws {
         struct Runtime: Encodable { var os: String; var model: String; var contextSize: Int; var sampling = "greedy"; var judgeConfiguration: EvaluationJudgeConnection? }
         let model = SystemLanguageModel.default
@@ -49,6 +50,7 @@ import Testing
         }
     }
 
+    /// Decode optional live-test judge settings from the explicitly configured file; propagate read and format errors.
     private func judgeConfiguration() throws -> EvaluationJudgeConnection? {
         guard let path = ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_JUDGE_CONFIG"] else { return nil }
         let decoder = JSONDecoder()
@@ -71,16 +73,19 @@ import Testing
         return suite
     }
 
+    /// Resolve the frozen qualification input fixture for the requested evidence run.
     private func input() throws -> Corpus {
         let path = try #require(ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"])
         return try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
     }
+    /// Resolve the retained evidence destination for the current qualification run.
     private func output() throws -> URL {
         let path = try #require(ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_OUTPUT"])
         let url = URL(fileURLWithPath: path)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
+    /// Append one encoded evidence record without overwriting earlier attempt history.
     private func append<T: Encodable>(_ value: T, name: String, directory: URL) throws {
         let url = directory.appending(path: name)
         if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: nil) }
@@ -93,6 +98,7 @@ import Testing
         try handle.synchronize()
     }
 
+    /// Verify that controlled answers have correct requirement scores.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil))
     func controlledAnswersHaveCorrectRequirementScores() async throws {
         let corpus = try input(), directory = try output()
@@ -132,6 +138,7 @@ import Testing
         }
     }
 
+    /// Verify that frozen corpus generation records every attempt.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil))
     func frozenCorpusGenerationRecordsEveryAttempt() async throws {
         let corpus = try input(), directory = try output()
@@ -204,6 +211,7 @@ import Testing
         var requiredTerms: [String]
     }
 
+    /// Verify that focused generation regressions.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil))
     func focusedGenerationRegressions() async throws {
         let path = try #require(ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"])
@@ -240,6 +248,7 @@ import Testing
         var candidate: EvaluationCase
         var accepted: Bool
     }
+    /// Verify that semantic controls reject bad drafts.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil))
     func semanticControlsRejectBadDrafts() async throws {
         let path = try #require(ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"])
@@ -257,6 +266,7 @@ import Testing
         var controls: [Control]
     }
 
+    /// Verify that known false approvals are rejected.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil))
     func knownFalseApprovalsAreRejected() async throws {
         let path = try #require(ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_ACCEPTANCE_CORPUS"])
@@ -280,6 +290,7 @@ import Testing
         }
     }
 
+    /// Run the frozen semantic controls through the selected review transport and retain their verdicts.
     private func reviewSemanticControls(_ fixtures: [SemanticControl]) async throws {
         let directory = try output()
         try recordRuntime(directory: directory)
@@ -293,6 +304,7 @@ import Testing
         }
     }
 
+    /// Convert a frozen control fixture into a document case with reproducible evidence bindings.
     private func materialize(_ document: Document, directory: URL) throws -> URL {
         let url = directory.appending(path: document.id + "." + document.format)
         if document.format == "pdf" {

@@ -26,6 +26,7 @@ struct EvaluationDocumentSemanticReview: Codable, Equatable, Sendable {
             && Set(checks.map(\.criterionIndex)) == Set(1...checks.count)
             && checks.allSatisfy { $0.score == 4 && !$0.rationale.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
+    /// Require a current policy and matching candidate digest before reusing a semantic review receipt.
     func matches(_ value: EvaluationCase) -> Bool { accepted && candidateDigest == value.documentReviewDigest }
     var feedback: String { ((questionChecks ?? []).filter { $0.score != 4 }.map { "Question \($0.criterionIndex): \($0.rationale)" }
         + checks.filter { $0.score != 4 }.map { "\($0.criterionIndex): \($0.rationale)" }).joined(separator: "\n") }
@@ -58,6 +59,7 @@ enum EvaluationDocumentSemanticReviewer {
         var requirements: [String] { self == .question ? questionRequirements : EvaluationDocumentSemanticReviewer.requirements }
         var instructions: String { self == .question ? questionInstructions : EvaluationDocumentSemanticReviewer.instructions }
     }
+    /// Require complete, uniquely indexed checks with every requirement fully satisfied.
     static func passes(_ checks: [EvaluationDocumentSemanticReview.Check], count: Int) -> Bool {
         checks.count == count && Set(checks.map(\.criterionIndex)) == Set(1...count)
             && checks.allSatisfy { $0.score == 4 && !$0.rationale.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -106,12 +108,14 @@ enum EvaluationDocumentSemanticReviewer {
         Return only JSON: {"requirements":[{"criterionIndex":1,"rationale":"Source comparison and any counterexample considered.","score":4}, ...]}.
         Return exactly one check for every numbered requirement, with no omitted or duplicate indexes.
         """
+    /// Return sorted unique question fingerprints so changes to prior questions invalidate distinctness review.
     static func questionDigests(_ questions: [String]) -> [String] {
         Set(questions.map { EvaluationDocumentEvidence.digest(Data($0.utf8)) }).sorted()
     }
     typealias Reviewer = @Sendable (EvaluationCase, EvaluationDocumentSource, [String]) async throws -> EvaluationDocumentSemanticReview
     typealias Factory = @Sendable (EvaluationJudgeConnection?) async throws -> Reviewer
 
+    /// Resolve an explicitly selected capable judge and its saved credential, failing before any review request.
     static func configured(_ connection: EvaluationJudgeConnection?) async throws -> Reviewer {
         guard let connection else { throw EvaluationStoreError.invalidSuite("Choose and authorize a semantic judge before generating drafts.") }
         if let issue = connection.validationIssue { throw EvaluationStoreError.invalidSuite(issue) }
@@ -125,6 +129,7 @@ enum EvaluationDocumentSemanticReviewer {
         return { value, source, existing in try await review(value, source: source, existingQuestions: existing, resolved: resolved) }
     }
 
+    /// Review the question against complete source first, then review its reference only after every question check passes.
     static func review(_ value: EvaluationCase, source: EvaluationDocumentSource, existingQuestions: [String],
                        resolved: EvaluationResolvedJudgeConnection,
                        client: EvaluationCompatibleJudgeClient = .init()) async throws -> EvaluationDocumentSemanticReview {
@@ -172,6 +177,7 @@ enum EvaluationDocumentSemanticReviewer {
         return result
     }
 
+    /// Decode a strict reference-stage verdict and bind its receipt to the candidate and selected judge.
     static func decode(_ raw: String, candidateDigest: String, connection: EvaluationJudgeConnection,
                        servedModel: String? = nil) throws -> EvaluationDocumentSemanticReview {
         .init(policyVersion: version, candidateDigest: candidateDigest, connectionID: connection.id,
@@ -179,6 +185,7 @@ enum EvaluationDocumentSemanticReviewer {
             checks: try decodeChecks(raw, count: requirements.count), rawResponse: raw)
     }
 
+    /// Reject oversized, incomplete, duplicate, out-of-range, or unexplained scores and sort valid checks by index.
     static func decodeChecks(_ raw: String, count: Int) throws -> [EvaluationDocumentSemanticReview.Check] {
         struct Response: Decodable { var requirements: [EvaluationDocumentSemanticReview.Check] }
         guard raw.utf8.count <= 32_768,

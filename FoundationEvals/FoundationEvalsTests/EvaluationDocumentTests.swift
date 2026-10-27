@@ -23,6 +23,7 @@ enum DocumentTestFixture {
     static var source: EvaluationDocumentSource {
         .init(name: "Guide.pdf", fileDigest: String(repeating: "a", count: 64), passages: [passage])
     }
+    /// Create an isolated document case with synthetic source, citations, and scoring requirements.
     static func example(reviewed: Bool = true) -> EvaluationCase {
         var value = EvaluationCase(name: "Workspace exports", prompt: "Can members export a workspace, and which documented role can?", expected: "Members cannot export a workspace; owners can.")
         value.criteriaOverride = ["States that members cannot export.", "Identifies the owner role."]
@@ -31,6 +32,7 @@ enum DocumentTestFixture {
         if reviewed { value.acceptDocumentReview() }
         return value
     }
+    /// Create an isolated document suite whose source and rubric support deterministic assertions.
     static func suite() -> EvaluationSuite {
         var suite = EvaluationSuite()
         suite.cases = [example()]
@@ -41,6 +43,7 @@ enum DocumentTestFixture {
 }
 
 struct EvaluationDocumentTests {
+    /// Verify that source review tracks content but not display names.
     @Test func sourceReviewTracksContentButNotDisplayNames() {
         var value = DocumentTestFixture.example()
         #expect(value.hasReviewedDocument)
@@ -57,6 +60,7 @@ struct EvaluationDocumentTests {
         #expect(!value.hasReviewedDocument)
     }
 
+    /// Verify that versioned cases round trip and legacy readers refuse them.
     @Test func versionedCasesRoundTripAndLegacyReadersRefuseThem() throws {
         struct OldCase: Decodable { var prompt: String; var expected: String }
         let value = DocumentTestFixture.example()
@@ -74,6 +78,7 @@ struct EvaluationDocumentTests {
         #expect(throws: (any Error).self) { try CanonicalJSON.decode(EvaluationCase.self, from: stripped) }
     }
 
+    /// Verify that citation can move to added context without losing review integrity.
     @Test func citationCanMoveToAddedContextWithoutLosingReviewIntegrity() {
         var value = DocumentTestFixture.example()
         let additional = EvaluationDocumentPassage(id: "page-7-1", location: "Page 7", text: "Workspace exports require the owner role.")
@@ -92,6 +97,7 @@ struct EvaluationDocumentTests {
         #expect(draft.representedPassageIDs.isEmpty)
     }
 
+    /// Verify that criteria fallback and scoring identity include source and overrides.
     @Test func criteriaFallbackAndScoringIdentityIncludeSourceAndOverrides() throws {
         var suite = DocumentTestFixture.suite()
         let ordinary = EvaluationCase(name: "Manual", prompt: "Question", expected: "Answer")
@@ -108,6 +114,7 @@ struct EvaluationDocumentTests {
         #expect(suite.documentValidationIssue() != nil)
     }
 
+    /// Verify that quotes must resolve and unsafe execution modes are rejected.
     @Test func quotesMustResolveAndUnsafeExecutionModesAreRejected() {
         var suite = DocumentTestFixture.suite()
         #expect(suite.documentValidationIssue() == nil)
@@ -124,6 +131,7 @@ struct EvaluationDocumentTests {
         #expect(suite.cases[0].documentValidationIssue != nil)
     }
 
+    /// Verify that answering gets complete source but no grading fields.
     @Test func answeringGetsCompleteSourceButNoGradingFields() async throws {
         var suite = DocumentTestFixture.suite()
         suite.cases[0].expected = "REFERENCE_ONLY"
@@ -142,6 +150,7 @@ struct EvaluationDocumentTests {
         #expect(judge.contains(DocumentTestFixture.passage.text))
     }
 
+    /// Verify that local judge overflow is rejected even when answering fits.
     @Test func localJudgeOverflowIsRejectedEvenWhenAnsweringFits() async throws {
         var suite = DocumentTestFixture.suite()
         suite.judgeConfiguration.mode = .connection
@@ -154,6 +163,7 @@ struct EvaluationDocumentTests {
         }
     }
 
+    /// Verify that mixed exact and semantic cases only admit the required judge.
     @Test func mixedExactAndSemanticCasesOnlyAdmitTheRequiredJudge() async throws {
         var suite = DocumentTestFixture.suite()
         suite.cases[0].criteriaOverride = ["The response is exactly READY."]
@@ -166,6 +176,7 @@ struct EvaluationDocumentTests {
             contextSize: 4_096, tools: [], tokenCounter: DocumentTokenCounter(oversizedJudge: true))
     }
 
+    /// Verify that isolated judge admission does not require the combined rubric to fit.
     @Test func isolatedJudgeAdmissionDoesNotRequireTheCombinedRubricToFit() async throws {
         var suite = DocumentTestFixture.suite()
         suite.cases[0].criteriaOverride = ["First unique requirement", "Second unique requirement"]
@@ -178,6 +189,7 @@ struct EvaluationDocumentTests {
         #expect(try await counter.tokenCount(for: Prompt(combined)) == 10_000)
     }
 
+    /// Verify that override entries cannot introduce extra criteria.
     @Test(arguments: ["\n", "\r\n", "\u{2028}"])
     func overrideEntriesCannotIntroduceExtraCriteria(newline: String) {
         var suite = DocumentTestFixture.suite()
@@ -186,6 +198,7 @@ struct EvaluationDocumentTests {
         #expect(suite.documentValidationIssue() != nil)
     }
 
+    /// Verify that external judge requires declared capacity and preserves evidence.
     @Test func externalJudgeRequiresDeclaredCapacityAndPreservesEvidence() throws {
         var connection = EvaluationJudgeConnection(id: UUID(), name: "Test", kind: .localCompatible,
             baseURL: "http://127.0.0.1:1234", modelID: "fixture")
@@ -200,6 +213,7 @@ struct EvaluationDocumentTests {
         }
     }
 
+    /// Verify that paraphrased questions with identical facts are duplicates.
     @Test func paraphrasedQuestionsWithIdenticalFactsAreDuplicates() {
         let original = DocumentTestFixture.suite().cases[0]
         var reworded = original
@@ -217,6 +231,7 @@ struct EvaluationDocumentTests {
         #expect(!EvaluationDocumentGenerator.repeatsFact(reworded, among: [original]))
     }
 
+    /// Verify that generated quotes recover only original whitespace.
     @Test func generatedQuotesRecoverOnlyOriginalWhitespace() {
         let source = "Records under an\nactive hold stay for 30 days."
         #expect(EvaluationDocumentGenerator.sourceQuote("Records under an active hold stay for 30 days.", in: source) == source)
@@ -227,6 +242,7 @@ struct EvaluationDocumentTests {
         #expect(EvaluationDocumentGenerator.sourceQuote(" \n", in: source) == nil)
     }
 
+    /// Verify that generated rubrics preserve the whole answer without literal matching.
     @Test func generatedRubricsPreserveTheWholeAnswerWithoutLiteralMatching() throws {
         for answer in ["Only release-role operators may approve.",
                        "Retry with exponential backoff, starting at one second and capped at one minute.",
@@ -239,6 +255,7 @@ struct EvaluationDocumentTests {
         }
     }
 
+    /// Verify that generated quotes can cite requested exceptions from other passages.
     @Test func generatedQuotesCanCiteRequestedExceptionsFromOtherPassages() throws {
         let focus = EvaluationDocumentPassage(id: "frequency", location: "Page 1", text: "Autosave runs every 60 seconds with unsaved changes.")
         let exception = EvaluationDocumentPassage(id: "exception", location: "Page 2", text: "Autosave does not run in read-only mode.")
@@ -263,6 +280,7 @@ struct EvaluationDocumentTests {
         }
     }
 
+    /// Verify that generated context keeps exceptions without claiming they were covered.
     @Test func generatedContextKeepsExceptionsWithoutClaimingTheyWereCovered() throws {
         var source = DocumentTestFixture.source
         let exception = EvaluationDocumentPassage(id: "exception", location: "Page 2", text: "Exports are disabled during maintenance.")
@@ -285,6 +303,7 @@ struct EvaluationDocumentTests {
         }
     }
 
+    /// Verify that malformed and duplicate generated drafts cannot be accepted.
     @Test func malformedAndDuplicateGeneratedDraftsCannotBeAccepted() throws {
         var candidate = EvaluationDocumentGenerator.Candidate(name: "Export", question: "Can members export?",
             answer: "Members cannot export.", quotes: ["A fabricated quote."], supported: true)
@@ -320,15 +339,21 @@ struct EvaluationDocumentTests {
 private struct DocumentTokenCounter: EvaluationPromptInputTokenCounting {
     var oversizedJudge = false
     var combinedJudgeIsOversized = false
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(for prompt: Prompt) async throws -> Int {
         if combinedJudgeIsOversized, String(describing: prompt).contains("First unique requirement"),
            String(describing: prompt).contains("Second unique requirement") { return 10_000 }
         return oversizedJudge && (String(describing: prompt).contains("candidateResponse:")
             || String(describing: prompt).contains("candidateAnswer")) ? 10_000 : 400
     }
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(for instructions: Instructions) async throws -> Int { 100 }
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(for schema: GenerationSchema) async throws -> Int { 100 }
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(for history: [Transcript.Entry]) async throws -> Int { 0 }
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(for tools: [any Tool]) async throws -> Int { 0 }
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(forText text: String) async throws -> Int { 400 }
 }

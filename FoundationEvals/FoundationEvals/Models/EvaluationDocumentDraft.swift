@@ -50,6 +50,7 @@ struct EvaluationDocumentDraft: Codable, Identifiable, Sendable {
         Set(acceptedCases.flatMap { $0.documentEvidence?.citations.map(\.passageID) ?? [] }).intersection(selectedPassageIDs)
     }
 
+    /// Describe whether a passage is excluded, awaiting review, accepted, or still uncovered.
     func coverageLabel(for passageID: String) -> String {
         guard selectedPassageIDs.contains(passageID) else { return "Excluded from generation" }
         if representedPassageIDs.contains(passageID) { return "Represented by an accepted case" }
@@ -61,6 +62,7 @@ struct EvaluationDocumentDraft: Codable, Identifiable, Sendable {
         return "Not yet considered"
     }
 
+    /// Build a suite from accepted drafts, preserving imported identity and rejecting an empty result.
     func makeSuite() throws -> EvaluationSuite {
         guard !acceptedCases.isEmpty else { throw EvaluationStoreError.invalidSuite("Accept at least one source-reviewed draft.") }
         var suite = importedTemplate ?? EvaluationSuite()
@@ -80,6 +82,7 @@ struct EvaluationDocumentDraft: Codable, Identifiable, Sendable {
 enum EvaluationDocumentDraftStorage {
     static let maximumBytes = 5_000_000
 
+    /// Read a bounded saved draft, returning nil when absent and throwing for unsupported or corrupt content.
     static func load(from url: URL) throws -> EvaluationDocumentDraft? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let data = try EvaluationAttachmentStorage.readCaseImportFile(at: url, maximumBytes: maximumBytes)
@@ -94,6 +97,7 @@ enum EvaluationDocumentDraftStorage {
         return draft
     }
 
+    /// Atomically persist a size-limited draft after creating its parent directory; propagate write failures.
     static func save(_ draft: EvaluationDocumentDraft, to url: URL) throws {
         let data = try CanonicalJSON.data(for: draft)
         guard data.count <= maximumBytes else { throw EvaluationStoreError.persistence("The document draft exceeds 5 MB. Reduce its source selection or draft count.") }

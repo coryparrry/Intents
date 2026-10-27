@@ -220,6 +220,7 @@ struct EvaluationJudgeTests {
         #expect(try JSONDecoder().decode([EvaluationJudgeCriterionTrace].self, from: data) == result.checks)
     }
 
+    /// Verify that prompt and validator use the same untrimmed reference.
     @Test func promptAndValidatorUseTheSameUntrimmedReference() throws {
         let reference = " Paris\n"
         var suite = EvaluationSuite()

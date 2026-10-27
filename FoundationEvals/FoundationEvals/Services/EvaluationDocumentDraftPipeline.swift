@@ -26,6 +26,7 @@ enum EvaluationDocumentDraftPipeline {
         var errorDescription: String? { "Semantic review stopped: \(message) No unreviewed draft was accepted." }
     }
 
+    /// Generate and independently review a candidate, recording attempts and allowing at most two corrections.
     static func generate(source: EvaluationDocumentSource, passage: EvaluationDocumentPassage,
                          questionType: String, existingQuestions: [String], batchID: String,
                          generator: Generator = EvaluationDocumentGenerator.generate,

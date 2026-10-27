@@ -158,6 +158,7 @@ actor EvaluationCompatibleJudgeClient {
         var model: String?
     }
 
+    /// Send one structured review stage to the selected judge after capability and context-budget checks.
     func reviewDocumentDraft(prompt: String, resolved: EvaluationResolvedJudgeConnection,
                              stage: EvaluationDocumentSemanticReviewer.Stage) async throws -> DocumentReviewResponse {
         if let issue = resolved.connection.validationIssue { throw EvaluationCompatibleJudgeError.invalidConfiguration(issue) }
@@ -297,6 +298,7 @@ actor EvaluationCompatibleJudgeClient {
             stream: connection.generationPolicy != .portable, thinking: thinking)
     }
 
+    /// Require declared judge capacity and reject prompts that exceed it after reserving response tokens.
     static func validateDocumentBudget(prompt: String, configuration: EvaluationJudgeRequestConfiguration,
                                        connection: EvaluationJudgeConnection, candidateReserve: Int = 0) throws {
         guard let limit = connection.capabilities.contextWindowTokens, limit >= 2_048 else {

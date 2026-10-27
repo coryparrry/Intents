@@ -5,11 +5,13 @@ from collections import defaultdict
 
 
 def prompt_text(case):
+    """Read question text from current or versioned archived prompt representations."""
     value = case['prompt']
     return value['text'] if isinstance(value, dict) else value
 
 
 def candidate_digest(case):
+    """Reproduce the canonical scoring-input digest without including the previous acceptance receipt."""
     evidence = {k: v for k, v in case['documentEvidence'].items() if k != 'reviewedDigest'}
     payload = dict(prompt=prompt_text(case), expected=case['expected'],
                    criteria=case['criteriaOverride'], evidence=evidence)
@@ -19,10 +21,12 @@ def candidate_digest(case):
 
 
 def question_digests(questions):
+    """Return sorted unique SHA-256 fingerprints for the exact prior-question history."""
     return sorted({hashlib.sha256(q.encode()).hexdigest() for q in questions})
 
 
 def connection_digest(connection):
+    """Reproduce the judge endpoint and capability fingerprint used to bind review receipts."""
     capabilities = connection['capabilities']
     fields = [connection['kind'], connection['baseURL'], connection['modelID'],
               '\x1f'.join(connection.get('providerOrder', [])),
@@ -33,6 +37,7 @@ def connection_digest(connection):
 
 
 def validate_review(review, case, connection, required_acceptance=True):
+    """Require matching policy, candidate, judge, raw verdicts, and complete per-requirement acceptance evidence."""
     assert review['policyVersion'] == 'document-semantic-v6', 'Wrong semantic policy'
     assert review['candidateDigest'] == candidate_digest(case), 'Stale semantic receipt'
     assert review['connectionID'].lower() == connection['id'].lower(), 'Wrong semantic connection'
@@ -59,6 +64,7 @@ def validate_review(review, case, connection, required_acceptance=True):
 
 
 def validate_acceptance_controls(run, controls_path, connection):
+    """Verify every frozen historical control and its original question history, including the rejection stage."""
     contract = json.loads((controls_path / 'acceptance-control-contract.json').read_text())
     assert contract == json.loads((run / 'acceptance-control-contract.json').read_text()), 'Frozen acceptance controls changed'
     fixtures = contract['controls']
@@ -81,6 +87,7 @@ def validate_acceptance_controls(run, controls_path, connection):
 
 
 def semantic_metrics(run, attempts, controls_path=None):
+    """Validate review receipts and control evidence before reporting whether semantic admission qualified."""
     result = dict(semantic_review_required=True, semantic_review_gate_passed=False,
                   semantic_controls_gate_passed=False)
     connection = json.loads((run / 'runtime.json').read_text())['judgeConfiguration']

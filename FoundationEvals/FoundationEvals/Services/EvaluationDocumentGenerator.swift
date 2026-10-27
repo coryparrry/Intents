@@ -27,6 +27,7 @@ enum EvaluationDocumentGenerator {
         @Guide(description: "Decide after drafting: true when the focus passage supports this question and answer; false if required information is missing or this repeats an excluded question.")
         var supported: Bool
 
+        /// Construct a generation candidate with its factual answer, supporting quotes, and requested question type.
         init(name: String, question: String, answer: String, quotes: [String],
              questionType: String = "Direct fact", supported: Bool) {
             self.name = name; self.answer = answer; self.question = question
@@ -38,6 +39,7 @@ enum EvaluationDocumentGenerator {
         var criteria: [String] { [EvaluationDocumentGenerator.criterion(for: answer, question: question)] }
     }
 
+    /// Build a semantic requirement tied to the question and answer without demanding unrequested reference details.
     static func criterion(for answer: String, question: String) -> String {
         let fact = answer.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         let request = question.split(whereSeparator: \.isWhitespace).joined(separator: " ")
@@ -67,6 +69,7 @@ enum EvaluationDocumentGenerator {
         information is missing. The answering model receives the complete source.
         """
 
+    /// Generate a candidate and validate its evidence; wrap correctable defects with the rejected candidate.
     static func generate(source: EvaluationDocumentSource, passage: EvaluationDocumentPassage,
                          questionType: String, existingQuestions: [String], feedback: String? = nil) async throws -> EvaluationCase? {
         let candidate = try await candidate(source: source, passage: passage, questionType: questionType, existingQuestions: existingQuestions, feedback: feedback)
@@ -78,6 +81,7 @@ enum EvaluationDocumentGenerator {
         }
     }
 
+    /// Ask the on-device model for a structured draft using the complete source and bounded correction feedback.
     static func candidate(source: EvaluationDocumentSource, passage: EvaluationDocumentPassage, questionType: String,
                           existingQuestions: [String], feedback: String? = nil) async throws -> Candidate {
         guard source.validationIssue == nil, let index = source.passages.firstIndex(of: passage) else {
@@ -113,6 +117,7 @@ enum EvaluationDocumentGenerator {
         return response.content
     }
 
+    /// Validate generated fields and exact source quotes, returning nil for unsupported or duplicate questions.
     static func validated(_ candidate: Candidate, source: EvaluationDocumentSource,
                           passage: EvaluationDocumentPassage, questionType: String,
                           existingQuestions: [String]) throws -> EvaluationCase? {
@@ -177,6 +182,7 @@ enum EvaluationDocumentGenerator {
         return String(source[range])
     }
 
+    /// Fold case, accents, and punctuation into stable words for duplicate-question comparisons.
     static func normalizedQuestion(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
             .components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.joined(separator: " ")

@@ -37,6 +37,7 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
         var text: String
     }
 
+    /// Encode document cases with an explicit versioned prompt so legacy readers cannot silently discard evidence.
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)

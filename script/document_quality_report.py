@@ -8,10 +8,12 @@ from document_semantic_report import semantic_metrics
 
 
 def load_lines(path):
+    """Read nonblank JSONL records from a retained evidence file."""
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
 def validate_sources(run, attempts):
+    """Verify the source manifest and attempt evidence refer to the same frozen imported passages."""
     manifest = json.loads((run / "input.json").read_text())
     documents = {item["id"]: item for item in manifest["documents"]}
     sources = load_lines(run / "sources.jsonl")
@@ -42,6 +44,7 @@ def validate_sources(run, attempts):
 
 
 def compatible_controls(run, controls_path, manifest):
+    """Require successful controls with identical definitions, source inputs, and runtime before reusing them."""
     if not terminal_success(controls_path):
         return False
     control_manifest = json.loads((controls_path / "input.json").read_text())
@@ -57,11 +60,13 @@ def compatible_controls(run, controls_path, manifest):
 
 
 def terminal_success(run):
+    """Return whether retained process evidence records a successful terminal exit."""
     path = run / "exit-code.txt"
     return path.is_file() and path.read_text().strip() == "0"
 
 
 def report(run, labels_path=None, controls_path=None, reviewer_kind="human", semantic_controls_path=None):
+    """Validate retained generation, scoring, review, and control evidence before computing qualification metrics."""
     if reviewer_kind not in ("human", "automated"):
         raise ValueError("Reviewer kind must be human or automated")
     attempts = load_lines(run / "attempts.jsonl")

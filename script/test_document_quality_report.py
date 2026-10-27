@@ -15,6 +15,7 @@ spec.loader.exec_module(quality)
 
 class QualityReportTests(unittest.TestCase):
     def setUp(self):
+        """Prepare isolated synthetic evidence and temporary storage for each report regression."""
         self.temporary = tempfile.TemporaryDirectory()
         self.directory = Path(self.temporary.name)
         (self.directory / 'exit-code.txt').write_text('0\n')
@@ -38,20 +39,24 @@ class QualityReportTests(unittest.TestCase):
         (self.directory / "summary.json").write_text(json.dumps({"generationVersion": "document-draft-v6", "documents": 10, "surfaced": 100, "attempts": 100, "requested": 100}))
 
     def tearDown(self):
+        """Remove only the temporary fixture storage allocated by this test."""
         self.temporary.cleanup()
 
     def run_report(self, labels=None, controls=None, reviewer_kind="human"):
+        """Invoke the report against the isolated evidence fixture and return its qualification result."""
         with contextlib.redirect_stdout(io.StringIO()):
             quality.report(self.directory, labels, controls, reviewer_kind)
         return json.loads((self.directory / "quality-gates.json").read_text())
 
     def set_summary_version(self, version):
+        """Change the fixture summary version to exercise stale-evidence rejection."""
         path = self.directory / 'summary.json'
         summary = json.loads(path.read_text())
         summary['generationVersion'] = version
         path.write_text(json.dumps(summary))
 
     def test_semantic_candidates_cannot_bypass_review_with_stale_summary(self):
+        """Verify that semantic candidates cannot bypass review with stale summary."""
         path = self.directory / 'attempts.jsonl'
         rows = quality.load_lines(path)
         for row in rows:
@@ -71,11 +76,13 @@ class QualityReportTests(unittest.TestCase):
             self.run_report()
 
     def test_no_human_labels_cannot_pass(self):
+        """Verify that no human labels cannot pass."""
         result = self.run_report()
         self.assertFalse(result["generation_gate_passed"])
         self.assertEqual(result["human_reviewed"], 0)
 
     def test_missing_or_failed_terminal_state_cannot_qualify(self):
+        """Verify that missing or failed terminal state cannot qualify."""
         self.run_report()
         labels = json.loads((self.directory / 'review-template.json').read_text())
         for label in labels.values():
@@ -90,6 +97,7 @@ class QualityReportTests(unittest.TestCase):
         self.assertFalse(self.run_report(path)['generation_gate_passed'])
 
     def test_ai_labels_or_mismatched_candidates_do_not_count(self):
+        """Verify that ai labels or mismatched candidates do not count."""
         self.run_report()
         labels = json.loads((self.directory / "review-template.json").read_text())
         for index, label in enumerate(labels.values()):
@@ -102,6 +110,7 @@ class QualityReportTests(unittest.TestCase):
         self.assertEqual(self.run_report(path)["human_reviewed"], 0)
 
     def test_duplicate_attempts_cannot_inflate_denominator(self):
+        """Verify that duplicate attempts cannot inflate denominator."""
         path = self.directory / "attempts.jsonl"
         rows = path.read_text().splitlines()
         rows[1] = rows[0]
@@ -109,6 +118,7 @@ class QualityReportTests(unittest.TestCase):
         with self.assertRaises(AssertionError): self.run_report()
 
     def test_complete_consistent_fixture_passes_but_inconsistent_score_does_not(self):
+        """Verify that complete consistent fixture passes but inconsistent score does not."""
         self.run_report()
         labels = json.loads((self.directory / "review-template.json").read_text())
         for label in labels.values():
@@ -147,6 +157,7 @@ class QualityReportTests(unittest.TestCase):
         self.assertFalse(self.run_report(labels_path, controls, "automated")["scoring_gate_passed"])
 
     def test_automated_review_keeps_thresholds_and_candidate_integrity(self):
+        """Verify that automated review keeps thresholds and candidate integrity."""
         self.run_report(reviewer_kind="automated")
         labels = json.loads((self.directory / "review-template.json").read_text())
         for index, label in enumerate(labels.values()):
@@ -168,6 +179,7 @@ class QualityReportTests(unittest.TestCase):
         self.assertFalse(self.run_report(path, reviewer_kind="automated")["generation_gate_passed"])
 
     def test_changed_source_or_retained_passage_rejected(self):
+        """Verify that changed source or retained passage rejected."""
         (self.directory / "document-0.txt").write_text("Changed source")
         with self.assertRaises(AssertionError): self.run_report()
         (self.directory / "document-0.txt").write_text("Source")
@@ -178,6 +190,7 @@ class QualityReportTests(unittest.TestCase):
         with self.assertRaises(AssertionError): self.run_report()
 
     def test_v7_context_must_retain_the_complete_imported_source(self):
+        """Verify that v7 context must retain the complete imported source."""
         source_path = self.directory / "sources.jsonl"
         sources = quality.load_lines(source_path)
         sources[0]["passages"].append({"id": "exception", "location": "Page 2", "text": "An exception."})
@@ -198,6 +211,7 @@ class QualityReportTests(unittest.TestCase):
         with self.assertRaises(AssertionError): self.run_report()
 
     def test_scope_planned_generation_cannot_drop_background_exception(self):
+        """Verify that scope planned generation cannot drop background exception."""
         sources_path = self.directory / "sources.jsonl"
         sources = quality.load_lines(sources_path)
         exception = {"id": "exception", "location": "Page 2", "text": "Read-only documents do not autosave."}
@@ -219,6 +233,7 @@ class QualityReportTests(unittest.TestCase):
             self.run_report()
 
     def test_controls_require_same_definitions_sources_and_runtime(self):
+        """Verify that controls require same definitions sources and runtime."""
         controls = self.directory / "controls"
         controls.mkdir()
         (controls / "exit-code.txt").write_text("0\n")

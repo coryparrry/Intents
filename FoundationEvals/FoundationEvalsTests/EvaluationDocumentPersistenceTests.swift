@@ -4,6 +4,7 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct EvaluationDocumentPersistenceTests {
+    /// Verify that imported sources at published limits remain valid evidence.
     @Test func importedSourcesAtPublishedLimitsRemainValidEvidence() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -24,6 +25,7 @@ import Testing
         #expect(throws: (any Error).self) { try EvaluationDocumentImporter.importFile(at: file) }
     }
 
+    /// Verify that failed reviewer setup preserves retry history on disk.
     @Test func failedReviewerSetupPreservesRetryHistoryOnDisk() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -45,6 +47,7 @@ import Testing
         #expect(saved.completedBatchIDs == draft.completedBatchIDs)
     }
 
+    /// Verify that exported cases with different retained contexts can be reviewed after import.
     @Test func exportedCasesWithDifferentRetainedContextsCanBeReviewedAfterImport() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -77,6 +80,7 @@ import Testing
         #expect(restored.cases.map { $0.documentEvidence?.passages.count } == [1, 2])
     }
 
+    /// Verify that text import normalizes unicode and refuses oversized selection.
     @Test func textImportNormalizesUnicodeAndRefusesOversizedSelection() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -95,6 +99,7 @@ import Testing
         #expect(throws: (any Error).self) { try EvaluationDocumentImporter.importFile(at: file) }
     }
 
+    /// Verify that pdf extraction retains page anchor.
     @Test func pdfExtractionRetainsPageAnchor() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -107,6 +112,7 @@ import Testing
         #expect(source.passages.first?.text.contains("Owners") == true)
     }
 
+    /// Verify that saved draft retains edits and acceptance after original file disappears.
     @Test func savedDraftRetainsEditsAndAcceptanceAfterOriginalFileDisappears() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -124,6 +130,7 @@ import Testing
         #expect(loaded.acceptedCases[0].documentEvidence?.contextText.contains("Owners") == true)
     }
 
+    /// Verify that creation retry is idempotent and failure does not publish partial suite.
     @Test(arguments: [false, true]) func creationRetryIsIdempotentAndFailureDoesNotPublishPartialSuite(incompleteDirectory: Bool) throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -154,6 +161,7 @@ import Testing
         #expect(reloaded.suite.cases[0].documentEvidence?.contextText == draft.cases[0].evaluationCase.documentEvidence?.contextText)
     }
 
+    /// Verify that document conversion and whole suite mutation are explicitly gated.
     @Test func documentConversionAndWholeSuiteMutationAreExplicitlyGated() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -167,6 +175,7 @@ import Testing
             heldOutCaseIDs: [store.draftSuite.cases[0].id]) != nil)
     }
 
+    /// Verify that archive round trip retains evidence and requires fresh review.
     @Test func archiveRoundTripRetainsEvidenceAndRequiresFreshReview() throws {
         let original = DocumentTestFixture.suite()
         let bytes = try EvaluationDocumentArchive.data(for: original)
@@ -181,6 +190,7 @@ import Testing
         #expect(recreated.modelConfiguration.provider == .onDevice)
     }
 
+    /// Verify that generation does not resurface identical facts with new questions.
     @Test func generationDoesNotResurfaceIdenticalFactsWithNewQuestions() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -196,6 +206,7 @@ import Testing
         #expect(controller.draft?.issues.count == 9)
     }
 
+    /// Verify that partial generation survives restart and retry preserves edits.
     @Test func partialGenerationSurvivesRestartAndRetryPreservesEdits() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -224,6 +235,7 @@ import Testing
         #expect(resumed.draft?.cases[0].evaluationCase.expected == "A preserved edit")
     }
 
+    /// Verify that full source generation stops before the suite budget and remains publishable.
     @Test func fullSourceGenerationStopsBeforeTheSuiteBudgetAndRemainsPublishable() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -251,6 +263,7 @@ import Testing
         #expect(try draft.makeSuite().cases.count == draft.cases.count)
     }
 
+    /// Verify that corrupted draft is preserved instead of overwritten.
     @Test func corruptedDraftIsPreservedInsteadOfOverwritten() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -265,6 +278,7 @@ import Testing
         #expect(try Data(contentsOf: url) == invalid)
     }
 
+    /// Create unique temporary storage so persistence tests cannot alter saved user evaluations.
     private func temporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appending(path: "document-suite-tests-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -274,6 +288,7 @@ import Testing
 
 private actor DraftFixtureGenerator {
     var calls = 0
+    /// Return the next scripted fixture response so retry tests can observe attempt order.
     func next() throws -> EvaluationCase? {
         calls += 1
         if calls == 1 { return DocumentTestFixture.example(reviewed: false) }
@@ -283,6 +298,7 @@ private actor DraftFixtureGenerator {
 
 private actor DuplicateFactFixtureGenerator {
     private var index = 0
+    /// Return the next scripted fixture response so retry tests can observe attempt order.
     func next() -> EvaluationCase {
         index += 1
         var result = DocumentTestFixture.suite().cases[0]

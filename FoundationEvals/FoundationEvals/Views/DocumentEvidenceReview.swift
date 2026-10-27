@@ -116,6 +116,7 @@ struct DocumentEvidenceReview: View {
         }
     }
 
+    /// Highlight exact cited excerpts in retained source without altering the underlying passage text.
     private func highlighted(_ passage: EvaluationDocumentPassage, quotes: [String]) -> AttributedString {
         var text = AttributedString(passage.text)
         for quote in quotes where !quote.isEmpty {

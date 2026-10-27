@@ -4,6 +4,7 @@ import Testing
 
 /// Opt-in device evidence, deliberately separate from deterministic CI coverage.
 struct EvaluationDocumentLiveTests {
+    /// Verify that generate and run one document case on device.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_LIVE_SMOKE"] == "1",
                    "Requires an available on-device model and explicit live-smoke opt-in."))
     func generateAndRunOneDocumentCaseOnDevice() async throws {

@@ -3,6 +3,7 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct EvaluationDocumentSemanticTests {
+    /// Verify that compact acceptance fixtures do not require generated citation i ds.
     @Test func compactAcceptanceFixturesDoNotRequireGeneratedCitationIDs() throws {
         let data = Data(#"{"sources":{},"controls":[{"id":"case","sourceID":"doc","question":"Question","reference":"Answer","citations":[{"passageID":"p","quote":"Source quote"}],"existingQuestions":[],"accepted":false}]}"#.utf8)
         let fixture = try CanonicalJSON.decode(EvaluationDocumentQualityTests.RegressionCorpus.self, from: data)
@@ -10,12 +11,14 @@ import Testing
         #expect(fixture.controls[0].citations[0].quote == "Source quote")
     }
 
+    /// Return the fixture review verdict so acceptance tests control each stage independently.
     private func review(_ value: EvaluationCase, passing: Bool = true) async throws -> EvaluationDocumentSemanticReview {
         var result = try await DocumentTestFixture.semanticReviewer(value, DocumentTestFixture.source, [])
         if !passing { result.checks[0].score = 2; result.checks[0].rationale = "Missing the source restriction." }
         return result
     }
 
+    /// Verify that rejected draft is regenerated with feedback before it can surface.
     @Test func rejectedDraftIsRegeneratedWithFeedbackBeforeItCanSurface() async throws {
         let fixture = SemanticSequence()
         var events: [EvaluationDocumentSemanticAttempt] = []
@@ -33,6 +36,7 @@ import Testing
         #expect(result.review?.matches(acceptedCandidate) == true)
     }
 
+    /// Verify that rejection limit is bounded and never returns the last bad draft.
     @Test func rejectionLimitIsBoundedAndNeverReturnsTheLastBadDraft() async throws {
         let value = DocumentTestFixture.example(reviewed: false)
         let rejected = try await review(value, passing: false)
@@ -45,6 +49,7 @@ import Testing
         #expect(events.allSatisfy { $0.outcome == "rejected" })
     }
 
+    /// Verify that invalid quotes receive bounded correction before semantic review.
     @Test func invalidQuotesReceiveBoundedCorrectionBeforeSemanticReview() async throws {
         let value = DocumentTestFixture.example(reviewed: false)
         let invalid = EvaluationDocumentGenerator.InvalidDraft(candidate: .init(name: "Bad quote",
@@ -74,6 +79,7 @@ import Testing
         #expect(events.allSatisfy { $0.outcome == "validation_rejected" })
     }
 
+    /// Verify that provider failure and mismatched verdicts cannot accept or regenerate.
     @Test func providerFailureAndMismatchedVerdictsCannotAcceptOrRegenerate() async throws {
         let value = DocumentTestFixture.example(reviewed: false)
         var mismatched = try await review(value)
@@ -93,6 +99,7 @@ import Testing
         }
     }
 
+    /// Verify that cancellation after review cannot publish a late acceptance.
     @Test func cancellationAfterReviewCannotPublishALateAcceptance() async throws {
         let value = DocumentTestFixture.example(reviewed: false)
         let accepted = try await review(value)
@@ -107,6 +114,7 @@ import Testing
         await #expect(throws: CancellationError.self) { _ = try await operation.value }
     }
 
+    /// Verify that strict verdict parsing rejects missing duplicate invalid and blank checks.
     @Test func strictVerdictParsingRejectsMissingDuplicateInvalidAndBlankChecks() throws {
         let checks = (1...6).map { ["criterionIndex": $0, "score": 4, "rationale": "Source supports it"] as [String: Any] }
         for variant in [Array(checks.dropLast()), checks + [checks[0]],
@@ -124,6 +132,7 @@ import Testing
         #expect(uncheckedQuestion.checks.count == 6)
     }
 
+    /// Verify that edits and policy changes invalidate approval and publication.
     @Test func editsAndPolicyChangesInvalidateApprovalAndPublication() async throws {
         let original = DocumentTestFixture.example()
         let accepted = try await review(original)
@@ -151,6 +160,7 @@ import Testing
         #expect(!stale.matches(original))
     }
 
+    /// Verify that restoring an excluded sibling requires a new distinctness check.
     @Test func restoringAnExcludedSiblingRequiresANewDistinctnessCheck() async throws {
         let first = DocumentTestFixture.example()
         var second = first; second.id = UUID(); second.prompt = "Which documented role can export?"
@@ -174,6 +184,7 @@ import Testing
         #expect(draft.acceptedCases.count == 2)
     }
 
+    /// Verify that no selected judge fails closed before generation.
     @Test func noSelectedJudgeFailsClosedBeforeGeneration() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -187,6 +198,7 @@ import Testing
         #expect(controller.error?.contains("semantic judge") == true)
     }
 
+    /// Verify that question rejection stops before reference can influence it.
     @Test func questionRejectionStopsBeforeReferenceCanInfluenceIt() async throws {
         var connection = DocumentTestFixture.semanticConnection
         connection.capabilities.structuredOutputs = true
@@ -215,6 +227,7 @@ import Testing
         #expect(result.questionRawResponse != nil)
     }
 
+    /// Verify that review transport uses independent policy and complete source.
     @Test func reviewTransportUsesIndependentPolicyAndCompleteSource() async throws {
         var connection = DocumentTestFixture.semanticConnection
         connection.capabilities.structuredOutputs = true
@@ -267,12 +280,14 @@ import Testing
 private actor SemanticSequence {
     var feedback: [String?] = []
     var reviews = 0
+    /// Return the next scripted generation candidate without invoking an external or on-device model.
     func generate(_ message: String?) -> EvaluationCase {
         feedback.append(message)
         var value = DocumentTestFixture.example(reviewed: false)
         value.prompt = feedback.count == 1 ? "Bad question" : "Corrected question"
         return value
     }
+    /// Return the fixture review verdict so acceptance tests control each stage independently.
     func review(_ value: EvaluationCase) async throws -> EvaluationDocumentSemanticReview {
         reviews += 1
         var result = try await DocumentTestFixture.semanticReviewer(value, DocumentTestFixture.source, [])

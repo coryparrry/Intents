@@ -109,6 +109,7 @@ extension EvaluationRunner {
                 explanation: "Apple's model runtime does not report monetary cost."))
     }
 
+    /// Prepare the isolated semantic requirement request, skipping cases whose criteria need only exact matching.
     static func externalDocumentJudgeAdmission(evaluationCase: EvaluationCase, effectivePrompt: String,
                                                suite: EvaluationSuite, subjectContext: EvaluationJudgeSubjectContext?,
                                                connection: EvaluationJudgeConnection)
@@ -124,6 +125,7 @@ extension EvaluationRunner {
                     criteriaCount: semanticCriteria.count, documentEvidence: true))
     }
 
+    /// Build the document scoring payload with source authority and the requested criterion isolated from other requirements.
     static func documentJudgePrompt(response: String, evaluationCase: EvaluationCase, effectivePrompt: String,
                                     suite: EvaluationSuite, subjectContext: EvaluationJudgeSubjectContext?) -> String {
         struct Input: Encodable {

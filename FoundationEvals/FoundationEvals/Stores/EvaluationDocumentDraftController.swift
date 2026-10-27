@@ -17,6 +17,7 @@ final class EvaluationDocumentDraftController {
     @ObservationIgnored private let reviewerFactory: EvaluationDocumentSemanticReviewer.Factory
     @ObservationIgnored private let availability: @Sendable () -> String?
 
+    /// Restore the project draft from isolated storage and retain injected generation, review, and availability dependencies.
     init(directory: URL, projectID: UUID,
          generate: @escaping Generator = EvaluationDocumentGenerator.generate,
          reviewerFactory: @escaping EvaluationDocumentSemanticReviewer.Factory = EvaluationDocumentSemanticReviewer.configured,
@@ -36,6 +37,7 @@ final class EvaluationDocumentDraftController {
         }
     }
 
+    /// Start a cancellable source import and persist its draft only while the operation still owns the controller.
     func importFile(_ file: URL, selection: ClosedRange<Int>?) {
         guard !isBusy, !storageBlocked, draft == nil else { return }
         let id = UUID()
@@ -62,6 +64,7 @@ final class EvaluationDocumentDraftController {
         }
     }
 
+    /// Import retained suite evidence into an editable project draft without replacing an existing draft.
     func importArchive(_ file: URL) {
         guard !isBusy, !storageBlocked, draft == nil else { return }
         let accessed = file.startAccessingSecurityScopedResource()
@@ -74,6 +77,7 @@ final class EvaluationDocumentDraftController {
         } catch { self.error = error.localizedDescription }
     }
 
+    /// Generate source-backed drafts with authorized review, bounded retries, cancellation, and persisted progress.
     func generate(retryFailures: Bool = false, judge: EvaluationJudgeConnection? = nil) {
         guard !isBusy, !storageBlocked, let initial = draft,
               [5, 10, 20].contains(initial.requestedCount), !initial.selectedPassageIDs.isEmpty else { return }
@@ -166,6 +170,7 @@ final class EvaluationDocumentDraftController {
         }
     }
 
+    /// Review the edited case against its retained source authority before marking it accepted and saving progress.
     func reviewAndAccept(caseID: UUID, judge: EvaluationJudgeConnection?) {
         guard !isBusy, !storageBlocked, let current = draft,
               let item = current.cases.first(where: { $0.id == caseID }) else { return }
@@ -205,6 +210,7 @@ final class EvaluationDocumentDraftController {
         }
     }
 
+    /// Cancel owned asynchronous work and invalidate late completions before clearing the busy state.
     func cancel() {
         operation?.cancel()
         operationID = nil
@@ -217,6 +223,7 @@ final class EvaluationDocumentDraftController {
     /// A completion signal for tests and callers that need durable batch completion, without polling UI state.
     func waitUntilIdle() async { await operation?.value }
 
+    /// Save the current draft unless recovery is blocked, surfacing write errors and returning whether saving succeeded.
     @discardableResult func persist() -> Bool {
         guard !storageBlocked else { return false }
         guard let draft else { return true }
@@ -224,6 +231,7 @@ final class EvaluationDocumentDraftController {
         catch { self.error = "Could not save draft: \(error.localizedDescription)"; return false }
     }
 
+    /// Cancel work and remove the saved draft, preserving an actionable error if removal fails.
     func discard() {
         cancel()
         do {

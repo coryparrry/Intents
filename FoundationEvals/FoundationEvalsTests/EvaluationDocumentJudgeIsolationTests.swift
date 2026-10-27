@@ -4,6 +4,7 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationDocumentJudgeIsolationTests {
+    /// Verify that opted in synthetic controls reach the external transport.
     @Test @MainActor func optedInSyntheticControlsReachTheExternalTransport() async throws {
         var connection = EvaluationJudgeConnection(id: UUID(), name: "Fixture", kind: .customCompatible,
             baseURL: "https://judge.invalid", modelID: "fixture")
@@ -29,6 +30,7 @@ struct EvaluationDocumentJudgeIsolationTests {
         #expect(!EvaluationDocumentQualityTests.controlSuite(value: value, connection: nil).judgeConfiguration.usesExternalConnection)
     }
 
+    /// Verify that external admission matches the semantic request and skips exact only cases.
     @Test func externalAdmissionMatchesTheSemanticRequestAndSkipsExactOnlyCases() throws {
         var suite = DocumentTestFixture.suite()
         let longLiteral = "exact: \"" + String(repeating: "X", count: 3_800) + "\""
@@ -53,6 +55,7 @@ struct EvaluationDocumentJudgeIsolationTests {
         #expect(EvaluationRunner.externalDocumentJudgeAdmission(evaluationCase: suite.cases[0], effectivePrompt: "Source",
             suite: suite, subjectContext: nil, connection: connection) == nil)
     }
+    /// Verify that separate requirements preserve identity and never publish partial score.
     @Test(arguments: [false, true])
     func separateRequirementsPreserveIdentityAndNeverPublishPartialScore(failSecond: Bool) async throws {
         let suite = DocumentTestFixture.suite()
@@ -96,6 +99,7 @@ struct EvaluationDocumentJudgeIsolationTests {
         }
     }
 
+    /// Verify that mixed literal and semantic checks keep the single raw verdict.
     @Test func mixedLiteralAndSemanticChecksKeepTheSingleRawVerdict() async throws {
         var suite = DocumentTestFixture.suite()
         suite.cases[0].criteriaOverride = ["The response is exactly READY.", "States readiness."]
@@ -117,6 +121,7 @@ struct EvaluationDocumentJudgeIsolationTests {
 private actor DocumentJudgeFixtureCalls {
     static let shared = DocumentJudgeFixtureCalls()
     var calls: [UUID: Int] = [:]
+    /// Return the next scripted fixture response so retry tests can observe attempt order.
     func next(_ id: UUID) -> Int { let value = calls[id, default: 0]; calls[id] = value + 1; return value }
 }
 private struct DocumentJudgeFixtureModel: LanguageModel {
@@ -129,8 +134,11 @@ private struct DocumentJudgeFixtureExecutor: LanguageModelExecutor {
     typealias Model = DocumentJudgeFixtureModel
     typealias Configuration = Model.Configuration
     let configuration: Configuration
+    /// Create a deterministic model fixture without loading live model resources.
     init(configuration: Configuration) throws { self.configuration = configuration }
+    /// Satisfy the model warmup contract without starting a live runtime.
     func prewarm(model: Model, transcript: Transcript) {}
+    /// Return the scripted model response while preserving the runner request contract.
     func respond(to request: LanguageModelExecutorGenerationRequest, model: Model,
                  streamingInto channel: LanguageModelExecutorGenerationChannel) async throws {
         let index = await DocumentJudgeFixtureCalls.shared.next(configuration.id)
@@ -141,10 +149,16 @@ private struct DocumentJudgeFixtureExecutor: LanguageModelExecutor {
     }
 }
 private struct DocumentJudgeFixtureTokenCounter: EvaluationPromptInputTokenCounting {
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(for prompt: Prompt) async throws -> Int { 100 }
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(for instructions: Instructions) async throws -> Int { 100 }
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(for schema: GenerationSchema) async throws -> Int { 100 }
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(for history: [Transcript.Entry]) async throws -> Int { 0 }
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(for tools: [any Tool]) async throws -> Int { 0 }
+    /// Return a controlled token estimate so admission and context-budget boundaries remain reproducible.
     func tokenCount(forText text: String) async throws -> Int { 100 }
 }
