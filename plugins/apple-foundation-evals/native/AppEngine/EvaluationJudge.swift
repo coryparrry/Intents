@@ -89,18 +89,20 @@ enum EvaluationJudge {
     // Required named fields make coverage part of constrained decoding. The model
     // supplies evidence; the application owns requirement identity and ordering.
     /// Builds required constrained assessment fields for one through four rubric requirements, throwing for unsupported criterion counts.
-    static func schema(criterionCount: Int) throws -> GenerationSchema {
+    static func schema(criterionCount: Int, evidenceFirst: Bool = false) throws -> GenerationSchema {
         guard (1...4).contains(criterionCount) else {
             throw EvaluationJudgeValidationError.invalidCriteria
         }
         // Recognized standalone literal rules are evaluated by EvaluationExactCriterion first.
         // Do not ask the semantic judge to generate irrelevant literal comparisons.
-        let assessment = DynamicGenerationSchema(name: "RequirementAssessment", properties: [
+        var assessmentProperties: [DynamicGenerationSchema.Property] = [
             .init(name: "score", description: "4 fully met; 3 minor issue; 2 material failure; 1 fundamental failure.",
                   schema: DynamicGenerationSchema(type: Int.self, guides: [.range(1...4)])),
             .init(name: "rationale", description: "One short sentence explaining the evidence for this requirement alone.",
                   schema: DynamicGenerationSchema(type: String.self))
-        ])
+        ]
+        if evidenceFirst { assessmentProperties.reverse() }
+        let assessment = DynamicGenerationSchema(name: "RequirementAssessment", properties: assessmentProperties)
         let properties = (1...criterionCount).map { index in
             DynamicGenerationSchema.Property(
                 name: "requirement\(index)",

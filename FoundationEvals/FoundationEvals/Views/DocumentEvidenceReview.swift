@@ -3,6 +3,8 @@ import SwiftUI
 struct DocumentEvidenceReview: View {
     @Binding var evaluationCase: EvaluationCase
     var availablePassages: [EvaluationDocumentPassage] = []
+    var acceptAction: (() -> Void)? = nil
+    var acceptanceReady: Bool = true
     @State private var selectedPassageID: String?
 
     private var evidence: EvaluationDocumentEvidence? { evaluationCase.documentEvidence }
@@ -15,8 +17,9 @@ struct DocumentEvidenceReview: View {
     var body: some View {
         if let evidence {
             VStack(alignment: .leading, spacing: 14) {
-                Label(evaluationCase.hasReviewedDocument ? "Source review accepted" : "Needs source review",
-                    systemImage: evaluationCase.hasReviewedDocument ? "checkmark.circle" : "doc.text.magnifyingglass")
+                Label(evaluationCase.hasReviewedDocument && acceptanceReady ? "Source review accepted" :
+                    !acceptanceReady && acceptAction != nil ? "Needs semantic check" : "Needs source review",
+                    systemImage: evaluationCase.hasReviewedDocument && acceptanceReady ? "checkmark.circle" : "doc.text.magnifyingglass")
                     .font(.headline)
                 Text("Scoring criteria for this case").font(.subheadline.weight(.semibold))
                 TextEditor(text: criteria).frame(minHeight: 90).font(.body)
@@ -102,10 +105,10 @@ struct DocumentEvidenceReview: View {
                 if let issue = evaluationCase.documentValidationIssue {
                     Label(issue, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
                 }
-                Button(evaluationCase.hasReviewedDocument ? "Source review accepted" : "Accept source review") {
-                    evaluationCase.acceptDocumentReview()
+                Button(evaluationCase.hasReviewedDocument && acceptanceReady ? "Source review accepted" : acceptAction != nil ? "Check and accept draft" : "Accept source review") {
+                    if let acceptAction { acceptAction() } else { evaluationCase.acceptDocumentReview() }
                 }
-                .disabled(evaluationCase.documentValidationIssue != nil || evaluationCase.hasReviewedDocument)
+                .disabled(evaluationCase.documentValidationIssue != nil || (evaluationCase.hasReviewedDocument && acceptanceReady))
                 .accessibilityIdentifier("Accept document source review")
                 Text("Check that the source supports the question, answer, and criteria, including conditions and exceptions. A matching quote alone does not establish correctness.")
                     .font(.caption).foregroundStyle(.secondary)

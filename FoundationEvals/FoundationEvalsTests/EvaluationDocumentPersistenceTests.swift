@@ -108,13 +108,28 @@ import Testing
         #expect(recreated.modelConfiguration.provider == .onDevice)
     }
 
+    @Test func generationDoesNotResurfaceIdenticalFactsWithNewQuestions() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let projectID = UUID()
+        let generator = DuplicateFactFixtureGenerator()
+        let controller = EvaluationDocumentDraftController(directory: directory, projectID: projectID,
+            generate: { _, _, _, _, _ in await generator.next() }, reviewerFactory: { _ in DocumentTestFixture.semanticReviewer }, availability: { nil })
+        controller.draft = .init(projectID: projectID, name: "Guide", source: DocumentTestFixture.source,
+            selectedPassageIDs: [DocumentTestFixture.passage.id], requestedCount: 5)
+        controller.generate()
+        await controller.waitUntilIdle()
+        #expect(controller.draft?.cases.count == 1)
+        #expect(controller.draft?.issues.count == 9)
+    }
+
     @Test func partialGenerationSurvivesRestartAndRetryPreservesEdits() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let projectID = UUID()
         let generator = DraftFixtureGenerator()
         let controller = EvaluationDocumentDraftController(directory: directory, projectID: projectID,
-            generate: { _, _, _, _ in try await generator.next() }, availability: { nil })
+            generate: { _, _, _, _, _ in try await generator.next() }, reviewerFactory: { _ in DocumentTestFixture.semanticReviewer }, availability: { nil })
         controller.draft = .init(projectID: projectID, name: "Guide", source: DocumentTestFixture.source,
             selectedPassageIDs: [DocumentTestFixture.passage.id], requestedCount: 5)
         controller.generate()
@@ -124,7 +139,7 @@ import Testing
         controller.draft?.cases[0].evaluationCase.expected = "A preserved edit"
         #expect(controller.persist())
         let resumed = EvaluationDocumentDraftController(directory: directory, projectID: projectID,
-            generate: { _, _, _, _ in try await generator.next() }, availability: { nil })
+            generate: { _, _, _, _, _ in try await generator.next() }, reviewerFactory: { _ in DocumentTestFixture.semanticReviewer }, availability: { nil })
         #expect(resumed.draft?.cases[0].evaluationCase.expected == "A preserved edit")
         let previousCalls = await generator.calls
         resumed.generate()
@@ -134,6 +149,33 @@ import Testing
         await resumed.waitUntilIdle()
         #expect(await generator.calls > previousCalls)
         #expect(resumed.draft?.cases[0].evaluationCase.expected == "A preserved edit")
+    }
+
+    @Test func fullSourceGenerationStopsBeforeTheSuiteBudgetAndRemainsPublishable() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let id = UUID()
+        var source = DocumentTestFixture.source
+        let facts = (0..<20).map { "Rule \($0)." }.joined(separator: " ")
+        source.passages.append(.init(id: "background", location: "Page 2", text: facts + String(repeating: "Background. ", count: 1_100)))
+        let controller = EvaluationDocumentDraftController(directory: directory, projectID: id,
+            generate: { source, passage, _, existing, _ in
+                var value = DocumentTestFixture.example(reviewed: false)
+                value.prompt = "Question \(existing.count)"
+                value.expected = "Answer \(existing.count)"
+                value.documentEvidence?.passages = source.passages
+                value.documentEvidence?.citations = [.init(passageID: "background", quote: "Rule \(existing.count).")]
+                return value
+            }, reviewerFactory: { _ in DocumentTestFixture.semanticReviewer }, availability: { nil })
+        controller.draft = .init(projectID: id, name: "Full source", source: source,
+            selectedPassageIDs: [DocumentTestFixture.passage.id], requestedCount: 20)
+        controller.generate()
+        await controller.waitUntilIdle()
+        var draft = try #require(controller.draft)
+        #expect(!draft.cases.isEmpty && draft.cases.count < 20)
+        #expect(draft.issues.values.contains { $0.contains("256,000") })
+        for index in draft.cases.indices { draft.cases[index].evaluationCase.acceptDocumentReview() }
+        #expect(try draft.makeSuite().cases.count == draft.cases.count)
     }
 
     @Test func corruptedDraftIsPreservedInsteadOfOverwritten() throws {
@@ -163,5 +205,16 @@ private actor DraftFixtureGenerator {
         calls += 1
         if calls == 1 { return DocumentTestFixture.example(reviewed: false) }
         throw CocoaError(.fileReadUnknown)
+    }
+}
+
+private actor DuplicateFactFixtureGenerator {
+    private var index = 0
+    func next() -> EvaluationCase {
+        index += 1
+        var result = DocumentTestFixture.suite().cases[0]
+        result.id = UUID()
+        result.prompt = "Reworded question number \(index) about the same fact."
+        return result
     }
 }

@@ -7,7 +7,7 @@ struct EvaluationDocumentLiveTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_LIVE_SMOKE"] == "1",
                    "Requires an available on-device model and explicit live-smoke opt-in."))
     func inspectSyntheticCandidate() async throws {
-        let candidate = try await EvaluationDocumentGenerator.candidate(passage: DocumentTestFixture.passage,
+        let candidate = try await EvaluationDocumentGenerator.candidate(source: DocumentTestFixture.source, passage: DocumentTestFixture.passage,
             questionType: "Apply a rule", existingQuestions: [])
         print("DOCUMENT_LIVE_CANDIDATE supported=\(candidate.supported) name=\(candidate.name) question=\(candidate.question) answer=\(candidate.answer) criteria=\(candidate.criteria) quotes=\(candidate.quotes)")
     }

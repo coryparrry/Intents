@@ -351,32 +351,38 @@ extension EvaluationRunner {
                 judgeAdmissionSuite.instructions = [suite.instructions, suite.features.profile.afterToolInstructions]
                     .filter { !$0.isEmpty }.joined(separator: "\n\n")
             }
-            let minimumJudgeText = Self.judgePrompt(
-                response: "",
-                evaluationCase: evaluationCase,
-                effectivePrompt: effectiveText,
-                suite: judgeAdmissionSuite,
-                toolEvidence: nil,
-                subjectContext: admissionContext
-            )
-            let minimumJudgePrompt = Self.prompt(text: minimumJudgeText, images: images)
-            let judgeInstructionTokens = try await tokenCounter.tokenCount(for: Instructions(Self.judgeInstructions))
-            let judgePromptTokens = try await EvaluationInputTokenCounter.promptEstimate(
-                text: minimumJudgeText,
-                prompt: minimumJudgePrompt,
-                hasImages: !images.isEmpty,
-                using: tokenCounter
-            ).count
-            let judgeSchema = try EvaluationJudge.schema(criterionCount: judgeAdmissionSuite.rubricCriteria.count)
-            let judgeSchemaTokens = try await tokenCounter.tokenCount(for: judgeSchema)
-            let worstCaseJudgeInput = judgeInstructionTokens
-                + judgePromptTokens
-                + judgeSchemaTokens
-                + suite.modelConfiguration.maximumResponseTokens
-                + allocation.toolOutputReserve
-            let judgeInputBudget = contextSize - EvaluationModelConfiguration.judgeResponseTokenReserve
-            guard worstCaseJudgeInput <= judgeInputBudget else {
-                throw EvaluationRunnerError.inputTooLarge(tokens: worstCaseJudgeInput, budget: judgeInputBudget)
+            let criterionGroups = evaluationCase.documentEvidence != nil
+                ? judgeAdmissionSuite.rubricCriteria.map { [$0] } : [judgeAdmissionSuite.rubricCriteria]
+            for group in criterionGroups {
+                judgeAdmissionSuite.criteria = group.joined(separator: "\n")
+                let minimumJudgeText = Self.judgePrompt(
+                    response: "",
+                    evaluationCase: evaluationCase,
+                    effectivePrompt: effectiveText,
+                    suite: judgeAdmissionSuite,
+                    toolEvidence: nil,
+                    subjectContext: admissionContext
+                )
+                let minimumJudgePrompt = Self.prompt(text: minimumJudgeText, images: images)
+                let judgeInstructionTokens = try await tokenCounter.tokenCount(for: Instructions(
+                    evaluationCase.documentEvidence != nil ? Self.documentJudgeInstructions : Self.judgeInstructions))
+                let judgePromptTokens = try await EvaluationInputTokenCounter.promptEstimate(
+                    text: minimumJudgeText,
+                    prompt: minimumJudgePrompt,
+                    hasImages: !images.isEmpty,
+                    using: tokenCounter
+                ).count
+                let judgeSchema = try EvaluationJudge.schema(criterionCount: judgeAdmissionSuite.rubricCriteria.count, evidenceFirst: evaluationCase.documentEvidence != nil)
+                let judgeSchemaTokens = try await tokenCounter.tokenCount(for: judgeSchema)
+                let worstCaseJudgeInput = judgeInstructionTokens
+                    + judgePromptTokens
+                    + judgeSchemaTokens
+                    + suite.modelConfiguration.maximumResponseTokens
+                    + allocation.toolOutputReserve
+                let judgeInputBudget = contextSize - EvaluationModelConfiguration.judgeResponseTokenReserve
+                guard worstCaseJudgeInput <= judgeInputBudget else {
+                    throw EvaluationRunnerError.inputTooLarge(tokens: worstCaseJudgeInput, budget: judgeInputBudget)
+                }
             }
         }
         return (

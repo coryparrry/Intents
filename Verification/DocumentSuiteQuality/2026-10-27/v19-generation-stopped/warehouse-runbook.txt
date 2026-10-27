@@ -1,0 +1,23 @@
+Items marked fragile must be packed with foam inserts.
+
+A parcel may weigh at most 20 kilograms for the standard courier service.
+
+Parcels over 20 kilograms must use the freight service.
+
+Orders received before 14:00 on a working day are dispatched that day.
+
+Orders received at or after 14:00 are dispatched on the next working day.
+
+A missing item blocks dispatch of the entire order until the discrepancy is resolved.
+
+A supervisor must approve replacing an ordered item with an alternative.
+
+Returned electronic items go to inspection before they can be restocked.
+
+The packing slip contains item names and quantities but excludes payment-card details.
+
+Damaged stock is placed in the quarantine area and cannot be allocated to orders.
+
+The dispatch scan records the parcel identifier and courier tracking number.
+
+A cancelled order must not be dispatched even if a shipping label has already been printed.

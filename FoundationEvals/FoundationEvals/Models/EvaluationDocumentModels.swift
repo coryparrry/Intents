@@ -45,6 +45,7 @@ struct EvaluationDocumentEvidence: Codable, Hashable, Sendable {
     var generator = "Foundation Models · on-device"
     var generatorVersion = "document-draft-v2"
     var reviewedDigest: String?
+    var requestedQuestionType: String? = nil
 
     var contextText: String {
         passages.map { "[\($0.id) · \($0.location)]\n\($0.text)" }.joined(separator: "\n\n")
@@ -117,6 +118,13 @@ extension EvaluationCase {
 }
 
 extension EvaluationSuite {
+    static func documentContextBudgetIssue(for cases: [EvaluationCase]) -> String? {
+        let retainedCharacters = cases.reduce(0) { $0 + ($1.documentEvidence?.contextText.count ?? 0)
+            + ($1.criteriaOverride?.joined().count ?? 0) }
+        return retainedCharacters > 256_000
+            ? "Retained document context and case criteria must total at most 256,000 characters." : nil
+    }
+
     var hasDocumentCases: Bool { cases.contains { $0.documentEvidence != nil } }
 
     func effectiveCriteria(for evaluationCase: EvaluationCase) -> [String] {
@@ -149,9 +157,7 @@ extension EvaluationSuite {
               attachments.isEmpty, features.outputFields.isEmpty, !features.profile.enabled else {
             return "Document cases require AI rubric scoring, strict inline context, and no tools, attachments, profiles, or output schemas."
         }
-        let retainedCharacters = cases.reduce(0) { $0 + ($1.documentEvidence?.contextText.count ?? 0)
-            + ($1.criteriaOverride?.joined().count ?? 0) }
-        guard retainedCharacters <= 256_000 else { return "Retained document context and case criteria must total at most 256,000 characters." }
+        if let issue = Self.documentContextBudgetIssue(for: cases) { return issue }
         for evaluationCase in cases where evaluationCase.documentEvidence != nil {
             if let issue = evaluationCase.documentValidationIssue { return issue }
             if requireReview && !evaluationCase.hasReviewedDocument { return "Review the changed source evidence for “\(evaluationCase.name)” before running." }

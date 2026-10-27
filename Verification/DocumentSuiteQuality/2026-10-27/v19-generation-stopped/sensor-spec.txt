@@ -1,0 +1,23 @@
+The temperature sensor accepts readings from minus 20 to 60 degrees Celsius. Values outside this range are rejected.
+
+The sensor reports temperature every 30 seconds while connected to external power.
+
+On battery power the sensor reports once every five minutes.
+
+The sensor stores up to 500 readings while offline. The oldest reading is replaced when storage is full.
+
+An amber indicator means the battery is below 15 percent.
+
+A red indicator means the temperature probe is disconnected.
+
+The sensor uses two AA batteries. Rechargeable AA batteries are supported.
+
+Factory reset removes stored readings and Wi-Fi credentials.
+
+Hold the reset button for ten seconds to start a factory reset.
+
+The calibration offset can be set between minus 3 and plus 3 degrees Celsius.
+
+The enclosure is rated for indoor use. It must not be exposed to rain.
+
+Each exported reading includes a UTC timestamp and a temperature in degrees Celsius.

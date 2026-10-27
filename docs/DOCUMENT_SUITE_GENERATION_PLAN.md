@@ -1,12 +1,14 @@
 # Turn documents into evaluation suites
 
-Status: reviewed proposal for the next release, 26 October 2026. The document-assisted answering mode is confirmed; the remaining scope and limits are recommendations, not implemented behavior.
+Status: implemented in the document-suite worktree; semantic acceptance qualification was stopped incomplete after user feedback about time and usefulness, 27 October 2026. See `DOCUMENT_SUITE_QUALITY.md` and dated verification evidence for measured results.
+
+The user authorized a configured DeepSeek semantic judge before draft acceptance. Drafting remains on-device. Full-source semantic review is mandatory in this flow, with explicit endpoint disclosure, all-six-check approval, and at most two correction retries. Provider failures stop the batch; edits invalidate approval. This check is separate from suite answer scoring and manual source review.
 
 ## Outcome
 
 Import a specification or product guide and turn it into a runnable evaluation suite. Intents drafts questions, reference answers, and case-specific scoring criteria, with source passages beside every draft. The user checks and accepts the drafts before creating the suite.
 
-Confirmed product decision: the model being evaluated receives document text when answering. This evaluates its ability to answer using supplied information. The first release supplies selected passages directly; it does not measure retrieval quality or whether the model already knows the product.
+Confirmed product decision: the model being evaluated receives document text when answering. This evaluates its ability to answer using supplied information. The first release supplies the complete imported source directly, with selected passages choosing question topics; it does not measure retrieval quality or whether the model already knows the product.
 
 The reference answer and scoring criteria belong to the judge. Their fields and review metadata must never enter the answering model's request. The document can naturally contain the same words as the reference answer; test separation of fields and request construction, not absence of those words.
 
@@ -207,8 +209,8 @@ Do not ship the creation flow before its cases execute and retain their evidence
 - Save/load, duplication, export/import, MCP access, native plugin execution, reassessment, and supported frozen-batch execution preserve context, criteria, and provenance or explicitly reject unsupported versions. Run evidence keeps its original source snapshot after edits.
 - Use fixtures for pre-feature readers and mixed cases with/without rubric overrides. Verify old-reader rejection, scoring-contract changes, judge availability/reserves, and that unsupported export/conversion/edit routes cannot drop fields. Reassessment must preserve the original response and context.
 - Verify keyboard navigation, focus, accessible labels, light/dark appearances, progress announcements, and source inspection through actual UI flows.
-- Evaluate a fixed corpus of at least 10 varied documents, requesting at least 100 drafts in total. Include short/long guides, specifications, cross-page exceptions, mixed scanned/text PDFs, and contradictory or instruction-like text. Freeze fixtures, generation settings, and model/OS identity. Human review labels every surfaced draft: supported, useful/distinct, rubric-correct, and acceptable without substantive edits. Proposed release gates are at least 90% source-supported and 80% acceptable without substantive edits among surfaced drafts. Report counts and rates per document as well as overall, and separately report yield against requested drafts, structural rejections, duplicates, and failed/omitted sections so returning very little cannot masquerade as quality. Never pad weak documents to reach 100 outputs.
-- Require at least 100 surfaced drafts before treating the percentage targets as evaluated. If the initial corpus yields fewer, retain its failures and extend the corpus with additional suitable documents; the gate remains unevaluated meanwhile. Every accepted release-fixture case must pass human source review. Use controlled correct paraphrases, omissions, and invented claims to validate scoring independently of the generator. Keep deterministic fixtures/stubbed-model tests in CI; report stochastic on-device quality separately and do not repeatedly rerun failures until a favorable sample appears.
+- Evaluate a fixed corpus of at least 10 varied documents, requesting at least 100 drafts in total. Include short/long guides, specifications, cross-page exceptions, mixed scanned/text PDFs, and contradictory or instruction-like text. Freeze fixtures, generation settings, and model/OS identity. Review labels every surfaced draft (human by default; agent review authorized for this qualification on 27 October 2026, as recorded below): supported, useful/distinct, rubric-correct, and acceptable without substantive edits. Proposed release gates are at least 90% source-supported and 80% acceptable without substantive edits among surfaced drafts. Report counts and rates per document as well as overall, and separately report yield against requested drafts, structural rejections, duplicates, and failed/omitted sections so returning very little cannot masquerade as quality. Never pad weak documents to reach 100 outputs.
+- Require at least 100 surfaced drafts before treating the percentage targets as evaluated. If the initial corpus yields fewer, retain its failures and extend the corpus with additional suitable documents; the gate remains unevaluated meanwhile. Every accepted release-fixture case must pass source review under the explicitly selected review policy. Use controlled correct paraphrases, omissions, and invented claims to validate scoring independently of the generator. Keep deterministic fixtures/stubbed-model tests in CI; report stochastic on-device quality separately and do not repeatedly rerun failures until a favorable sample appears.
 - Measure time to first draft, total generation time, cancellation response, and memory on a supported Mac before setting a user-facing performance expectation.
 
 ## Implementation status
@@ -230,3 +232,48 @@ Independent review identified and corrected criteria normalization, mixed-case j
 The UI uses a deterministic saved-draft fixture. It does not establish model generation quality. Likewise, synthetic live fixtures are not human approval of generated user content.
 
 The 10-document/100-surfaced-draft human quality study and performance measurements above remain release gates. A successful build or synthetic smoke test does not satisfy them.
+
+
+### Quality follow-up — 26–27 October 2026
+
+The reproducible harness and review protocol are documented in [DOCUMENT_SUITE_QUALITY.md](DOCUMENT_SUITE_QUALITY.md). The frozen corpus requests 120 drafts across 12 documents. These runs preserve every omission, duplicate, and structural rejection:
+
+| Generator | Surfaced / requested | Attempts | Interpretation |
+|---|---:|---:|---|
+| v3 | 64 / 120 | 234 | Failed the minimum surfaced count. False unsupported decisions and repeated questions dominated. |
+| v4 | 110 / 120 | 183 | Yield minimum met; review found redundant and unasked rubric requirements. |
+| v5 | 120 / 120 | 133 | One requirement and one quote per draft removed the observed redundant rubric pattern. Ten PDF whitespace citation rejections remained in the ledger. Automated review found 95% supported and 86.7% acceptable; human review remains pending. |
+| v6 | 120 / 120 | 122 | Original source whitespace is restored for exact citations; identical factual targets are rejected even when questions are reworded. All 27 selected corpus and regression tests passed. Automated review found 95.8% supported and 88.3% acceptable; human approval remains pending. |
+
+Version v6 restores whitespace-only quotation matches to exact original source spans. Altered words, numbers, case, and punctuation remain rejected. Sixteen affected document and judge-isolation tests pass, including this behavior. The broader scoring, persistence, context-budget, and compatible-client regression run passed after correcting one test fixture's exact-literal syntax.
+
+Native scoring remains unqualified: the production v12 scorer passed **19/28 full-corpus controls** when checking both individual requirements and whole-case outcomes. Nine controls failed. The v10/v11/v12 six-control pilots passed 1/6, 3/6, and 3/6 cases respectively. Separate diagnostic designs tested contextual grading, factual extraction, and binary comparison; none is counted as a production gate pass. PCC reported device availability but diagnostic requests failed; Xcode documentation identifies its managed entitlement as a prerequisite, and the current target has no PCC entitlement. No app default or saved judge connection was changed.
+
+The user then authorized the configured DeepSeek judge for synthetic qualification. With v12 it passed all six pilot cases and 27/28 primary controls; it wrongly demanded that a concise frequency answer repeat a condition already fixed by the question. Policy v13 explicitly inherits question context while still requiring requested facts and rejecting explicit contradictions. Through the production runner, the configured `deepseek-flash` judge passed **28/28 primary controls (34 requirement checks)** and **28/28 frozen holdout controls (38 requirement checks)**. Frozen expectations were unchanged. This qualifies scoring for that selected external configuration; it does not establish native-model quality or replace human generation review.
+
+A fresh v6 generation run bound to that v13 scoring configuration again surfaced **120/120 drafts in 122 attempts**. All 28 selected tests passed. All complete source and draft semantics matched the prior automated review: 115/120 supported and 106/120 acceptable without edits. The final app built and passed signature verification. The report records `scoring_gate_passed: true`, but `overall_gate_passed: false` because human labels remain 0/120. The current review packet and retained failures are indexed in `Verification/DocumentSuiteQuality/2026-10-27/README.md`.
+
+
+### User-authorized agent-review qualification — 27 October 2026
+
+The user declined manual labeling and instructed: “I am not labeling them, you label them.” For this qualification, agent review replaces the proposed human-label requirement. The sample-size, source-support (90%), acceptance (80%), provenance, and scoring requirements are unchanged. All 120 labels remain `reviewer_kind: automated`; the 14 unacceptable drafts retain their failed labels and reasons.
+
+The report now supports explicit `--reviewer-kind automated`; its default remains human. The selected agent-review gate passes with 120/120 labels, 115/120 supported, 106/120 acceptable, and 28/28 primary scoring controls. The separate frozen holdout also passes 28/28. Human review is not claimed: `human_reviewed: 0` and `human_overall_gate_passed: false`. The original failed human-gate report is retained under `Verification/DocumentSuiteQuality/2026-10-27/deepseek-generation-v6-v13/human-policy-snapshot/`.
+
+
+### Flagged-draft repairs and generation qualification — 27 October 2026
+
+The original 14 flagged drafts were corrected in a separate artifact and independently source-reviewed. Their original failed labels remain unchanged. A 34-case regression set covers each repaired question with a correct paraphrase and a wrong answer, plus three pairs proving unasked reference details are optional. All 34 passed through the production DeepSeek scorer.
+
+Generator v10 consults and retains complete imported context, counts cited passages for coverage, rejects reused quote targets, and derives a question-scoped rubric from concrete reference facts. The unchanged 256,000-character suite limit is enforced before appending drafts, so a large source cannot leave an accepted draft set that fails suite creation. Documents that cannot fit complete on-device context require a smaller import range.
+
+Fresh qualification produced 120/120 drafts in 123 attempts. Independent automated review found **116/120 supported (96.7%)** and **115/120 acceptable without edits (95.8%)**, exceeding the unchanged 90%/80% thresholds. The unchanged primary and holdout sets each passed 28/28; including repairs/scope controls, **90/90 scoring cases and 106/106 checks passed**. Thirty-one selected Swift tests, eight reporter tests, and the verified app build passed.
+
+Five raw drafts still require edits: guest-host applicability, legal hold, read-only autosave, a Find question that reveals its answer, and a state/detail mismatch. The original read-only exception theme still recurs; passing the aggregate gate does not establish its elimination. V7/v8 failed experiments and the complete v9 failure (72.5% acceptable) remain retained alongside v10. Current evidence and the 14 repaired drafts are indexed in `Verification/DocumentSuiteQuality/2026-10-27/README.md`.
+
+
+### Follow-up: five v10 corrections and fact-first generation
+
+Generator v15 emits its grounded fact before its question and highlights neighboring passages while retaining the entire source. It now includes the active legal-hold and read-only autosave exceptions in fresh outputs. The five v10 corrections are separately reviewed in `Verification/DocumentSuiteQuality/2026-10-27/corrected-v10-drafts.json`; original failed labels remain unchanged.
+
+The new fixed-corpus run surfaced 120 drafts from 124 attempts. Fresh automated review found 96.7% supported and 96.7% acceptable without edits, with 31 selected Swift tests passing. Four raw drafts still need edits (projector request wording, printer-light inference, autosave failure wording, and approval timing). Separate agent repairs retain those original candidates and their failed labels. A passing aggregate gate is not a claim that native generation produces no defects. Current scoring, build, and repair evidence is indexed in `Verification/DocumentSuiteQuality/2026-10-27/README.md`.

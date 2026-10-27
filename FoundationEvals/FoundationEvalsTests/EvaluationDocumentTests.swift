@@ -4,6 +4,18 @@ import Testing
 @testable import FoundationEvals
 
 enum DocumentTestFixture {
+    static let semanticConnection = EvaluationJudgeConnection(id: UUID(), name: "Test", kind: .customCompatible,
+        baseURL: "https://example.invalid/v1", modelID: "test")
+    static let semanticReviewer: EvaluationDocumentSemanticReviewer.Reviewer = { value, _, existing in
+        let checks = (1...EvaluationDocumentSemanticReviewer.requirements.count).map {
+            EvaluationDocumentSemanticReview.Check(criterionIndex: $0, score: 4, rationale: "Fixture approved")
+        }
+        return .init(policyVersion: EvaluationDocumentSemanticReviewer.version, candidateDigest: value.documentReviewDigest ?? "",
+            connectionID: semanticConnection.id, connectionDigest: semanticConnection.disclosureDigest,
+            modelID: "test", checks: checks, rawResponse: "fixture",
+            reviewedQuestions: EvaluationDocumentSemanticReviewer.questionDigests(existing))
+    }
+
     static var passage: EvaluationDocumentPassage {
         .init(id: "page-6-1", location: "Page 6", text: "Owners can export a workspace. Members can view reports but cannot export a workspace.")
     }
@@ -11,7 +23,7 @@ enum DocumentTestFixture {
         .init(name: "Guide.pdf", fileDigest: String(repeating: "a", count: 64), passages: [passage])
     }
     static func example(reviewed: Bool = true) -> EvaluationCase {
-        var value = EvaluationCase(name: "Workspace exports", prompt: "Can members export a workspace?", expected: "No. Only owners can export.")
+        var value = EvaluationCase(name: "Workspace exports", prompt: "Can members export a workspace, and which documented role can?", expected: "Members cannot export a workspace; owners can.")
         value.criteriaOverride = ["States that members cannot export.", "Identifies the owner role."]
         value.documentEvidence = .init(sourceName: source.name, sourceDigest: source.fileDigest,
             passages: source.passages, citations: [.init(passageID: passage.id, quote: "Owners can export a workspace.")], questionType: "Apply a rule")
@@ -153,6 +165,18 @@ struct EvaluationDocumentTests {
             contextSize: 4_096, tools: [], tokenCounter: DocumentTokenCounter(oversizedJudge: true))
     }
 
+    @Test func isolatedJudgeAdmissionDoesNotRequireTheCombinedRubricToFit() async throws {
+        var suite = DocumentTestFixture.suite()
+        suite.cases[0].criteriaOverride = ["First unique requirement", "Second unique requirement"]
+        suite.cases[0].acceptDocumentReview()
+        let counter = DocumentTokenCounter(combinedJudgeIsOversized: true)
+        _ = try await EvaluationRunner().preparedPrompt(for: suite.cases[0], suite: suite, images: [],
+            contextSize: 4_096, tools: [], tokenCounter: counter)
+        let combined = EvaluationRunner.judgePrompt(response: "", evaluationCase: suite.cases[0],
+            effectivePrompt: "Source", suite: suite.effectiveSuite(for: suite.cases[0]), toolEvidence: nil)
+        #expect(try await counter.tokenCount(for: Prompt(combined)) == 10_000)
+    }
+
     @Test(arguments: ["\n", "\r\n", "\u{2028}"])
     func overrideEntriesCannotIntroduceExtraCriteria(newline: String) {
         var suite = DocumentTestFixture.suite()
@@ -175,9 +199,94 @@ struct EvaluationDocumentTests {
         }
     }
 
+    @Test func paraphrasedQuestionsWithIdenticalFactsAreDuplicates() {
+        let original = DocumentTestFixture.suite().cases[0]
+        var reworded = original
+        reworded.prompt = "A differently worded question about the same fact."
+        #expect(EvaluationDocumentGenerator.repeatsFact(reworded, among: [original]))
+        reworded.expected += " Rephrased target."
+        #expect(EvaluationDocumentGenerator.repeatsFact(reworded, among: [original]))
+        reworded = original
+        reworded.criteriaOverride = ["A differently worded requirement."]
+        #expect(EvaluationDocumentGenerator.repeatsFact(reworded, among: [original]))
+        reworded.documentEvidence?.citations[0].quote = "A distinct source fact."
+        #expect(!EvaluationDocumentGenerator.repeatsFact(reworded, among: [original]))
+        reworded = original
+        reworded.documentEvidence?.sourceDigest = String(repeating: "0", count: 64)
+        #expect(!EvaluationDocumentGenerator.repeatsFact(reworded, among: [original]))
+    }
+
+    @Test func generatedQuotesRecoverOnlyOriginalWhitespace() {
+        let source = "Records under an\nactive hold stay for 30 days."
+        #expect(EvaluationDocumentGenerator.sourceQuote("Records under an active hold stay for 30 days.", in: source) == source)
+        #expect(EvaluationDocumentGenerator.sourceQuote("active hold stay for 30 days.", in: source) == "active hold stay for 30 days.")
+        #expect(EvaluationDocumentGenerator.sourceQuote("Records under an active hold stay for 60 days.", in: source) == nil)
+        #expect(EvaluationDocumentGenerator.sourceQuote("records under an active hold stay for 30 days.", in: source) == nil)
+        #expect(EvaluationDocumentGenerator.sourceQuote("Records under an active hold stay for 30 days!", in: source) == nil)
+        #expect(EvaluationDocumentGenerator.sourceQuote(" \n", in: source) == nil)
+    }
+
+    @Test func generatedRubricsPreserveTheWholeAnswerWithoutLiteralMatching() throws {
+        for answer in ["Only release-role operators may approve.",
+                       "Retry with exponential backoff, starting at one second and capped at one minute.",
+                       "Press any control-panel button.\nThe printer wakes."] {
+            let criterion = EvaluationDocumentGenerator.criterion(for: answer, question: "What is the documented rule?")
+            #expect(criterion.contains(answer.split(whereSeparator: \.isWhitespace).joined(separator: " ")))
+            let containsNewline = criterion.contains(where: \.isNewline)
+            #expect(!containsNewline)
+            #expect(EvaluationExactCriterion.expectedText(in: criterion) == nil)
+        }
+    }
+
+    @Test func generatedQuotesCanCiteRequestedExceptionsFromOtherPassages() throws {
+        let focus = EvaluationDocumentPassage(id: "frequency", location: "Page 1", text: "Autosave runs every 60 seconds with unsaved changes.")
+        let exception = EvaluationDocumentPassage(id: "exception", location: "Page 2", text: "Autosave does not run in read-only mode.")
+        let source = EvaluationDocumentSource(name: "Editor.txt", fileDigest: String(repeating: "a", count: 64), passages: [focus, exception])
+        var candidate = EvaluationDocumentGenerator.Candidate(name: "Autosave",
+            question: "How often does autosave run, and what changes in read-only mode?",
+            answer: "Every 60 seconds with unsaved changes, but never in read-only mode.",
+            quotes: [focus.text, exception.text], supported: true)
+        let value = try #require(try EvaluationDocumentGenerator.validated(candidate, source: source,
+            passage: focus, questionType: "Direct fact", existingQuestions: []))
+        #expect(value.documentEvidence?.citations.map(\.passageID) == [focus.id, exception.id])
+        candidate.quotes = [focus.text, exception.text, focus.text]
+        let deduplicated = try #require(try EvaluationDocumentGenerator.validated(candidate, source: source,
+            passage: focus, questionType: "Direct fact", existingQuestions: []))
+        #expect(deduplicated.documentEvidence?.citations.map(\.passageID) == [focus.id, exception.id])
+        for invalid in [[exception.text], [focus.text, "Runs every 30 seconds."]] {
+            candidate.quotes = invalid
+            #expect(throws: (any Error).self) {
+                try EvaluationDocumentGenerator.validated(candidate, source: source, passage: focus,
+                    questionType: "Direct fact", existingQuestions: [])
+            }
+        }
+    }
+
+    @Test func generatedContextKeepsExceptionsWithoutClaimingTheyWereCovered() throws {
+        var source = DocumentTestFixture.source
+        let exception = EvaluationDocumentPassage(id: "exception", location: "Page 2", text: "Exports are disabled during maintenance.")
+        source.passages.append(exception)
+        let candidate = EvaluationDocumentGenerator.Candidate(name: "Export", question: "Who can export outside maintenance?",
+            answer: "Owners can export outside maintenance.", quotes: ["Owners can export a workspace."], supported: true)
+        var value = try #require(try EvaluationDocumentGenerator.validated(candidate, source: source,
+            passage: DocumentTestFixture.passage, questionType: "Direct fact", existingQuestions: []))
+        #expect(value.documentEvidence?.passages == source.passages)
+        #expect(value.criteriaOverride == [EvaluationDocumentGenerator.criterion(for: candidate.answer, question: candidate.question)])
+        value.acceptDocumentReview()
+        var draft = EvaluationDocumentDraft(projectID: UUID(), name: "Fixture", source: source,
+            selectedPassageIDs: Set(source.passages.map(\.id)))
+        draft.cases = [.init(evaluationCase: value)]
+        #expect(draft.representedPassageIDs == [DocumentTestFixture.passage.id])
+        #expect(draft.coverageLabel(for: exception.id) == "Not yet considered")
+        #expect(throws: (any Error).self) {
+            try EvaluationDocumentGenerator.validated(candidate, source: DocumentTestFixture.source,
+                passage: exception, questionType: "Direct fact", existingQuestions: [])
+        }
+    }
+
     @Test func malformedAndDuplicateGeneratedDraftsCannotBeAccepted() throws {
-        var candidate = EvaluationDocumentGenerator.Candidate(supported: true, name: "Export", question: "Can members export?",
-            answer: "No.", criteria: ["Says no."], quotes: ["A fabricated quote."])
+        var candidate = EvaluationDocumentGenerator.Candidate(name: "Export", question: "Can members export?",
+            answer: "Members cannot export.", quotes: ["A fabricated quote."], supported: true)
         #expect(throws: (any Error).self) {
             try EvaluationDocumentGenerator.validated(candidate, source: DocumentTestFixture.source,
                 passage: DocumentTestFixture.passage, questionType: "Direct fact", existingQuestions: [])
@@ -186,6 +295,22 @@ struct EvaluationDocumentTests {
         let draft = try #require(try EvaluationDocumentGenerator.validated(candidate, source: DocumentTestFixture.source,
             passage: DocumentTestFixture.passage, questionType: "Direct fact", existingQuestions: []))
         #expect(!draft.hasReviewedDocument)
+        let fallback = try #require(try EvaluationDocumentGenerator.validated(candidate, source: DocumentTestFixture.source,
+            passage: DocumentTestFixture.passage, questionType: "Apply a rule", existingQuestions: []))
+        #expect(fallback.documentEvidence?.questionType == "Direct fact")
+        #expect(fallback.documentEvidence?.requestedQuestionType == "Apply a rule")
+        var extraQuote = candidate
+        extraQuote.quotes.append(candidate.quotes[0])
+        let deduplicated = try #require(try EvaluationDocumentGenerator.validated(extraQuote, source: DocumentTestFixture.source,
+            passage: DocumentTestFixture.passage, questionType: "Direct fact", existingQuestions: []))
+        #expect(deduplicated.documentEvidence?.citations.count == 1)
+        #expect(!deduplicated.hasReviewedDocument)
+        candidate.questionType = "Invented category"
+        #expect(throws: (any Error).self) {
+            try EvaluationDocumentGenerator.validated(candidate, source: DocumentTestFixture.source,
+                passage: DocumentTestFixture.passage, questionType: "Apply a rule", existingQuestions: [])
+        }
+        candidate.questionType = "Direct fact"
         #expect(try EvaluationDocumentGenerator.validated(candidate, source: DocumentTestFixture.source,
             passage: DocumentTestFixture.passage, questionType: "Direct fact", existingQuestions: ["CAN MEMBERS EXPORT!"]) == nil)
     }
@@ -193,8 +318,12 @@ struct EvaluationDocumentTests {
 
 private struct DocumentTokenCounter: EvaluationPromptInputTokenCounting {
     var oversizedJudge = false
+    var combinedJudgeIsOversized = false
     func tokenCount(for prompt: Prompt) async throws -> Int {
-        oversizedJudge && String(describing: prompt).contains("candidateResponse:") ? 10_000 : 400
+        if combinedJudgeIsOversized, String(describing: prompt).contains("First unique requirement"),
+           String(describing: prompt).contains("Second unique requirement") { return 10_000 }
+        return oversizedJudge && (String(describing: prompt).contains("candidateResponse:")
+            || String(describing: prompt).contains("candidateAnswer")) ? 10_000 : 400
     }
     func tokenCount(for instructions: Instructions) async throws -> Int { 100 }
     func tokenCount(for schema: GenerationSchema) async throws -> Int { 100 }

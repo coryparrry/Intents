@@ -4,6 +4,7 @@ struct EvaluationDocumentDraftCase: Codable, Identifiable, Equatable, Sendable {
     var id: UUID { evaluationCase.id }
     var evaluationCase: EvaluationCase
     var discarded = false
+    var semanticReview: EvaluationDocumentSemanticReview? = nil
 }
 
 struct EvaluationDocumentDraft: Codable, Identifiable, Sendable {
@@ -18,22 +19,41 @@ struct EvaluationDocumentDraft: Codable, Identifiable, Sendable {
     var cases: [EvaluationDocumentDraftCase] = []
     var completedBatchIDs: Set<String> = []
     var issues: [String: String] = [:]
-    var generationVersion = "document-draft-v2"
+    var generationVersion = EvaluationDocumentGenerator.version
     var importedTemplate: EvaluationSuite? = nil
+    var semanticJudgeID: UUID? = nil
+    var semanticApprovalDigest: String? = nil
+    var semanticAttempts: [EvaluationDocumentSemanticAttempt]? = nil
+    var requiresSemanticReview: Bool? = nil
 
     var acceptedCases: [EvaluationCase] {
-        cases.filter { !$0.discarded && $0.evaluationCase.hasReviewedDocument }
+        cases.filter { !$0.discarded && $0.evaluationCase.hasReviewedDocument
+            && (requiresSemanticReview != true || semanticReviewIsCurrent(for: $0.id)) }
             .map(\.evaluationCase)
     }
 
+    /// Each active pair must have been compared by at least one unchanged approved receipt.
+    /// New approvals cover earlier questions; restoring a previously excluded sibling requires a recheck.
+    func semanticReviewIsCurrent(for id: UUID) -> Bool {
+        guard let item = cases.first(where: { $0.id == id }),
+              let review = item.semanticReview, review.matches(item.evaluationCase) else { return false }
+        let ownQuestion = EvaluationDocumentSemanticReviewer.questionDigests([item.evaluationCase.prompt])[0]
+        return cases.filter { !$0.discarded && $0.id != id }.allSatisfy { other in
+            let otherQuestion = EvaluationDocumentSemanticReviewer.questionDigests([other.evaluationCase.prompt])[0]
+            return review.reviewedQuestions?.contains(otherQuestion) == true
+                || (other.semanticReview?.matches(other.evaluationCase) == true
+                    && other.semanticReview?.reviewedQuestions?.contains(ownQuestion) == true)
+        }
+    }
+
     var representedPassageIDs: Set<String> {
-        Set(acceptedCases.flatMap { $0.documentEvidence?.passages.map(\.id) ?? [] }).intersection(selectedPassageIDs)
+        Set(acceptedCases.flatMap { $0.documentEvidence?.citations.map(\.passageID) ?? [] }).intersection(selectedPassageIDs)
     }
 
     func coverageLabel(for passageID: String) -> String {
         guard selectedPassageIDs.contains(passageID) else { return "Excluded from generation" }
         if representedPassageIDs.contains(passageID) { return "Represented by an accepted case" }
-        if cases.contains(where: { !$0.discarded && $0.evaluationCase.documentEvidence?.passages.contains(where: { $0.id == passageID }) == true }) {
+        if cases.contains(where: { !$0.discarded && $0.evaluationCase.documentEvidence?.citations.contains(where: { $0.passageID == passageID }) == true }) {
             return "Draft awaiting source review"
         }
         if issues.keys.contains(where: { $0.hasPrefix(passageID + ":") }) { return "Omitted or failed — see attempt details" }

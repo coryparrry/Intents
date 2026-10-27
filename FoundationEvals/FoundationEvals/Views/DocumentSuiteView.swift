@@ -89,7 +89,7 @@ struct DocumentSuiteView: View {
     private var importPanel: some View {
         VStack(alignment: .leading, spacing: 18) {
             ContentUnavailableView("Start with a specification or product guide", systemImage: "doc.text.magnifyingglass",
-                description: Text("One text-based PDF, Markdown, or UTF-8 text file. Generation stays on this Mac. Scanned pages, diagrams, and complex tables are not interpreted."))
+                description: Text("One text-based PDF, Markdown, or UTF-8 text file. Drafting uses this Mac; semantic review sends extracted text to your selected judge after authorization. Scanned pages, diagrams, and complex tables are not interpreted."))
             HStack {
                 Text("Optional range")
                 TextField("First", text: $rangeStart).frame(width: 70)
@@ -121,10 +121,11 @@ struct DocumentSuiteView: View {
                     controller.draft?.name = $0; controller.persist()
                 })).textFieldStyle(.roundedBorder).accessibilityLabel("Document suite name")
                 if let draft = controller.draft, !draft.cases.isEmpty {
+                    let acceptedIDs = Set(draft.acceptedCases.map(\.id))
                     Picker("Draft", selection: $selectedCaseID) {
                         Text("Choose a draft").tag(UUID?.none)
                         ForEach(draft.cases) { item in
-                            Text("\(item.discarded ? "Discarded · " : item.evaluationCase.hasReviewedDocument ? "Accepted · " : "")\(item.evaluationCase.name)")
+                            Text("\(item.discarded ? "Discarded · " : acceptedIDs.contains(item.id) ? "Accepted · " : "")\(item.evaluationCase.name)")
                                 .tag(Optional(item.id))
                         }
                     }
@@ -140,6 +141,34 @@ struct DocumentSuiteView: View {
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }.frame(maxHeight: .infinity)
+    }
+
+    private var semanticJudge: EvaluationJudgeConnection? {
+        store.judgeConnections.first { $0.id == controller.draft?.semanticJudgeID }
+    }
+
+    private var semanticReviewSettings: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Semantic judge", selection: Binding(get: { controller.draft?.semanticJudgeID }, set: {
+                controller.draft?.semanticJudgeID = $0
+                controller.draft?.semanticApprovalDigest = nil
+                controller.persist()
+            })) {
+                Text("Choose a configured judge").tag(UUID?.none)
+                ForEach(store.judgeConnections) { connection in Text(connection.name + " · " + connection.modelID).tag(Optional(connection.id)) }
+            }
+            if let judge = semanticJudge {
+                Text("Each draft is checked against the complete extracted document by \(judge.modelID) at \(judge.baseURL). Rejected drafts are regenerated up to twice. Provider charges may apply.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Allow sending this document, draft answers, rubrics, and prior questions to this judge", isOn: Binding(
+                    get: { controller.draft?.semanticApprovalDigest == judge.disclosureDigest },
+                    set: { controller.draft?.semanticApprovalDigest = $0 ? judge.disclosureDigest : nil; controller.persist() }))
+                    .font(.caption)
+            } else {
+                Text("Configure a judge in Settings → Judges, then select it here. Generation requires semantic review.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }.disabled(controller.isBusy)
     }
 
     private var sourcePanel: some View {
@@ -171,18 +200,20 @@ struct DocumentSuiteView: View {
                         }
                     }
                 }
+                semanticReviewSettings
                 Picker("Requested drafts", selection: Binding(get: { controller.draft?.requestedCount ?? 10 }, set: {
                     controller.draft?.requestedCount = $0; controller.persist()
                 })) {
                     ForEach([5, 10, 20], id: \.self) { Text("\($0)").tag($0) }
                 }.disabled(controller.isBusy || !draft.completedBatchIDs.isEmpty || !draft.issues.isEmpty)
-                Button(draft.completedBatchIDs.isEmpty ? "Generate drafts" : "Resume generation") { controller.generate() }
+                Button(draft.completedBatchIDs.isEmpty ? "Generate drafts" : "Resume generation") { controller.generate(judge: semanticJudge) }
                     .disabled(controller.isBusy || draft.selectedPassageIDs.isEmpty || controller.storageBlocked
+                        || semanticJudge == nil || draft.semanticApprovalDigest != semanticJudge?.disclosureDigest
                         || draft.cases.filter { !$0.discarded }.count >= draft.requestedCount
                         || draft.completedBatchIDs.union(Set(draft.issues.keys)).count >= draft.requestedCount * 2)
                     .accessibilityIdentifier("Generate document drafts")
                 if !draft.issues.isEmpty {
-                    Button("Retry failed attempts") { controller.generate(retryFailures: true) }.disabled(controller.isBusy)
+                    Button("Retry failed attempts") { controller.generate(retryFailures: true, judge: semanticJudge) }.disabled(controller.isBusy)
                 }
                 Text("Fewer drafts may be returned. Coverage counts accepted questions, not every requirement in a section.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -206,7 +237,9 @@ struct DocumentSuiteView: View {
                 TextEditor(text: binding.prompt).frame(minHeight: 70).border(.separator).accessibilityLabel("Draft question")
                 Text("Reference answer").font(.headline)
                 TextEditor(text: binding.expected).frame(minHeight: 70).border(.separator).accessibilityLabel("Draft reference answer")
-                DocumentEvidenceReview(evaluationCase: binding, availablePassages: controller.draft?.source.passages ?? [])
+                DocumentEvidenceReview(evaluationCase: binding, availablePassages: controller.draft?.source.passages ?? [],
+                    acceptAction: { controller.reviewAndAccept(caseID: initial.id, judge: semanticJudge) },
+                    acceptanceReady: controller.draft?.semanticReviewIsCurrent(for: initial.id) == true)
                 Toggle("Discard this draft", isOn: Binding(get: { controller.draft?.cases[index].discarded ?? false }, set: {
                     controller.draft?.cases[index].discarded = $0
                 }))

@@ -1,0 +1,23 @@
+The draft release note says uploads are limited to 8 MB. A second equally authoritative draft says uploads are limited to 12 MB. No approved limit is supplied.
+
+Release 4.2 adds a progress indicator to uploads.
+
+Release 4.2 fixes a crash when cancelling an upload.
+
+Uploads paused by the user do not resume automatically after relaunch.
+
+The retry button restarts the failed upload from the beginning.
+
+Upload filenames are preserved in the destination folder.
+
+The destination folder must be writable before an upload can begin.
+
+An interrupted network connection leaves the upload in the Failed state.
+
+A completed upload shows the destination path in its details.
+
+The upload history retains the latest 100 jobs.
+
+Removing a job from history does not delete its uploaded file.
+
+The upload queue runs two jobs concurrently.

@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 
 final class DocumentSuiteUITests: XCTestCase {
     private var app: XCUIApplication?
@@ -13,26 +14,26 @@ final class DocumentSuiteUITests: XCTestCase {
     @MainActor func testReviewAndCreateDocumentSuiteInLightMode() throws { try reviewAndCreate(style: "Light") }
     @MainActor func testReviewAndCreateDocumentSuiteInDarkMode() throws { try reviewAndCreate(style: "Dark") }
 
-    @MainActor private func reviewAndCreate(style: String) throws {
-        let storage = try fixture()
-        self.storage = storage
-        let app = XCUIApplication()
-        self.app = app
-        app.launchArguments = ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
-            "--evaluation-window-width", "1180", "--evaluation-window-height", "850",
-            "-AppleInterfaceStyle", style, "-SUEnableAutomaticChecks", "NO", "-SUAutomaticallyUpdate", "NO"]
-        app.launch()
-        try UITestStorage.openSuiteEditor(in: app)
-        let newSuite = app.buttons["New Suite"].firstMatch
-        XCTAssertTrue(newSuite.waitForExistence(timeout: 5), app.debugDescription)
-        newSuite.click()
-        let fromDocument = app.buttons["New suite from document"]
-        XCTAssertTrue(fromDocument.waitForExistence(timeout: 3), app.debugDescription)
-        fromDocument.click()
+    @MainActor func testUncheckedDraftCannotBeAcceptedWithoutAnAuthorizedJudge() throws {
+        let app = try openDraft(style: "Light", semanticApproved: false)
         let create = app.buttons["Create document suite"]
-        XCTAssertTrue(create.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertFalse(create.isEnabled)
-        XCTAssertTrue(app.textViews["Draft question"].waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Needs semantic check"].exists, app.debugDescription)
+        app.scrollViews["Document draft review scroll"].scroll(byDeltaX: 0, deltaY: -1000)
+        let accept = app.buttons["Accept document source review"]
+        XCTAssertTrue(accept.waitForExistence(timeout: 3))
+        accept.click()
+        XCTAssertFalse(create.isEnabled)
+        XCTAssertTrue(app.staticTexts["Authorize a semantic judge to check the edited draft."].waitForExistence(timeout: 3), app.debugDescription)
+    }
+
+    @MainActor private func reviewAndCreate(style: String) throws {
+        let app = try openDraft(style: style, semanticApproved: true)
+        let storage = try XCTUnwrap(self.storage)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "https://example.invalid/v1")).firstMatch.exists, app.debugDescription)
+        XCTAssertFalse(app.buttons["Resume generation"].isEnabled)
+        let create = app.buttons["Create document suite"]
+        XCTAssertFalse(create.isEnabled)
         let review = app.scrollViews["Document draft review scroll"]
         XCTAssertTrue(review.exists, app.debugDescription)
         review.scroll(byDeltaX: 0, deltaY: -1000)
@@ -61,11 +62,34 @@ final class DocumentSuiteUITests: XCTestCase {
         XCTAssertFalse(app.alerts.firstMatch.exists, app.debugDescription)
     }
 
-    private func fixture() throws -> URL {
+    @MainActor private func openDraft(style: String, semanticApproved: Bool) throws -> XCUIApplication {
+        let storage = try fixture(semanticApproved: semanticApproved)
+        self.storage = storage
+        let app = XCUIApplication()
+        self.app = app
+        app.launchArguments = ["--disable-mcp-autostart", "--evaluation-storage", storage.path,
+            "--evaluation-window-width", "1180", "--evaluation-window-height", "850",
+            "-AppleInterfaceStyle", style, "-SUEnableAutomaticChecks", "NO", "-SUAutomaticallyUpdate", "NO"]
+        app.launch()
+        try UITestStorage.openSuiteEditor(in: app)
+        let newSuite = app.buttons["New Suite"].firstMatch
+        XCTAssertTrue(newSuite.waitForExistence(timeout: 5), app.debugDescription)
+        newSuite.click()
+        let fromDocument = app.buttons["New suite from document"]
+        XCTAssertTrue(fromDocument.waitForExistence(timeout: 3), app.debugDescription)
+        fromDocument.click()
+        let create = app.buttons["Create document suite"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.textViews["Draft question"].waitForExistence(timeout: 3), app.debugDescription)
+        return app
+    }
+
+    private func fixture(semanticApproved: Bool) throws -> URL {
         let directory = try UITestStorage.makeDirectory(prefix: "document-suite")
         let projectID = UUID().uuidString
         let suiteID = UUID().uuidString
         let caseID = UUID().uuidString
+        let judgeID = UUID().uuidString
         let date = "2026-10-26T12:00:00Z"
         let location = directory.appending(path: "Projects/\(projectID)/Suites/\(suiteID)")
         try FileManager.default.createDirectory(at: location.appending(path: "Runs"), withIntermediateDirectories: true)
@@ -83,10 +107,31 @@ final class DocumentSuiteUITests: XCTestCase {
             "questionType": "Apply a rule", "generator": "UI fixture", "generatorVersion": "document-draft-v1"]
         let evaluationCase: [String: Any] = ["id": caseID, "name": "Workspace exports", "prompt": ["format": "document-case-v1", "text": "Can members export a workspace?"],
             "expected": "No. Only owners can export.", "criteriaOverride": ["States that members cannot export.", "Identifies the owner role."], "documentEvidence": evidence]
-        let draft: [String: Any] = ["id": UUID().uuidString, "formatVersion": 1, "projectID": projectID,
+        var draftCase: [String: Any] = ["evaluationCase": evaluationCase, "discarded": false]
+        if semanticApproved {
+            // UI-only receipt fixture: live provider behavior is tested by the separate quality harness.
+            let payload: [String: Any] = ["prompt": "Can members export a workspace?", "expected": evaluationCase["expected"]!,
+                "criteria": evaluationCase["criteriaOverride"]!, "evidence": evidence]
+            let digest = SHA256.hash(data: try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]))
+                .map { String(format: "%02x", $0) }.joined()
+            let checks: [[String: Any]] = (1...6).map { ["criterionIndex": $0, "score": 4, "rationale": "UI-only approved fixture"] }
+            draftCase["semanticReview"] = ["policyVersion": "document-semantic-v5", "candidateDigest": digest,
+                "connectionID": judgeID, "connectionDigest": "ui-fixture", "modelID": "ui-fixture",
+                "checks": checks, "reviewedQuestions": [],
+                "rawResponse": String(decoding: try JSONSerialization.data(withJSONObject: ["requirements": checks]), as: UTF8.self)]
+        }
+        var draft: [String: Any] = ["id": UUID().uuidString, "formatVersion": 1, "projectID": projectID,
             "destinationSuiteID": UUID().uuidString, "name": "Document UI fixture", "source": source,
-            "selectedPassageIDs": ["page-6-1"], "requestedCount": 5, "cases": [["evaluationCase": evaluationCase, "discarded": false]],
+            "selectedPassageIDs": ["page-6-1"], "requestedCount": 5, "cases": [draftCase], "requiresSemanticReview": true,
             "completedBatchIDs": ["page-6-1:0"], "issues": [:], "generationVersion": "document-draft-v1"]
+        if semanticApproved {
+            draft["semanticJudgeID"] = judgeID
+            let connection: [String: Any] = ["id": judgeID, "name": "UI fixture judge", "kind": "customCompatible",
+                "baseURL": "https://example.invalid/v1", "modelID": "ui-fixture", "generationPolicy": "portable",
+                "capabilities": ["structuredOutputs": true, "multimodal": false, "contextWindowTokens": 8192]]
+            try JSONSerialization.data(withJSONObject: [connection], options: [.sortedKeys])
+                .write(to: directory.appending(path: "judge-connections.json"), options: .atomic)
+        }
         let draftURL = directory.appending(path: "DocumentDrafts/\(projectID).json")
         try FileManager.default.createDirectory(at: draftURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try write(draft, to: draftURL)

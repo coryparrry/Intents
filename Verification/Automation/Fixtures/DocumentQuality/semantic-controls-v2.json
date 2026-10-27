@@ -1,0 +1,3356 @@
+[
+  {
+    "id": "v10-booking-guide:5-original",
+    "source": {
+      "fileDigest": "6b66856e123f9673478801261f4f0d3ce02d694ee5b87f06629e16ed48e01703",
+      "name": "booking-guide.pdf",
+      "passages": [
+        {
+          "id": "page-1-1",
+          "location": "Page 1",
+          "text": "A room booking may last at most four hours."
+        },
+        {
+          "id": "page-2-1",
+          "location": "Page 2",
+          "text": "Bookings can be made up to 30 days in advance."
+        },
+        {
+          "id": "page-3-1",
+          "location": "Page 3",
+          "text": "A booking can be cancelled without a charge until two hours before its start."
+        },
+        {
+          "id": "page-4-1",
+          "location": "Page 4",
+          "text": "Cancelling less than two hours before the start incurs a ten-credit charge."
+        },
+        {
+          "id": "page-5-1",
+          "location": "Page 5",
+          "text": "Check in within 15 minutes of the start time. Otherwise the room is released."
+        },
+        {
+          "id": "page-6-1",
+          "location": "Page 6",
+          "text": "Guests need a host present throughout the booking."
+        },
+        {
+          "id": "page-7-1",
+          "location": "Page 7",
+          "text": "Food is permitted in rooms A and B. Food is prohibited in room C."
+        },
+        {
+          "id": "page-8-1",
+          "location": "Page 8",
+          "text": "The projector must be requested when the booking is created."
+        },
+        {
+          "id": "page-9-1",
+          "location": "Page 9",
+          "text": "A recurring booking can include up to eight weekly occurrences."
+        },
+        {
+          "id": "page-10-1",
+          "location": "Page 10",
+          "text": "Changing a recurring booking affects only the selected occurrence unless all future\noccurrences are selected."
+        },
+        {
+          "id": "page-11-1",
+          "location": "Page 11",
+          "text": "Room B accommodates six people. The occupancy limit must not be exceeded."
+        },
+        {
+          "id": "page-12-1",
+          "location": "Page 12",
+          "text": "The booking receipt is sent to the organizer, not to every attendee."
+        }
+      ],
+      "warnings": [
+        "PDF extraction may change reading order or omit diagrams and tables. Check the text before accepting questions."
+      ]
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: What must be present throughout the booking? Use this factual reference for meaning, including relevant conditions and restrictions: A host must be present throughout the booking. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "90A683ED-FAA8-49A7-92AC-03A4A046FE3A",
+            "passageID": "page-6-1",
+            "quote": "Guests need a host present throughout the booking."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "page-1-1",
+            "location": "Page 1",
+            "text": "A room booking may last at most four hours."
+          },
+          {
+            "id": "page-2-1",
+            "location": "Page 2",
+            "text": "Bookings can be made up to 30 days in advance."
+          },
+          {
+            "id": "page-3-1",
+            "location": "Page 3",
+            "text": "A booking can be cancelled without a charge until two hours before its start."
+          },
+          {
+            "id": "page-4-1",
+            "location": "Page 4",
+            "text": "Cancelling less than two hours before the start incurs a ten-credit charge."
+          },
+          {
+            "id": "page-5-1",
+            "location": "Page 5",
+            "text": "Check in within 15 minutes of the start time. Otherwise the room is released."
+          },
+          {
+            "id": "page-6-1",
+            "location": "Page 6",
+            "text": "Guests need a host present throughout the booking."
+          },
+          {
+            "id": "page-7-1",
+            "location": "Page 7",
+            "text": "Food is permitted in rooms A and B. Food is prohibited in room C."
+          },
+          {
+            "id": "page-8-1",
+            "location": "Page 8",
+            "text": "The projector must be requested when the booking is created."
+          },
+          {
+            "id": "page-9-1",
+            "location": "Page 9",
+            "text": "A recurring booking can include up to eight weekly occurrences."
+          },
+          {
+            "id": "page-10-1",
+            "location": "Page 10",
+            "text": "Changing a recurring booking affects only the selected occurrence unless all future\noccurrences are selected."
+          },
+          {
+            "id": "page-11-1",
+            "location": "Page 11",
+            "text": "Room B accommodates six people. The occupancy limit must not be exceeded."
+          },
+          {
+            "id": "page-12-1",
+            "location": "Page 12",
+            "text": "The booking receipt is sent to the organizer, not to every attendee."
+          }
+        ],
+        "questionType": "Apply a rule",
+        "requestedQuestionType": "Limit or exception",
+        "sourceDigest": "6b66856e123f9673478801261f4f0d3ce02d694ee5b87f06629e16ed48e01703",
+        "sourceName": "booking-guide.pdf"
+      },
+      "expected": "A host must be present throughout the booking.",
+      "id": "9BBE8CFB-522E-42BD-BCD0-7F56A1EA92CF",
+      "name": "Rule",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "What must be present throughout the booking?"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "id": "v10-booking-guide:5-corrected",
+    "source": {
+      "fileDigest": "6b66856e123f9673478801261f4f0d3ce02d694ee5b87f06629e16ed48e01703",
+      "name": "booking-guide.pdf",
+      "passages": [
+        {
+          "id": "page-1-1",
+          "location": "Page 1",
+          "text": "A room booking may last at most four hours."
+        },
+        {
+          "id": "page-2-1",
+          "location": "Page 2",
+          "text": "Bookings can be made up to 30 days in advance."
+        },
+        {
+          "id": "page-3-1",
+          "location": "Page 3",
+          "text": "A booking can be cancelled without a charge until two hours before its start."
+        },
+        {
+          "id": "page-4-1",
+          "location": "Page 4",
+          "text": "Cancelling less than two hours before the start incurs a ten-credit charge."
+        },
+        {
+          "id": "page-5-1",
+          "location": "Page 5",
+          "text": "Check in within 15 minutes of the start time. Otherwise the room is released."
+        },
+        {
+          "id": "page-6-1",
+          "location": "Page 6",
+          "text": "Guests need a host present throughout the booking."
+        },
+        {
+          "id": "page-7-1",
+          "location": "Page 7",
+          "text": "Food is permitted in rooms A and B. Food is prohibited in room C."
+        },
+        {
+          "id": "page-8-1",
+          "location": "Page 8",
+          "text": "The projector must be requested when the booking is created."
+        },
+        {
+          "id": "page-9-1",
+          "location": "Page 9",
+          "text": "A recurring booking can include up to eight weekly occurrences."
+        },
+        {
+          "id": "page-10-1",
+          "location": "Page 10",
+          "text": "Changing a recurring booking affects only the selected occurrence unless all future\noccurrences are selected."
+        },
+        {
+          "id": "page-11-1",
+          "location": "Page 11",
+          "text": "Room B accommodates six people. The occupancy limit must not be exceeded."
+        },
+        {
+          "id": "page-12-1",
+          "location": "Page 12",
+          "text": "The booking receipt is sent to the organizer, not to every attendee."
+        }
+      ],
+      "warnings": [
+        "PDF extraction may change reading order or omit diagrams and tables. Check the text before accepting questions."
+      ]
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: Who must be present throughout a booking involving guests? Use this factual reference for meaning, including relevant conditions and restrictions: A host must be present throughout a booking involving guests. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "90A683ED-FAA8-49A7-92AC-03A4A046FE3A",
+            "passageID": "page-6-1",
+            "quote": "Guests need a host present throughout the booking."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "page-1-1",
+            "location": "Page 1",
+            "text": "A room booking may last at most four hours."
+          },
+          {
+            "id": "page-2-1",
+            "location": "Page 2",
+            "text": "Bookings can be made up to 30 days in advance."
+          },
+          {
+            "id": "page-3-1",
+            "location": "Page 3",
+            "text": "A booking can be cancelled without a charge until two hours before its start."
+          },
+          {
+            "id": "page-4-1",
+            "location": "Page 4",
+            "text": "Cancelling less than two hours before the start incurs a ten-credit charge."
+          },
+          {
+            "id": "page-5-1",
+            "location": "Page 5",
+            "text": "Check in within 15 minutes of the start time. Otherwise the room is released."
+          },
+          {
+            "id": "page-6-1",
+            "location": "Page 6",
+            "text": "Guests need a host present throughout the booking."
+          },
+          {
+            "id": "page-7-1",
+            "location": "Page 7",
+            "text": "Food is permitted in rooms A and B. Food is prohibited in room C."
+          },
+          {
+            "id": "page-8-1",
+            "location": "Page 8",
+            "text": "The projector must be requested when the booking is created."
+          },
+          {
+            "id": "page-9-1",
+            "location": "Page 9",
+            "text": "A recurring booking can include up to eight weekly occurrences."
+          },
+          {
+            "id": "page-10-1",
+            "location": "Page 10",
+            "text": "Changing a recurring booking affects only the selected occurrence unless all future\noccurrences are selected."
+          },
+          {
+            "id": "page-11-1",
+            "location": "Page 11",
+            "text": "Room B accommodates six people. The occupancy limit must not be exceeded."
+          },
+          {
+            "id": "page-12-1",
+            "location": "Page 12",
+            "text": "The booking receipt is sent to the organizer, not to every attendee."
+          }
+        ],
+        "questionType": "Apply a rule",
+        "requestedQuestionType": "Limit or exception",
+        "sourceDigest": "6b66856e123f9673478801261f4f0d3ce02d694ee5b87f06629e16ed48e01703",
+        "sourceName": "booking-guide.pdf"
+      },
+      "expected": "A host must be present throughout a booking involving guests.",
+      "id": "9BBE8CFB-522E-42BD-BCD0-7F56A1EA92CF",
+      "name": "Rule",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "Who must be present throughout a booking involving guests?"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "id": "v10-retention-exceptions:0-original",
+    "source": {
+      "fileDigest": "06ff8f0572d8db54e0aa73896ceb05ec886c261e44dc5ed983c9a4505ac6172a",
+      "name": "retention-exceptions.pdf",
+      "passages": [
+        {
+          "id": "page-1-1",
+          "location": "Page 1",
+          "text": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds."
+        },
+        {
+          "id": "page-2-1",
+          "location": "Page 2",
+          "text": "Exception to the ordinary support-message retention rule: messages under an\nactive legal hold are kept until the hold is released, even after 30 days."
+        },
+        {
+          "id": "page-3-1",
+          "location": "Page 3",
+          "text": "Financial invoices are retained for seven years from their issue date."
+        },
+        {
+          "id": "page-4-1",
+          "location": "Page 4",
+          "text": "An export request includes active records and archived records, but excludes\nrecords already deleted."
+        },
+        {
+          "id": "page-5-1",
+          "location": "Page 5",
+          "text": "Only compliance administrators can apply a legal hold."
+        },
+        {
+          "id": "page-6-1",
+          "location": "Page 6",
+          "text": "Releasing a legal hold requires two different compliance administrators to approve\nthe release."
+        },
+        {
+          "id": "page-7-1",
+          "location": "Page 7",
+          "text": "Deleting an account disables sign-in immediately. Record retention continues under\nthe applicable retention rules."
+        },
+        {
+          "id": "page-8-1",
+          "location": "Page 8",
+          "text": "An audit event records the actor, UTC time, and record identifier for every deletion."
+        },
+        {
+          "id": "page-9-1",
+          "location": "Page 9",
+          "text": "Attachments follow the retention period of the message to which they belong."
+        },
+        {
+          "id": "page-10-1",
+          "location": "Page 10",
+          "text": "A retention preview lists records scheduled for deletion during the next 24 hours."
+        },
+        {
+          "id": "page-11-1",
+          "location": "Page 11",
+          "text": "Changing a retention policy affects future deletion decisions and does not restore\nrecords already deleted."
+        },
+        {
+          "id": "page-12-1",
+          "location": "Page 12",
+          "text": "The retention service pauses deletion when its policy database is unavailable."
+        }
+      ],
+      "warnings": [
+        "PDF extraction may change reading order or omit diagrams and tables. Check the text before accepting questions."
+      ]
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: How long are ordinary support messages kept before deletion? Use this factual reference for meaning, including relevant conditions and restrictions: Ordinary support messages are deleted after 30 days. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "A2A9A2E6-34A2-4996-97DF-7AD5622CAE26",
+            "passageID": "page-1-1",
+            "quote": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "page-1-1",
+            "location": "Page 1",
+            "text": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds."
+          },
+          {
+            "id": "page-2-1",
+            "location": "Page 2",
+            "text": "Exception to the ordinary support-message retention rule: messages under an\nactive legal hold are kept until the hold is released, even after 30 days."
+          },
+          {
+            "id": "page-3-1",
+            "location": "Page 3",
+            "text": "Financial invoices are retained for seven years from their issue date."
+          },
+          {
+            "id": "page-4-1",
+            "location": "Page 4",
+            "text": "An export request includes active records and archived records, but excludes\nrecords already deleted."
+          },
+          {
+            "id": "page-5-1",
+            "location": "Page 5",
+            "text": "Only compliance administrators can apply a legal hold."
+          },
+          {
+            "id": "page-6-1",
+            "location": "Page 6",
+            "text": "Releasing a legal hold requires two different compliance administrators to approve\nthe release."
+          },
+          {
+            "id": "page-7-1",
+            "location": "Page 7",
+            "text": "Deleting an account disables sign-in immediately. Record retention continues under\nthe applicable retention rules."
+          },
+          {
+            "id": "page-8-1",
+            "location": "Page 8",
+            "text": "An audit event records the actor, UTC time, and record identifier for every deletion."
+          },
+          {
+            "id": "page-9-1",
+            "location": "Page 9",
+            "text": "Attachments follow the retention period of the message to which they belong."
+          },
+          {
+            "id": "page-10-1",
+            "location": "Page 10",
+            "text": "A retention preview lists records scheduled for deletion during the next 24 hours."
+          },
+          {
+            "id": "page-11-1",
+            "location": "Page 11",
+            "text": "Changing a retention policy affects future deletion decisions and does not restore\nrecords already deleted."
+          },
+          {
+            "id": "page-12-1",
+            "location": "Page 12",
+            "text": "The retention service pauses deletion when its policy database is unavailable."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Direct fact",
+        "sourceDigest": "06ff8f0572d8db54e0aa73896ceb05ec886c261e44dc5ed983c9a4505ac6172a",
+        "sourceName": "retention-exceptions.pdf"
+      },
+      "expected": "Ordinary support messages are deleted after 30 days.",
+      "id": "54E2AE94-8CCE-42CB-8ADE-6198F64DE458",
+      "name": "Ordinary support message retention",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "How long are ordinary support messages kept before deletion?"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "id": "v10-retention-exceptions:0-corrected",
+    "source": {
+      "fileDigest": "06ff8f0572d8db54e0aa73896ceb05ec886c261e44dc5ed983c9a4505ac6172a",
+      "name": "retention-exceptions.pdf",
+      "passages": [
+        {
+          "id": "page-1-1",
+          "location": "Page 1",
+          "text": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds."
+        },
+        {
+          "id": "page-2-1",
+          "location": "Page 2",
+          "text": "Exception to the ordinary support-message retention rule: messages under an\nactive legal hold are kept until the hold is released, even after 30 days."
+        },
+        {
+          "id": "page-3-1",
+          "location": "Page 3",
+          "text": "Financial invoices are retained for seven years from their issue date."
+        },
+        {
+          "id": "page-4-1",
+          "location": "Page 4",
+          "text": "An export request includes active records and archived records, but excludes\nrecords already deleted."
+        },
+        {
+          "id": "page-5-1",
+          "location": "Page 5",
+          "text": "Only compliance administrators can apply a legal hold."
+        },
+        {
+          "id": "page-6-1",
+          "location": "Page 6",
+          "text": "Releasing a legal hold requires two different compliance administrators to approve\nthe release."
+        },
+        {
+          "id": "page-7-1",
+          "location": "Page 7",
+          "text": "Deleting an account disables sign-in immediately. Record retention continues under\nthe applicable retention rules."
+        },
+        {
+          "id": "page-8-1",
+          "location": "Page 8",
+          "text": "An audit event records the actor, UTC time, and record identifier for every deletion."
+        },
+        {
+          "id": "page-9-1",
+          "location": "Page 9",
+          "text": "Attachments follow the retention period of the message to which they belong."
+        },
+        {
+          "id": "page-10-1",
+          "location": "Page 10",
+          "text": "A retention preview lists records scheduled for deletion during the next 24 hours."
+        },
+        {
+          "id": "page-11-1",
+          "location": "Page 11",
+          "text": "Changing a retention policy affects future deletion decisions and does not restore\nrecords already deleted."
+        },
+        {
+          "id": "page-12-1",
+          "location": "Page 12",
+          "text": "The retention service pauses deletion when its policy database is unavailable."
+        }
+      ],
+      "warnings": [
+        "PDF extraction may change reading order or omit diagrams and tables. Check the text before accepting questions."
+      ]
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: What is the ordinary support-message retention period, and how does an active legal hold change it? Use this factual reference for meaning, including relevant conditions and restrictions: Ordinary support messages are deleted after 30 days, except messages under an active legal hold are kept until that hold is released. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "A2A9A2E6-34A2-4996-97DF-7AD5622CAE26",
+            "passageID": "page-1-1",
+            "quote": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds."
+          },
+          {
+            "id": "B133335D-9090-4F27-99EC-B6DEDF4628B1",
+            "passageID": "page-2-1",
+            "quote": "Exception to the ordinary support-message retention rule: messages under an\nactive legal hold are kept until the hold is released, even after 30 days."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "page-1-1",
+            "location": "Page 1",
+            "text": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds."
+          },
+          {
+            "id": "page-2-1",
+            "location": "Page 2",
+            "text": "Exception to the ordinary support-message retention rule: messages under an\nactive legal hold are kept until the hold is released, even after 30 days."
+          },
+          {
+            "id": "page-3-1",
+            "location": "Page 3",
+            "text": "Financial invoices are retained for seven years from their issue date."
+          },
+          {
+            "id": "page-4-1",
+            "location": "Page 4",
+            "text": "An export request includes active records and archived records, but excludes\nrecords already deleted."
+          },
+          {
+            "id": "page-5-1",
+            "location": "Page 5",
+            "text": "Only compliance administrators can apply a legal hold."
+          },
+          {
+            "id": "page-6-1",
+            "location": "Page 6",
+            "text": "Releasing a legal hold requires two different compliance administrators to approve\nthe release."
+          },
+          {
+            "id": "page-7-1",
+            "location": "Page 7",
+            "text": "Deleting an account disables sign-in immediately. Record retention continues under\nthe applicable retention rules."
+          },
+          {
+            "id": "page-8-1",
+            "location": "Page 8",
+            "text": "An audit event records the actor, UTC time, and record identifier for every deletion."
+          },
+          {
+            "id": "page-9-1",
+            "location": "Page 9",
+            "text": "Attachments follow the retention period of the message to which they belong."
+          },
+          {
+            "id": "page-10-1",
+            "location": "Page 10",
+            "text": "A retention preview lists records scheduled for deletion during the next 24 hours."
+          },
+          {
+            "id": "page-11-1",
+            "location": "Page 11",
+            "text": "Changing a retention policy affects future deletion decisions and does not restore\nrecords already deleted."
+          },
+          {
+            "id": "page-12-1",
+            "location": "Page 12",
+            "text": "The retention service pauses deletion when its policy database is unavailable."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Direct fact",
+        "sourceDigest": "06ff8f0572d8db54e0aa73896ceb05ec886c261e44dc5ed983c9a4505ac6172a",
+        "sourceName": "retention-exceptions.pdf"
+      },
+      "expected": "Ordinary support messages are deleted after 30 days, except messages under an active legal hold are kept until that hold is released.",
+      "id": "54E2AE94-8CCE-42CB-8ADE-6198F64DE458",
+      "name": "Ordinary support message retention",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "What is the ordinary support-message retention period, and how does an active legal hold change it?"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "id": "v10-editor-shortcuts:4-original",
+    "source": {
+      "fileDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+      "name": "editor-shortcuts.md",
+      "passages": [
+        {
+          "id": "text-1-1",
+          "location": "Text \u00b7 passage 1",
+          "text": "Control-S saves the active document without changing its file name."
+        },
+        {
+          "id": "text-2-1",
+          "location": "Text \u00b7 passage 2",
+          "text": "Control-Shift-S opens Save As for the active document."
+        },
+        {
+          "id": "text-3-1",
+          "location": "Text \u00b7 passage 3",
+          "text": "Control-Z undoes the most recent edit."
+        },
+        {
+          "id": "text-4-1",
+          "location": "Text \u00b7 passage 4",
+          "text": "Control-Y redoes an edit that was undone."
+        },
+        {
+          "id": "text-5-1",
+          "location": "Text \u00b7 passage 5",
+          "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+        },
+        {
+          "id": "text-6-1",
+          "location": "Text \u00b7 passage 6",
+          "text": "Autosave does not run for documents opened in read-only mode."
+        },
+        {
+          "id": "text-7-1",
+          "location": "Text \u00b7 passage 7",
+          "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+        },
+        {
+          "id": "text-8-1",
+          "location": "Text \u00b7 passage 8",
+          "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+        },
+        {
+          "id": "text-9-1",
+          "location": "Text \u00b7 passage 9",
+          "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+        },
+        {
+          "id": "text-10-1",
+          "location": "Text \u00b7 passage 10",
+          "text": "The line-number display can be toggled from the View menu."
+        },
+        {
+          "id": "text-11-1",
+          "location": "Text \u00b7 passage 11",
+          "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+        },
+        {
+          "id": "text-12-1",
+          "location": "Text \u00b7 passage 12",
+          "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+        }
+      ],
+      "warnings": []
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: How often does the editor autosave while the document has unsaved changes? Use this factual reference for meaning, including relevant conditions and restrictions: The editor autosaves every 60 seconds while the document has unsaved changes. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "73253BEE-EDD8-47E3-881F-F0A408EE8925",
+            "passageID": "text-5-1",
+            "quote": "The editor autosaves every 60 seconds while the document has unsaved changes."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "text-1-1",
+            "location": "Text \u00b7 passage 1",
+            "text": "Control-S saves the active document without changing its file name."
+          },
+          {
+            "id": "text-2-1",
+            "location": "Text \u00b7 passage 2",
+            "text": "Control-Shift-S opens Save As for the active document."
+          },
+          {
+            "id": "text-3-1",
+            "location": "Text \u00b7 passage 3",
+            "text": "Control-Z undoes the most recent edit."
+          },
+          {
+            "id": "text-4-1",
+            "location": "Text \u00b7 passage 4",
+            "text": "Control-Y redoes an edit that was undone."
+          },
+          {
+            "id": "text-5-1",
+            "location": "Text \u00b7 passage 5",
+            "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+          },
+          {
+            "id": "text-6-1",
+            "location": "Text \u00b7 passage 6",
+            "text": "Autosave does not run for documents opened in read-only mode."
+          },
+          {
+            "id": "text-7-1",
+            "location": "Text \u00b7 passage 7",
+            "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+          },
+          {
+            "id": "text-8-1",
+            "location": "Text \u00b7 passage 8",
+            "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+          },
+          {
+            "id": "text-9-1",
+            "location": "Text \u00b7 passage 9",
+            "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+          },
+          {
+            "id": "text-10-1",
+            "location": "Text \u00b7 passage 10",
+            "text": "The line-number display can be toggled from the View menu."
+          },
+          {
+            "id": "text-11-1",
+            "location": "Text \u00b7 passage 11",
+            "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+          },
+          {
+            "id": "text-12-1",
+            "location": "Text \u00b7 passage 12",
+            "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Apply a rule",
+        "sourceDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+        "sourceName": "editor-shortcuts.md"
+      },
+      "expected": "The editor autosaves every 60 seconds while the document has unsaved changes.",
+      "id": "1C939344-B1F7-480C-8580-81CB53DA732B",
+      "name": "autosave behavior",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "How often does the editor autosave while the document has unsaved changes?"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "id": "v10-editor-shortcuts:4-corrected",
+    "source": {
+      "fileDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+      "name": "editor-shortcuts.md",
+      "passages": [
+        {
+          "id": "text-1-1",
+          "location": "Text \u00b7 passage 1",
+          "text": "Control-S saves the active document without changing its file name."
+        },
+        {
+          "id": "text-2-1",
+          "location": "Text \u00b7 passage 2",
+          "text": "Control-Shift-S opens Save As for the active document."
+        },
+        {
+          "id": "text-3-1",
+          "location": "Text \u00b7 passage 3",
+          "text": "Control-Z undoes the most recent edit."
+        },
+        {
+          "id": "text-4-1",
+          "location": "Text \u00b7 passage 4",
+          "text": "Control-Y redoes an edit that was undone."
+        },
+        {
+          "id": "text-5-1",
+          "location": "Text \u00b7 passage 5",
+          "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+        },
+        {
+          "id": "text-6-1",
+          "location": "Text \u00b7 passage 6",
+          "text": "Autosave does not run for documents opened in read-only mode."
+        },
+        {
+          "id": "text-7-1",
+          "location": "Text \u00b7 passage 7",
+          "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+        },
+        {
+          "id": "text-8-1",
+          "location": "Text \u00b7 passage 8",
+          "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+        },
+        {
+          "id": "text-9-1",
+          "location": "Text \u00b7 passage 9",
+          "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+        },
+        {
+          "id": "text-10-1",
+          "location": "Text \u00b7 passage 10",
+          "text": "The line-number display can be toggled from the View menu."
+        },
+        {
+          "id": "text-11-1",
+          "location": "Text \u00b7 passage 11",
+          "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+        },
+        {
+          "id": "text-12-1",
+          "location": "Text \u00b7 passage 12",
+          "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+        }
+      ],
+      "warnings": []
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: How often does autosave run for a document with unsaved changes, and what happens in read-only mode? Use this factual reference for meaning, including relevant conditions and restrictions: Autosave runs every 60 seconds while there are unsaved changes; it does not run for documents opened in read-only mode. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "73253BEE-EDD8-47E3-881F-F0A408EE8925",
+            "passageID": "text-5-1",
+            "quote": "The editor autosaves every 60 seconds while the document has unsaved changes."
+          },
+          {
+            "id": "47206E35-C2F9-4F53-8ADA-B726A328DF41",
+            "passageID": "text-6-1",
+            "quote": "Autosave does not run for documents opened in read-only mode."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "text-1-1",
+            "location": "Text \u00b7 passage 1",
+            "text": "Control-S saves the active document without changing its file name."
+          },
+          {
+            "id": "text-2-1",
+            "location": "Text \u00b7 passage 2",
+            "text": "Control-Shift-S opens Save As for the active document."
+          },
+          {
+            "id": "text-3-1",
+            "location": "Text \u00b7 passage 3",
+            "text": "Control-Z undoes the most recent edit."
+          },
+          {
+            "id": "text-4-1",
+            "location": "Text \u00b7 passage 4",
+            "text": "Control-Y redoes an edit that was undone."
+          },
+          {
+            "id": "text-5-1",
+            "location": "Text \u00b7 passage 5",
+            "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+          },
+          {
+            "id": "text-6-1",
+            "location": "Text \u00b7 passage 6",
+            "text": "Autosave does not run for documents opened in read-only mode."
+          },
+          {
+            "id": "text-7-1",
+            "location": "Text \u00b7 passage 7",
+            "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+          },
+          {
+            "id": "text-8-1",
+            "location": "Text \u00b7 passage 8",
+            "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+          },
+          {
+            "id": "text-9-1",
+            "location": "Text \u00b7 passage 9",
+            "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+          },
+          {
+            "id": "text-10-1",
+            "location": "Text \u00b7 passage 10",
+            "text": "The line-number display can be toggled from the View menu."
+          },
+          {
+            "id": "text-11-1",
+            "location": "Text \u00b7 passage 11",
+            "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+          },
+          {
+            "id": "text-12-1",
+            "location": "Text \u00b7 passage 12",
+            "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Apply a rule",
+        "sourceDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+        "sourceName": "editor-shortcuts.md"
+      },
+      "expected": "Autosave runs every 60 seconds while there are unsaved changes; it does not run for documents opened in read-only mode.",
+      "id": "1C939344-B1F7-480C-8580-81CB53DA732B",
+      "name": "autosave behavior",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "How often does autosave run for a document with unsaved changes, and what happens in read-only mode?"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "id": "v10-editor-shortcuts:8-original",
+    "source": {
+      "fileDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+      "name": "editor-shortcuts.md",
+      "passages": [
+        {
+          "id": "text-1-1",
+          "location": "Text \u00b7 passage 1",
+          "text": "Control-S saves the active document without changing its file name."
+        },
+        {
+          "id": "text-2-1",
+          "location": "Text \u00b7 passage 2",
+          "text": "Control-Shift-S opens Save As for the active document."
+        },
+        {
+          "id": "text-3-1",
+          "location": "Text \u00b7 passage 3",
+          "text": "Control-Z undoes the most recent edit."
+        },
+        {
+          "id": "text-4-1",
+          "location": "Text \u00b7 passage 4",
+          "text": "Control-Y redoes an edit that was undone."
+        },
+        {
+          "id": "text-5-1",
+          "location": "Text \u00b7 passage 5",
+          "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+        },
+        {
+          "id": "text-6-1",
+          "location": "Text \u00b7 passage 6",
+          "text": "Autosave does not run for documents opened in read-only mode."
+        },
+        {
+          "id": "text-7-1",
+          "location": "Text \u00b7 passage 7",
+          "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+        },
+        {
+          "id": "text-8-1",
+          "location": "Text \u00b7 passage 8",
+          "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+        },
+        {
+          "id": "text-9-1",
+          "location": "Text \u00b7 passage 9",
+          "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+        },
+        {
+          "id": "text-10-1",
+          "location": "Text \u00b7 passage 10",
+          "text": "The line-number display can be toggled from the View menu."
+        },
+        {
+          "id": "text-11-1",
+          "location": "Text \u00b7 passage 11",
+          "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+        },
+        {
+          "id": "text-12-1",
+          "location": "Text \u00b7 passage 12",
+          "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+        }
+      ],
+      "warnings": []
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: Under what condition does Find searches operate only on the active document? Use this factual reference for meaning, including relevant conditions and restrictions: Find searches only the active document. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "E58CE6FB-FFD9-4FBE-A9D4-C8599CF936A8",
+            "passageID": "text-9-1",
+            "quote": "Find searches only the active document."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "text-1-1",
+            "location": "Text \u00b7 passage 1",
+            "text": "Control-S saves the active document without changing its file name."
+          },
+          {
+            "id": "text-2-1",
+            "location": "Text \u00b7 passage 2",
+            "text": "Control-Shift-S opens Save As for the active document."
+          },
+          {
+            "id": "text-3-1",
+            "location": "Text \u00b7 passage 3",
+            "text": "Control-Z undoes the most recent edit."
+          },
+          {
+            "id": "text-4-1",
+            "location": "Text \u00b7 passage 4",
+            "text": "Control-Y redoes an edit that was undone."
+          },
+          {
+            "id": "text-5-1",
+            "location": "Text \u00b7 passage 5",
+            "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+          },
+          {
+            "id": "text-6-1",
+            "location": "Text \u00b7 passage 6",
+            "text": "Autosave does not run for documents opened in read-only mode."
+          },
+          {
+            "id": "text-7-1",
+            "location": "Text \u00b7 passage 7",
+            "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+          },
+          {
+            "id": "text-8-1",
+            "location": "Text \u00b7 passage 8",
+            "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+          },
+          {
+            "id": "text-9-1",
+            "location": "Text \u00b7 passage 9",
+            "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+          },
+          {
+            "id": "text-10-1",
+            "location": "Text \u00b7 passage 10",
+            "text": "The line-number display can be toggled from the View menu."
+          },
+          {
+            "id": "text-11-1",
+            "location": "Text \u00b7 passage 11",
+            "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+          },
+          {
+            "id": "text-12-1",
+            "location": "Text \u00b7 passage 12",
+            "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Limit or exception",
+        "sourceDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+        "sourceName": "editor-shortcuts.md"
+      },
+      "expected": "Find searches only the active document.",
+      "id": "EA314844-30BF-4745-A051-55368C839242",
+      "name": "Find searches",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "Under what condition does Find searches operate only on the active document?"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "id": "v10-editor-shortcuts:8-corrected",
+    "source": {
+      "fileDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+      "name": "editor-shortcuts.md",
+      "passages": [
+        {
+          "id": "text-1-1",
+          "location": "Text \u00b7 passage 1",
+          "text": "Control-S saves the active document without changing its file name."
+        },
+        {
+          "id": "text-2-1",
+          "location": "Text \u00b7 passage 2",
+          "text": "Control-Shift-S opens Save As for the active document."
+        },
+        {
+          "id": "text-3-1",
+          "location": "Text \u00b7 passage 3",
+          "text": "Control-Z undoes the most recent edit."
+        },
+        {
+          "id": "text-4-1",
+          "location": "Text \u00b7 passage 4",
+          "text": "Control-Y redoes an edit that was undone."
+        },
+        {
+          "id": "text-5-1",
+          "location": "Text \u00b7 passage 5",
+          "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+        },
+        {
+          "id": "text-6-1",
+          "location": "Text \u00b7 passage 6",
+          "text": "Autosave does not run for documents opened in read-only mode."
+        },
+        {
+          "id": "text-7-1",
+          "location": "Text \u00b7 passage 7",
+          "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+        },
+        {
+          "id": "text-8-1",
+          "location": "Text \u00b7 passage 8",
+          "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+        },
+        {
+          "id": "text-9-1",
+          "location": "Text \u00b7 passage 9",
+          "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+        },
+        {
+          "id": "text-10-1",
+          "location": "Text \u00b7 passage 10",
+          "text": "The line-number display can be toggled from the View menu."
+        },
+        {
+          "id": "text-11-1",
+          "location": "Text \u00b7 passage 11",
+          "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+        },
+        {
+          "id": "text-12-1",
+          "location": "Text \u00b7 passage 12",
+          "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+        }
+      ],
+      "warnings": []
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: What content does Find search? Use this factual reference for meaning, including relevant conditions and restrictions: Find searches only the active document. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "E58CE6FB-FFD9-4FBE-A9D4-C8599CF936A8",
+            "passageID": "text-9-1",
+            "quote": "Find searches only the active document."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "text-1-1",
+            "location": "Text \u00b7 passage 1",
+            "text": "Control-S saves the active document without changing its file name."
+          },
+          {
+            "id": "text-2-1",
+            "location": "Text \u00b7 passage 2",
+            "text": "Control-Shift-S opens Save As for the active document."
+          },
+          {
+            "id": "text-3-1",
+            "location": "Text \u00b7 passage 3",
+            "text": "Control-Z undoes the most recent edit."
+          },
+          {
+            "id": "text-4-1",
+            "location": "Text \u00b7 passage 4",
+            "text": "Control-Y redoes an edit that was undone."
+          },
+          {
+            "id": "text-5-1",
+            "location": "Text \u00b7 passage 5",
+            "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+          },
+          {
+            "id": "text-6-1",
+            "location": "Text \u00b7 passage 6",
+            "text": "Autosave does not run for documents opened in read-only mode."
+          },
+          {
+            "id": "text-7-1",
+            "location": "Text \u00b7 passage 7",
+            "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+          },
+          {
+            "id": "text-8-1",
+            "location": "Text \u00b7 passage 8",
+            "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+          },
+          {
+            "id": "text-9-1",
+            "location": "Text \u00b7 passage 9",
+            "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+          },
+          {
+            "id": "text-10-1",
+            "location": "Text \u00b7 passage 10",
+            "text": "The line-number display can be toggled from the View menu."
+          },
+          {
+            "id": "text-11-1",
+            "location": "Text \u00b7 passage 11",
+            "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+          },
+          {
+            "id": "text-12-1",
+            "location": "Text \u00b7 passage 12",
+            "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Limit or exception",
+        "sourceDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+        "sourceName": "editor-shortcuts.md"
+      },
+      "expected": "Find searches only the active document.",
+      "id": "EA314844-30BF-4745-A051-55368C839242",
+      "name": "Find searches",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "What content does Find search?"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "id": "v10-conflicting-release-notes:8-original",
+    "source": {
+      "fileDigest": "80686980d4a3018a1809fe8c02472155b03e74474137a9d422e24f95f81a5931",
+      "name": "conflicting-release-notes.txt",
+      "passages": [
+        {
+          "id": "text-1-1",
+          "location": "Text \u00b7 passage 1",
+          "text": "The draft release note says uploads are limited to 8 MB. A second equally authoritative draft says uploads are limited to 12 MB. No approved limit is supplied."
+        },
+        {
+          "id": "text-2-1",
+          "location": "Text \u00b7 passage 2",
+          "text": "Release 4.2 adds a progress indicator to uploads."
+        },
+        {
+          "id": "text-3-1",
+          "location": "Text \u00b7 passage 3",
+          "text": "Release 4.2 fixes a crash when cancelling an upload."
+        },
+        {
+          "id": "text-4-1",
+          "location": "Text \u00b7 passage 4",
+          "text": "Uploads paused by the user do not resume automatically after relaunch."
+        },
+        {
+          "id": "text-5-1",
+          "location": "Text \u00b7 passage 5",
+          "text": "The retry button restarts the failed upload from the beginning."
+        },
+        {
+          "id": "text-6-1",
+          "location": "Text \u00b7 passage 6",
+          "text": "Upload filenames are preserved in the destination folder."
+        },
+        {
+          "id": "text-7-1",
+          "location": "Text \u00b7 passage 7",
+          "text": "The destination folder must be writable before an upload can begin."
+        },
+        {
+          "id": "text-8-1",
+          "location": "Text \u00b7 passage 8",
+          "text": "An interrupted network connection leaves the upload in the Failed state."
+        },
+        {
+          "id": "text-9-1",
+          "location": "Text \u00b7 passage 9",
+          "text": "A completed upload shows the destination path in its details."
+        },
+        {
+          "id": "text-10-1",
+          "location": "Text \u00b7 passage 10",
+          "text": "The upload history retains the latest 100 jobs."
+        },
+        {
+          "id": "text-11-1",
+          "location": "Text \u00b7 passage 11",
+          "text": "Removing a job from history does not delete its uploaded file."
+        },
+        {
+          "id": "text-12-1",
+          "location": "Text \u00b7 passage 12",
+          "text": "The upload queue runs two jobs concurrently."
+        }
+      ],
+      "warnings": []
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: What state does a completed upload enter? Use this factual reference for meaning, including relevant conditions and restrictions: A completed upload shows the destination path in its details. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "6C2E2BA5-73F0-44B6-817F-A597552E47DA",
+            "passageID": "text-9-1",
+            "quote": "A completed upload shows the destination path in its details."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "text-1-1",
+            "location": "Text \u00b7 passage 1",
+            "text": "The draft release note says uploads are limited to 8 MB. A second equally authoritative draft says uploads are limited to 12 MB. No approved limit is supplied."
+          },
+          {
+            "id": "text-2-1",
+            "location": "Text \u00b7 passage 2",
+            "text": "Release 4.2 adds a progress indicator to uploads."
+          },
+          {
+            "id": "text-3-1",
+            "location": "Text \u00b7 passage 3",
+            "text": "Release 4.2 fixes a crash when cancelling an upload."
+          },
+          {
+            "id": "text-4-1",
+            "location": "Text \u00b7 passage 4",
+            "text": "Uploads paused by the user do not resume automatically after relaunch."
+          },
+          {
+            "id": "text-5-1",
+            "location": "Text \u00b7 passage 5",
+            "text": "The retry button restarts the failed upload from the beginning."
+          },
+          {
+            "id": "text-6-1",
+            "location": "Text \u00b7 passage 6",
+            "text": "Upload filenames are preserved in the destination folder."
+          },
+          {
+            "id": "text-7-1",
+            "location": "Text \u00b7 passage 7",
+            "text": "The destination folder must be writable before an upload can begin."
+          },
+          {
+            "id": "text-8-1",
+            "location": "Text \u00b7 passage 8",
+            "text": "An interrupted network connection leaves the upload in the Failed state."
+          },
+          {
+            "id": "text-9-1",
+            "location": "Text \u00b7 passage 9",
+            "text": "A completed upload shows the destination path in its details."
+          },
+          {
+            "id": "text-10-1",
+            "location": "Text \u00b7 passage 10",
+            "text": "The upload history retains the latest 100 jobs."
+          },
+          {
+            "id": "text-11-1",
+            "location": "Text \u00b7 passage 11",
+            "text": "Removing a job from history does not delete its uploaded file."
+          },
+          {
+            "id": "text-12-1",
+            "location": "Text \u00b7 passage 12",
+            "text": "The upload queue runs two jobs concurrently."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Limit or exception",
+        "sourceDigest": "80686980d4a3018a1809fe8c02472155b03e74474137a9d422e24f95f81a5931",
+        "sourceName": "conflicting-release-notes.txt"
+      },
+      "expected": "A completed upload shows the destination path in its details.",
+      "id": "C99FFE92-F509-46AE-9DF8-56E00059672F",
+      "name": "upload state",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "What state does a completed upload enter?"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "id": "v10-conflicting-release-notes:8-corrected",
+    "source": {
+      "fileDigest": "80686980d4a3018a1809fe8c02472155b03e74474137a9d422e24f95f81a5931",
+      "name": "conflicting-release-notes.txt",
+      "passages": [
+        {
+          "id": "text-1-1",
+          "location": "Text \u00b7 passage 1",
+          "text": "The draft release note says uploads are limited to 8 MB. A second equally authoritative draft says uploads are limited to 12 MB. No approved limit is supplied."
+        },
+        {
+          "id": "text-2-1",
+          "location": "Text \u00b7 passage 2",
+          "text": "Release 4.2 adds a progress indicator to uploads."
+        },
+        {
+          "id": "text-3-1",
+          "location": "Text \u00b7 passage 3",
+          "text": "Release 4.2 fixes a crash when cancelling an upload."
+        },
+        {
+          "id": "text-4-1",
+          "location": "Text \u00b7 passage 4",
+          "text": "Uploads paused by the user do not resume automatically after relaunch."
+        },
+        {
+          "id": "text-5-1",
+          "location": "Text \u00b7 passage 5",
+          "text": "The retry button restarts the failed upload from the beginning."
+        },
+        {
+          "id": "text-6-1",
+          "location": "Text \u00b7 passage 6",
+          "text": "Upload filenames are preserved in the destination folder."
+        },
+        {
+          "id": "text-7-1",
+          "location": "Text \u00b7 passage 7",
+          "text": "The destination folder must be writable before an upload can begin."
+        },
+        {
+          "id": "text-8-1",
+          "location": "Text \u00b7 passage 8",
+          "text": "An interrupted network connection leaves the upload in the Failed state."
+        },
+        {
+          "id": "text-9-1",
+          "location": "Text \u00b7 passage 9",
+          "text": "A completed upload shows the destination path in its details."
+        },
+        {
+          "id": "text-10-1",
+          "location": "Text \u00b7 passage 10",
+          "text": "The upload history retains the latest 100 jobs."
+        },
+        {
+          "id": "text-11-1",
+          "location": "Text \u00b7 passage 11",
+          "text": "Removing a job from history does not delete its uploaded file."
+        },
+        {
+          "id": "text-12-1",
+          "location": "Text \u00b7 passage 12",
+          "text": "The upload queue runs two jobs concurrently."
+        }
+      ],
+      "warnings": []
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: What does a completed upload show in its details? Use this factual reference for meaning, including relevant conditions and restrictions: A completed upload shows the destination path in its details. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "6C2E2BA5-73F0-44B6-817F-A597552E47DA",
+            "passageID": "text-9-1",
+            "quote": "A completed upload shows the destination path in its details."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "text-1-1",
+            "location": "Text \u00b7 passage 1",
+            "text": "The draft release note says uploads are limited to 8 MB. A second equally authoritative draft says uploads are limited to 12 MB. No approved limit is supplied."
+          },
+          {
+            "id": "text-2-1",
+            "location": "Text \u00b7 passage 2",
+            "text": "Release 4.2 adds a progress indicator to uploads."
+          },
+          {
+            "id": "text-3-1",
+            "location": "Text \u00b7 passage 3",
+            "text": "Release 4.2 fixes a crash when cancelling an upload."
+          },
+          {
+            "id": "text-4-1",
+            "location": "Text \u00b7 passage 4",
+            "text": "Uploads paused by the user do not resume automatically after relaunch."
+          },
+          {
+            "id": "text-5-1",
+            "location": "Text \u00b7 passage 5",
+            "text": "The retry button restarts the failed upload from the beginning."
+          },
+          {
+            "id": "text-6-1",
+            "location": "Text \u00b7 passage 6",
+            "text": "Upload filenames are preserved in the destination folder."
+          },
+          {
+            "id": "text-7-1",
+            "location": "Text \u00b7 passage 7",
+            "text": "The destination folder must be writable before an upload can begin."
+          },
+          {
+            "id": "text-8-1",
+            "location": "Text \u00b7 passage 8",
+            "text": "An interrupted network connection leaves the upload in the Failed state."
+          },
+          {
+            "id": "text-9-1",
+            "location": "Text \u00b7 passage 9",
+            "text": "A completed upload shows the destination path in its details."
+          },
+          {
+            "id": "text-10-1",
+            "location": "Text \u00b7 passage 10",
+            "text": "The upload history retains the latest 100 jobs."
+          },
+          {
+            "id": "text-11-1",
+            "location": "Text \u00b7 passage 11",
+            "text": "Removing a job from history does not delete its uploaded file."
+          },
+          {
+            "id": "text-12-1",
+            "location": "Text \u00b7 passage 12",
+            "text": "The upload queue runs two jobs concurrently."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Limit or exception",
+        "sourceDigest": "80686980d4a3018a1809fe8c02472155b03e74474137a9d422e24f95f81a5931",
+        "sourceName": "conflicting-release-notes.txt"
+      },
+      "expected": "A completed upload shows the destination path in its details.",
+      "id": "C99FFE92-F509-46AE-9DF8-56E00059672F",
+      "name": "upload state",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "What does a completed upload show in its details?"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "id": "v15-booking-guide:7-original",
+    "source": {
+      "fileDigest": "a776bf9ef96e8c0d72091c9d5b26d2beb7b772e45ee926c4822773f8f29b4952",
+      "name": "booking-guide.pdf",
+      "passages": [
+        {
+          "id": "page-1-1",
+          "location": "Page 1",
+          "text": "A room booking may last at most four hours."
+        },
+        {
+          "id": "page-2-1",
+          "location": "Page 2",
+          "text": "Bookings can be made up to 30 days in advance."
+        },
+        {
+          "id": "page-3-1",
+          "location": "Page 3",
+          "text": "A booking can be cancelled without a charge until two hours before its start."
+        },
+        {
+          "id": "page-4-1",
+          "location": "Page 4",
+          "text": "Cancelling less than two hours before the start incurs a ten-credit charge."
+        },
+        {
+          "id": "page-5-1",
+          "location": "Page 5",
+          "text": "Check in within 15 minutes of the start time. Otherwise the room is released."
+        },
+        {
+          "id": "page-6-1",
+          "location": "Page 6",
+          "text": "Guests need a host present throughout the booking."
+        },
+        {
+          "id": "page-7-1",
+          "location": "Page 7",
+          "text": "Food is permitted in rooms A and B. Food is prohibited in room C."
+        },
+        {
+          "id": "page-8-1",
+          "location": "Page 8",
+          "text": "The projector must be requested when the booking is created."
+        },
+        {
+          "id": "page-9-1",
+          "location": "Page 9",
+          "text": "A recurring booking can include up to eight weekly occurrences."
+        },
+        {
+          "id": "page-10-1",
+          "location": "Page 10",
+          "text": "Changing a recurring booking affects only the selected occurrence unless all future\noccurrences are selected."
+        },
+        {
+          "id": "page-11-1",
+          "location": "Page 11",
+          "text": "Room B accommodates six people. The occupancy limit must not be exceeded."
+        },
+        {
+          "id": "page-12-1",
+          "location": "Page 12",
+          "text": "The booking receipt is sent to the organizer, not to every attendee."
+        }
+      ],
+      "warnings": [
+        "PDF extraction may change reading order or omit diagrams and tables. Check the text before accepting questions."
+      ]
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: When is the projector required for a booking? Use this factual reference for meaning, including relevant conditions and restrictions: The projector must be requested when the booking is created. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "30A3205F-AF12-4EA8-8919-961E6219E7C9",
+            "passageID": "page-8-1",
+            "quote": "The projector must be requested when the booking is created."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v15",
+        "passages": [
+          {
+            "id": "page-1-1",
+            "location": "Page 1",
+            "text": "A room booking may last at most four hours."
+          },
+          {
+            "id": "page-2-1",
+            "location": "Page 2",
+            "text": "Bookings can be made up to 30 days in advance."
+          },
+          {
+            "id": "page-3-1",
+            "location": "Page 3",
+            "text": "A booking can be cancelled without a charge until two hours before its start."
+          },
+          {
+            "id": "page-4-1",
+            "location": "Page 4",
+            "text": "Cancelling less than two hours before the start incurs a ten-credit charge."
+          },
+          {
+            "id": "page-5-1",
+            "location": "Page 5",
+            "text": "Check in within 15 minutes of the start time. Otherwise the room is released."
+          },
+          {
+            "id": "page-6-1",
+            "location": "Page 6",
+            "text": "Guests need a host present throughout the booking."
+          },
+          {
+            "id": "page-7-1",
+            "location": "Page 7",
+            "text": "Food is permitted in rooms A and B. Food is prohibited in room C."
+          },
+          {
+            "id": "page-8-1",
+            "location": "Page 8",
+            "text": "The projector must be requested when the booking is created."
+          },
+          {
+            "id": "page-9-1",
+            "location": "Page 9",
+            "text": "A recurring booking can include up to eight weekly occurrences."
+          },
+          {
+            "id": "page-10-1",
+            "location": "Page 10",
+            "text": "Changing a recurring booking affects only the selected occurrence unless all future\noccurrences are selected."
+          },
+          {
+            "id": "page-11-1",
+            "location": "Page 11",
+            "text": "Room B accommodates six people. The occupancy limit must not be exceeded."
+          },
+          {
+            "id": "page-12-1",
+            "location": "Page 12",
+            "text": "The booking receipt is sent to the organizer, not to every attendee."
+          }
+        ],
+        "questionType": "Apply a rule",
+        "requestedQuestionType": "Apply a rule",
+        "sourceDigest": "a776bf9ef96e8c0d72091c9d5b26d2beb7b772e45ee926c4822773f8f29b4952",
+        "sourceName": "booking-guide.pdf"
+      },
+      "expected": "The projector must be requested when the booking is created.",
+      "id": "E4342DBC-2B61-431D-89D2-841FBCF2B74E",
+      "name": "Projector request rule",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "When is the projector required for a booking?"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "id": "v15-booking-guide:7-corrected",
+    "source": {
+      "fileDigest": "a776bf9ef96e8c0d72091c9d5b26d2beb7b772e45ee926c4822773f8f29b4952",
+      "name": "booking-guide.pdf",
+      "passages": [
+        {
+          "id": "page-1-1",
+          "location": "Page 1",
+          "text": "A room booking may last at most four hours."
+        },
+        {
+          "id": "page-2-1",
+          "location": "Page 2",
+          "text": "Bookings can be made up to 30 days in advance."
+        },
+        {
+          "id": "page-3-1",
+          "location": "Page 3",
+          "text": "A booking can be cancelled without a charge until two hours before its start."
+        },
+        {
+          "id": "page-4-1",
+          "location": "Page 4",
+          "text": "Cancelling less than two hours before the start incurs a ten-credit charge."
+        },
+        {
+          "id": "page-5-1",
+          "location": "Page 5",
+          "text": "Check in within 15 minutes of the start time. Otherwise the room is released."
+        },
+        {
+          "id": "page-6-1",
+          "location": "Page 6",
+          "text": "Guests need a host present throughout the booking."
+        },
+        {
+          "id": "page-7-1",
+          "location": "Page 7",
+          "text": "Food is permitted in rooms A and B. Food is prohibited in room C."
+        },
+        {
+          "id": "page-8-1",
+          "location": "Page 8",
+          "text": "The projector must be requested when the booking is created."
+        },
+        {
+          "id": "page-9-1",
+          "location": "Page 9",
+          "text": "A recurring booking can include up to eight weekly occurrences."
+        },
+        {
+          "id": "page-10-1",
+          "location": "Page 10",
+          "text": "Changing a recurring booking affects only the selected occurrence unless all future\noccurrences are selected."
+        },
+        {
+          "id": "page-11-1",
+          "location": "Page 11",
+          "text": "Room B accommodates six people. The occupancy limit must not be exceeded."
+        },
+        {
+          "id": "page-12-1",
+          "location": "Page 12",
+          "text": "The booking receipt is sent to the organizer, not to every attendee."
+        }
+      ],
+      "warnings": [
+        "PDF extraction may change reading order or omit diagrams and tables. Check the text before accepting questions."
+      ]
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: When must the projector be requested for a booking? Use this factual reference for meaning, including relevant conditions and restrictions: The projector must be requested when the booking is created. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "30A3205F-AF12-4EA8-8919-961E6219E7C9",
+            "passageID": "page-8-1",
+            "quote": "The projector must be requested when the booking is created."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v15",
+        "passages": [
+          {
+            "id": "page-1-1",
+            "location": "Page 1",
+            "text": "A room booking may last at most four hours."
+          },
+          {
+            "id": "page-2-1",
+            "location": "Page 2",
+            "text": "Bookings can be made up to 30 days in advance."
+          },
+          {
+            "id": "page-3-1",
+            "location": "Page 3",
+            "text": "A booking can be cancelled without a charge until two hours before its start."
+          },
+          {
+            "id": "page-4-1",
+            "location": "Page 4",
+            "text": "Cancelling less than two hours before the start incurs a ten-credit charge."
+          },
+          {
+            "id": "page-5-1",
+            "location": "Page 5",
+            "text": "Check in within 15 minutes of the start time. Otherwise the room is released."
+          },
+          {
+            "id": "page-6-1",
+            "location": "Page 6",
+            "text": "Guests need a host present throughout the booking."
+          },
+          {
+            "id": "page-7-1",
+            "location": "Page 7",
+            "text": "Food is permitted in rooms A and B. Food is prohibited in room C."
+          },
+          {
+            "id": "page-8-1",
+            "location": "Page 8",
+            "text": "The projector must be requested when the booking is created."
+          },
+          {
+            "id": "page-9-1",
+            "location": "Page 9",
+            "text": "A recurring booking can include up to eight weekly occurrences."
+          },
+          {
+            "id": "page-10-1",
+            "location": "Page 10",
+            "text": "Changing a recurring booking affects only the selected occurrence unless all future\noccurrences are selected."
+          },
+          {
+            "id": "page-11-1",
+            "location": "Page 11",
+            "text": "Room B accommodates six people. The occupancy limit must not be exceeded."
+          },
+          {
+            "id": "page-12-1",
+            "location": "Page 12",
+            "text": "The booking receipt is sent to the organizer, not to every attendee."
+          }
+        ],
+        "questionType": "Apply a rule",
+        "requestedQuestionType": "Apply a rule",
+        "sourceDigest": "a776bf9ef96e8c0d72091c9d5b26d2beb7b772e45ee926c4822773f8f29b4952",
+        "sourceName": "booking-guide.pdf"
+      },
+      "expected": "The projector must be requested when the booking is created.",
+      "id": "E4342DBC-2B61-431D-89D2-841FBCF2B74E",
+      "name": "Projector request rule",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "When must the projector be requested for a booking?"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "id": "v15-mixed-scan-manual:1-original",
+    "source": {
+      "fileDigest": "8c3009446b2d8af6e1131f882c653f84cb8d4e8ab9ba9e291a71beb48f97cd8a",
+      "name": "mixed-scan-manual.pdf",
+      "passages": [
+        {
+          "id": "page-1-1",
+          "location": "Page 1",
+          "text": "The green status light means the printer is ready."
+        },
+        {
+          "id": "page-2-1",
+          "location": "Page 2",
+          "text": "The blue status light means the printer is receiving a job."
+        },
+        {
+          "id": "page-3-1",
+          "location": "Page 3",
+          "text": "The orange status light means the paper tray is empty."
+        },
+        {
+          "id": "page-5-1",
+          "location": "Page 5",
+          "text": "Use A4 or Letter plain paper in the main tray."
+        },
+        {
+          "id": "page-6-1",
+          "location": "Page 6",
+          "text": "The main tray holds at most 150 sheets."
+        },
+        {
+          "id": "page-7-1",
+          "location": "Page 7",
+          "text": "Envelopes must be fed one at a time through the rear slot."
+        },
+        {
+          "id": "page-8-1",
+          "location": "Page 8",
+          "text": "To cancel the active print job, hold Cancel for two seconds."
+        },
+        {
+          "id": "page-9-1",
+          "location": "Page 9",
+          "text": "Cleaning the rollers requires disconnecting the power cable first."
+        },
+        {
+          "id": "page-10-1",
+          "location": "Page 10",
+          "text": "The printer enters sleep mode after ten minutes without a job."
+        },
+        {
+          "id": "page-11-1",
+          "location": "Page 11",
+          "text": "Press any control-panel button to wake the printer from sleep."
+        },
+        {
+          "id": "page-12-1",
+          "location": "Page 12",
+          "text": "The printer rejects jobs protected by an unsupported encryption format."
+        }
+      ],
+      "warnings": [
+        "Page 4 has no usable text and was omitted. OCR is not supported.",
+        "PDF extraction may change reading order or omit diagrams and tables. Check the text before accepting questions."
+      ]
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: What does the blue status light indicate for the printer? Use this factual reference for meaning, including relevant conditions and restrictions: The blue status light means the printer is receiving a job. This applies to the printer regardless of encryption format, as the rejection of jobs is due to unsupported encryption format, not the light itself. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "8DA1C1EF-C3F7-4604-9B8F-FFEF5688BDD5",
+            "passageID": "page-2-1",
+            "quote": "The blue status light means the printer is receiving a job."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v15",
+        "passages": [
+          {
+            "id": "page-1-1",
+            "location": "Page 1",
+            "text": "The green status light means the printer is ready."
+          },
+          {
+            "id": "page-2-1",
+            "location": "Page 2",
+            "text": "The blue status light means the printer is receiving a job."
+          },
+          {
+            "id": "page-3-1",
+            "location": "Page 3",
+            "text": "The orange status light means the paper tray is empty."
+          },
+          {
+            "id": "page-5-1",
+            "location": "Page 5",
+            "text": "Use A4 or Letter plain paper in the main tray."
+          },
+          {
+            "id": "page-6-1",
+            "location": "Page 6",
+            "text": "The main tray holds at most 150 sheets."
+          },
+          {
+            "id": "page-7-1",
+            "location": "Page 7",
+            "text": "Envelopes must be fed one at a time through the rear slot."
+          },
+          {
+            "id": "page-8-1",
+            "location": "Page 8",
+            "text": "To cancel the active print job, hold Cancel for two seconds."
+          },
+          {
+            "id": "page-9-1",
+            "location": "Page 9",
+            "text": "Cleaning the rollers requires disconnecting the power cable first."
+          },
+          {
+            "id": "page-10-1",
+            "location": "Page 10",
+            "text": "The printer enters sleep mode after ten minutes without a job."
+          },
+          {
+            "id": "page-11-1",
+            "location": "Page 11",
+            "text": "Press any control-panel button to wake the printer from sleep."
+          },
+          {
+            "id": "page-12-1",
+            "location": "Page 12",
+            "text": "The printer rejects jobs protected by an unsupported encryption format."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Apply a rule",
+        "sourceDigest": "8c3009446b2d8af6e1131f882c653f84cb8d4e8ab9ba9e291a71beb48f97cd8a",
+        "sourceName": "mixed-scan-manual.pdf"
+      },
+      "expected": "The blue status light means the printer is receiving a job. This applies to the printer regardless of encryption format, as the rejection of jobs is due to unsupported encryption format, not the light itself.",
+      "id": "A83D8C14-C3F5-4F1C-8D75-2C424D3DCA71",
+      "name": "Printer status light meaning",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "What does the blue status light indicate for the printer?"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "id": "v15-mixed-scan-manual:1-corrected",
+    "source": {
+      "fileDigest": "8c3009446b2d8af6e1131f882c653f84cb8d4e8ab9ba9e291a71beb48f97cd8a",
+      "name": "mixed-scan-manual.pdf",
+      "passages": [
+        {
+          "id": "page-1-1",
+          "location": "Page 1",
+          "text": "The green status light means the printer is ready."
+        },
+        {
+          "id": "page-2-1",
+          "location": "Page 2",
+          "text": "The blue status light means the printer is receiving a job."
+        },
+        {
+          "id": "page-3-1",
+          "location": "Page 3",
+          "text": "The orange status light means the paper tray is empty."
+        },
+        {
+          "id": "page-5-1",
+          "location": "Page 5",
+          "text": "Use A4 or Letter plain paper in the main tray."
+        },
+        {
+          "id": "page-6-1",
+          "location": "Page 6",
+          "text": "The main tray holds at most 150 sheets."
+        },
+        {
+          "id": "page-7-1",
+          "location": "Page 7",
+          "text": "Envelopes must be fed one at a time through the rear slot."
+        },
+        {
+          "id": "page-8-1",
+          "location": "Page 8",
+          "text": "To cancel the active print job, hold Cancel for two seconds."
+        },
+        {
+          "id": "page-9-1",
+          "location": "Page 9",
+          "text": "Cleaning the rollers requires disconnecting the power cable first."
+        },
+        {
+          "id": "page-10-1",
+          "location": "Page 10",
+          "text": "The printer enters sleep mode after ten minutes without a job."
+        },
+        {
+          "id": "page-11-1",
+          "location": "Page 11",
+          "text": "Press any control-panel button to wake the printer from sleep."
+        },
+        {
+          "id": "page-12-1",
+          "location": "Page 12",
+          "text": "The printer rejects jobs protected by an unsupported encryption format."
+        }
+      ],
+      "warnings": [
+        "Page 4 has no usable text and was omitted. OCR is not supported.",
+        "PDF extraction may change reading order or omit diagrams and tables. Check the text before accepting questions."
+      ]
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: What does the blue printer status light mean? Use this factual reference for meaning, including relevant conditions and restrictions: The blue status light means the printer is receiving a job. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "8DA1C1EF-C3F7-4604-9B8F-FFEF5688BDD5",
+            "passageID": "page-2-1",
+            "quote": "The blue status light means the printer is receiving a job."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v15",
+        "passages": [
+          {
+            "id": "page-1-1",
+            "location": "Page 1",
+            "text": "The green status light means the printer is ready."
+          },
+          {
+            "id": "page-2-1",
+            "location": "Page 2",
+            "text": "The blue status light means the printer is receiving a job."
+          },
+          {
+            "id": "page-3-1",
+            "location": "Page 3",
+            "text": "The orange status light means the paper tray is empty."
+          },
+          {
+            "id": "page-5-1",
+            "location": "Page 5",
+            "text": "Use A4 or Letter plain paper in the main tray."
+          },
+          {
+            "id": "page-6-1",
+            "location": "Page 6",
+            "text": "The main tray holds at most 150 sheets."
+          },
+          {
+            "id": "page-7-1",
+            "location": "Page 7",
+            "text": "Envelopes must be fed one at a time through the rear slot."
+          },
+          {
+            "id": "page-8-1",
+            "location": "Page 8",
+            "text": "To cancel the active print job, hold Cancel for two seconds."
+          },
+          {
+            "id": "page-9-1",
+            "location": "Page 9",
+            "text": "Cleaning the rollers requires disconnecting the power cable first."
+          },
+          {
+            "id": "page-10-1",
+            "location": "Page 10",
+            "text": "The printer enters sleep mode after ten minutes without a job."
+          },
+          {
+            "id": "page-11-1",
+            "location": "Page 11",
+            "text": "Press any control-panel button to wake the printer from sleep."
+          },
+          {
+            "id": "page-12-1",
+            "location": "Page 12",
+            "text": "The printer rejects jobs protected by an unsupported encryption format."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Apply a rule",
+        "sourceDigest": "8c3009446b2d8af6e1131f882c653f84cb8d4e8ab9ba9e291a71beb48f97cd8a",
+        "sourceName": "mixed-scan-manual.pdf"
+      },
+      "expected": "The blue status light means the printer is receiving a job.",
+      "id": "A83D8C14-C3F5-4F1C-8D75-2C424D3DCA71",
+      "name": "Printer status light meaning",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "What does the blue printer status light mean?"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "id": "v15-editor-shortcuts:4-original",
+    "source": {
+      "fileDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+      "name": "editor-shortcuts.md",
+      "passages": [
+        {
+          "id": "text-1-1",
+          "location": "Text \u00b7 passage 1",
+          "text": "Control-S saves the active document without changing its file name."
+        },
+        {
+          "id": "text-2-1",
+          "location": "Text \u00b7 passage 2",
+          "text": "Control-Shift-S opens Save As for the active document."
+        },
+        {
+          "id": "text-3-1",
+          "location": "Text \u00b7 passage 3",
+          "text": "Control-Z undoes the most recent edit."
+        },
+        {
+          "id": "text-4-1",
+          "location": "Text \u00b7 passage 4",
+          "text": "Control-Y redoes an edit that was undone."
+        },
+        {
+          "id": "text-5-1",
+          "location": "Text \u00b7 passage 5",
+          "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+        },
+        {
+          "id": "text-6-1",
+          "location": "Text \u00b7 passage 6",
+          "text": "Autosave does not run for documents opened in read-only mode."
+        },
+        {
+          "id": "text-7-1",
+          "location": "Text \u00b7 passage 7",
+          "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+        },
+        {
+          "id": "text-8-1",
+          "location": "Text \u00b7 passage 8",
+          "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+        },
+        {
+          "id": "text-9-1",
+          "location": "Text \u00b7 passage 9",
+          "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+        },
+        {
+          "id": "text-10-1",
+          "location": "Text \u00b7 passage 10",
+          "text": "The line-number display can be toggled from the View menu."
+        },
+        {
+          "id": "text-11-1",
+          "location": "Text \u00b7 passage 11",
+          "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+        },
+        {
+          "id": "text-12-1",
+          "location": "Text \u00b7 passage 12",
+          "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+        }
+      ],
+      "warnings": []
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: Under what condition does autosave fail? Use this factual reference for meaning, including relevant conditions and restrictions: The editor autosaves every 60 seconds while the document has unsaved changes. Autosave does not run for documents opened in read-only mode. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "33D7CBFC-FFA8-43F4-8B1F-8DA625E03BB2",
+            "passageID": "text-5-1",
+            "quote": "The editor autosaves every 60 seconds while the document has unsaved changes."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v15",
+        "passages": [
+          {
+            "id": "text-1-1",
+            "location": "Text \u00b7 passage 1",
+            "text": "Control-S saves the active document without changing its file name."
+          },
+          {
+            "id": "text-2-1",
+            "location": "Text \u00b7 passage 2",
+            "text": "Control-Shift-S opens Save As for the active document."
+          },
+          {
+            "id": "text-3-1",
+            "location": "Text \u00b7 passage 3",
+            "text": "Control-Z undoes the most recent edit."
+          },
+          {
+            "id": "text-4-1",
+            "location": "Text \u00b7 passage 4",
+            "text": "Control-Y redoes an edit that was undone."
+          },
+          {
+            "id": "text-5-1",
+            "location": "Text \u00b7 passage 5",
+            "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+          },
+          {
+            "id": "text-6-1",
+            "location": "Text \u00b7 passage 6",
+            "text": "Autosave does not run for documents opened in read-only mode."
+          },
+          {
+            "id": "text-7-1",
+            "location": "Text \u00b7 passage 7",
+            "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+          },
+          {
+            "id": "text-8-1",
+            "location": "Text \u00b7 passage 8",
+            "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+          },
+          {
+            "id": "text-9-1",
+            "location": "Text \u00b7 passage 9",
+            "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+          },
+          {
+            "id": "text-10-1",
+            "location": "Text \u00b7 passage 10",
+            "text": "The line-number display can be toggled from the View menu."
+          },
+          {
+            "id": "text-11-1",
+            "location": "Text \u00b7 passage 11",
+            "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+          },
+          {
+            "id": "text-12-1",
+            "location": "Text \u00b7 passage 12",
+            "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+          }
+        ],
+        "questionType": "Limit or exception",
+        "requestedQuestionType": "Apply a rule",
+        "sourceDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+        "sourceName": "editor-shortcuts.md"
+      },
+      "expected": "The editor autosaves every 60 seconds while the document has unsaved changes. Autosave does not run for documents opened in read-only mode.",
+      "id": "BAF94A80-0815-4930-A9B1-8A3E59F90AEB",
+      "name": "Autosave behavior",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "Under what condition does autosave fail?"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "id": "v15-editor-shortcuts:4-corrected",
+    "source": {
+      "fileDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+      "name": "editor-shortcuts.md",
+      "passages": [
+        {
+          "id": "text-1-1",
+          "location": "Text \u00b7 passage 1",
+          "text": "Control-S saves the active document without changing its file name."
+        },
+        {
+          "id": "text-2-1",
+          "location": "Text \u00b7 passage 2",
+          "text": "Control-Shift-S opens Save As for the active document."
+        },
+        {
+          "id": "text-3-1",
+          "location": "Text \u00b7 passage 3",
+          "text": "Control-Z undoes the most recent edit."
+        },
+        {
+          "id": "text-4-1",
+          "location": "Text \u00b7 passage 4",
+          "text": "Control-Y redoes an edit that was undone."
+        },
+        {
+          "id": "text-5-1",
+          "location": "Text \u00b7 passage 5",
+          "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+        },
+        {
+          "id": "text-6-1",
+          "location": "Text \u00b7 passage 6",
+          "text": "Autosave does not run for documents opened in read-only mode."
+        },
+        {
+          "id": "text-7-1",
+          "location": "Text \u00b7 passage 7",
+          "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+        },
+        {
+          "id": "text-8-1",
+          "location": "Text \u00b7 passage 8",
+          "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+        },
+        {
+          "id": "text-9-1",
+          "location": "Text \u00b7 passage 9",
+          "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+        },
+        {
+          "id": "text-10-1",
+          "location": "Text \u00b7 passage 10",
+          "text": "The line-number display can be toggled from the View menu."
+        },
+        {
+          "id": "text-11-1",
+          "location": "Text \u00b7 passage 11",
+          "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+        },
+        {
+          "id": "text-12-1",
+          "location": "Text \u00b7 passage 12",
+          "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+        }
+      ],
+      "warnings": []
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: When does autosave not run for a document? Use this factual reference for meaning, including relevant conditions and restrictions: Autosave does not run for documents opened in read-only mode. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "passageID": "text-6-1",
+            "quote": "Autosave does not run for documents opened in read-only mode.",
+            "id": "33D7CBFC-FFA8-43F4-8B1F-8DA625E03BB2"
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v15",
+        "passages": [
+          {
+            "id": "text-1-1",
+            "location": "Text \u00b7 passage 1",
+            "text": "Control-S saves the active document without changing its file name."
+          },
+          {
+            "id": "text-2-1",
+            "location": "Text \u00b7 passage 2",
+            "text": "Control-Shift-S opens Save As for the active document."
+          },
+          {
+            "id": "text-3-1",
+            "location": "Text \u00b7 passage 3",
+            "text": "Control-Z undoes the most recent edit."
+          },
+          {
+            "id": "text-4-1",
+            "location": "Text \u00b7 passage 4",
+            "text": "Control-Y redoes an edit that was undone."
+          },
+          {
+            "id": "text-5-1",
+            "location": "Text \u00b7 passage 5",
+            "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+          },
+          {
+            "id": "text-6-1",
+            "location": "Text \u00b7 passage 6",
+            "text": "Autosave does not run for documents opened in read-only mode."
+          },
+          {
+            "id": "text-7-1",
+            "location": "Text \u00b7 passage 7",
+            "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+          },
+          {
+            "id": "text-8-1",
+            "location": "Text \u00b7 passage 8",
+            "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+          },
+          {
+            "id": "text-9-1",
+            "location": "Text \u00b7 passage 9",
+            "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+          },
+          {
+            "id": "text-10-1",
+            "location": "Text \u00b7 passage 10",
+            "text": "The line-number display can be toggled from the View menu."
+          },
+          {
+            "id": "text-11-1",
+            "location": "Text \u00b7 passage 11",
+            "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+          },
+          {
+            "id": "text-12-1",
+            "location": "Text \u00b7 passage 12",
+            "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+          }
+        ],
+        "questionType": "Limit or exception",
+        "requestedQuestionType": "Apply a rule",
+        "sourceDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+        "sourceName": "editor-shortcuts.md"
+      },
+      "expected": "Autosave does not run for documents opened in read-only mode.",
+      "id": "BAF94A80-0815-4930-A9B1-8A3E59F90AEB",
+      "name": "Autosave behavior",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "When does autosave not run for a document?"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "id": "v15-deployment-operations:0-original",
+    "source": {
+      "fileDigest": "5d49a93481a8b724dd06787b54bb204b8ee47c4bf1c40334c2d294b093b8dfb1",
+      "name": "deployment-operations.pdf",
+      "passages": [
+        {
+          "id": "page-1-1",
+          "location": "Page 1",
+          "text": "A deployment starts in the Pending state until an operator approves it."
+        },
+        {
+          "id": "page-2-1",
+          "location": "Page 2",
+          "text": "Only operators with the release role may approve a deployment."
+        },
+        {
+          "id": "page-3-1",
+          "location": "Page 3",
+          "text": "The deployment stops when the health check fails three consecutive times."
+        },
+        {
+          "id": "page-4-1",
+          "location": "Page 4",
+          "text": "Health checks run every 20 seconds during rollout."
+        },
+        {
+          "id": "page-5-1",
+          "location": "Page 5",
+          "text": "A rollout begins with ten percent of instances."
+        },
+        {
+          "id": "page-6-1",
+          "location": "Page 6",
+          "text": "The rollout advances to all instances only after five minutes of healthy checks."
+        },
+        {
+          "id": "page-7-1",
+          "location": "Page 7",
+          "text": "Rollback restores the previously deployed application version."
+        },
+        {
+          "id": "page-8-1",
+          "location": "Page 8",
+          "text": "Rollback does not reverse database migrations."
+        },
+        {
+          "id": "page-9-1",
+          "location": "Page 9",
+          "text": "A database backup is required before a deployment that includes a migration."
+        },
+        {
+          "id": "page-10-1",
+          "location": "Page 10",
+          "text": "Deployment logs are retained for 14 days."
+        },
+        {
+          "id": "page-11-1",
+          "location": "Page 11",
+          "text": "A maintenance window prevents automatic deployments from starting."
+        },
+        {
+          "id": "page-12-1",
+          "location": "Page 12",
+          "text": "A deployment already in progress continues when a maintenance window begins."
+        }
+      ],
+      "warnings": [
+        "PDF extraction may change reading order or omit diagrams and tables. Check the text before accepting questions."
+      ]
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: What state does a deployment enter after an operator approves it? Use this factual reference for meaning, including relevant conditions and restrictions: A deployment starts in the Pending state until an operator approves it. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "6A352D88-BC38-49F1-9F33-B0FC3130A467",
+            "passageID": "page-1-1",
+            "quote": "A deployment starts in the Pending state until an operator approves it."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v15",
+        "passages": [
+          {
+            "id": "page-1-1",
+            "location": "Page 1",
+            "text": "A deployment starts in the Pending state until an operator approves it."
+          },
+          {
+            "id": "page-2-1",
+            "location": "Page 2",
+            "text": "Only operators with the release role may approve a deployment."
+          },
+          {
+            "id": "page-3-1",
+            "location": "Page 3",
+            "text": "The deployment stops when the health check fails three consecutive times."
+          },
+          {
+            "id": "page-4-1",
+            "location": "Page 4",
+            "text": "Health checks run every 20 seconds during rollout."
+          },
+          {
+            "id": "page-5-1",
+            "location": "Page 5",
+            "text": "A rollout begins with ten percent of instances."
+          },
+          {
+            "id": "page-6-1",
+            "location": "Page 6",
+            "text": "The rollout advances to all instances only after five minutes of healthy checks."
+          },
+          {
+            "id": "page-7-1",
+            "location": "Page 7",
+            "text": "Rollback restores the previously deployed application version."
+          },
+          {
+            "id": "page-8-1",
+            "location": "Page 8",
+            "text": "Rollback does not reverse database migrations."
+          },
+          {
+            "id": "page-9-1",
+            "location": "Page 9",
+            "text": "A database backup is required before a deployment that includes a migration."
+          },
+          {
+            "id": "page-10-1",
+            "location": "Page 10",
+            "text": "Deployment logs are retained for 14 days."
+          },
+          {
+            "id": "page-11-1",
+            "location": "Page 11",
+            "text": "A maintenance window prevents automatic deployments from starting."
+          },
+          {
+            "id": "page-12-1",
+            "location": "Page 12",
+            "text": "A deployment already in progress continues when a maintenance window begins."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Direct fact",
+        "sourceDigest": "5d49a93481a8b724dd06787b54bb204b8ee47c4bf1c40334c2d294b093b8dfb1",
+        "sourceName": "deployment-operations.pdf"
+      },
+      "expected": "A deployment starts in the Pending state until an operator approves it.",
+      "id": "2CBCE96D-C029-4247-8722-3372FCE67CBC",
+      "name": "Deployment state transition",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "What state does a deployment enter after an operator approves it?"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "id": "v15-deployment-operations:0-corrected",
+    "source": {
+      "fileDigest": "5d49a93481a8b724dd06787b54bb204b8ee47c4bf1c40334c2d294b093b8dfb1",
+      "name": "deployment-operations.pdf",
+      "passages": [
+        {
+          "id": "page-1-1",
+          "location": "Page 1",
+          "text": "A deployment starts in the Pending state until an operator approves it."
+        },
+        {
+          "id": "page-2-1",
+          "location": "Page 2",
+          "text": "Only operators with the release role may approve a deployment."
+        },
+        {
+          "id": "page-3-1",
+          "location": "Page 3",
+          "text": "The deployment stops when the health check fails three consecutive times."
+        },
+        {
+          "id": "page-4-1",
+          "location": "Page 4",
+          "text": "Health checks run every 20 seconds during rollout."
+        },
+        {
+          "id": "page-5-1",
+          "location": "Page 5",
+          "text": "A rollout begins with ten percent of instances."
+        },
+        {
+          "id": "page-6-1",
+          "location": "Page 6",
+          "text": "The rollout advances to all instances only after five minutes of healthy checks."
+        },
+        {
+          "id": "page-7-1",
+          "location": "Page 7",
+          "text": "Rollback restores the previously deployed application version."
+        },
+        {
+          "id": "page-8-1",
+          "location": "Page 8",
+          "text": "Rollback does not reverse database migrations."
+        },
+        {
+          "id": "page-9-1",
+          "location": "Page 9",
+          "text": "A database backup is required before a deployment that includes a migration."
+        },
+        {
+          "id": "page-10-1",
+          "location": "Page 10",
+          "text": "Deployment logs are retained for 14 days."
+        },
+        {
+          "id": "page-11-1",
+          "location": "Page 11",
+          "text": "A maintenance window prevents automatic deployments from starting."
+        },
+        {
+          "id": "page-12-1",
+          "location": "Page 12",
+          "text": "A deployment already in progress continues when a maintenance window begins."
+        }
+      ],
+      "warnings": [
+        "PDF extraction may change reading order or omit diagrams and tables. Check the text before accepting questions."
+      ]
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: What state does a deployment remain in until an operator approves it? Use this factual reference for meaning, including relevant conditions and restrictions: A deployment remains in the Pending state until an operator approves it. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "6A352D88-BC38-49F1-9F33-B0FC3130A467",
+            "passageID": "page-1-1",
+            "quote": "A deployment starts in the Pending state until an operator approves it."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v15",
+        "passages": [
+          {
+            "id": "page-1-1",
+            "location": "Page 1",
+            "text": "A deployment starts in the Pending state until an operator approves it."
+          },
+          {
+            "id": "page-2-1",
+            "location": "Page 2",
+            "text": "Only operators with the release role may approve a deployment."
+          },
+          {
+            "id": "page-3-1",
+            "location": "Page 3",
+            "text": "The deployment stops when the health check fails three consecutive times."
+          },
+          {
+            "id": "page-4-1",
+            "location": "Page 4",
+            "text": "Health checks run every 20 seconds during rollout."
+          },
+          {
+            "id": "page-5-1",
+            "location": "Page 5",
+            "text": "A rollout begins with ten percent of instances."
+          },
+          {
+            "id": "page-6-1",
+            "location": "Page 6",
+            "text": "The rollout advances to all instances only after five minutes of healthy checks."
+          },
+          {
+            "id": "page-7-1",
+            "location": "Page 7",
+            "text": "Rollback restores the previously deployed application version."
+          },
+          {
+            "id": "page-8-1",
+            "location": "Page 8",
+            "text": "Rollback does not reverse database migrations."
+          },
+          {
+            "id": "page-9-1",
+            "location": "Page 9",
+            "text": "A database backup is required before a deployment that includes a migration."
+          },
+          {
+            "id": "page-10-1",
+            "location": "Page 10",
+            "text": "Deployment logs are retained for 14 days."
+          },
+          {
+            "id": "page-11-1",
+            "location": "Page 11",
+            "text": "A maintenance window prevents automatic deployments from starting."
+          },
+          {
+            "id": "page-12-1",
+            "location": "Page 12",
+            "text": "A deployment already in progress continues when a maintenance window begins."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Direct fact",
+        "sourceDigest": "5d49a93481a8b724dd06787b54bb204b8ee47c4bf1c40334c2d294b093b8dfb1",
+        "sourceName": "deployment-operations.pdf"
+      },
+      "expected": "A deployment remains in the Pending state until an operator approves it.",
+      "id": "2CBCE96D-C029-4247-8722-3372FCE67CBC",
+      "name": "Deployment state transition",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "What state does a deployment remain in until an operator approves it?"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "id": "v10-retention-exceptions:0-partial-citations",
+    "source": {
+      "fileDigest": "06ff8f0572d8db54e0aa73896ceb05ec886c261e44dc5ed983c9a4505ac6172a",
+      "name": "retention-exceptions.pdf",
+      "passages": [
+        {
+          "id": "page-1-1",
+          "location": "Page 1",
+          "text": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds."
+        },
+        {
+          "id": "page-2-1",
+          "location": "Page 2",
+          "text": "Exception to the ordinary support-message retention rule: messages under an\nactive legal hold are kept until the hold is released, even after 30 days."
+        },
+        {
+          "id": "page-3-1",
+          "location": "Page 3",
+          "text": "Financial invoices are retained for seven years from their issue date."
+        },
+        {
+          "id": "page-4-1",
+          "location": "Page 4",
+          "text": "An export request includes active records and archived records, but excludes\nrecords already deleted."
+        },
+        {
+          "id": "page-5-1",
+          "location": "Page 5",
+          "text": "Only compliance administrators can apply a legal hold."
+        },
+        {
+          "id": "page-6-1",
+          "location": "Page 6",
+          "text": "Releasing a legal hold requires two different compliance administrators to approve\nthe release."
+        },
+        {
+          "id": "page-7-1",
+          "location": "Page 7",
+          "text": "Deleting an account disables sign-in immediately. Record retention continues under\nthe applicable retention rules."
+        },
+        {
+          "id": "page-8-1",
+          "location": "Page 8",
+          "text": "An audit event records the actor, UTC time, and record identifier for every deletion."
+        },
+        {
+          "id": "page-9-1",
+          "location": "Page 9",
+          "text": "Attachments follow the retention period of the message to which they belong."
+        },
+        {
+          "id": "page-10-1",
+          "location": "Page 10",
+          "text": "A retention preview lists records scheduled for deletion during the next 24 hours."
+        },
+        {
+          "id": "page-11-1",
+          "location": "Page 11",
+          "text": "Changing a retention policy affects future deletion decisions and does not restore\nrecords already deleted."
+        },
+        {
+          "id": "page-12-1",
+          "location": "Page 12",
+          "text": "The retention service pauses deletion when its policy database is unavailable."
+        }
+      ],
+      "warnings": [
+        "PDF extraction may change reading order or omit diagrams and tables. Check the text before accepting questions."
+      ]
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: What is the ordinary support-message retention period, and how does an active legal hold change it? Use this factual reference for meaning, including relevant conditions and restrictions: Ordinary support messages are deleted after 30 days, except messages under an active legal hold are kept until that hold is released. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "A2A9A2E6-34A2-4996-97DF-7AD5622CAE26",
+            "passageID": "page-1-1",
+            "quote": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "page-1-1",
+            "location": "Page 1",
+            "text": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds."
+          },
+          {
+            "id": "page-2-1",
+            "location": "Page 2",
+            "text": "Exception to the ordinary support-message retention rule: messages under an\nactive legal hold are kept until the hold is released, even after 30 days."
+          },
+          {
+            "id": "page-3-1",
+            "location": "Page 3",
+            "text": "Financial invoices are retained for seven years from their issue date."
+          },
+          {
+            "id": "page-4-1",
+            "location": "Page 4",
+            "text": "An export request includes active records and archived records, but excludes\nrecords already deleted."
+          },
+          {
+            "id": "page-5-1",
+            "location": "Page 5",
+            "text": "Only compliance administrators can apply a legal hold."
+          },
+          {
+            "id": "page-6-1",
+            "location": "Page 6",
+            "text": "Releasing a legal hold requires two different compliance administrators to approve\nthe release."
+          },
+          {
+            "id": "page-7-1",
+            "location": "Page 7",
+            "text": "Deleting an account disables sign-in immediately. Record retention continues under\nthe applicable retention rules."
+          },
+          {
+            "id": "page-8-1",
+            "location": "Page 8",
+            "text": "An audit event records the actor, UTC time, and record identifier for every deletion."
+          },
+          {
+            "id": "page-9-1",
+            "location": "Page 9",
+            "text": "Attachments follow the retention period of the message to which they belong."
+          },
+          {
+            "id": "page-10-1",
+            "location": "Page 10",
+            "text": "A retention preview lists records scheduled for deletion during the next 24 hours."
+          },
+          {
+            "id": "page-11-1",
+            "location": "Page 11",
+            "text": "Changing a retention policy affects future deletion decisions and does not restore\nrecords already deleted."
+          },
+          {
+            "id": "page-12-1",
+            "location": "Page 12",
+            "text": "The retention service pauses deletion when its policy database is unavailable."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Direct fact",
+        "sourceDigest": "06ff8f0572d8db54e0aa73896ceb05ec886c261e44dc5ed983c9a4505ac6172a",
+        "sourceName": "retention-exceptions.pdf"
+      },
+      "expected": "Ordinary support messages are deleted after 30 days, except messages under an active legal hold are kept until that hold is released.",
+      "id": "54E2AE94-8CCE-42CB-8ADE-6198F64DE458",
+      "name": "Ordinary support message retention",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "What is the ordinary support-message retention period, and how does an active legal hold change it?"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "id": "v10-editor-shortcuts:4-partial-citations",
+    "source": {
+      "fileDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+      "name": "editor-shortcuts.md",
+      "passages": [
+        {
+          "id": "text-1-1",
+          "location": "Text \u00b7 passage 1",
+          "text": "Control-S saves the active document without changing its file name."
+        },
+        {
+          "id": "text-2-1",
+          "location": "Text \u00b7 passage 2",
+          "text": "Control-Shift-S opens Save As for the active document."
+        },
+        {
+          "id": "text-3-1",
+          "location": "Text \u00b7 passage 3",
+          "text": "Control-Z undoes the most recent edit."
+        },
+        {
+          "id": "text-4-1",
+          "location": "Text \u00b7 passage 4",
+          "text": "Control-Y redoes an edit that was undone."
+        },
+        {
+          "id": "text-5-1",
+          "location": "Text \u00b7 passage 5",
+          "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+        },
+        {
+          "id": "text-6-1",
+          "location": "Text \u00b7 passage 6",
+          "text": "Autosave does not run for documents opened in read-only mode."
+        },
+        {
+          "id": "text-7-1",
+          "location": "Text \u00b7 passage 7",
+          "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+        },
+        {
+          "id": "text-8-1",
+          "location": "Text \u00b7 passage 8",
+          "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+        },
+        {
+          "id": "text-9-1",
+          "location": "Text \u00b7 passage 9",
+          "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+        },
+        {
+          "id": "text-10-1",
+          "location": "Text \u00b7 passage 10",
+          "text": "The line-number display can be toggled from the View menu."
+        },
+        {
+          "id": "text-11-1",
+          "location": "Text \u00b7 passage 11",
+          "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+        },
+        {
+          "id": "text-12-1",
+          "location": "Text \u00b7 passage 12",
+          "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+        }
+      ],
+      "warnings": []
+    },
+    "candidate": {
+      "conversation": {
+        "historyPolicy": "keepAll",
+        "retainedTurnCount": 2,
+        "setupTurns": []
+      },
+      "criteriaOverride": [
+        "Correctly answers this question: How often does autosave run for a document with unsaved changes, and what happens in read-only mode? Use this factual reference for meaning, including relevant conditions and restrictions: Autosave runs every 60 seconds while there are unsaved changes; it does not run for documents opened in read-only mode. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "documentEvidence": {
+        "citations": [
+          {
+            "id": "73253BEE-EDD8-47E3-881F-F0A408EE8925",
+            "passageID": "text-5-1",
+            "quote": "The editor autosaves every 60 seconds while the document has unsaved changes."
+          }
+        ],
+        "extractionVersion": 1,
+        "formatVersion": 1,
+        "generator": "Foundation Models \u00b7 on-device",
+        "generatorVersion": "document-draft-v10",
+        "passages": [
+          {
+            "id": "text-1-1",
+            "location": "Text \u00b7 passage 1",
+            "text": "Control-S saves the active document without changing its file name."
+          },
+          {
+            "id": "text-2-1",
+            "location": "Text \u00b7 passage 2",
+            "text": "Control-Shift-S opens Save As for the active document."
+          },
+          {
+            "id": "text-3-1",
+            "location": "Text \u00b7 passage 3",
+            "text": "Control-Z undoes the most recent edit."
+          },
+          {
+            "id": "text-4-1",
+            "location": "Text \u00b7 passage 4",
+            "text": "Control-Y redoes an edit that was undone."
+          },
+          {
+            "id": "text-5-1",
+            "location": "Text \u00b7 passage 5",
+            "text": "The editor autosaves every 60 seconds while the document has unsaved changes."
+          },
+          {
+            "id": "text-6-1",
+            "location": "Text \u00b7 passage 6",
+            "text": "Autosave does not run for documents opened in read-only mode."
+          },
+          {
+            "id": "text-7-1",
+            "location": "Text \u00b7 passage 7",
+            "text": "The recovery panel offers the most recent autosaved version after an unexpected exit."
+          },
+          {
+            "id": "text-8-1",
+            "location": "Text \u00b7 passage 8",
+            "text": "Closing a document with unsaved changes prompts the user to save, discard, or cancel closing."
+          },
+          {
+            "id": "text-9-1",
+            "location": "Text \u00b7 passage 9",
+            "text": "Find searches only the active document. Find in Folder searches all supported files in the chosen folder."
+          },
+          {
+            "id": "text-10-1",
+            "location": "Text \u00b7 passage 10",
+            "text": "The line-number display can be toggled from the View menu."
+          },
+          {
+            "id": "text-11-1",
+            "location": "Text \u00b7 passage 11",
+            "text": "The editor preserves UTF-8 encoding when saving a UTF-8 text file."
+          },
+          {
+            "id": "text-12-1",
+            "location": "Text \u00b7 passage 12",
+            "text": "Tabs are displayed as four spaces by default; this setting changes display width without rewriting the file."
+          }
+        ],
+        "questionType": "Direct fact",
+        "requestedQuestionType": "Apply a rule",
+        "sourceDigest": "5a90dc6e746a996de0a762cd0aa706867e25261ca3adffdc06a404f6e9c0dd90",
+        "sourceName": "editor-shortcuts.md"
+      },
+      "expected": "Autosave runs every 60 seconds while there are unsaved changes; it does not run for documents opened in read-only mode.",
+      "id": "1C939344-B1F7-480C-8580-81CB53DA732B",
+      "name": "autosave behavior",
+      "prompt": {
+        "format": "document-case-v1",
+        "text": "How often does autosave run for a document with unsaved changes, and what happens in read-only mode?"
+      }
+    },
+    "accepted": false
+  }
+]

@@ -12,17 +12,25 @@ Inspect the extracted passages and choose which ones to consider. PDF page label
 
 ## Generate and review
 
+Select a configured semantic judge and authorize sending the complete extracted document, questions, reference answers, rubrics, citations, and prior questions to its displayed endpoint. The judge needs structured outputs, a declared context window, and its saved credential. This selection does not change suite scoring defaults.
+
 Request 5, 10, or 20 drafts. Generation uses the on-device model and may return fewer questions when the source cannot support enough distinct cases. **Stop generation** keeps completed drafts. **Save and close** retains progress; reopen the same project's document flow to resume. A model availability error does not switch generation to a cloud provider.
+
+Selected passages choose the question topics. Generation consults and retains the complete imported source so definitions and exceptions elsewhere remain available. If that source and draft history cannot fit the on-device model, import a smaller page or text-block range; the app does not silently omit source context. Generation also stops before the saved suite's combined context limit, preserving the drafts that fit.
+
+Before a draft appears, the judge checks source support, question accuracy, completeness, rubric alignment, citations, and distinctness. Every check must score 4. Rejected drafts receive up to two correction attempts; exhausted drafts are skipped. Provider or malformed-verdict errors stop the batch without accepting an unchecked draft. Saved attempts retain the verdict and rejection reason.
+
+New drafts derive their initial semantic scoring requirement from the question and reference answer. The rubric includes the concrete reference facts and relevant restrictions, but explicitly treats reference details that the question does not request as optional. Check that the reference actually answers the question; a matching quote alone cannot establish this.
 
 For each draft:
 
 1. Read the question and reference answer.
 2. Review one to four case-specific scoring requirements. Each must occupy one line.
 3. Inspect the supporting quotes and the complete source context. **Quote found** means the quote exists, not that the answer is correct.
-4. Use **Add context** when neighboring passages contain required definitions or exceptions. Remove unused added context if it makes the request too large.
-5. Choose **Accept source review**, or discard the draft.
+4. Check that the retained context includes required definitions and exceptions. Older drafts may need **Add context** for neighboring passages. Removing context requires a fresh review and must not remove a relevant exception.
+5. Choose **Check and accept draft**, or discard the draft. Edits invalidate semantic approval; acceptance rechecks the edited content and current sibling questions. A current approval can be reused.
 
-The coverage count reports selected passages represented by accepted cases. It does not establish complete requirements coverage. Omitted and failed generation attempts remain visible. Retry failed attempts explicitly; retries preserve existing edits.
+The coverage count reports selected passages cited by accepted cases; retaining a passage as background does not count as covering it. It does not establish complete requirements coverage. Omitted and failed generation attempts remain visible. Retry failed attempts explicitly; retries preserve existing edits.
 
 ## Create and run
 

@@ -649,12 +649,12 @@ actor EvaluationRunner {
             imageInputTokenCountAvailable = imageInputTokenCountAvailable
                 && prepared.imageInputTokenCountAvailable
             effectivePrompt = prepared.text
-            if evaluationCase.documentEvidence != nil, let externalJudge {
-                let judgePrompt = Self.judgePrompt(response: "", evaluationCase: evaluationCase,
-                    effectivePrompt: prepared.text, suite: suite, toolEvidence: nil, subjectContext: judgeSubjectContext)
-                try EvaluationCompatibleJudgeClient.validateDocumentBudget(prompt: judgePrompt,
-                    configuration: EvaluationCompatibleJudgeClient.requestConfiguration(for: externalJudge.connection,
-                        criteriaCount: suite.rubricCriteria.count), connection: externalJudge.connection,
+            if evaluationCase.documentEvidence != nil, let externalJudge,
+               let admission = Self.externalDocumentJudgeAdmission(evaluationCase: evaluationCase,
+                    effectivePrompt: prepared.text, suite: suite, subjectContext: judgeSubjectContext,
+                    connection: externalJudge.connection) {
+                try EvaluationCompatibleJudgeClient.validateDocumentBudget(prompt: admission.prompt,
+                    configuration: admission.configuration, connection: externalJudge.connection,
                     candidateReserve: suite.modelConfiguration.maximumResponseTokens * 8)
             }
             workflow.finish(promptPreparationSpanID, metadata: ["estimatedInputTokens": String(prepared.tokenCount)])
