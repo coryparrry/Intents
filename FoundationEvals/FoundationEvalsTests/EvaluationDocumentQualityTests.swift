@@ -25,16 +25,8 @@ import Testing
     struct Attempt: Codable {
         var documentID: String; var slot: Int; var passage: EvaluationDocumentPassage
         var candidate: EvaluationCase?; var issue: String?; var milliseconds: Double
-        var outcome: String; var requestedType: String; var raw: ModelDraft?
+        var outcome: String; var requestedType: String
         var semanticReview: EvaluationDocumentSemanticReview? = nil
-    }
-    struct ModelDraft: Codable {
-        var supported: Bool; var name: String; var question: String; var answer: String
-        var criteria: [String]; var quotes: [String]; var questionType: String
-        init(_ value: EvaluationDocumentGenerator.Candidate) {
-            supported = value.supported; name = value.name; question = value.question; answer = value.answer
-            criteria = value.criteria; quotes = value.quotes; questionType = value.questionType
-        }
     }
     struct Summary: Codable {
         var documents: Int; var requested: Int; var surfaced: Int; var attempts: Int
@@ -79,7 +71,6 @@ import Testing
         return suite
     }
 
-    private var enabled: Bool { ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil }
     private func input() throws -> Corpus {
         let path = try #require(ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"])
         return try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
@@ -164,7 +155,6 @@ import Testing
                 let passage = source.passages[index]
                 let started = ContinuousClock.now
                 var candidate: EvaluationCase?, issue: String?
-                let raw: ModelDraft? = nil
                 var semanticReview: EvaluationDocumentSemanticReview?
                 var stopDocument = false
                 var outcome = "runtime_failure"
@@ -189,7 +179,7 @@ import Testing
                 let elapsed = started.duration(to: .now)
                 let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
                 try append(Attempt(documentID: document.id, slot: slot, passage: passage, candidate: candidate,
-                    issue: issue, milliseconds: ms, outcome: outcome, requestedType: requestedType, raw: raw, semanticReview: semanticReview), name: "attempts.jsonl", directory: directory)
+                    issue: issue, milliseconds: ms, outcome: outcome, requestedType: requestedType, semanticReview: semanticReview), name: "attempts.jsonl", directory: directory)
                 totalAttempts += 1
                 if let candidate { cases.append(candidate); surfaced += 1 }
                 if outcome == "suite_budget_rejection" || stopDocument { break }
@@ -229,7 +219,7 @@ import Testing
                 let candidate = reviewed.candidate
                 try append(Attempt(documentID: fixture.id, slot: 0, passage: fixture.passage, candidate: candidate,
                     issue: nil, milliseconds: 0, outcome: candidate == nil ? "rejected" : "surfaced",
-                    requestedType: fixture.requestedType, raw: nil, semanticReview: reviewed.review), name: "attempts.jsonl", directory: directory)
+                    requestedType: fixture.requestedType, semanticReview: reviewed.review), name: "attempts.jsonl", directory: directory)
                 let value = try #require(candidate, "Known supported focus must yield an approved draft: \(fixture.id)")
                 #expect(reviewed.review?.matches(value) == true)
                 let text = (value.prompt + " " + value.expected).lowercased()
