@@ -18,6 +18,33 @@
 ## Validation before pushing
 
 - Before every push, determine coverage for the complete proposed PR diff using `script/ci_routes.py`, including uncommitted changes, new files, deletions, and renames. Record the selected Python modules, Swift suites, native tests, UI shards, and additional workflow checks. Do not choose checks from the last commit or from labels such as "docs-only." `AGENTS.md` is currently an unclassified path and selects full coverage; main pushes also run full ordinary coverage.
+- Fetch the actual PR target first (`origin/main` below; substitute the PR's base when different). The script's CLI reads GitHub event commit ranges and does not collect local changes. From the repo root, call its `coverage()` API with the union of committed, staged, unstaged, and nonignored untracked paths:
+
+  ```sh
+  git fetch origin main
+  python3 - <<'PY' > /tmp/intents-prepush-coverage.json
+  import json
+  import os
+  import subprocess
+  from script.ci_routes import coverage
+
+  commands = [
+      ["git", "diff", "--no-renames", "--name-only", "-z", "origin/main...HEAD", "--"],
+      ["git", "diff", "--no-renames", "--name-only", "-z", "--cached", "--"],
+      ["git", "diff", "--no-renames", "--name-only", "-z", "--"],
+      ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+  ]
+  paths = {
+      os.fsdecode(path)
+      for command in commands
+      for path in subprocess.check_output(command).split(b"\0")
+      if path
+  }
+  print(json.dumps(coverage(sorted(paths)), indent=2))
+  PY
+  ```
+
+  Inspect `/tmp/intents-prepush-coverage.json` and run its selections alongside the always-on checks below. NUL-separated output and disabled rename detection preserve unusual filenames and both sides of renames. A failed Git command stops this helper; resolve it before recording coverage.
 - Run the always-on checks from `.github/workflows/ci.yml` and `.github/workflows/docstrings.yml` as well as every selected check. The affected-area table below adds to this baseline; it does not narrow it. The current baseline is:
 
   ```sh
