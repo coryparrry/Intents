@@ -67,6 +67,10 @@ struct JudgeConnectionsSettingsView: View {
                         Text("Use the exact model ID provided by your service. Select this connection in a suite’s Setup → Scoring page.")
                     }
                     Section("Capabilities") {
+                        TextField("Context window in tokens (required for document suites)", text: Binding(
+                            get: { draft.capabilities.contextWindowTokens.map(String.init) ?? "" },
+                            set: { draft.capabilities.contextWindowTokens = Int($0) }
+                        ))
                         Toggle("Strict structured outputs", isOn: $draft.capabilities.structuredOutputs)
                             .help("The judge must return scores in the required JSON format. Enable this option only for services that support strict structured outputs.")
                         Toggle("Accepts image evidence", isOn: $draft.capabilities.multimodal)

@@ -38,6 +38,9 @@ import Foundation
       case "eval_production_dataset_snapshot":
         try MCPWorkspaceControl.requireTarget(call, store: control.store)
         let suite = control.store.draftSuite
+        guard !suite.hasDocumentCases else {
+          throw EvaluationStoreError.invalidSuite("Document suites cannot be flattened into production datasets. Run or export the document suite in the native app.")
+        }
         let dataset = try await Task.detached(priority: .utility) {
           let file = FileManager.default.temporaryDirectory.appendingPathComponent(
             "mcp-dataset-\(UUID()).jsonl")

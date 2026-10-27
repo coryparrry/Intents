@@ -187,6 +187,11 @@ RELEASE_VALIDATION = {
     "script.tests.test_release_dispatch",
 }
 PYTHON_DEPENDENCIES = {
+    "script/changed_function_docs.py": {"script.tests.test_changed_function_docs", "script.tests.test_docstring_coverage"},
+    "script/tests/test_changed_function_docs.py": {"script.tests.test_changed_function_docs"},
+    "script/docstring_coverage.py": {"script.tests.test_docstring_coverage", "script.tests.test_changed_function_docs"},
+    "Tools/DocstringCoverage/parse.mjs": {"script.tests.test_docstring_coverage", "script.tests.test_changed_function_docs"},
+    ".github/workflows/docstrings.yml": {"script.tests.test_changed_function_docs", "script.tests.test_docstring_coverage"},
     "script/verify_mcp_app_control.py": {"script.tests.test_verify_mcp_app_control"},
     "script/foundation-evals": {"script.tests.test_foundation_evals_cli"},
     "script/upload_posthog_symbols.sh": {"script.tests.test_upload_posthog_symbols"},

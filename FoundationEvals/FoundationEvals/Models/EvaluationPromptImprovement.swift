@@ -85,6 +85,9 @@ struct EvaluationPromptImprovement: Identifiable, Codable, Sendable {
 enum EvaluationPromptImprovementRules {
     /// Requires distinct development and held-out cases, an automated scoring mode, and at most 100 planned samples.
     static func validationIssue(suite: EvaluationSuite, heldOutCaseIDs: Set<UUID>) -> String? {
+        guard !suite.hasDocumentCases else {
+            return "Automatic improvement does not yet support document suites. Their shared source passages need a source-aware held-out split."
+        }
         let caseIDs = Set(suite.cases.map(\.id))
         guard suite.cases.count >= 2, caseIDs.count == suite.cases.count else {
             return "Add at least two distinct cases before improving instructions."

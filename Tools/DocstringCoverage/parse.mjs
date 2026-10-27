@@ -107,7 +107,15 @@ function declarations(path, source, sourceLines = null, embedded = false) {
       name = assignedName(node, ancestors, source);
     }
     if (name !== null) found.push({ path, line: sourceLines?.[node.start] ?? node.loc.start.line, name,
-      kind: node.kind ?? node.type, language, documented: documented(node, ancestors) });
+      kind: node.kind ?? node.type, language, documented: documented(node, ancestors),
+      start_line: sourceLines?.[node.start] ?? Math.min(node.loc.start.line,
+        ...(node.leadingComments ?? []).map(comment => comment.loc.start.line),
+        ...ancestors.slice(-3).filter(parent => ['VariableDeclarator', 'VariableDeclaration',
+          'ExportNamedDeclaration', 'ExportDefaultDeclaration', 'ExpressionStatement',
+          'AssignmentExpression', 'ObjectProperty', 'ClassProperty'].includes(parent.type))
+          .flatMap(parent => [parent.loc.start.line,
+            ...(parent.leadingComments ?? []).map(comment => comment.loc.start.line)])),
+      end_line: sourceLines?.[Math.max(node.start, node.end - 1)] ?? node.loc.end.line });
     if (!embedded && node.type === 'TemplateLiteral' && node.expressions.length === 0) {
       const quasi = node.quasis[0];
       const html = quasi.value.cooked;

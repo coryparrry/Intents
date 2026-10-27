@@ -184,6 +184,10 @@ final class ProductionWorkspaceStore {
     /// Captures the draft before dispatch and attempts temporary-file cleanup when import finishes.
     func snapshotDataset(store: EvaluationStore) {
         let suite = store.draftSuite
+        guard !suite.hasDocumentCases else {
+            error = "Document suites cannot be flattened into production datasets. Run or export the document suite in Cases."
+            return
+        }
         perform { storage in
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("suite-dataset-\(UUID().uuidString).jsonl")
             defer { try? FileManager.default.removeItem(at: file) }

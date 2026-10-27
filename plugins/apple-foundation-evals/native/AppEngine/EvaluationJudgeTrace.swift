@@ -21,6 +21,8 @@ struct EvaluationJudgeAttemptTrace: Codable, Sendable {
     var requestConfiguration: EvaluationJudgeRequestConfiguration? = nil
     var usage: EvaluationUsage? = nil
     var cost: EvaluationCost? = nil
+    /// Original rubric indexes covered by this request; nil for legacy whole-rubric attempts.
+    var judgedCriterionIndexes: [Int]? = nil
 }
 
 /// The same immutable value drives the wire request and the saved audit trail.

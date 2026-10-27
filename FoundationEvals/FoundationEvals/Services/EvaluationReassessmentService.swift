@@ -97,7 +97,13 @@ actor EvaluationReassessmentService {
                 ))
                 continue
             }
-            let criteria = suite.rubricCriteria
+            let criteria = suite.effectiveCriteria(for: evaluationCase)
+            guard (1...4).contains(criteria.count), criteria.allSatisfy({ !$0.contains(where: \.isNewline) }) else {
+                samples.append(.init(id: UUID(), sampleID: saved.id, status: .unscored, score: nil,
+                    rationale: "The saved case rubric is invalid.", trace: nil, errorCategory: "invalidJudgeConfiguration",
+                    errorMessage: "Each case requirement must occupy one line.", usage: nil, durationMilliseconds: nil))
+                continue
+            }
             let objective = criteria.enumerated().compactMap { index, criterion in
                 EvaluationExactCriterion.check(criterion: criterion, index: index + 1, response: saved.response)
             }
@@ -270,7 +276,10 @@ actor EvaluationReassessmentService {
                 continue
             }
             do {
-                let criteria = suite.rubricCriteria
+                let criteria = suite.effectiveCriteria(for: evaluationCase)
+                guard (1...4).contains(criteria.count), criteria.allSatisfy({ !$0.contains(where: \.isNewline) }) else {
+                    throw EvaluationJudgeValidationError.invalidCriteria
+                }
                 let objective = criteria.enumerated().compactMap { index, criterion in
                     EvaluationExactCriterion.check(criterion: criterion, index: index + 1, response: sample.response)
                 }

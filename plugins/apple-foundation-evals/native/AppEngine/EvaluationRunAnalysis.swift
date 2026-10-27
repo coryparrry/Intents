@@ -80,6 +80,7 @@ struct EvaluationCaseAnalysis: Identifiable, Codable, Equatable, Sendable {
     var repetitionVariation: EvaluationRepetitionVariation
     var conversation: EvaluationConversationConfiguration? = nil
     var fieldAssertions: [EvaluationFieldAssertion]? = nil
+    var criteriaOverride: [String]? = nil
 }
 
 @available(macOS 27.0, *)
@@ -197,7 +198,8 @@ struct EvaluationRunAnalysis: Codable, Equatable, Sendable {
                 scoredPassRate: scored == 0 ? nil : Double(passed) / Double(scored),
                 repetitionVariation: variation,
                 conversation: definition.conversation,
-                fieldAssertions: definition.fieldAssertions
+                fieldAssertions: definition.fieldAssertions,
+                criteriaOverride: definition.criteriaOverride
             )
         }
     }
@@ -305,7 +307,10 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
         let currentAnalysis = EvaluationRunAnalysis(run: current)
         let baselineAnalysis = EvaluationRunAnalysis(run: baseline)
         let comparisons = incompatibilities.isEmpty
-            ? Self.compareCases(current: currentAnalysis.cases, baseline: baselineAnalysis.cases)
+            ? Self.compareCases(current: currentAnalysis.cases, baseline: baselineAnalysis.cases,
+                                rubric: Self.comparisonScoringContract(for: current).flatMap {
+                                    $0.scoringMode == .modelJudge ? $0.rubricCriteria : nil
+                                })
             : []
         caseComparisons = comparisons
 
@@ -491,7 +496,8 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
     /// Missing, changed, or incompletely scored cases retain an explicit noncomparability reason.
     private static func compareCases(
         current: [EvaluationCaseAnalysis],
-        baseline: [EvaluationCaseAnalysis]
+        baseline: [EvaluationCaseAnalysis],
+        rubric: [String]?
     ) -> [EvaluationCaseComparison] {
         let currentByID = Dictionary(uniqueKeysWithValues: current.map { ($0.caseID, $0) })
         let baselineByID = Dictionary(uniqueKeysWithValues: baseline.map { ($0.caseID, $0) })
@@ -527,7 +533,10 @@ struct EvaluationRunComparison: Codable, Equatable, Sendable {
                     issue: .missingFromBaselineRun
                 )
             }
-            guard currentCase.prompt == baselineCase.prompt,
+            let currentCriteria = rubric.map { normalizedRubric((currentCase.criteriaOverride ?? $0).joined(separator: "\n")) }
+            let baselineCriteria = rubric.map { normalizedRubric((baselineCase.criteriaOverride ?? $0).joined(separator: "\n")) }
+            guard currentCriteria == baselineCriteria,
+                  currentCase.prompt == baselineCase.prompt,
                   currentCase.expected == baselineCase.expected,
                   Self.sameConversation(currentCase.conversation, baselineCase.conversation),
                   Self.sameAssertions(currentCase.fieldAssertions, baselineCase.fieldAssertions) else {
@@ -607,6 +616,7 @@ private struct CaseDefinition {
     var expected: String
     var conversation: EvaluationConversationConfiguration?
     var fieldAssertions: [EvaluationFieldAssertion]?
+    var criteriaOverride: [String]? = nil
 
     /// Captures the planned case's scoring inputs and display name for analysis, including conversation and assertion configuration.
     init(_ evaluationCase: EvaluationCase) {
@@ -615,6 +625,7 @@ private struct CaseDefinition {
         expected = evaluationCase.expected
         conversation = evaluationCase.conversation
         fieldAssertions = evaluationCase.fieldAssertions
+        criteriaOverride = evaluationCase.criteriaOverride
     }
 
     /// Reconstructs a result-only case definition from saved sample text and assertion results; conversation configuration remains unavailable.

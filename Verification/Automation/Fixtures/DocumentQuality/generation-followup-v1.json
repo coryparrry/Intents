@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "documents": [],
+  "controls": [
+    {
+      "id": "v15-repair-booking-guide:7-correct",
+      "source": "A room booking may last at most four hours.\n\nBookings can be made up to 30 days in advance.\n\nA booking can be cancelled without a charge until two hours before its start.\n\nCancelling less than two hours before the start incurs a ten-credit charge.\n\nCheck in within 15 minutes of the start time. Otherwise the room is released.\n\nGuests need a host present throughout the booking.\n\nFood is permitted in rooms A and B. Food is prohibited in room C.\n\nThe projector must be requested when the booking is created.\n\nA recurring booking can include up to eight weekly occurrences.\n\nChanging a recurring booking affects only the selected occurrence unless all future\noccurrences are selected.\n\nRoom B accommodates six people. The occupancy limit must not be exceeded.\n\nThe booking receipt is sent to the organizer, not to every attendee.",
+      "question": "When must the projector be requested for a booking?",
+      "reference": "The projector must be requested when the booking is created.",
+      "criteria": [
+        "Correctly answers this question: When must the projector be requested for a booking? Use this factual reference for meaning, including relevant conditions and restrictions: The projector must be requested when the booking is created. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Request it at the time the booking is created.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "v15-repair-booking-guide:7-wrong",
+      "source": "A room booking may last at most four hours.\n\nBookings can be made up to 30 days in advance.\n\nA booking can be cancelled without a charge until two hours before its start.\n\nCancelling less than two hours before the start incurs a ten-credit charge.\n\nCheck in within 15 minutes of the start time. Otherwise the room is released.\n\nGuests need a host present throughout the booking.\n\nFood is permitted in rooms A and B. Food is prohibited in room C.\n\nThe projector must be requested when the booking is created.\n\nA recurring booking can include up to eight weekly occurrences.\n\nChanging a recurring booking affects only the selected occurrence unless all future\noccurrences are selected.\n\nRoom B accommodates six people. The occupancy limit must not be exceeded.\n\nThe booking receipt is sent to the organizer, not to every attendee.",
+      "question": "When must the projector be requested for a booking?",
+      "reference": "The projector must be requested when the booking is created.",
+      "criteria": [
+        "Correctly answers this question: When must the projector be requested for a booking? Use this factual reference for meaning, including relevant conditions and restrictions: The projector must be requested when the booking is created. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Request it at any time after check-in.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "v15-repair-mixed-scan-manual:1-correct",
+      "source": "The green status light means the printer is ready.\n\nThe blue status light means the printer is receiving a job.\n\nThe orange status light means the paper tray is empty.\n\nUse A4 or Letter plain paper in the main tray.\n\nThe main tray holds at most 150 sheets.\n\nEnvelopes must be fed one at a time through the rear slot.\n\nTo cancel the active print job, hold Cancel for two seconds.\n\nCleaning the rollers requires disconnecting the power cable first.\n\nThe printer enters sleep mode after ten minutes without a job.\n\nPress any control-panel button to wake the printer from sleep.\n\nThe printer rejects jobs protected by an unsupported encryption format.",
+      "question": "What does the blue printer status light mean?",
+      "reference": "The blue status light means the printer is receiving a job.",
+      "criteria": [
+        "Correctly answers this question: What does the blue printer status light mean? Use this factual reference for meaning, including relevant conditions and restrictions: The blue status light means the printer is receiving a job. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "The printer is receiving a print job.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "v15-repair-mixed-scan-manual:1-wrong",
+      "source": "The green status light means the printer is ready.\n\nThe blue status light means the printer is receiving a job.\n\nThe orange status light means the paper tray is empty.\n\nUse A4 or Letter plain paper in the main tray.\n\nThe main tray holds at most 150 sheets.\n\nEnvelopes must be fed one at a time through the rear slot.\n\nTo cancel the active print job, hold Cancel for two seconds.\n\nCleaning the rollers requires disconnecting the power cable first.\n\nThe printer enters sleep mode after ten minutes without a job.\n\nPress any control-panel button to wake the printer from sleep.\n\nThe printer rejects jobs protected by an unsupported encryption format.",
+      "question": "What does the blue printer status light mean?",
+      "reference": "The blue status light means the printer is receiving a job.",
+      "criteria": [
+        "Correctly answers this question: What does the blue printer status light mean? Use this factual reference for meaning, including relevant conditions and restrictions: The blue status light means the printer is receiving a job. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "The paper tray is empty.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "v15-repair-editor-shortcuts:4-correct",
+      "source": "Control-S saves the active document without changing its file name.\n\nControl-Shift-S opens Save As for the active document.\n\nControl-Z undoes the most recent edit.\n\nControl-Y redoes an edit that was undone.\n\nThe editor autosaves every 60 seconds while the document has unsaved changes.\n\nAutosave does not run for documents opened in read-only mode.\n\nThe recovery panel offers the most recent autosaved version after an unexpected exit.\n\nClosing a document with unsaved changes prompts the user to save, discard, or cancel closing.\n\nFind searches only the active document. Find in Folder searches all supported files in the chosen folder.\n\nThe line-number display can be toggled from the View menu.\n\nThe editor preserves UTF-8 encoding when saving a UTF-8 text file.\n\nTabs are displayed as four spaces by default; this setting changes display width without rewriting the file.",
+      "question": "When does autosave not run for a document?",
+      "reference": "Autosave does not run for documents opened in read-only mode.",
+      "criteria": [
+        "Correctly answers this question: When does autosave not run for a document? Use this factual reference for meaning, including relevant conditions and restrictions: Autosave does not run for documents opened in read-only mode. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "It does not run when the document was opened read-only.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "v15-repair-editor-shortcuts:4-wrong",
+      "source": "Control-S saves the active document without changing its file name.\n\nControl-Shift-S opens Save As for the active document.\n\nControl-Z undoes the most recent edit.\n\nControl-Y redoes an edit that was undone.\n\nThe editor autosaves every 60 seconds while the document has unsaved changes.\n\nAutosave does not run for documents opened in read-only mode.\n\nThe recovery panel offers the most recent autosaved version after an unexpected exit.\n\nClosing a document with unsaved changes prompts the user to save, discard, or cancel closing.\n\nFind searches only the active document. Find in Folder searches all supported files in the chosen folder.\n\nThe line-number display can be toggled from the View menu.\n\nThe editor preserves UTF-8 encoding when saving a UTF-8 text file.\n\nTabs are displayed as four spaces by default; this setting changes display width without rewriting the file.",
+      "question": "When does autosave not run for a document?",
+      "reference": "Autosave does not run for documents opened in read-only mode.",
+      "criteria": [
+        "Correctly answers this question: When does autosave not run for a document? Use this factual reference for meaning, including relevant conditions and restrictions: Autosave does not run for documents opened in read-only mode. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "It still runs every 60 seconds in read-only mode.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "v15-repair-deployment-operations:0-correct",
+      "source": "A deployment starts in the Pending state until an operator approves it.\n\nOnly operators with the release role may approve a deployment.\n\nThe deployment stops when the health check fails three consecutive times.\n\nHealth checks run every 20 seconds during rollout.\n\nA rollout begins with ten percent of instances.\n\nThe rollout advances to all instances only after five minutes of healthy checks.\n\nRollback restores the previously deployed application version.\n\nRollback does not reverse database migrations.\n\nA database backup is required before a deployment that includes a migration.\n\nDeployment logs are retained for 14 days.\n\nA maintenance window prevents automatic deployments from starting.\n\nA deployment already in progress continues when a maintenance window begins.",
+      "question": "What state does a deployment remain in until an operator approves it?",
+      "reference": "A deployment remains in the Pending state until an operator approves it.",
+      "criteria": [
+        "Correctly answers this question: What state does a deployment remain in until an operator approves it? Use this factual reference for meaning, including relevant conditions and restrictions: A deployment remains in the Pending state until an operator approves it. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Pending until operator approval.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "v15-repair-deployment-operations:0-wrong",
+      "source": "A deployment starts in the Pending state until an operator approves it.\n\nOnly operators with the release role may approve a deployment.\n\nThe deployment stops when the health check fails three consecutive times.\n\nHealth checks run every 20 seconds during rollout.\n\nA rollout begins with ten percent of instances.\n\nThe rollout advances to all instances only after five minutes of healthy checks.\n\nRollback restores the previously deployed application version.\n\nRollback does not reverse database migrations.\n\nA database backup is required before a deployment that includes a migration.\n\nDeployment logs are retained for 14 days.\n\nA maintenance window prevents automatic deployments from starting.\n\nA deployment already in progress continues when a maintenance window begins.",
+      "question": "What state does a deployment remain in until an operator approves it?",
+      "reference": "A deployment remains in the Pending state until an operator approves it.",
+      "criteria": [
+        "Correctly answers this question: What state does a deployment remain in until an operator approves it? Use this factual reference for meaning, including relevant conditions and restrictions: A deployment remains in the Pending state until an operator approves it. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "It is Running before operator approval.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    }
+  ]
+}

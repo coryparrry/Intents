@@ -190,6 +190,7 @@ actor EvaluationRunner {
         liveResponse: @Sendable (EvaluationLiveResponse) async -> Void,
         progress: @Sendable (EvaluationSampleResult, Int, Int) async -> Void
     ) async -> EvaluationRun {
+        let admissionError = suite.documentValidationIssue().map { (category: "invalidConfiguration", message: $0) } ?? admissionError
         let total = suite.cases.count * suite.repetitions
         var completed = 0
         var results: [EvaluationSampleResult] = []
@@ -348,6 +349,7 @@ actor EvaluationRunner {
         promptTokenCounter: any EvaluationPromptInputTokenCounting,
         liveResponse: @Sendable (EvaluationLiveResponse) async -> Void
     ) async -> EvaluationSampleResult {
+        let suite = suite.effectiveSuite(for: evaluationCase)
         let started = ContinuousClock.now
         let outputTokenCounter: any EvaluationToolOutputTokenCounting =
             suite.modelConfiguration.provider == .customHTTP
@@ -647,6 +649,14 @@ actor EvaluationRunner {
             imageInputTokenCountAvailable = imageInputTokenCountAvailable
                 && prepared.imageInputTokenCountAvailable
             effectivePrompt = prepared.text
+            if evaluationCase.documentEvidence != nil, let externalJudge,
+               let admission = Self.externalDocumentJudgeAdmission(evaluationCase: evaluationCase,
+                    effectivePrompt: prepared.text, suite: suite, subjectContext: judgeSubjectContext,
+                    connection: externalJudge.connection) {
+                try EvaluationCompatibleJudgeClient.validateDocumentBudget(prompt: admission.prompt,
+                    configuration: admission.configuration, connection: externalJudge.connection,
+                    candidateReserve: suite.modelConfiguration.maximumResponseTokens * 8)
+            }
             workflow.finish(promptPreparationSpanID, metadata: ["estimatedInputTokens": String(prepared.tokenCount)])
             timing.preparationMilliseconds = Self.milliseconds(since: started)
             generationStarted = ContinuousClock.now

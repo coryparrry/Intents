@@ -33,6 +33,9 @@ function number(value, fallback, min, max, name, integer = false) {
 /** Normalizes app or legacy suites, enforcing case identity, size, repetition, and output-budget constraints before execution or persistence. */
 export function suite(value, generateId, options = {}) {
   object(value, 'suite');
+  if (Array.isArray(value.cases) && value.cases.some((item) => item && (item.documentEvidence != null || item.criteriaOverride != null || item.prompt?.format === 'document-case-v1'))) {
+    throw new Error('Document suites are supported in the native Intents app. This plugin cannot discard their source evidence or case-specific scoring.');
+  }
   if (isAppSuite(value)) return appSuite(value, generateId, options);
   only(value, ['id', 'name', 'instructions', 'cases', 'repetitions', 'temperature', 'maxTokens', 'projectId', 'revision', 'updatedAt']);
   if (!Array.isArray(value.cases) || value.cases.length < 1 || value.cases.length > 100) throw new Error('cases must contain 1 to 100 entries');

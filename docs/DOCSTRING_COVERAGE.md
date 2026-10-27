@@ -4,7 +4,7 @@ Run the source-only gate from the repository root:
 
 ```sh
 npm ci --prefix Tools/DocstringCoverage --ignore-scripts --no-audit --no-fund
-python3 -m unittest script.tests.test_docstring_coverage
+python3 -m unittest script.tests.test_docstring_coverage script.tests.test_changed_function_docs
 python3 script/docstring_coverage.py --minimum 81
 ```
 
@@ -19,6 +19,26 @@ python3 script/docstring_coverage.py --minimum 81 --path script --path website
 ```
 
 Positional paths and repeated `--path` options select repository-relative files or whole directory prefixes. All selected declarations contribute to the summary even when `--missing` restricts the listed results. JSON includes exact totals, percentages by language, and declaration paths, lines, names, kinds, and documentation flags. `--root` can inspect another Git checkout with the same methodology.
+
+## New and changed functions
+
+Every new or changed authored function must be documented, including test functions.
+The overall 81% minimum remains a separate repository-wide check; existing coverage
+cannot compensate for undocumented changes.
+
+```sh
+python3 script/changed_function_docs.py --base "$(git merge-base origin/main HEAD)"
+```
+
+The dedicated workflow fetches complete history and compares each pull request with
+its merge base. Main pushes compare with the previous commit. Missing or invalid
+base evidence fails the check. The comparison uses complete function source spans,
+including bodies, decorators/attributes, and documentation. Line-number shifts and
+fully deleted functions do not require new documentation. Renamed files and extra
+copies of existing functions count as additions. A change with no affected functions
+passes. Test sources are included in this check; generated files, vendored files,
+fixtures, and build outputs retain the existing exclusions. The check measures the
+presence of meaningful comment text; review must still assess its accuracy.
 
 ## Denominator
 
