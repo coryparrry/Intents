@@ -170,7 +170,7 @@ final class EvaluationDocumentDraftController {
         }
     }
 
-    /// Review the edited case against its retained source authority before marking it accepted and saving progress.
+    /// Review against immutable original source authority so removed passages cannot hide qualifications before acceptance.
     func reviewAndAccept(caseID: UUID, judge: EvaluationJudgeConnection?) {
         guard !isBusy, !storageBlocked, let current = draft,
               let item = current.cases.first(where: { $0.id == caseID }) else { return }
@@ -192,8 +192,10 @@ final class EvaluationDocumentDraftController {
                 try Task.checkCancellation()
                 guard operationID == id else { return }
                 var source = current.source
-                if current.importedTemplate != nil, let evidence = item.evaluationCase.documentEvidence {
-                    source = .init(name: evidence.sourceName, fileDigest: evidence.sourceDigest, passages: evidence.passages)
+                if let original = current.importedTemplate?.cases.first(where: { $0.id == caseID })?.documentEvidence {
+                    source = .init(name: original.sourceName, fileDigest: original.sourceDigest,
+                        passages: original.passages + current.source.passages.filter { !original.passages.contains($0)
+                            && item.evaluationCase.documentEvidence?.passages.contains($0) == true })
                 }
                 let review = try await reviewer(item.evaluationCase, source,
                     current.cases.filter { $0.id != caseID && !$0.discarded }.map { $0.evaluationCase.prompt })

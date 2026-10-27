@@ -80,7 +80,37 @@ import Testing
         #expect(restored.cases.map { $0.documentEvidence?.passages.count } == [1, 2])
     }
 
-    /// Verify that text import normalizes unicode and refuses oversized selection.
+    /// Keeps the immutable archived exception in review authority after an editable case removes it.
+    @Test func importedCaseCannotHideOriginalContextBeforeReview() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var value = DocumentTestFixture.example()
+        value.documentEvidence?.passages.append(.init(id: "exception", location: "Page 2", text: "Exports are disabled during maintenance."))
+        value.acceptDocumentReview()
+        var suite = DocumentTestFixture.suite(); suite.cases = [value]
+        let projectID = UUID()
+        var imported = try EvaluationDocumentArchive.draft(from: EvaluationDocumentArchive.data(for: suite), projectID: projectID)
+        imported.cases[0].evaluationCase.documentEvidence?.passages.removeLast()
+        var configured = DocumentTestFixture.semanticConnection
+        configured.capabilities.structuredOutputs = true
+        configured.capabilities.contextWindowTokens = 100_000
+        let connection = configured
+        imported.semanticJudgeID = connection.id
+        imported.semanticApprovalDigest = connection.disclosureDigest
+        let controller = EvaluationDocumentDraftController(directory: directory, projectID: projectID,
+            reviewerFactory: { _ in { candidate, source, questions in
+                try await EvaluationDocumentSemanticReviewer.review(candidate, source: source, existingQuestions: questions,
+                    resolved: .init(connection: connection, apiKey: "synthetic-test-key"),
+                    client: .init(transport: { _ in Issue.record("Missing original context must fail before transport"); throw URLError(.badURL) }))
+            } }, availability: { nil })
+        controller.draft = imported
+        controller.reviewAndAccept(caseID: value.id, judge: connection)
+        await controller.waitUntilIdle()
+        #expect(controller.error?.contains("complete original source") == true)
+        #expect(controller.draft?.acceptedCases.isEmpty == true)
+    }
+
+    /// Verify that text import normalizes Unicode and refuses oversized selections.
     @Test func textImportNormalizesUnicodeAndRefusesOversizedSelection() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
