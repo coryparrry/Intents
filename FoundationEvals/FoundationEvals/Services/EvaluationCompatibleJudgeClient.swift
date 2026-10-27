@@ -158,15 +158,16 @@ actor EvaluationCompatibleJudgeClient {
         var model: String?
     }
 
-    func reviewDocumentDraft(prompt: String, resolved: EvaluationResolvedJudgeConnection) async throws -> DocumentReviewResponse {
+    func reviewDocumentDraft(prompt: String, resolved: EvaluationResolvedJudgeConnection,
+                             stage: EvaluationDocumentSemanticReviewer.Stage) async throws -> DocumentReviewResponse {
         if let issue = resolved.connection.validationIssue { throw EvaluationCompatibleJudgeError.invalidConfiguration(issue) }
         guard resolved.connection.capabilities.structuredOutputs else {
             throw EvaluationCompatibleJudgeError.capabilityMismatch("Structured verdicts are required for document review.")
         }
         var configuration = Self.requestConfiguration(for: resolved.connection,
-            criteriaCount: EvaluationDocumentSemanticReviewer.requirements.count, documentEvidence: true)
+            criteriaCount: stage.requirements.count, documentEvidence: true)
         configuration.promptVersion = EvaluationDocumentSemanticReviewer.version
-        configuration.instructions = EvaluationDocumentSemanticReviewer.instructions
+        configuration.instructions = stage.instructions
         // This is a bounded classification task; use the connection's supported transport policy.
         if !configuration.thinking { configuration.maximumResponseTokens = 2_048 }
         try Self.validateDocumentBudget(prompt: prompt, configuration: configuration, connection: resolved.connection)

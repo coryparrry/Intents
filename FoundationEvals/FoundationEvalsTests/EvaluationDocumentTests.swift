@@ -13,7 +13,8 @@ enum DocumentTestFixture {
         return .init(policyVersion: EvaluationDocumentSemanticReviewer.version, candidateDigest: value.documentReviewDigest ?? "",
             connectionID: semanticConnection.id, connectionDigest: semanticConnection.disclosureDigest,
             modelID: "test", checks: checks, rawResponse: "fixture",
-            reviewedQuestions: EvaluationDocumentSemanticReviewer.questionDigests(existing))
+            reviewedQuestions: EvaluationDocumentSemanticReviewer.questionDigests(existing),
+            questionChecks: (1...3).map { .init(criterionIndex: $0, score: 4, rationale: "Fixture question approved") })
     }
 
     static var passage: EvaluationDocumentPassage {

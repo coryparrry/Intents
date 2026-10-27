@@ -3,6 +3,13 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct EvaluationDocumentSemanticTests {
+    @Test func compactAcceptanceFixturesDoNotRequireGeneratedCitationIDs() throws {
+        let data = Data(#"{"sources":{},"controls":[{"id":"case","sourceID":"doc","question":"Question","reference":"Answer","citations":[{"passageID":"p","quote":"Source quote"}],"existingQuestions":[],"accepted":false}]}"#.utf8)
+        let fixture = try CanonicalJSON.decode(EvaluationDocumentQualityTests.RegressionCorpus.self, from: data)
+        #expect(fixture.controls.count == 1)
+        #expect(fixture.controls[0].citations[0].quote == "Source quote")
+    }
+
     private func review(_ value: EvaluationCase, passing: Bool = true) async throws -> EvaluationDocumentSemanticReview {
         var result = try await DocumentTestFixture.semanticReviewer(value, DocumentTestFixture.source, [])
         if !passing { result.checks[0].score = 2; result.checks[0].rationale = "Missing the source restriction." }
@@ -112,7 +119,9 @@ import Testing
             }
         }
         let raw = String(decoding: try JSONSerialization.data(withJSONObject: ["requirements": checks]), as: UTF8.self)
-        #expect(try EvaluationDocumentSemanticReviewer.decode(raw, candidateDigest: "digest", connection: DocumentTestFixture.semanticConnection).accepted)
+        let uncheckedQuestion = try EvaluationDocumentSemanticReviewer.decode(raw, candidateDigest: "digest", connection: DocumentTestFixture.semanticConnection)
+        #expect(!uncheckedQuestion.accepted)
+        #expect(uncheckedQuestion.checks.count == 6)
     }
 
     @Test func editsAndPolicyChangesInvalidateApprovalAndPublication() async throws {
@@ -178,6 +187,34 @@ import Testing
         #expect(controller.error?.contains("semantic judge") == true)
     }
 
+    @Test func questionRejectionStopsBeforeReferenceCanInfluenceIt() async throws {
+        var connection = DocumentTestFixture.semanticConnection
+        connection.capabilities.structuredOutputs = true
+        connection.capabilities.contextWindowTokens = 100_000
+        let client = EvaluationCompatibleJudgeClient(transport: { request in
+            let requestBytes = try #require(request.httpBody)
+            let body = try #require(JSONSerialization.jsonObject(with: requestBytes) as? [String: Any])
+            let messages = try #require(body["messages"] as? [[String: String]])
+            #expect(messages[0]["content"] == EvaluationDocumentSemanticReviewer.questionInstructions,
+                "A rejected question must never reach the reference-review stage")
+            let checks = (1...3).map { ["criterionIndex": $0, "score": $0 == 1 ? 2 : 4,
+                "rationale": "The source gives a retention period, not post-deletion behavior."] as [String: Any] }
+            let verdict = String(decoding: try JSONSerialization.data(withJSONObject: ["requirements": checks]), as: UTF8.self)
+            let bytes = try JSONSerialization.data(withJSONObject: ["choices": [["message": ["content": verdict]]]])
+            let url = try #require(request.url)
+            let response = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            return (bytes, response)
+        })
+        let value = DocumentTestFixture.example(reviewed: false)
+        let result = try await EvaluationDocumentSemanticReviewer.review(value, source: DocumentTestFixture.source,
+            existingQuestions: [], resolved: .init(connection: connection, apiKey: "synthetic-test-key"), client: client)
+        #expect(!result.accepted)
+        #expect(result.checks.isEmpty)
+        #expect(result.rawResponse.isEmpty)
+        #expect(result.feedback.contains("post-deletion"))
+        #expect(result.questionRawResponse != nil)
+    }
+
     @Test func reviewTransportUsesIndependentPolicyAndCompleteSource() async throws {
         var connection = DocumentTestFixture.semanticConnection
         connection.capabilities.structuredOutputs = true
@@ -191,12 +228,18 @@ import Testing
             let format = try #require(body["response_format"] as? [String: Any])
             let schemaText = String(decoding: try JSONSerialization.data(withJSONObject: format, options: [.sortedKeys]), as: UTF8.self)
             #expect(schemaText.contains("\"minimum\":1"))
-            #expect(schemaText.contains("\"maximum\":6"))
             let messages = try #require(body["messages"] as? [[String: String]])
-            #expect(messages[0]["content"] == EvaluationDocumentSemanticReviewer.instructions)
+            let questionOnly = messages[0]["content"] == EvaluationDocumentSemanticReviewer.questionInstructions
+            #expect(questionOnly || messages[0]["content"] == EvaluationDocumentSemanticReviewer.instructions)
+            #expect(schemaText.contains(questionOnly ? "\"maximum\":3" : "\"maximum\":6"))
             #expect(messages[1]["content"]?.contains(DocumentTestFixture.passage.text) == true)
             #expect(messages[1]["content"]?.contains("Existing question") == true)
-            let checks = (1...6).map { ["criterionIndex": $0, "score": 4, "rationale": "Supported"] as [String: Any] }
+            if questionOnly {
+                let payload = try #require(messages[1]["content"]?.data(using: .utf8))
+                let fields = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
+                #expect(Set(fields.keys) == ["source", "question", "existingQuestions", "requirements"])
+            }
+            let checks = (1...(questionOnly ? 3 : 6)).map { ["criterionIndex": $0, "score": 4, "rationale": "Supported"] as [String: Any] }
             let verdict = String(decoding: try JSONSerialization.data(withJSONObject: ["requirements": checks]), as: UTF8.self)
             let data = try JSONSerialization.data(withJSONObject: ["choices": [["message": ["content": verdict]]], "model": "served-test"])
             let url = try #require(request.url)
@@ -211,6 +254,8 @@ import Testing
             existingQuestions: ["Existing question"], resolved: .init(connection: connection, apiKey: "synthetic-test-key"), client: client)
         #expect(result.matches(value))
         #expect(result.servedModel == "served-test")
+        #expect(result.questionServedModel == "served-test")
+        #expect(result.questionChecks?.count == 3)
         value.documentEvidence?.passages.removeLast()
         await #expect(throws: (any Error).self) {
             try await EvaluationDocumentSemanticReviewer.review(value, source: source,

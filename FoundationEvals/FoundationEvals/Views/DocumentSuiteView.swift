@@ -160,6 +160,7 @@ struct DocumentSuiteView: View {
             if let judge = semanticJudge {
                 Text("Each draft is checked against the complete extracted document by \(judge.modelID) at \(judge.baseURL). Rejected drafts are regenerated up to twice. Provider charges may apply.")
                     .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("Document semantic judge disclosure")
                 Toggle("Allow sending this document, draft answers, rubrics, and prior questions to this judge", isOn: Binding(
                     get: { controller.draft?.semanticApprovalDigest == judge.disclosureDigest },
                     set: { controller.draft?.semanticApprovalDigest = $0 ? judge.disclosureDigest : nil; controller.persist() }))

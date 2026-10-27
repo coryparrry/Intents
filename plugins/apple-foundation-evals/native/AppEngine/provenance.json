@@ -164,19 +164,19 @@
     },
     {
       "bundled": "EvaluationJudge.swift",
-      "bundledSHA256": "c2c768c3d9906f438eab03833ec89a51d22d0aba3f69217b14cbc0dc23612e2f",
+      "bundledSHA256": "d8b9c9143377ba275f32eba9e6b3aabb933db4f426c85760579b2164b015c200",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present",
       "canonicalSource": "plugins/apple-foundation-evals/native/AppEngine/EvaluationJudge.swift",
-      "canonicalSHA256": "c2c768c3d9906f438eab03833ec89a51d22d0aba3f69217b14cbc0dc23612e2f",
+      "canonicalSHA256": "d8b9c9143377ba275f32eba9e6b3aabb933db4f426c85760579b2164b015c200",
       "formerSource": "FoundationEvals/FoundationEvals/Services/EvaluationJudge.swift",
       "formerSourceSHA256": "63d35b0dc06cc744c849f1591e980bfd5d544c2b8c17b56b4a4b968ed5ab08d6"
     },
     {
       "bundled": "EvaluationJudgeTrace.swift",
-      "bundledSHA256": "1683ec1efb54a1f0f84fddd4c7c1b93656f1ed1143a8b565858e5b394b374b34",
+      "bundledSHA256": "162803847180db0bcf4a2da1173f984348825116b911211bba9cc7df3f74355f",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present",
       "canonicalSource": "plugins/apple-foundation-evals/native/AppEngine/EvaluationJudgeTrace.swift",
-      "canonicalSHA256": "1683ec1efb54a1f0f84fddd4c7c1b93656f1ed1143a8b565858e5b394b374b34",
+      "canonicalSHA256": "162803847180db0bcf4a2da1173f984348825116b911211bba9cc7df3f74355f",
       "formerSource": "FoundationEvals/FoundationEvals/Models/EvaluationJudgeTrace.swift",
       "formerSourceSHA256": "412ad6f59060d2c151641d5f1fa0182fa4b01a10f1dba88c3bcb170892750767"
     },

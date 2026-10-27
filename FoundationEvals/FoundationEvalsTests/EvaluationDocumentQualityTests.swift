@@ -244,6 +244,41 @@ import Testing
     func semanticControlsRejectBadDrafts() async throws {
         let path = try #require(ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"])
         let fixtures = try CanonicalJSON.decode([SemanticControl].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        try await reviewSemanticControls(fixtures)
+    }
+
+    struct RegressionCorpus: Decodable {
+        struct Control: Decodable {
+            struct Citation: Decodable { var passageID: String; var quote: String }
+            var id: String; var sourceID: String; var question: String; var reference: String
+            var citations: [Citation]; var existingQuestions: [String]; var accepted: Bool
+        }
+        var sources: [String: EvaluationDocumentSource]
+        var controls: [Control]
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil))
+    func knownFalseApprovalsAreRejected() async throws {
+        let path = try #require(ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_ACCEPTANCE_CORPUS"])
+        let corpus = try CanonicalJSON.decode(RegressionCorpus.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        let directory = try output()
+        try recordRuntime(directory: directory)
+        let reviewer = try await EvaluationDocumentSemanticReviewer.configured(try judgeConfiguration())
+        struct Result: Encodable { var id: String; var expectedAcceptance: Bool; var candidate: EvaluationCase; var review: EvaluationDocumentSemanticReview; var correct: Bool }
+        for control in corpus.controls {
+            let source = try #require(corpus.sources[control.sourceID])
+            var candidate = EvaluationCase(name: control.id, prompt: control.question, expected: control.reference)
+            candidate.criteriaOverride = [EvaluationDocumentGenerator.criterion(for: control.reference, question: control.question)]
+            candidate.documentEvidence = .init(sourceName: source.name, sourceDigest: source.fileDigest,
+                passages: source.passages, citations: control.citations.map { .init(passageID: $0.passageID, quote: $0.quote) }, questionType: "Direct fact")
+            let review = try await reviewer(candidate, source, control.existingQuestions)
+            let correct = review.matches(candidate) == control.accepted
+            try append(Result(id: control.id, expectedAcceptance: control.accepted, candidate: candidate, review: review, correct: correct), name: "acceptance-controls.jsonl", directory: directory)
+            #expect(correct, "Historical false-approval control \(control.id): \(review.feedback)")
+        }
+    }
+
+    private func reviewSemanticControls(_ fixtures: [SemanticControl]) async throws {
         let directory = try output()
         try recordRuntime(directory: directory)
         let reviewer = try await EvaluationDocumentSemanticReviewer.configured(try judgeConfiguration())

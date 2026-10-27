@@ -8,7 +8,7 @@ Build success, matching quotes, and successful model requests do not establish a
 `Verification/Automation/Fixtures/DocumentQuality/` retains the inputs consumed by
 `script/run_document_quality.sh`: the 12-document corpus, scoring pilot and holdout,
 current repair controls, focused generation regressions, follow-up scoring controls,
-and 22 semantic controls. Superseded fixture versions and recorded campaign output
+22 original semantic controls, and the five historical false approvals paired with five positive controls. Superseded fixture versions and recorded campaign output
 remain in Git history rather than the feature diff. Do not alter expected outcomes
 to make a failed implementation pass.
 
@@ -19,6 +19,7 @@ logs, source copies, PDFs, model responses, and result bundles outside tracked s
 ```bash
 bash script/run_document_quality.sh unit /private/tmp/document-unit
 bash script/run_document_quality.sh semantic /private/tmp/document-semantic-controls
+bash script/run_document_quality.sh acceptance /private/tmp/document-acceptance-regressions
 bash script/run_document_quality.sh focus /private/tmp/document-focused-regressions
 bash script/run_document_quality.sh generation /private/tmp/document-generation-run
 bash script/run_document_quality.sh controls /private/tmp/document-scoring-run
@@ -55,15 +56,28 @@ cannot qualify the full corpus.
 
 The last broad run stopped with exit 75 after 100 admitted drafts and 124 passage
 attempts. Automated review found 95 acceptable without edits. No terminal summary
-was produced, so this source is **not qualified**. Full scoring requalification,
-updated UI tests, and the final distributable build remain unfinished.
+was produced, so this source is **not qualified**. A fresh broad-corpus run, full scoring requalification, and final distributable release checks remain unfinished.
 
-Five known false approvals remain: attachment-retention timing, a circular sequence
+The five historical false approvals motivating the question-only check were: attachment-retention timing, a circular sequence
 number question, two duplicate warehouse dispatch/cancellation questions, and a
-question confusing quote matching with factual correctness. An independent
-question-answerability stage has not been implemented or validated.
+question confusing quote matching with factual correctness. They are frozen in `acceptance-regressions.json` with their original source and question history. The question-only stage must reject them before reference review; positive controls prevent rejecting their valid corrected or standalone forms. Live replay results are recorded separately from broad-corpus qualification.
 
 The original [checkpoint](https://github.com/coryparrry/Intents/blob/880b29ec8778155fa47df487061ed442163ca601/Verification/DocumentSuiteQuality/PR_CHECKPOINT.md)
 and [five findings with recorded evidence](https://github.com/coryparrry/Intents/blob/880b29ec8778155fa47df487061ed442163ca601/Verification/DocumentSuiteQuality/2026-10-27/v19-generation-stopped/automated-review.md)
 are preserved at the pre-cleanup commit. Their historical test results do not
 qualify later source changes.
+
+
+## Acceptance-fix verification
+
+The v6 question-only stage rejects all five historical failures before reference
+review. All five positive controls pass. The original 22 semantic controls also
+pass with the same production judge hashes, semantic policy, runtime, and original
+control helper. The first combined command passed those 22, then stopped on a
+compact-fixture decoding error; after correcting the loader, the ten-control
+replay completed successfully. These are targeted checks, not a completed combined
+campaign or a new broad-corpus qualification.
+
+The current source also passes 92 focused document/judge Swift tests, 20 Python
+report-integrity tests, 7 shared-source checks, 42 plugin compatibility/parity tests,
+and all 3 document UI flows. Light and dark source-review screenshots were inspected.

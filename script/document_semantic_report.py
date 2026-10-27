@@ -33,12 +33,22 @@ def connection_digest(connection):
 
 
 def validate_review(review, case, connection, required_acceptance=True):
-    assert review['policyVersion'] == 'document-semantic-v5', 'Wrong semantic policy'
+    assert review['policyVersion'] == 'document-semantic-v6', 'Wrong semantic policy'
     assert review['candidateDigest'] == candidate_digest(case), 'Stale semantic receipt'
     assert review['connectionID'].lower() == connection['id'].lower(), 'Wrong semantic connection'
     assert review['modelID'] == connection['modelID'], 'Wrong semantic model'
     assert review['connectionDigest'] == connection_digest(connection), 'Semantic endpoint or policy changed'
+    question_checks = sorted(review.get('questionChecks', []), key=lambda c: c['criterionIndex'])
+    assert len(question_checks) == 3 and [c['criterionIndex'] for c in question_checks] == [1, 2, 3], 'Incomplete question-only verdict'
+    assert all(type(c['score']) is int and 1 <= c['score'] <= 4 and c['rationale'].strip() for c in question_checks), 'Invalid question checks'
+    question_raw = json.loads(review['questionRawResponse'])
+    assert sorted(question_raw['requirements'], key=lambda c: c['criterionIndex']) == question_checks, 'Question raw verdict mismatch'
+    question_accepted = all(c['score'] == 4 for c in question_checks)
     checks = sorted(review['checks'], key=lambda c: c['criterionIndex'])
+    if not question_accepted:
+        assert not checks and not review['rawResponse'], 'Rejected question reached reference review'
+        assert not required_acceptance, 'Question-only verdict rejected the draft'
+        return False
     assert len(checks) == 6 and [c['criterionIndex'] for c in checks] == list(range(1, 7)), 'Incomplete semantic verdict'
     assert all(type(c['score']) is int and 1 <= c['score'] <= 4 and c['rationale'].strip() for c in checks), 'Invalid semantic checks'
     raw = json.loads(review['rawResponse'])
@@ -46,6 +56,25 @@ def validate_review(review, case, connection, required_acceptance=True):
     accepted = all(c['score'] == 4 for c in checks)
     assert accepted == required_acceptance, 'Semantic verdict disagrees with expected outcome'
     return accepted
+
+
+def validate_acceptance_controls(run, controls_path, connection):
+    contract = json.loads((controls_path / 'acceptance-control-contract.json').read_text())
+    assert contract == json.loads((run / 'acceptance-control-contract.json').read_text()), 'Frozen acceptance controls changed'
+    fixtures = contract['controls']
+    rows = [json.loads(line) for line in (controls_path / 'acceptance-controls.jsonl').read_text().splitlines() if line.strip()]
+    assert len(rows) == len(fixtures) == 10, 'Incomplete historical acceptance controls'
+    assert len({r['id'] for r in rows}) == len(rows), 'Duplicate acceptance controls'
+    for fixture, row in zip(fixtures, rows):
+        assert row['id'] == fixture['id'] and row['correct'] and row['expectedAcceptance'] == fixture['accepted'], 'Wrong acceptance-control result'
+        case = row['candidate']
+        source = contract['sources'][fixture['sourceID']]
+        evidence = case['documentEvidence']
+        assert prompt_text(case) == fixture['question'] and case['expected'] == fixture['reference'], 'Acceptance candidate changed'
+        assert evidence['passages'] == source['passages'] and evidence['sourceDigest'] == source['fileDigest'], 'Acceptance source changed'
+        assert [dict(passageID=c['passageID'], quote=c['quote']) for c in evidence['citations']] == fixture['citations'], 'Acceptance citations changed'
+        assert row['review'].get('reviewedQuestions', []) == question_digests(fixture['existingQuestions']), 'Acceptance sibling context changed'
+        validate_review(row['review'], case, connection, fixture['accepted'])
 
 
 def semantic_metrics(run, attempts, controls_path=None):
@@ -89,5 +118,6 @@ def semantic_metrics(run, attempts, controls_path=None):
         for fixture, row in zip(fixtures, rows):
             assert row['id'] == fixture['id'] and row['correct'] and row['expectedAcceptance'] == fixture['accepted']
             validate_review(row['review'], fixture['candidate'], connection, fixture['accepted'])
+        validate_acceptance_controls(run, controls_path, connection)
         result['semantic_controls_gate_passed'] = (controls_path / 'exit-code.txt').read_text().strip() == '0'
     return result

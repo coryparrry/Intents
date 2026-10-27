@@ -30,7 +30,9 @@ final class DocumentSuiteUITests: XCTestCase {
     @MainActor private func reviewAndCreate(style: String) throws {
         let app = try openDraft(style: style, semanticApproved: true)
         let storage = try XCTUnwrap(self.storage)
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "https://example.invalid/v1")).firstMatch.exists, app.debugDescription)
+        let disclosure = app.staticTexts["Document semantic judge disclosure"]
+        XCTAssertTrue(disclosure.exists, app.debugDescription)
+        XCTAssertTrue((disclosure.value as? String ?? disclosure.label).contains("https://example.invalid/v1"), app.debugDescription)
         XCTAssertFalse(app.buttons["Resume generation"].isEnabled)
         let create = app.buttons["Create document suite"]
         XCTAssertFalse(create.isEnabled)
@@ -115,9 +117,11 @@ final class DocumentSuiteUITests: XCTestCase {
             let digest = SHA256.hash(data: try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]))
                 .map { String(format: "%02x", $0) }.joined()
             let checks: [[String: Any]] = (1...6).map { ["criterionIndex": $0, "score": 4, "rationale": "UI-only approved fixture"] }
-            draftCase["semanticReview"] = ["policyVersion": "document-semantic-v5", "candidateDigest": digest,
+            let questionChecks: [[String: Any]] = (1...3).map { ["criterionIndex": $0, "score": 4, "rationale": "UI-only independent question fixture"] }
+            draftCase["semanticReview"] = ["policyVersion": "document-semantic-v6", "candidateDigest": digest,
                 "connectionID": judgeID, "connectionDigest": "ui-fixture", "modelID": "ui-fixture",
-                "checks": checks, "reviewedQuestions": [],
+                "checks": checks, "reviewedQuestions": [], "questionChecks": questionChecks,
+                "questionRawResponse": String(decoding: try JSONSerialization.data(withJSONObject: ["requirements": questionChecks]), as: UTF8.self),
                 "rawResponse": String(decoding: try JSONSerialization.data(withJSONObject: ["requirements": checks]), as: UTF8.self)]
         }
         var draft: [String: Any] = ["id": UUID().uuidString, "formatVersion": 1, "projectID": projectID,

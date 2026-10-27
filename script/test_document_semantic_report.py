@@ -3,7 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from document_semantic_report import candidate_digest, connection_digest, validate_review, semantic_metrics
+from document_semantic_report import candidate_digest, connection_digest, validate_review, validate_acceptance_controls, semantic_metrics
 
 
 class SemanticEvidenceTests(unittest.TestCase):
@@ -15,10 +15,27 @@ class SemanticEvidenceTests(unittest.TestCase):
                          expected='In read-only mode.', criteriaOverride=['Identifies read-only mode.'],
                          documentEvidence=dict(passages=[dict(id='p', text='No autosave in read-only mode.')]))
         checks = [dict(criterionIndex=i, score=4, rationale='Source supports it') for i in range(1, 7)]
-        self.review = dict(policyVersion='document-semantic-v5', candidateDigest=candidate_digest(self.case),
+        question_checks = [dict(criterionIndex=i, score=4, rationale='Independently answerable and distinct') for i in range(1, 4)]
+        self.review = dict(policyVersion='document-semantic-v6', candidateDigest=candidate_digest(self.case),
                            connectionID='connection', connectionDigest=connection_digest(self.connection),
                            modelID='reviewer', checks=checks, reviewedQuestions=[],
-                           rawResponse=json.dumps(dict(requirements=checks)))
+                           rawResponse=json.dumps(dict(requirements=checks)), questionChecks=question_checks,
+                           questionRawResponse=json.dumps(dict(requirements=question_checks)))
+
+    def test_reference_approval_cannot_replace_question_only_approval(self):
+        for field in ['questionChecks', 'questionRawResponse']:
+            changed = copy.deepcopy(self.review)
+            changed.pop(field)
+            with self.assertRaises((AssertionError, KeyError)):
+                validate_review(changed, self.case, self.connection)
+        changed = copy.deepcopy(self.review)
+        changed['questionChecks'][0]['score'] = 2
+        changed['questionRawResponse'] = json.dumps(dict(requirements=changed['questionChecks']))
+        changed['checks'] = []
+        changed['rawResponse'] = ''
+        self.assertFalse(validate_review(changed, self.case, self.connection, False))
+        with self.assertRaises(AssertionError):
+            validate_review(changed, self.case, self.connection)
 
     def test_acceptance_is_bound_to_all_scoring_inputs(self):
         validate_review(self.review, self.case, self.connection)
@@ -29,6 +46,28 @@ class SemanticEvidenceTests(unittest.TestCase):
             elif field == 'criteriaOverride': changed[field][0] += ' changed'
             else: changed[field] += ' changed'
             with self.assertRaises(AssertionError): validate_review(self.review, changed, self.connection)
+
+    def test_historical_controls_require_every_result_and_exact_question_history(self):
+        case = copy.deepcopy(self.case)
+        case['documentEvidence'].update(sourceDigest='source', citations=[dict(passageID='p', quote='No autosave')])
+        review = dict(self.review, candidateDigest=candidate_digest(case))
+        fixture = dict(sourceID='doc', question=case['prompt']['text'], reference=case['expected'],
+                       citations=case['documentEvidence']['citations'], existingQuestions=[], accepted=True)
+        contract = dict(sources=dict(doc=dict(passages=case['documentEvidence']['passages'], fileDigest='source')),
+                        controls=[dict(fixture, id=str(i)) for i in range(10)])
+        rows = [dict(id=str(i), candidate=case, review=review, expectedAcceptance=True, correct=True) for i in range(10)]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / 'acceptance-control-contract.json').write_text(json.dumps(contract))
+            result = path / 'acceptance-controls.jsonl'
+            result.write_text('\n'.join(map(json.dumps, rows)))
+            validate_acceptance_controls(path, path, self.connection)
+            result.write_text('\n'.join(map(json.dumps, rows[:-1])))
+            with self.assertRaises(AssertionError): validate_acceptance_controls(path, path, self.connection)
+            changed = copy.deepcopy(rows)
+            changed[0]['review']['reviewedQuestions'] = ['wrong-context']
+            result.write_text('\n'.join(map(json.dumps, changed)))
+            with self.assertRaises(AssertionError): validate_acceptance_controls(path, path, self.connection)
 
     def test_raw_verdict_cannot_be_relabelled_as_acceptance(self):
         changed = copy.deepcopy(self.review)
