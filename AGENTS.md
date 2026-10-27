@@ -22,7 +22,7 @@
 
 | Affected area | Local verification |
 |---|---|
-| Function declarations or documentation detector | `npm ci --prefix Tools/DocstringCoverage --ignore-scripts --no-audit --no-fund`, then `python3 script/docstring_coverage.py --minimum 81` and `python3 script/changed_function_docs.py --base "$(git merge-base origin/main HEAD)"` (includes test functions); run `python3 -m unittest script.tests.test_docstring_coverage` when changing the detector. |
+| Function declarations or documentation detector | `npm ci --prefix Tools/DocstringCoverage --ignore-scripts --no-audit --no-fund`, then `python3 script/docstring_coverage.py --minimum 81` and `python3 script/changed_function_docs.py --base "$(git merge-base origin/main HEAD)"` (includes test functions); run `python3 -m unittest script.tests.test_docstring_coverage script.tests.test_changed_function_docs` when changing either detector. |
 | Python tools | Run the affected `script.tests.test_*` modules with `python3 -m unittest`; use the router's selection. Check example syntax with `python3 -m compileall -q examples` when changing examples. |
 | Shell scripts | `shellcheck script/*.sh` and the affected script regression tests. |
 | GitHub workflows or CI tooling | Run the affected routing, workflow, gate, and runner contract tests. Validate workflow YAML with the pinned command from CI: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color -ignore 'label "xcode-27" is unknown'`. |
