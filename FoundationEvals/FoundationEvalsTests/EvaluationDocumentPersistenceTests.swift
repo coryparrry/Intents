@@ -42,7 +42,7 @@ import Testing
         await controller.waitUntilIdle()
         #expect(controller.draft?.issues == draft.issues)
         #expect(controller.draft?.completedBatchIDs == draft.completedBatchIDs)
-        let saved = try #require(EvaluationDocumentDraftStorage.load(from: directory.appending(path: "DocumentDrafts/\(projectID.uuidString).json")))
+        let saved = try #require(try EvaluationDocumentDraftStorage.load(from: directory.appending(path: "DocumentDrafts/\(projectID.uuidString).json")))
         #expect(saved.issues == draft.issues)
         #expect(saved.completedBatchIDs == draft.completedBatchIDs)
     }
