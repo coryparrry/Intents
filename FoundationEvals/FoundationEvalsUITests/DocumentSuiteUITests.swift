@@ -18,7 +18,7 @@ final class DocumentSuiteUITests: XCTestCase {
     /// Verify that source review and accepted-suite creation work in dark appearance.
     @MainActor func testReviewAndCreateDocumentSuiteInDarkMode() throws { try reviewAndCreate(style: "Dark") }
 
-    /// Verify that unchecked draft cannot be accepted without an authorized judge.
+    /// Keep the acceptance action unavailable until unchecked evidence has an explicitly authorized reviewer.
     @MainActor func testUncheckedDraftCannotBeAcceptedWithoutAnAuthorizedJudge() throws {
         let app = try openDraft(style: "Light", semanticApproved: false)
         let create = app.buttons["Create document suite"]

@@ -3,7 +3,7 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct EvaluationDocumentSemanticTests {
-    /// Verify that compact acceptance fixtures do not require generated citation i ds.
+    /// Keep frozen controls independent of incidental generated citation identifiers while preserving factual evidence.
     @Test func compactAcceptanceFixturesDoNotRequireGeneratedCitationIDs() throws {
         let data = Data(#"{"sources":{},"controls":[{"id":"case","sourceID":"doc","question":"Question","reference":"Answer","citations":[{"passageID":"p","quote":"Source quote"}],"existingQuestions":[],"accepted":false}]}"#.utf8)
         let fixture = try CanonicalJSON.decode(EvaluationDocumentQualityTests.RegressionCorpus.self, from: data)
@@ -18,7 +18,7 @@ import Testing
         return result
     }
 
-    /// Verify that rejected draft is regenerated with feedback before it can surface.
+    /// Require a failed review to inform a corrected generation attempt before exposing the candidate for acceptance.
     @Test func rejectedDraftIsRegeneratedWithFeedbackBeforeItCanSurface() async throws {
         let fixture = SemanticSequence()
         var events: [EvaluationDocumentSemanticAttempt] = []
@@ -36,7 +36,7 @@ import Testing
         #expect(result.review?.matches(acceptedCandidate) == true)
     }
 
-    /// Verify that rejection limit is bounded and never returns the last bad draft.
+    /// Bound correction work and refuse to surface a rejected candidate when the attempt budget is exhausted.
     @Test func rejectionLimitIsBoundedAndNeverReturnsTheLastBadDraft() async throws {
         let value = DocumentTestFixture.example(reviewed: false)
         let rejected = try await review(value, passing: false)
@@ -49,7 +49,7 @@ import Testing
         #expect(events.allSatisfy { $0.outcome == "rejected" })
     }
 
-    /// Verify that invalid quotes receive bounded correction before semantic review.
+    /// Reject unsupported quotations locally before spending a semantic review request on the candidate.
     @Test func invalidQuotesReceiveBoundedCorrectionBeforeSemanticReview() async throws {
         let value = DocumentTestFixture.example(reviewed: false)
         let invalid = EvaluationDocumentGenerator.InvalidDraft(candidate: .init(name: "Bad quote",
@@ -79,7 +79,7 @@ import Testing
         #expect(events.allSatisfy { $0.outcome == "validation_rejected" })
     }
 
-    /// Verify that provider failure and mismatched verdicts cannot accept or regenerate.
+    /// Fail closed on transport errors and stale receipts instead of accepting or silently retrying untrusted evidence.
     @Test func providerFailureAndMismatchedVerdictsCannotAcceptOrRegenerate() async throws {
         let value = DocumentTestFixture.example(reviewed: false)
         var mismatched = try await review(value)
@@ -99,7 +99,7 @@ import Testing
         }
     }
 
-    /// Verify that cancellation after review cannot publish a late acceptance.
+    /// Keep a late reviewer response from committing acceptance after the operation has been cancelled.
     @Test func cancellationAfterReviewCannotPublishALateAcceptance() async throws {
         let value = DocumentTestFixture.example(reviewed: false)
         let accepted = try await review(value)
@@ -114,7 +114,7 @@ import Testing
         await #expect(throws: CancellationError.self) { _ = try await operation.value }
     }
 
-    /// Verify that strict verdict parsing rejects missing duplicate invalid and blank checks.
+    /// Require complete, uniquely indexed scores and rationales so malformed responses cannot approve a draft.
     @Test func strictVerdictParsingRejectsMissingDuplicateInvalidAndBlankChecks() throws {
         let checks = (1...6).map { ["criterionIndex": $0, "score": 4, "rationale": "Source supports it"] as [String: Any] }
         for variant in [Array(checks.dropLast()), checks + [checks[0]],
@@ -132,7 +132,7 @@ import Testing
         #expect(uncheckedQuestion.checks.count == 6)
     }
 
-    /// Verify that edits and policy changes invalidate approval and publication.
+    /// Bind approval to current scoring content and policy so a stale receipt cannot authorize suite publication.
     @Test func editsAndPolicyChangesInvalidateApprovalAndPublication() async throws {
         let original = DocumentTestFixture.example()
         let accepted = try await review(original)
@@ -160,7 +160,7 @@ import Testing
         #expect(!stale.matches(original))
     }
 
-    /// Verify that restoring an excluded sibling requires a new distinctness check.
+    /// Recheck question history when a previously excluded sibling rejoins the draft.
     @Test func restoringAnExcludedSiblingRequiresANewDistinctnessCheck() async throws {
         let first = DocumentTestFixture.example()
         var second = first; second.id = UUID(); second.prompt = "Which documented role can export?"
@@ -184,7 +184,7 @@ import Testing
         #expect(draft.acceptedCases.count == 2)
     }
 
-    /// Verify that no selected judge fails closed before generation.
+    /// Refuse generation before model work begins when no semantic reviewer has been explicitly selected.
     @Test func noSelectedJudgeFailsClosedBeforeGeneration() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -198,7 +198,7 @@ import Testing
         #expect(controller.error?.contains("semantic judge") == true)
     }
 
-    /// Verify that question rejection stops before reference can influence it.
+    /// Ensure the proposed answer cannot rescue an unsupported question or trigger a later reference-stage request.
     @Test func questionRejectionStopsBeforeReferenceCanInfluenceIt() async throws {
         var connection = DocumentTestFixture.semanticConnection
         connection.capabilities.structuredOutputs = true
@@ -227,7 +227,7 @@ import Testing
         #expect(result.questionRawResponse != nil)
     }
 
-    /// Verify that review transport uses independent policy and complete source.
+    /// Keep source authority and review instructions independent from candidate text sent through the transport.
     @Test func reviewTransportUsesIndependentPolicyAndCompleteSource() async throws {
         var connection = DocumentTestFixture.semanticConnection
         connection.capabilities.structuredOutputs = true

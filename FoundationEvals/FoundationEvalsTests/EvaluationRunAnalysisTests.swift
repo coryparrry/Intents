@@ -254,7 +254,7 @@ struct EvaluationRunAnalysisTests {
         #expect(comparison.caseComparisons.allSatisfy { $0.change == .notComparable })
     }
 
-    /// Verify that changed case rubric cannot create a compatible baseline.
+    /// Prevent changed scoring requirements from producing misleading baseline deltas or automatic compatibility.
     @Test func changedCaseRubricCannotCreateACompatibleBaseline() {
         var changed = EvaluationCase(name: "Changed rubric", prompt: "Prompt", expected: "Expected")
         changed.criteriaOverride = ["Original requirement"]
@@ -275,7 +275,7 @@ struct EvaluationRunAnalysisTests {
         #expect(RunBaselineSelection.defaultID(for: current, candidates: [baseline]) == nil)
     }
 
-    /// Verify that identical effective case rubric remains comparable.
+    /// Preserve valid comparisons when an explicit override and the fallback rubric express identical requirements.
     @Test func identicalEffectiveCaseRubricRemainsComparable() {
         let value = EvaluationCase(name: "Case", prompt: "Prompt", expected: "Expected")
         let baseline = makeRun(cases: [value], scoringMode: .modelJudge,

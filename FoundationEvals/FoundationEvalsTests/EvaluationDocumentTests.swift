@@ -43,7 +43,7 @@ enum DocumentTestFixture {
 }
 
 struct EvaluationDocumentTests {
-    /// Verify that source review tracks content but not display names.
+    /// Allow cosmetic renaming while requiring fresh approval for substantive changes to scoring evidence.
     @Test func sourceReviewTracksContentButNotDisplayNames() {
         var value = DocumentTestFixture.example()
         #expect(value.hasReviewedDocument)
@@ -60,7 +60,7 @@ struct EvaluationDocumentTests {
         #expect(!value.hasReviewedDocument)
     }
 
-    /// Verify that versioned cases round trip and legacy readers refuse them.
+    /// Preserve document evidence on current readers and prevent older formats from silently dropping it.
     @Test func versionedCasesRoundTripAndLegacyReadersRefuseThem() throws {
         struct OldCase: Decodable { var prompt: String; var expected: String }
         let value = DocumentTestFixture.example()
@@ -78,7 +78,7 @@ struct EvaluationDocumentTests {
         #expect(throws: (any Error).self) { try CanonicalJSON.decode(EvaluationCase.self, from: stripped) }
     }
 
-    /// Verify that citation can move to added context without losing review integrity.
+    /// Permit explicit context additions while invalidating acceptance when a citation’s factual target changes.
     @Test func citationCanMoveToAddedContextWithoutLosingReviewIntegrity() {
         var value = DocumentTestFixture.example()
         let additional = EvaluationDocumentPassage(id: "page-7-1", location: "Page 7", text: "Workspace exports require the owner role.")
@@ -97,7 +97,7 @@ struct EvaluationDocumentTests {
         #expect(draft.representedPassageIDs.isEmpty)
     }
 
-    /// Verify that criteria fallback and scoring identity include source and overrides.
+    /// Bind scoring identity to effective case criteria and retained source while preserving the shared-rubric fallback.
     @Test func criteriaFallbackAndScoringIdentityIncludeSourceAndOverrides() throws {
         var suite = DocumentTestFixture.suite()
         let ordinary = EvaluationCase(name: "Manual", prompt: "Question", expected: "Answer")
@@ -114,7 +114,7 @@ struct EvaluationDocumentTests {
         #expect(suite.documentValidationIssue() != nil)
     }
 
-    /// Verify that quotes must resolve and unsafe execution modes are rejected.
+    /// Require exact retained-source support and refuse execution configurations that cannot preserve document guarantees.
     @Test func quotesMustResolveAndUnsafeExecutionModesAreRejected() {
         var suite = DocumentTestFixture.suite()
         #expect(suite.documentValidationIssue() == nil)
@@ -131,7 +131,7 @@ struct EvaluationDocumentTests {
         #expect(suite.cases[0].documentValidationIssue != nil)
     }
 
-    /// Verify that answering gets complete source but no grading fields.
+    /// Give the answering model factual context without leaking the reference answer or grading rubric.
     @Test func answeringGetsCompleteSourceButNoGradingFields() async throws {
         var suite = DocumentTestFixture.suite()
         suite.cases[0].expected = "REFERENCE_ONLY"
@@ -150,7 +150,7 @@ struct EvaluationDocumentTests {
         #expect(judge.contains(DocumentTestFixture.passage.text))
     }
 
-    /// Verify that local judge overflow is rejected even when answering fits.
+    /// Check judge capacity independently so successful answering admission cannot hide scoring-context overflow.
     @Test func localJudgeOverflowIsRejectedEvenWhenAnsweringFits() async throws {
         var suite = DocumentTestFixture.suite()
         suite.judgeConfiguration.mode = .connection
@@ -163,7 +163,7 @@ struct EvaluationDocumentTests {
         }
     }
 
-    /// Verify that mixed exact and semantic cases only admit the required judge.
+    /// Admit a semantic judge only for requirements that cannot be resolved through literal matching.
     @Test func mixedExactAndSemanticCasesOnlyAdmitTheRequiredJudge() async throws {
         var suite = DocumentTestFixture.suite()
         suite.cases[0].criteriaOverride = ["The response is exactly READY."]
@@ -176,7 +176,7 @@ struct EvaluationDocumentTests {
             contextSize: 4_096, tools: [], tokenCounter: DocumentTokenCounter(oversizedJudge: true))
     }
 
-    /// Verify that isolated judge admission does not require the combined rubric to fit.
+    /// Size each isolated scoring request against its actual payload instead of an unused combined rubric.
     @Test func isolatedJudgeAdmissionDoesNotRequireTheCombinedRubricToFit() async throws {
         var suite = DocumentTestFixture.suite()
         suite.cases[0].criteriaOverride = ["First unique requirement", "Second unique requirement"]
@@ -189,7 +189,7 @@ struct EvaluationDocumentTests {
         #expect(try await counter.tokenCount(for: Prompt(combined)) == 10_000)
     }
 
-    /// Verify that override entries cannot introduce extra criteria.
+    /// Keep a per-case override within the supported requirement count and prevent hidden rubric expansion.
     @Test(arguments: ["\n", "\r\n", "\u{2028}"])
     func overrideEntriesCannotIntroduceExtraCriteria(newline: String) {
         var suite = DocumentTestFixture.suite()
@@ -198,7 +198,7 @@ struct EvaluationDocumentTests {
         #expect(suite.documentValidationIssue() != nil)
     }
 
-    /// Verify that external judge requires declared capacity and preserves evidence.
+    /// Require explicit external capacity before sending retained source and keep the evidence available for scoring.
     @Test func externalJudgeRequiresDeclaredCapacityAndPreservesEvidence() throws {
         var connection = EvaluationJudgeConnection(id: UUID(), name: "Test", kind: .localCompatible,
             baseURL: "http://127.0.0.1:1234", modelID: "fixture")
@@ -213,7 +213,7 @@ struct EvaluationDocumentTests {
         }
     }
 
-    /// Verify that paraphrased questions with identical facts are duplicates.
+    /// Reject repeated factual targets even when a model changes the question’s wording.
     @Test func paraphrasedQuestionsWithIdenticalFactsAreDuplicates() {
         let original = DocumentTestFixture.suite().cases[0]
         var reworded = original
@@ -231,7 +231,7 @@ struct EvaluationDocumentTests {
         #expect(!EvaluationDocumentGenerator.repeatsFact(reworded, among: [original]))
     }
 
-    /// Verify that generated quotes recover only original whitespace.
+    /// Recover the original source span across wrapping differences without accepting reworded quotations.
     @Test func generatedQuotesRecoverOnlyOriginalWhitespace() {
         let source = "Records under an\nactive hold stay for 30 days."
         #expect(EvaluationDocumentGenerator.sourceQuote("Records under an active hold stay for 30 days.", in: source) == source)
@@ -242,7 +242,7 @@ struct EvaluationDocumentTests {
         #expect(EvaluationDocumentGenerator.sourceQuote(" \n", in: source) == nil)
     }
 
-    /// Verify that generated rubrics preserve the whole answer without literal matching.
+    /// Retain relevant factual conditions in semantic criteria while allowing meaning-preserving paraphrases.
     @Test func generatedRubricsPreserveTheWholeAnswerWithoutLiteralMatching() throws {
         for answer in ["Only release-role operators may approve.",
                        "Retry with exponential backoff, starting at one second and capped at one minute.",
@@ -255,7 +255,7 @@ struct EvaluationDocumentTests {
         }
     }
 
-    /// Verify that generated quotes can cite requested exceptions from other passages.
+    /// Allow an explicitly requested exception to cite its supporting passage outside the generation focus.
     @Test func generatedQuotesCanCiteRequestedExceptionsFromOtherPassages() throws {
         let focus = EvaluationDocumentPassage(id: "frequency", location: "Page 1", text: "Autosave runs every 60 seconds with unsaved changes.")
         let exception = EvaluationDocumentPassage(id: "exception", location: "Page 2", text: "Autosave does not run in read-only mode.")
@@ -280,7 +280,7 @@ struct EvaluationDocumentTests {
         }
     }
 
-    /// Verify that generated context keeps exceptions without claiming they were covered.
+    /// Retain background qualifications without treating their presence as accepted question coverage.
     @Test func generatedContextKeepsExceptionsWithoutClaimingTheyWereCovered() throws {
         var source = DocumentTestFixture.source
         let exception = EvaluationDocumentPassage(id: "exception", location: "Page 2", text: "Exports are disabled during maintenance.")
@@ -303,7 +303,7 @@ struct EvaluationDocumentTests {
         }
     }
 
-    /// Verify that malformed and duplicate generated drafts cannot be accepted.
+    /// Reject invalid fields and duplicate candidates before they enter the accepted draft set.
     @Test func malformedAndDuplicateGeneratedDraftsCannotBeAccepted() throws {
         var candidate = EvaluationDocumentGenerator.Candidate(name: "Export", question: "Can members export?",
             answer: "Members cannot export.", quotes: ["A fabricated quote."], supported: true)

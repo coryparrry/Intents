@@ -56,7 +56,7 @@ class QualityReportTests(unittest.TestCase):
         path.write_text(json.dumps(summary))
 
     def test_semantic_candidates_cannot_bypass_review_with_stale_summary(self):
-        """Verify that semantic candidates cannot bypass review with stale summary."""
+        """Require current semantic receipts even when older summary metadata would otherwise omit the review gate."""
         path = self.directory / 'attempts.jsonl'
         rows = quality.load_lines(path)
         for row in rows:
@@ -76,13 +76,13 @@ class QualityReportTests(unittest.TestCase):
             self.run_report()
 
     def test_no_human_labels_cannot_pass(self):
-        """Verify that no human labels cannot pass."""
+        """Refuse human-reviewed qualification when the retained run has no complete human labeling evidence."""
         result = self.run_report()
         self.assertFalse(result["generation_gate_passed"])
         self.assertEqual(result["human_reviewed"], 0)
 
     def test_missing_or_failed_terminal_state_cannot_qualify(self):
-        """Verify that missing or failed terminal state cannot qualify."""
+        """Require successful process completion before trusting partial quality artifacts."""
         self.run_report()
         labels = json.loads((self.directory / 'review-template.json').read_text())
         for label in labels.values():
@@ -97,7 +97,7 @@ class QualityReportTests(unittest.TestCase):
         self.assertFalse(self.run_report(path)['generation_gate_passed'])
 
     def test_ai_labels_or_mismatched_candidates_do_not_count(self):
-        """Verify that ai labels or mismatched candidates do not count."""
+        """Keep human-review counts bound to the exact surfaced candidates and reject automated substitutes."""
         self.run_report()
         labels = json.loads((self.directory / "review-template.json").read_text())
         for index, label in enumerate(labels.values()):
@@ -110,7 +110,7 @@ class QualityReportTests(unittest.TestCase):
         self.assertEqual(self.run_report(path)["human_reviewed"], 0)
 
     def test_duplicate_attempts_cannot_inflate_denominator(self):
-        """Verify that duplicate attempts cannot inflate denominator."""
+        """Reject repeated attempt identities so duplicated records cannot improve apparent generation yield."""
         path = self.directory / "attempts.jsonl"
         rows = path.read_text().splitlines()
         rows[1] = rows[0]
@@ -118,7 +118,7 @@ class QualityReportTests(unittest.TestCase):
         with self.assertRaises(AssertionError): self.run_report()
 
     def test_complete_consistent_fixture_passes_but_inconsistent_score_does_not(self):
-        """Verify that complete consistent fixture passes but inconsistent score does not."""
+        """Accept internally consistent evidence while rejecting scores that disagree with their retained control results."""
         self.run_report()
         labels = json.loads((self.directory / "review-template.json").read_text())
         for label in labels.values():
@@ -157,7 +157,7 @@ class QualityReportTests(unittest.TestCase):
         self.assertFalse(self.run_report(labels_path, controls, "automated")["scoring_gate_passed"])
 
     def test_automated_review_keeps_thresholds_and_candidate_integrity(self):
-        """Verify that automated review keeps thresholds and candidate integrity."""
+        """Apply the same quality and identity checks when review labels come from an automated workflow."""
         self.run_report(reviewer_kind="automated")
         labels = json.loads((self.directory / "review-template.json").read_text())
         for index, label in enumerate(labels.values()):
@@ -179,7 +179,7 @@ class QualityReportTests(unittest.TestCase):
         self.assertFalse(self.run_report(path, reviewer_kind="automated")["generation_gate_passed"])
 
     def test_changed_source_or_retained_passage_rejected(self):
-        """Verify that changed source or retained passage rejected."""
+        """Bind qualification to the exact imported source rather than edited or substituted retained passages."""
         (self.directory / "document-0.txt").write_text("Changed source")
         with self.assertRaises(AssertionError): self.run_report()
         (self.directory / "document-0.txt").write_text("Source")
@@ -190,7 +190,7 @@ class QualityReportTests(unittest.TestCase):
         with self.assertRaises(AssertionError): self.run_report()
 
     def test_v7_context_must_retain_the_complete_imported_source(self):
-        """Verify that v7 context must retain the complete imported source."""
+        """Reject context that omits imported qualifications even if its remaining citations still resolve."""
         source_path = self.directory / "sources.jsonl"
         sources = quality.load_lines(source_path)
         sources[0]["passages"].append({"id": "exception", "location": "Page 2", "text": "An exception."})
@@ -211,7 +211,7 @@ class QualityReportTests(unittest.TestCase):
         with self.assertRaises(AssertionError): self.run_report()
 
     def test_scope_planned_generation_cannot_drop_background_exception(self):
-        """Verify that scope planned generation cannot drop background exception."""
+        """Keep background exceptions authoritative when generation focuses on a narrower passage."""
         sources_path = self.directory / "sources.jsonl"
         sources = quality.load_lines(sources_path)
         exception = {"id": "exception", "location": "Page 2", "text": "Read-only documents do not autosave."}
@@ -233,7 +233,7 @@ class QualityReportTests(unittest.TestCase):
             self.run_report()
 
     def test_controls_require_same_definitions_sources_and_runtime(self):
-        """Verify that controls require same definitions sources and runtime."""
+        """Refuse reusable control evidence when any frozen definition, source input, or runtime identity differs."""
         controls = self.directory / "controls"
         controls.mkdir()
         (controls / "exit-code.txt").write_text("0\n")

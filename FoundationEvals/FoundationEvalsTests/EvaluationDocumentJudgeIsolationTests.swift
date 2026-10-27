@@ -4,7 +4,7 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationDocumentJudgeIsolationTests {
-    /// Verify that opted in synthetic controls reach the external transport.
+    /// Exercise external review only after synthetic controls explicitly authorize the selected judge.
     @Test @MainActor func optedInSyntheticControlsReachTheExternalTransport() async throws {
         var connection = EvaluationJudgeConnection(id: UUID(), name: "Fixture", kind: .customCompatible,
             baseURL: "https://judge.invalid", modelID: "fixture")
@@ -30,7 +30,7 @@ struct EvaluationDocumentJudgeIsolationTests {
         #expect(!EvaluationDocumentQualityTests.controlSuite(value: value, connection: nil).judgeConfiguration.usesExternalConnection)
     }
 
-    /// Verify that external admission matches the semantic request and skips exact only cases.
+    /// Keep capacity admission aligned with the actual semantic payload while avoiding transport for literal-only checks.
     @Test func externalAdmissionMatchesTheSemanticRequestAndSkipsExactOnlyCases() throws {
         var suite = DocumentTestFixture.suite()
         let longLiteral = "exact: \"" + String(repeating: "X", count: 3_800) + "\""
@@ -55,7 +55,7 @@ struct EvaluationDocumentJudgeIsolationTests {
         #expect(EvaluationRunner.externalDocumentJudgeAdmission(evaluationCase: suite.cases[0], effectivePrompt: "Source",
             suite: suite, subjectContext: nil, connection: connection) == nil)
     }
-    /// Verify that separate requirements preserve identity and never publish partial score.
+    /// Prevent a later requirement failure from publishing a partial score or losing the shared judge identity.
     @Test(arguments: [false, true])
     func separateRequirementsPreserveIdentityAndNeverPublishPartialScore(failSecond: Bool) async throws {
         let suite = DocumentTestFixture.suite()
@@ -99,7 +99,7 @@ struct EvaluationDocumentJudgeIsolationTests {
         }
     }
 
-    /// Verify that mixed literal and semantic checks keep the single raw verdict.
+    /// Combine local literal checks with semantic scoring without replacing the retained external verdict.
     @Test func mixedLiteralAndSemanticChecksKeepTheSingleRawVerdict() async throws {
         var suite = DocumentTestFixture.suite()
         suite.cases[0].criteriaOverride = ["The response is exactly READY.", "States readiness."]

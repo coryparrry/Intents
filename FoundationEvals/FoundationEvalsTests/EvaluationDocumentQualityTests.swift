@@ -98,7 +98,7 @@ import Testing
         try handle.synchronize()
     }
 
-    /// Verify that controlled answers have correct requirement scores.
+    /// Qualify known answers against expected requirement-level results before trusting generated-case metrics.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil))
     func controlledAnswersHaveCorrectRequirementScores() async throws {
         let corpus = try input(), directory = try output()
@@ -138,7 +138,7 @@ import Testing
         }
     }
 
-    /// Verify that frozen corpus generation records every attempt.
+    /// Checkpoint generation outcomes so rejected candidates and interruptions cannot disappear from measured yield.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil))
     func frozenCorpusGenerationRecordsEveryAttempt() async throws {
         let corpus = try input(), directory = try output()
@@ -211,7 +211,7 @@ import Testing
         var requiredTerms: [String]
     }
 
-    /// Verify that focused generation regressions.
+    /// Replay frozen problematic generation cases with their correction and review evidence retained.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil))
     func focusedGenerationRegressions() async throws {
         let path = try #require(ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"])
@@ -248,7 +248,7 @@ import Testing
         var candidate: EvaluationCase
         var accepted: Bool
     }
-    /// Verify that semantic controls reject bad drafts.
+    /// Challenge independent source review with frozen defective candidates before relying on its approvals.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil))
     func semanticControlsRejectBadDrafts() async throws {
         let path = try #require(ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"])
@@ -266,7 +266,7 @@ import Testing
         var controls: [Control]
     }
 
-    /// Verify that known false approvals are rejected.
+    /// Replay historical false approvals with their original sources and prior questions to require question-stage rejection.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_QUALITY_CORPUS"] != nil))
     func knownFalseApprovalsAreRejected() async throws {
         let path = try #require(ProcessInfo.processInfo.environment["INTENTS_DOCUMENT_ACCEPTANCE_CORPUS"])

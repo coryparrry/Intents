@@ -4,7 +4,7 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct EvaluationDocumentPersistenceTests {
-    /// Verify that imported sources at published limits remain valid evidence.
+    /// Keep valid 512-passage imports usable when citation headers add text beyond the raw-source budget.
     @Test func importedSourcesAtPublishedLimitsRemainValidEvidence() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -25,7 +25,7 @@ import Testing
         #expect(throws: (any Error).self) { try EvaluationDocumentImporter.importFile(at: file) }
     }
 
-    /// Verify that failed reviewer setup preserves retry history on disk.
+    /// Protect persisted failure records when retry setup cannot obtain a usable semantic reviewer.
     @Test func failedReviewerSetupPreservesRetryHistoryOnDisk() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -47,7 +47,7 @@ import Testing
         #expect(saved.completedBatchIDs == draft.completedBatchIDs)
     }
 
-    /// Verify that exported cases with different retained contexts can be reviewed after import.
+    /// Preserve each archived case’s original context instead of requiring every case to match the archive-wide union.
     @Test func exportedCasesWithDifferentRetainedContextsCanBeReviewedAfterImport() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -110,7 +110,7 @@ import Testing
         #expect(controller.draft?.acceptedCases.isEmpty == true)
     }
 
-    /// Verify that text import normalizes Unicode and refuses oversized selections.
+    /// Keep text extraction stable across line endings and Unicode forms while enforcing input bounds.
     @Test func textImportNormalizesUnicodeAndRefusesOversizedSelection() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -129,7 +129,7 @@ import Testing
         #expect(throws: (any Error).self) { try EvaluationDocumentImporter.importFile(at: file) }
     }
 
-    /// Verify that pdf extraction retains page anchor.
+    /// Retain a page location beside extracted PDF text so users can trace a generated citation.
     @Test func pdfExtractionRetainsPageAnchor() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -142,7 +142,7 @@ import Testing
         #expect(source.passages.first?.text.contains("Owners") == true)
     }
 
-    /// Verify that saved draft retains edits and acceptance after original file disappears.
+    /// Prove that retained evidence supports recovery after the original imported file is unavailable.
     @Test func savedDraftRetainsEditsAndAcceptanceAfterOriginalFileDisappears() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -160,7 +160,7 @@ import Testing
         #expect(loaded.acceptedCases[0].documentEvidence?.contextText.contains("Owners") == true)
     }
 
-    /// Verify that creation retry is idempotent and failure does not publish partial suite.
+    /// Protect workspace integrity when suite creation is retried or fails before its final publication.
     @Test(arguments: [false, true]) func creationRetryIsIdempotentAndFailureDoesNotPublishPartialSuite(incompleteDirectory: Bool) throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -191,7 +191,7 @@ import Testing
         #expect(reloaded.suite.cases[0].documentEvidence?.contextText == draft.cases[0].evaluationCase.documentEvidence?.contextText)
     }
 
-    /// Verify that document conversion and whole suite mutation are explicitly gated.
+    /// Prevent operations designed for ordinary cases from silently stripping document evidence or review state.
     @Test func documentConversionAndWholeSuiteMutationAreExplicitlyGated() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -205,7 +205,7 @@ import Testing
             heldOutCaseIDs: [store.draftSuite.cases[0].id]) != nil)
     }
 
-    /// Verify that archive round trip retains evidence and requires fresh review.
+    /// Keep exported source evidence portable while refusing to reuse approval after archive import.
     @Test func archiveRoundTripRetainsEvidenceAndRequiresFreshReview() throws {
         let original = DocumentTestFixture.suite()
         let bytes = try EvaluationDocumentArchive.data(for: original)
@@ -220,7 +220,7 @@ import Testing
         #expect(recreated.modelConfiguration.provider == .onDevice)
     }
 
-    /// Verify that generation does not resurface identical facts with new questions.
+    /// Measure distinct factual targets rather than inflating generated yield with paraphrased questions.
     @Test func generationDoesNotResurfaceIdenticalFactsWithNewQuestions() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -236,7 +236,7 @@ import Testing
         #expect(controller.draft?.issues.count == 9)
     }
 
-    /// Verify that partial generation survives restart and retry preserves edits.
+    /// Retain reviewed edits and attempt progress across controller restart and bounded retry.
     @Test func partialGenerationSurvivesRestartAndRetryPreservesEdits() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -265,7 +265,7 @@ import Testing
         #expect(resumed.draft?.cases[0].evaluationCase.expected == "A preserved edit")
     }
 
-    /// Verify that full source generation stops before the suite budget and remains publishable.
+    /// Stop adding retained source before the aggregate suite limit makes an otherwise valid draft unusable.
     @Test func fullSourceGenerationStopsBeforeTheSuiteBudgetAndRemainsPublishable() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -293,7 +293,7 @@ import Testing
         #expect(try draft.makeSuite().cases.count == draft.cases.count)
     }
 
-    /// Verify that corrupted draft is preserved instead of overwritten.
+    /// Keep damaged saved content available for recovery instead of replacing it during controller initialization.
     @Test func corruptedDraftIsPreservedInsteadOfOverwritten() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
