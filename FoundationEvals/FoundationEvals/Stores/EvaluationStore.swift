@@ -474,13 +474,19 @@ final class EvaluationStore {
     /// Creates and selects a fresh suite in the current project and returns its ID.
     /// An empty name keeps the starter's name; failed staging or catalog publication triggers cleanup of the new directory.
     @discardableResult
-    func createSuite(name: String, starter: EvaluationStarterPack? = nil) throws -> UUID {
+    func createSuite(name: String, starter: EvaluationStarterPack? = nil, documentDraft: EvaluationDocumentDraft? = nil) throws -> UUID {
         try requireIdle()
         try preserveCurrentDraftBeforeWorkspaceChange()
-        var newSuite = starter?.makeSuite() ?? EvaluationSuite()
-        newSuite.id = UUID()
+        if let documentDraft, documentDraft.projectID != selectedProjectID {
+            throw EvaluationStoreError.invalidSuite("Open the document draft's original project before creating its suite.")
+        }
+        var newSuite = try documentDraft?.makeSuite() ?? starter?.makeSuite() ?? EvaluationSuite()
+        if documentDraft == nil { newSuite.id = UUID() }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { newSuite.name = trimmed }
+        if documentDraft != nil, let issue = validationIssue(for: newSuite, includeModelReadiness: false) {
+            throw EvaluationStoreError.invalidSuite(issue)
+        }
         let now = Date()
         let record = EvaluationSuiteRecord(
             id: newSuite.id, name: newSuite.name, createdAt: now, updatedAt: now,
@@ -489,6 +495,27 @@ final class EvaluationStore {
         let directory = EvaluationWorkspacePersistence.suiteDirectory(
             supportDirectory: supportDirectory, projectID: selectedProjectID, suiteID: newSuite.id
         )
+        let directoryExisted = FileManager.default.fileExists(atPath: directory.path)
+        if documentDraft != nil, directoryExisted {
+            let published = workspace.projects.contains { $0.id == selectedProjectID && $0.suites.contains { $0.id == newSuite.id } }
+            let suiteFile = directory.appending(path: "suite.json")
+            if FileManager.default.fileExists(atPath: suiteFile.path) {
+                let saved = try CanonicalJSON.decode(EvaluationSuite.self, from: Data(contentsOf: suiteFile))
+                guard saved == newSuite else { throw EvaluationStoreError.resourceConflict("The draft's destination already contains a different suite. Open that suite before retrying.") }
+                if published {
+                    try switchWorkspace(projectID: selectedProjectID, suiteID: newSuite.id)
+                    return newSuite.id
+                }
+            } else {
+                let entries = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey])
+                guard !published, try entries.allSatisfy({ entry in
+                    guard ["Attachments", "Runs"].contains(entry.lastPathComponent) else { return false }
+                    let attributes = try entry.resourceValues(forKeys: [.isDirectoryKey])
+                    guard attributes.isDirectory == true else { return false }
+                    return try FileManager.default.contentsOfDirectory(atPath: entry.path).isEmpty
+                }) else { throw EvaluationStoreError.resourceConflict("The destination contains incomplete existing evidence. It was preserved; inspect it before retrying.") }
+            }
+        }
         do {
             try EvaluationWorkspacePersistence.createSuiteDirectories(at: directory)
             try CanonicalJSON.data(for: newSuite).write(to: directory.appending(path: "suite.json"), options: .atomic)
@@ -498,7 +525,7 @@ final class EvaluationStore {
                 project.updatedAt = now
             }
         } catch {
-            try? FileManager.default.removeItem(at: directory)
+            if !directoryExisted { try? FileManager.default.removeItem(at: directory) }
             throw error
         }
         try switchWorkspace(projectID: selectedProjectID, suiteID: newSuite.id)
@@ -994,6 +1021,7 @@ final class EvaluationStore {
             + (sentImages > 0 ? ", and \(sentImages) reference image\(sentImages == 1 ? "" : "s")" : "")
             + " to \(connection.name) at \(connection.baseURL)."
             + (images > 0 && sentImages == 0 ? " Reference images remain local." : "")
+            + (draftSuite.hasDocumentCases ? " Document cases include retained source passages, case-specific scoring criteria, and user-reviewed reference answers." : "")
             + " No unrelated runs, application tool access, or telemetry are sent."
     }
 
@@ -2702,6 +2730,9 @@ final class EvaluationStore {
         expectedRevision: String,
         confirmDeletes: Bool
     ) throws -> String {
+        guard !suite.hasDocumentCases, !draftSuite.hasDocumentCases, !replacement.hasDocumentCases else {
+            throw EvaluationStoreError.invalidSuite("Document suites require source review in the native Cases editor. Whole-suite replacement through this interface is not supported.")
+        }
         try flushPendingSuiteSave()
         var candidate = replacement
         candidate.id = suite.id
@@ -3220,6 +3251,9 @@ final class EvaluationStore {
               draftSuite.cases.contains(where: { $0.id == caseID }) else { return }
         guard promptText(for: caseID) != text else { return }
         pendingPromptEdits[caseID] = text
+        if draftSuite.cases.first(where: { $0.id == caseID })?.documentEvidence != nil {
+            applyPendingPromptEdits() // Source-review status must reflect the visible question immediately.
+        }
         scheduleSuiteSave()
     }
 
@@ -3734,6 +3768,7 @@ final class EvaluationStore {
         includeModelReadiness: Bool = true,
         includeSubjectModelConfiguration: Bool = true
     ) -> String? {
+        if let issue = candidate.documentValidationIssue(requireReview: includeModelReadiness) { return issue }
         let configuration = candidate.modelConfiguration
         let capabilities = selectedModelCapabilities(for: candidate)
         let validateCapabilities = configuration.provider != .coreAI || coreAIModel(for: candidate) != nil
@@ -3871,6 +3906,9 @@ final class EvaluationStore {
                     return "Choose an independent judge connection."
                 }
                 if let issue = connection.validationIssue { return issue }
+                if candidate.hasDocumentCases, connection.capabilities.contextWindowTokens == nil {
+                    return "Declare the independent judge's context window in Settings before using it with document cases."
+                }
                 if !connection.capabilities.structuredOutputs {
                     return "The independent judge must support structured outputs."
                 }
@@ -5570,6 +5608,9 @@ extension EvaluationStore {
     /// Requires idle admission and rejects changed image evidence or an encoded context larger than 64 MB.
     func productionSnapshot() throws -> NativeProductionContext {
         try requireIdle()
+        guard !draftSuite.hasDocumentCases else {
+            throw ProductionFailure.invalid("Document suites cannot be converted to production datasets yet. Run this suite in Cases and Results to preserve its source evidence and case criteria.")
+        }
         var snapshot = draftSuite
         // Cases belong to the versioned dataset; retain only the execution/scoring contract here.
         snapshot.cases = []; snapshot.repetitions = 1

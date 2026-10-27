@@ -15,6 +15,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
@@ -26,6 +29,19 @@ jobs:
       - name: Install pinned source parser
         run: npm ci --prefix Tools/DocstringCoverage --ignore-scripts --no-audit --no-fund
       - name: Verify coverage detector
-        run: python3 -m unittest script.tests.test_docstring_coverage
+        run: python3 -m unittest script.tests.test_docstring_coverage script.tests.test_changed_function_docs
       - name: Enforce function documentation coverage
         run: python3 script/docstring_coverage.py --minimum 81
+      - name: Require documentation on new and changed functions
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = pull_request ]; then
+            base=$(git merge-base "$PR_BASE_SHA" "$PR_HEAD_SHA")
+          else
+            base="$PUSH_BEFORE_SHA"
+          fi
+          python3 script/changed_function_docs.py --base "$base"

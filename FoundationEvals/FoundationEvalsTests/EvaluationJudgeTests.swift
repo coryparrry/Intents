@@ -220,6 +220,7 @@ struct EvaluationJudgeTests {
         #expect(try JSONDecoder().decode([EvaluationJudgeCriterionTrace].self, from: data) == result.checks)
     }
 
+    /// Keep the literal value presented to the judge identical to the value used by score validation.
     @Test func promptAndValidatorUseTheSameUntrimmedReference() throws {
         let reference = " Paris\n"
         var suite = EvaluationSuite()
@@ -229,7 +230,7 @@ struct EvaluationJudgeTests {
             response: reference, evaluationCase: evaluationCase,
             effectivePrompt: evaluationCase.prompt, suite: suite, toolEvidence: nil
         )
-        #expect(prompt.contains("verifiedReference: \(String(reflecting: Optional(reference)))"))
+        #expect(prompt.contains("verifiedReference: \(String(reflecting: reference))"))
         let result = try EvaluationJudge.validate(
             verdict: Self.verdict(expected: reference, matches: true),
             criteria: suite.rubricCriteria, response: reference, verifiedReference: evaluationCase.expected

@@ -1,0 +1,650 @@
+{
+  "version": 2,
+  "documents": [],
+  "controls": [
+    {
+      "id": "repair-sensor-spec:6-correct",
+      "source": "The temperature sensor accepts readings from minus 20 to 60 degrees Celsius. Values outside this range are rejected.\n\nThe sensor reports temperature every 30 seconds while connected to external power.\n\nOn battery power the sensor reports once every five minutes.\n\nThe sensor stores up to 500 readings while offline. The oldest reading is replaced when storage is full.\n\nAn amber indicator means the battery is below 15 percent.\n\nA red indicator means the temperature probe is disconnected.\n\nThe sensor uses two AA batteries. Rechargeable AA batteries are supported.\n\nFactory reset removes stored readings and Wi-Fi credentials.\n\nHold the reset button for ten seconds to start a factory reset.\n\nThe calibration offset can be set between minus 3 and plus 3 degrees Celsius.\n\nThe enclosure is rated for indoor use. It must not be exposed to rain.\n\nEach exported reading includes a UTC timestamp and a temperature in degrees Celsius.",
+      "question": "How many batteries of which size does the sensor use?",
+      "reference": "The sensor uses two AA batteries.",
+      "criteria": [
+        "Correctly answers this question: How many batteries of which size does the sensor use? Use this factual reference for meaning, including relevant conditions and restrictions: The sensor uses two AA batteries. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "It takes a pair of AA batteries.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-sensor-spec:6-wrong",
+      "source": "The temperature sensor accepts readings from minus 20 to 60 degrees Celsius. Values outside this range are rejected.\n\nThe sensor reports temperature every 30 seconds while connected to external power.\n\nOn battery power the sensor reports once every five minutes.\n\nThe sensor stores up to 500 readings while offline. The oldest reading is replaced when storage is full.\n\nAn amber indicator means the battery is below 15 percent.\n\nA red indicator means the temperature probe is disconnected.\n\nThe sensor uses two AA batteries. Rechargeable AA batteries are supported.\n\nFactory reset removes stored readings and Wi-Fi credentials.\n\nHold the reset button for ten seconds to start a factory reset.\n\nThe calibration offset can be set between minus 3 and plus 3 degrees Celsius.\n\nThe enclosure is rated for indoor use. It must not be exposed to rain.\n\nEach exported reading includes a UTC timestamp and a temperature in degrees Celsius.",
+      "question": "How many batteries of which size does the sensor use?",
+      "reference": "The sensor uses two AA batteries.",
+      "criteria": [
+        "Correctly answers this question: How many batteries of which size does the sensor use? Use this factual reference for meaning, including relevant conditions and restrictions: The sensor uses two AA batteries. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "It takes one AAA battery.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-retention-exceptions:6-correct",
+      "source": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds.\n\nException to the ordinary support-message retention rule: messages under an\nactive legal hold are kept until the hold is released, even after 30 days.\n\nFinancial invoices are retained for seven years from their issue date.\n\nAn export request includes active records and archived records, but excludes\nrecords already deleted.\n\nOnly compliance administrators can apply a legal hold.\n\nReleasing a legal hold requires two different compliance administrators to approve\nthe release.\n\nDeleting an account disables sign-in immediately. Record retention continues under\nthe applicable retention rules.\n\nAn audit event records the actor, UTC time, and record identifier for every deletion.\n\nAttachments follow the retention period of the message to which they belong.\n\nA retention preview lists records scheduled for deletion during the next 24 hours.\n\nChanging a retention policy affects future deletion decisions and does not restore\nrecords already deleted.\n\nThe retention service pauses deletion when its policy database is unavailable.",
+      "question": "What happens to sign-in immediately after an account is deleted?",
+      "reference": "Sign-in is disabled immediately.",
+      "criteria": [
+        "Correctly answers this question: What happens to sign-in immediately after an account is deleted? Use this factual reference for meaning, including relevant conditions and restrictions: Sign-in is disabled immediately. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Account deletion immediately disables signing in.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-retention-exceptions:6-wrong",
+      "source": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds.\n\nException to the ordinary support-message retention rule: messages under an\nactive legal hold are kept until the hold is released, even after 30 days.\n\nFinancial invoices are retained for seven years from their issue date.\n\nAn export request includes active records and archived records, but excludes\nrecords already deleted.\n\nOnly compliance administrators can apply a legal hold.\n\nReleasing a legal hold requires two different compliance administrators to approve\nthe release.\n\nDeleting an account disables sign-in immediately. Record retention continues under\nthe applicable retention rules.\n\nAn audit event records the actor, UTC time, and record identifier for every deletion.\n\nAttachments follow the retention period of the message to which they belong.\n\nA retention preview lists records scheduled for deletion during the next 24 hours.\n\nChanging a retention policy affects future deletion decisions and does not restore\nrecords already deleted.\n\nThe retention service pauses deletion when its policy database is unavailable.",
+      "question": "What happens to sign-in immediately after an account is deleted?",
+      "reference": "Sign-in is disabled immediately.",
+      "criteria": [
+        "Correctly answers this question: What happens to sign-in immediately after an account is deleted? Use this factual reference for meaning, including relevant conditions and restrictions: Sign-in is disabled immediately. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Sign-in remains enabled.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-mixed-scan-manual:7-correct",
+      "source": "The green status light means the printer is ready.\n\nThe blue status light means the printer is receiving a job.\n\nThe orange status light means the paper tray is empty.\n\nUse A4 or Letter plain paper in the main tray.\n\nThe main tray holds at most 150 sheets.\n\nEnvelopes must be fed one at a time through the rear slot.\n\nTo cancel the active print job, hold Cancel for two seconds.\n\nCleaning the rollers requires disconnecting the power cable first.\n\nThe printer enters sleep mode after ten minutes without a job.\n\nPress any control-panel button to wake the printer from sleep.\n\nThe printer rejects jobs protected by an unsupported encryption format.",
+      "question": "What must be disconnected before cleaning the rollers?",
+      "reference": "The power cable must be disconnected before cleaning the rollers.",
+      "criteria": [
+        "Correctly answers this question: What must be disconnected before cleaning the rollers? Use this factual reference for meaning, including relevant conditions and restrictions: The power cable must be disconnected before cleaning the rollers. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Disconnect the power cable first, then clean the rollers.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-mixed-scan-manual:7-wrong",
+      "source": "The green status light means the printer is ready.\n\nThe blue status light means the printer is receiving a job.\n\nThe orange status light means the paper tray is empty.\n\nUse A4 or Letter plain paper in the main tray.\n\nThe main tray holds at most 150 sheets.\n\nEnvelopes must be fed one at a time through the rear slot.\n\nTo cancel the active print job, hold Cancel for two seconds.\n\nCleaning the rollers requires disconnecting the power cable first.\n\nThe printer enters sleep mode after ten minutes without a job.\n\nPress any control-panel button to wake the printer from sleep.\n\nThe printer rejects jobs protected by an unsupported encryption format.",
+      "question": "What must be disconnected before cleaning the rollers?",
+      "reference": "The power cable must be disconnected before cleaning the rollers.",
+      "criteria": [
+        "Correctly answers this question: What must be disconnected before cleaning the rollers? Use this factual reference for meaning, including relevant conditions and restrictions: The power cable must be disconnected before cleaning the rollers. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Leave the power cable connected while cleaning the rollers.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-mixed-scan-manual:9-correct",
+      "source": "The green status light means the printer is ready.\n\nThe blue status light means the printer is receiving a job.\n\nThe orange status light means the paper tray is empty.\n\nUse A4 or Letter plain paper in the main tray.\n\nThe main tray holds at most 150 sheets.\n\nEnvelopes must be fed one at a time through the rear slot.\n\nTo cancel the active print job, hold Cancel for two seconds.\n\nCleaning the rollers requires disconnecting the power cable first.\n\nThe printer enters sleep mode after ten minutes without a job.\n\nPress any control-panel button to wake the printer from sleep.\n\nThe printer rejects jobs protected by an unsupported encryption format.",
+      "question": "What action wakes the printer from sleep?",
+      "reference": "Pressing any control-panel button wakes the printer from sleep.",
+      "criteria": [
+        "Correctly answers this question: What action wakes the printer from sleep? Use this factual reference for meaning, including relevant conditions and restrictions: Pressing any control-panel button wakes the printer from sleep. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Press any button on the control panel.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-mixed-scan-manual:9-wrong",
+      "source": "The green status light means the printer is ready.\n\nThe blue status light means the printer is receiving a job.\n\nThe orange status light means the paper tray is empty.\n\nUse A4 or Letter plain paper in the main tray.\n\nThe main tray holds at most 150 sheets.\n\nEnvelopes must be fed one at a time through the rear slot.\n\nTo cancel the active print job, hold Cancel for two seconds.\n\nCleaning the rollers requires disconnecting the power cable first.\n\nThe printer enters sleep mode after ten minutes without a job.\n\nPress any control-panel button to wake the printer from sleep.\n\nThe printer rejects jobs protected by an unsupported encryption format.",
+      "question": "What action wakes the printer from sleep?",
+      "reference": "Pressing any control-panel button wakes the printer from sleep.",
+      "criteria": [
+        "Correctly answers this question: What action wakes the printer from sleep? Use this factual reference for meaning, including relevant conditions and restrictions: Pressing any control-panel button wakes the printer from sleep. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Open the paper tray.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-sync-protocol:6-correct",
+      "source": "A client sends a monotonically increasing sequence number with every update. A lower sequence number is rejected.\n\nWhen the same sequence number and payload are received twice, the server returns the original acknowledgement without applying the update again.\n\nThe maximum update payload is 64 KiB.\n\nA payload larger than 64 KiB receives status 413.\n\nThe server responds with status 409 when the same sequence number is reused with different content.\n\nAn acknowledgement contains the committed sequence number.\n\nClients retry transient failures with exponential backoff, starting at one second and capped at one minute.\n\nAuthentication failures are not retried automatically.\n\nThe sync cursor expires after seven days without use.\n\nAn expired cursor requires a full snapshot before incremental updates resume.\n\nEach response includes a request identifier for diagnostic correlation.\n\nAn update is considered durable only after the acknowledgement has been received.",
+      "question": "What retry strategy is used for transient failures, and what are its starting and maximum intervals?",
+      "reference": "Clients use exponential backoff starting at one second and capped at one minute.",
+      "criteria": [
+        "Correctly answers this question: What retry strategy is used for transient failures, and what are its starting and maximum intervals? Use this factual reference for meaning, including relevant conditions and restrictions: Clients use exponential backoff starting at one second and capped at one minute. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Retry exponentially, starting at 1 second and never exceeding 60 seconds.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-sync-protocol:6-wrong",
+      "source": "A client sends a monotonically increasing sequence number with every update. A lower sequence number is rejected.\n\nWhen the same sequence number and payload are received twice, the server returns the original acknowledgement without applying the update again.\n\nThe maximum update payload is 64 KiB.\n\nA payload larger than 64 KiB receives status 413.\n\nThe server responds with status 409 when the same sequence number is reused with different content.\n\nAn acknowledgement contains the committed sequence number.\n\nClients retry transient failures with exponential backoff, starting at one second and capped at one minute.\n\nAuthentication failures are not retried automatically.\n\nThe sync cursor expires after seven days without use.\n\nAn expired cursor requires a full snapshot before incremental updates resume.\n\nEach response includes a request identifier for diagnostic correlation.\n\nAn update is considered durable only after the acknowledgement has been received.",
+      "question": "What retry strategy is used for transient failures, and what are its starting and maximum intervals?",
+      "reference": "Clients use exponential backoff starting at one second and capped at one minute.",
+      "criteria": [
+        "Correctly answers this question: What retry strategy is used for transient failures, and what are its starting and maximum intervals? Use this factual reference for meaning, including relevant conditions and restrictions: Clients use exponential backoff starting at one second and capped at one minute. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Clients retry with linear backoff starting at one second and capped at one minute.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-warehouse-runbook:3-correct",
+      "source": "Items marked fragile must be packed with foam inserts.\n\nA parcel may weigh at most 20 kilograms for the standard courier service.\n\nParcels over 20 kilograms must use the freight service.\n\nOrders received before 14:00 on a working day are dispatched that day.\n\nOrders received at or after 14:00 are dispatched on the next working day.\n\nA missing item blocks dispatch of the entire order until the discrepancy is resolved.\n\nA supervisor must approve replacing an ordered item with an alternative.\n\nReturned electronic items go to inspection before they can be restocked.\n\nThe packing slip contains item names and quantities but excludes payment-card details.\n\nDamaged stock is placed in the quarantine area and cannot be allocated to orders.\n\nThe dispatch scan records the parcel identifier and courier tracking number.\n\nA cancelled order must not be dispatched even if a shipping label has already been printed.",
+      "question": "When are orders received before 14:00 on a working day dispatched?",
+      "reference": "They are dispatched on that working day.",
+      "criteria": [
+        "Correctly answers this question: When are orders received before 14:00 on a working day dispatched? Use this factual reference for meaning, including relevant conditions and restrictions: They are dispatched on that working day. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "They ship the same working day.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-warehouse-runbook:3-wrong",
+      "source": "Items marked fragile must be packed with foam inserts.\n\nA parcel may weigh at most 20 kilograms for the standard courier service.\n\nParcels over 20 kilograms must use the freight service.\n\nOrders received before 14:00 on a working day are dispatched that day.\n\nOrders received at or after 14:00 are dispatched on the next working day.\n\nA missing item blocks dispatch of the entire order until the discrepancy is resolved.\n\nA supervisor must approve replacing an ordered item with an alternative.\n\nReturned electronic items go to inspection before they can be restocked.\n\nThe packing slip contains item names and quantities but excludes payment-card details.\n\nDamaged stock is placed in the quarantine area and cannot be allocated to orders.\n\nThe dispatch scan records the parcel identifier and courier tracking number.\n\nA cancelled order must not be dispatched even if a shipping label has already been printed.",
+      "question": "When are orders received before 14:00 on a working day dispatched?",
+      "reference": "They are dispatched on that working day.",
+      "criteria": [
+        "Correctly answers this question: When are orders received before 14:00 on a working day dispatched? Use this factual reference for meaning, including relevant conditions and restrictions: They are dispatched on that working day. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "They are dispatched on the next working day.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-warehouse-runbook:8-correct",
+      "source": "Items marked fragile must be packed with foam inserts.\n\nA parcel may weigh at most 20 kilograms for the standard courier service.\n\nParcels over 20 kilograms must use the freight service.\n\nOrders received before 14:00 on a working day are dispatched that day.\n\nOrders received at or after 14:00 are dispatched on the next working day.\n\nA missing item blocks dispatch of the entire order until the discrepancy is resolved.\n\nA supervisor must approve replacing an ordered item with an alternative.\n\nReturned electronic items go to inspection before they can be restocked.\n\nThe packing slip contains item names and quantities but excludes payment-card details.\n\nDamaged stock is placed in the quarantine area and cannot be allocated to orders.\n\nThe dispatch scan records the parcel identifier and courier tracking number.\n\nA cancelled order must not be dispatched even if a shipping label has already been printed.",
+      "question": "What is excluded from the packing slip?",
+      "reference": "Payment-card details are excluded from the packing slip.",
+      "criteria": [
+        "Correctly answers this question: What is excluded from the packing slip? Use this factual reference for meaning, including relevant conditions and restrictions: Payment-card details are excluded from the packing slip. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "The slip omits payment card information.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-warehouse-runbook:8-wrong",
+      "source": "Items marked fragile must be packed with foam inserts.\n\nA parcel may weigh at most 20 kilograms for the standard courier service.\n\nParcels over 20 kilograms must use the freight service.\n\nOrders received before 14:00 on a working day are dispatched that day.\n\nOrders received at or after 14:00 are dispatched on the next working day.\n\nA missing item blocks dispatch of the entire order until the discrepancy is resolved.\n\nA supervisor must approve replacing an ordered item with an alternative.\n\nReturned electronic items go to inspection before they can be restocked.\n\nThe packing slip contains item names and quantities but excludes payment-card details.\n\nDamaged stock is placed in the quarantine area and cannot be allocated to orders.\n\nThe dispatch scan records the parcel identifier and courier tracking number.\n\nA cancelled order must not be dispatched even if a shipping label has already been printed.",
+      "question": "What is excluded from the packing slip?",
+      "reference": "Payment-card details are excluded from the packing slip.",
+      "criteria": [
+        "Correctly answers this question: What is excluded from the packing slip? Use this factual reference for meaning, including relevant conditions and restrictions: Payment-card details are excluded from the packing slip. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Nothing is excluded; payment-card details are included.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-editor-shortcuts:4-correct",
+      "source": "Control-S saves the active document without changing its file name.\n\nControl-Shift-S opens Save As for the active document.\n\nControl-Z undoes the most recent edit.\n\nControl-Y redoes an edit that was undone.\n\nThe editor autosaves every 60 seconds while the document has unsaved changes.\n\nAutosave does not run for documents opened in read-only mode.\n\nThe recovery panel offers the most recent autosaved version after an unexpected exit.\n\nClosing a document with unsaved changes prompts the user to save, discard, or cancel closing.\n\nFind searches only the active document. Find in Folder searches all supported files in the chosen folder.\n\nThe line-number display can be toggled from the View menu.\n\nThe editor preserves UTF-8 encoding when saving a UTF-8 text file.\n\nTabs are displayed as four spaces by default; this setting changes display width without rewriting the file.",
+      "question": "How often does an editable document with unsaved changes autosave?",
+      "reference": "The editor autosaves every 60 seconds.",
+      "criteria": [
+        "Correctly answers this question: How often does an editable document with unsaved changes autosave? Use this factual reference for meaning, including relevant conditions and restrictions: The editor autosaves every 60 seconds. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Once per minute.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-editor-shortcuts:4-wrong",
+      "source": "Control-S saves the active document without changing its file name.\n\nControl-Shift-S opens Save As for the active document.\n\nControl-Z undoes the most recent edit.\n\nControl-Y redoes an edit that was undone.\n\nThe editor autosaves every 60 seconds while the document has unsaved changes.\n\nAutosave does not run for documents opened in read-only mode.\n\nThe recovery panel offers the most recent autosaved version after an unexpected exit.\n\nClosing a document with unsaved changes prompts the user to save, discard, or cancel closing.\n\nFind searches only the active document. Find in Folder searches all supported files in the chosen folder.\n\nThe line-number display can be toggled from the View menu.\n\nThe editor preserves UTF-8 encoding when saving a UTF-8 text file.\n\nTabs are displayed as four spaces by default; this setting changes display width without rewriting the file.",
+      "question": "How often does an editable document with unsaved changes autosave?",
+      "reference": "The editor autosaves every 60 seconds.",
+      "criteria": [
+        "Correctly answers this question: How often does an editable document with unsaved changes autosave? Use this factual reference for meaning, including relevant conditions and restrictions: The editor autosaves every 60 seconds. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Every 30 seconds.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-conflicting-release-notes:7-correct",
+      "source": "The draft release note says uploads are limited to 8 MB. A second equally authoritative draft says uploads are limited to 12 MB. No approved limit is supplied.\n\nRelease 4.2 adds a progress indicator to uploads.\n\nRelease 4.2 fixes a crash when cancelling an upload.\n\nUploads paused by the user do not resume automatically after relaunch.\n\nThe retry button restarts the failed upload from the beginning.\n\nUpload filenames are preserved in the destination folder.\n\nThe destination folder must be writable before an upload can begin.\n\nAn interrupted network connection leaves the upload in the Failed state.\n\nA completed upload shows the destination path in its details.\n\nThe upload history retains the latest 100 jobs.\n\nRemoving a job from history does not delete its uploaded file.\n\nThe upload queue runs two jobs concurrently.",
+      "question": "What state does an upload enter when its network connection is interrupted?",
+      "reference": "The upload enters the Failed state.",
+      "criteria": [
+        "Correctly answers this question: What state does an upload enter when its network connection is interrupted? Use this factual reference for meaning, including relevant conditions and restrictions: The upload enters the Failed state. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "It becomes Failed.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-conflicting-release-notes:7-wrong",
+      "source": "The draft release note says uploads are limited to 8 MB. A second equally authoritative draft says uploads are limited to 12 MB. No approved limit is supplied.\n\nRelease 4.2 adds a progress indicator to uploads.\n\nRelease 4.2 fixes a crash when cancelling an upload.\n\nUploads paused by the user do not resume automatically after relaunch.\n\nThe retry button restarts the failed upload from the beginning.\n\nUpload filenames are preserved in the destination folder.\n\nThe destination folder must be writable before an upload can begin.\n\nAn interrupted network connection leaves the upload in the Failed state.\n\nA completed upload shows the destination path in its details.\n\nThe upload history retains the latest 100 jobs.\n\nRemoving a job from history does not delete its uploaded file.\n\nThe upload queue runs two jobs concurrently.",
+      "question": "What state does an upload enter when its network connection is interrupted?",
+      "reference": "The upload enters the Failed state.",
+      "criteria": [
+        "Correctly answers this question: What state does an upload enter when its network connection is interrupted? Use this factual reference for meaning, including relevant conditions and restrictions: The upload enters the Failed state. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "It enters the Paused state.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-deployment-operations:0-correct",
+      "source": "A deployment starts in the Pending state until an operator approves it.\n\nOnly operators with the release role may approve a deployment.\n\nThe deployment stops when the health check fails three consecutive times.\n\nHealth checks run every 20 seconds during rollout.\n\nA rollout begins with ten percent of instances.\n\nThe rollout advances to all instances only after five minutes of healthy checks.\n\nRollback restores the previously deployed application version.\n\nRollback does not reverse database migrations.\n\nA database backup is required before a deployment that includes a migration.\n\nDeployment logs are retained for 14 days.\n\nA maintenance window prevents automatic deployments from starting.\n\nA deployment already in progress continues when a maintenance window begins.",
+      "question": "What state does a deployment start in?",
+      "reference": "A deployment starts in the Pending state.",
+      "criteria": [
+        "Correctly answers this question: What state does a deployment start in? Use this factual reference for meaning, including relevant conditions and restrictions: A deployment starts in the Pending state. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Pending.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-deployment-operations:0-wrong",
+      "source": "A deployment starts in the Pending state until an operator approves it.\n\nOnly operators with the release role may approve a deployment.\n\nThe deployment stops when the health check fails three consecutive times.\n\nHealth checks run every 20 seconds during rollout.\n\nA rollout begins with ten percent of instances.\n\nThe rollout advances to all instances only after five minutes of healthy checks.\n\nRollback restores the previously deployed application version.\n\nRollback does not reverse database migrations.\n\nA database backup is required before a deployment that includes a migration.\n\nDeployment logs are retained for 14 days.\n\nA maintenance window prevents automatic deployments from starting.\n\nA deployment already in progress continues when a maintenance window begins.",
+      "question": "What state does a deployment start in?",
+      "reference": "A deployment starts in the Pending state.",
+      "criteria": [
+        "Correctly answers this question: What state does a deployment start in? Use this factual reference for meaning, including relevant conditions and restrictions: A deployment starts in the Pending state. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Running.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-deployment-operations:1-correct",
+      "source": "A deployment starts in the Pending state until an operator approves it.\n\nOnly operators with the release role may approve a deployment.\n\nThe deployment stops when the health check fails three consecutive times.\n\nHealth checks run every 20 seconds during rollout.\n\nA rollout begins with ten percent of instances.\n\nThe rollout advances to all instances only after five minutes of healthy checks.\n\nRollback restores the previously deployed application version.\n\nRollback does not reverse database migrations.\n\nA database backup is required before a deployment that includes a migration.\n\nDeployment logs are retained for 14 days.\n\nA maintenance window prevents automatic deployments from starting.\n\nA deployment already in progress continues when a maintenance window begins.",
+      "question": "Who may approve a deployment?",
+      "reference": "Only operators with the release role may approve a deployment.",
+      "criteria": [
+        "Correctly answers this question: Who may approve a deployment? Use this factual reference for meaning, including relevant conditions and restrictions: Only operators with the release role may approve a deployment. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Approval is restricted to release-role operators.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-deployment-operations:1-wrong",
+      "source": "A deployment starts in the Pending state until an operator approves it.\n\nOnly operators with the release role may approve a deployment.\n\nThe deployment stops when the health check fails three consecutive times.\n\nHealth checks run every 20 seconds during rollout.\n\nA rollout begins with ten percent of instances.\n\nThe rollout advances to all instances only after five minutes of healthy checks.\n\nRollback restores the previously deployed application version.\n\nRollback does not reverse database migrations.\n\nA database backup is required before a deployment that includes a migration.\n\nDeployment logs are retained for 14 days.\n\nA maintenance window prevents automatic deployments from starting.\n\nA deployment already in progress continues when a maintenance window begins.",
+      "question": "Who may approve a deployment?",
+      "reference": "Only operators with the release role may approve a deployment.",
+      "criteria": [
+        "Correctly answers this question: Who may approve a deployment? Use this factual reference for meaning, including relevant conditions and restrictions: Only operators with the release role may approve a deployment. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Any operator may approve, including operators without the release role.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-long-accessibility-guide:0-correct",
+      "source": "The application follows a consistent interaction model across its settings, editor, and review screens. Keyboard focus remains visible so a user can tell which control receives input. Pressing Tab moves focus to the next enabled control. Disabled controls are skipped in this navigation sequence.\n\nWithin a group of radio buttons, arrow keys change the selected option. Tab moves out of the radio group to the next control. This behavior avoids requiring a separate Tab stop for every option and preserves predictable navigation.\n\nA modal dialog keeps keyboard focus inside the dialog until it closes. Closing the dialog returns focus to the control that opened it. A dialog that cannot identify its opener returns focus to the first enabled control in the main window.\n\nEvery icon-only action exposes an accessible name describing the action. Decorative icons do not expose separate accessible elements. An icon that conveys status must have an accessible text description of that status.\n\nError messages identify the affected field and explain how to correct the problem. The application announces a newly displayed error to assistive technology. It does not clear the current field value when reporting an error.\n\nLong-running actions expose a textual progress description. When the total amount of work is unknown, the description reports that processing is active without inventing a completion percentage.\n\nCancelling a long-running import keeps previously saved work. Partial unsaved import content is discarded. The application announces that cancellation has completed after the import task has actually stopped.\n\nText enlargement increases interface text size without hiding essential actions. When content no longer fits vertically, the panel scrolls. The primary action remains reachable through keyboard navigation.\n\nColor is never the only way to communicate validation status. A failed field includes a textual explanation in addition to its color treatment. A successful field may include an icon with an accessible description.\n\nThe reduced-motion setting replaces animated panel transitions with immediate state changes. This setting does not disable progress announcements or hide the result of an action.\n\nScreen-reader reading order follows the visual order of labels, controls, and help text. Related help text is associated with its control. A field label is announced before its current value.\n\nA destructive confirmation identifies the item to be deleted. The default keyboard action is Cancel. Pressing Return without changing focus therefore cancels the confirmation.",
+      "question": "Which controls are skipped when navigating with Tab?",
+      "reference": "Disabled controls are skipped.",
+      "criteria": [
+        "Correctly answers this question: Which controls are skipped when navigating with Tab? Use this factual reference for meaning, including relevant conditions and restrictions: Disabled controls are skipped. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Tab navigation skips disabled controls.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-long-accessibility-guide:0-wrong",
+      "source": "The application follows a consistent interaction model across its settings, editor, and review screens. Keyboard focus remains visible so a user can tell which control receives input. Pressing Tab moves focus to the next enabled control. Disabled controls are skipped in this navigation sequence.\n\nWithin a group of radio buttons, arrow keys change the selected option. Tab moves out of the radio group to the next control. This behavior avoids requiring a separate Tab stop for every option and preserves predictable navigation.\n\nA modal dialog keeps keyboard focus inside the dialog until it closes. Closing the dialog returns focus to the control that opened it. A dialog that cannot identify its opener returns focus to the first enabled control in the main window.\n\nEvery icon-only action exposes an accessible name describing the action. Decorative icons do not expose separate accessible elements. An icon that conveys status must have an accessible text description of that status.\n\nError messages identify the affected field and explain how to correct the problem. The application announces a newly displayed error to assistive technology. It does not clear the current field value when reporting an error.\n\nLong-running actions expose a textual progress description. When the total amount of work is unknown, the description reports that processing is active without inventing a completion percentage.\n\nCancelling a long-running import keeps previously saved work. Partial unsaved import content is discarded. The application announces that cancellation has completed after the import task has actually stopped.\n\nText enlargement increases interface text size without hiding essential actions. When content no longer fits vertically, the panel scrolls. The primary action remains reachable through keyboard navigation.\n\nColor is never the only way to communicate validation status. A failed field includes a textual explanation in addition to its color treatment. A successful field may include an icon with an accessible description.\n\nThe reduced-motion setting replaces animated panel transitions with immediate state changes. This setting does not disable progress announcements or hide the result of an action.\n\nScreen-reader reading order follows the visual order of labels, controls, and help text. Related help text is associated with its control. A field label is announced before its current value.\n\nA destructive confirmation identifies the item to be deleted. The default keyboard action is Cancel. Pressing Return without changing focus therefore cancels the confirmation.",
+      "question": "Which controls are skipped when navigating with Tab?",
+      "reference": "Disabled controls are skipped.",
+      "criteria": [
+        "Correctly answers this question: Which controls are skipped when navigating with Tab? Use this factual reference for meaning, including relevant conditions and restrictions: Disabled controls are skipped. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Disabled controls receive focus instead of being skipped.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-long-accessibility-guide:2-correct",
+      "source": "The application follows a consistent interaction model across its settings, editor, and review screens. Keyboard focus remains visible so a user can tell which control receives input. Pressing Tab moves focus to the next enabled control. Disabled controls are skipped in this navigation sequence.\n\nWithin a group of radio buttons, arrow keys change the selected option. Tab moves out of the radio group to the next control. This behavior avoids requiring a separate Tab stop for every option and preserves predictable navigation.\n\nA modal dialog keeps keyboard focus inside the dialog until it closes. Closing the dialog returns focus to the control that opened it. A dialog that cannot identify its opener returns focus to the first enabled control in the main window.\n\nEvery icon-only action exposes an accessible name describing the action. Decorative icons do not expose separate accessible elements. An icon that conveys status must have an accessible text description of that status.\n\nError messages identify the affected field and explain how to correct the problem. The application announces a newly displayed error to assistive technology. It does not clear the current field value when reporting an error.\n\nLong-running actions expose a textual progress description. When the total amount of work is unknown, the description reports that processing is active without inventing a completion percentage.\n\nCancelling a long-running import keeps previously saved work. Partial unsaved import content is discarded. The application announces that cancellation has completed after the import task has actually stopped.\n\nText enlargement increases interface text size without hiding essential actions. When content no longer fits vertically, the panel scrolls. The primary action remains reachable through keyboard navigation.\n\nColor is never the only way to communicate validation status. A failed field includes a textual explanation in addition to its color treatment. A successful field may include an icon with an accessible description.\n\nThe reduced-motion setting replaces animated panel transitions with immediate state changes. This setting does not disable progress announcements or hide the result of an action.\n\nScreen-reader reading order follows the visual order of labels, controls, and help text. Related help text is associated with its control. A field label is announced before its current value.\n\nA destructive confirmation identifies the item to be deleted. The default keyboard action is Cancel. Pressing Return without changing focus therefore cancels the confirmation.",
+      "question": "When a closing modal dialog can identify its opener, where does keyboard focus return?",
+      "reference": "Focus returns to the control that opened the dialog.",
+      "criteria": [
+        "Correctly answers this question: When a closing modal dialog can identify its opener, where does keyboard focus return? Use this factual reference for meaning, including relevant conditions and restrictions: Focus returns to the control that opened the dialog. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "It returns to the opening control.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-long-accessibility-guide:2-wrong",
+      "source": "The application follows a consistent interaction model across its settings, editor, and review screens. Keyboard focus remains visible so a user can tell which control receives input. Pressing Tab moves focus to the next enabled control. Disabled controls are skipped in this navigation sequence.\n\nWithin a group of radio buttons, arrow keys change the selected option. Tab moves out of the radio group to the next control. This behavior avoids requiring a separate Tab stop for every option and preserves predictable navigation.\n\nA modal dialog keeps keyboard focus inside the dialog until it closes. Closing the dialog returns focus to the control that opened it. A dialog that cannot identify its opener returns focus to the first enabled control in the main window.\n\nEvery icon-only action exposes an accessible name describing the action. Decorative icons do not expose separate accessible elements. An icon that conveys status must have an accessible text description of that status.\n\nError messages identify the affected field and explain how to correct the problem. The application announces a newly displayed error to assistive technology. It does not clear the current field value when reporting an error.\n\nLong-running actions expose a textual progress description. When the total amount of work is unknown, the description reports that processing is active without inventing a completion percentage.\n\nCancelling a long-running import keeps previously saved work. Partial unsaved import content is discarded. The application announces that cancellation has completed after the import task has actually stopped.\n\nText enlargement increases interface text size without hiding essential actions. When content no longer fits vertically, the panel scrolls. The primary action remains reachable through keyboard navigation.\n\nColor is never the only way to communicate validation status. A failed field includes a textual explanation in addition to its color treatment. A successful field may include an icon with an accessible description.\n\nThe reduced-motion setting replaces animated panel transitions with immediate state changes. This setting does not disable progress announcements or hide the result of an action.\n\nScreen-reader reading order follows the visual order of labels, controls, and help text. Related help text is associated with its control. A field label is announced before its current value.\n\nA destructive confirmation identifies the item to be deleted. The default keyboard action is Cancel. Pressing Return without changing focus therefore cancels the confirmation.",
+      "question": "When a closing modal dialog can identify its opener, where does keyboard focus return?",
+      "reference": "Focus returns to the control that opened the dialog.",
+      "criteria": [
+        "Correctly answers this question: When a closing modal dialog can identify its opener, where does keyboard focus return? Use this factual reference for meaning, including relevant conditions and restrictions: Focus returns to the control that opened the dialog. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "It always returns to the first enabled control in the main window.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "repair-long-accessibility-guide:6-correct",
+      "source": "The application follows a consistent interaction model across its settings, editor, and review screens. Keyboard focus remains visible so a user can tell which control receives input. Pressing Tab moves focus to the next enabled control. Disabled controls are skipped in this navigation sequence.\n\nWithin a group of radio buttons, arrow keys change the selected option. Tab moves out of the radio group to the next control. This behavior avoids requiring a separate Tab stop for every option and preserves predictable navigation.\n\nA modal dialog keeps keyboard focus inside the dialog until it closes. Closing the dialog returns focus to the control that opened it. A dialog that cannot identify its opener returns focus to the first enabled control in the main window.\n\nEvery icon-only action exposes an accessible name describing the action. Decorative icons do not expose separate accessible elements. An icon that conveys status must have an accessible text description of that status.\n\nError messages identify the affected field and explain how to correct the problem. The application announces a newly displayed error to assistive technology. It does not clear the current field value when reporting an error.\n\nLong-running actions expose a textual progress description. When the total amount of work is unknown, the description reports that processing is active without inventing a completion percentage.\n\nCancelling a long-running import keeps previously saved work. Partial unsaved import content is discarded. The application announces that cancellation has completed after the import task has actually stopped.\n\nText enlargement increases interface text size without hiding essential actions. When content no longer fits vertically, the panel scrolls. The primary action remains reachable through keyboard navigation.\n\nColor is never the only way to communicate validation status. A failed field includes a textual explanation in addition to its color treatment. A successful field may include an icon with an accessible description.\n\nThe reduced-motion setting replaces animated panel transitions with immediate state changes. This setting does not disable progress announcements or hide the result of an action.\n\nScreen-reader reading order follows the visual order of labels, controls, and help text. Related help text is associated with its control. A field label is announced before its current value.\n\nA destructive confirmation identifies the item to be deleted. The default keyboard action is Cancel. Pressing Return without changing focus therefore cancels the confirmation.",
+      "question": "What happens to previously saved work when a long-running import is cancelled?",
+      "reference": "Previously saved work is kept.",
+      "criteria": [
+        "Correctly answers this question: What happens to previously saved work when a long-running import is cancelled? Use this factual reference for meaning, including relevant conditions and restrictions: Previously saved work is kept. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Already saved work is preserved.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "repair-long-accessibility-guide:6-wrong",
+      "source": "The application follows a consistent interaction model across its settings, editor, and review screens. Keyboard focus remains visible so a user can tell which control receives input. Pressing Tab moves focus to the next enabled control. Disabled controls are skipped in this navigation sequence.\n\nWithin a group of radio buttons, arrow keys change the selected option. Tab moves out of the radio group to the next control. This behavior avoids requiring a separate Tab stop for every option and preserves predictable navigation.\n\nA modal dialog keeps keyboard focus inside the dialog until it closes. Closing the dialog returns focus to the control that opened it. A dialog that cannot identify its opener returns focus to the first enabled control in the main window.\n\nEvery icon-only action exposes an accessible name describing the action. Decorative icons do not expose separate accessible elements. An icon that conveys status must have an accessible text description of that status.\n\nError messages identify the affected field and explain how to correct the problem. The application announces a newly displayed error to assistive technology. It does not clear the current field value when reporting an error.\n\nLong-running actions expose a textual progress description. When the total amount of work is unknown, the description reports that processing is active without inventing a completion percentage.\n\nCancelling a long-running import keeps previously saved work. Partial unsaved import content is discarded. The application announces that cancellation has completed after the import task has actually stopped.\n\nText enlargement increases interface text size without hiding essential actions. When content no longer fits vertically, the panel scrolls. The primary action remains reachable through keyboard navigation.\n\nColor is never the only way to communicate validation status. A failed field includes a textual explanation in addition to its color treatment. A successful field may include an icon with an accessible description.\n\nThe reduced-motion setting replaces animated panel transitions with immediate state changes. This setting does not disable progress announcements or hide the result of an action.\n\nScreen-reader reading order follows the visual order of labels, controls, and help text. Related help text is associated with its control. A field label is announced before its current value.\n\nA destructive confirmation identifies the item to be deleted. The default keyboard action is Cancel. Pressing Return without changing focus therefore cancels the confirmation.",
+      "question": "What happens to previously saved work when a long-running import is cancelled?",
+      "reference": "Previously saved work is kept.",
+      "criteria": [
+        "Correctly answers this question: What happens to previously saved work when a long-running import is cancelled? Use this factual reference for meaning, including relevant conditions and restrictions: Previously saved work is kept. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Previously saved work is deleted.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "scope-permissions:4-correct",
+      "source": "Workspace exports are available to owners. Members can view reports but cannot export a workspace.\n\nGuests may read published reports. Guests cannot edit report drafts.\n\nAn invitation link expires 48 hours after it is created.\n\nA workspace may contain at most 25 active members.\n\nOnly an owner can delete a workspace. Deletion requires entering the workspace name.\n\nArchived workspaces are read-only. Restoring a workspace makes it editable again.\n\nOwners can rotate an API key. Rotating a key immediately revokes the previous key.\n\nA failed sign-in is recorded in the audit log. Audit records are retained for 90 days.\n\nRemoving a member ends their workspace access immediately. Their existing reports remain in the workspace.\n\nA workspace name must contain between 3 and 60 characters.\n\nChanging the workspace time zone affects future scheduled reports, not reports already generated.\n\nA transfer of ownership must be accepted by the new owner before the old owner loses that role.",
+      "question": "Who can perform workspace deletion under the given condition involving ownership?",
+      "reference": "Only an owner can delete a workspace. Deletion requires entering the workspace name.",
+      "criteria": [
+        "Correctly answers this question: Who can perform workspace deletion under the given condition involving ownership? Use this factual reference for meaning, including relevant conditions and restrictions: Only an owner can delete a workspace. Deletion requires entering the workspace name. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Only an owner.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "scope-permissions:4-wrong",
+      "source": "Workspace exports are available to owners. Members can view reports but cannot export a workspace.\n\nGuests may read published reports. Guests cannot edit report drafts.\n\nAn invitation link expires 48 hours after it is created.\n\nA workspace may contain at most 25 active members.\n\nOnly an owner can delete a workspace. Deletion requires entering the workspace name.\n\nArchived workspaces are read-only. Restoring a workspace makes it editable again.\n\nOwners can rotate an API key. Rotating a key immediately revokes the previous key.\n\nA failed sign-in is recorded in the audit log. Audit records are retained for 90 days.\n\nRemoving a member ends their workspace access immediately. Their existing reports remain in the workspace.\n\nA workspace name must contain between 3 and 60 characters.\n\nChanging the workspace time zone affects future scheduled reports, not reports already generated.\n\nA transfer of ownership must be accepted by the new owner before the old owner loses that role.",
+      "question": "Who can perform workspace deletion under the given condition involving ownership?",
+      "reference": "Only an owner can delete a workspace. Deletion requires entering the workspace name.",
+      "criteria": [
+        "Correctly answers this question: Who can perform workspace deletion under the given condition involving ownership? Use this factual reference for meaning, including relevant conditions and restrictions: Only an owner can delete a workspace. Deletion requires entering the workspace name. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Any member.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "scope-permissions:8-correct",
+      "source": "Workspace exports are available to owners. Members can view reports but cannot export a workspace.\n\nGuests may read published reports. Guests cannot edit report drafts.\n\nAn invitation link expires 48 hours after it is created.\n\nA workspace may contain at most 25 active members.\n\nOnly an owner can delete a workspace. Deletion requires entering the workspace name.\n\nArchived workspaces are read-only. Restoring a workspace makes it editable again.\n\nOwners can rotate an API key. Rotating a key immediately revokes the previous key.\n\nA failed sign-in is recorded in the audit log. Audit records are retained for 90 days.\n\nRemoving a member ends their workspace access immediately. Their existing reports remain in the workspace.\n\nA workspace name must contain between 3 and 60 characters.\n\nChanging the workspace time zone affects future scheduled reports, not reports already generated.\n\nA transfer of ownership must be accepted by the new owner before the old owner loses that role.",
+      "question": "What action immediately ends a member's workspace access after removal?",
+      "reference": "Removing a member ends their workspace access immediately. Their existing reports remain in the workspace.",
+      "criteria": [
+        "Correctly answers this question: What action immediately ends a member's workspace access after removal? Use this factual reference for meaning, including relevant conditions and restrictions: Removing a member ends their workspace access immediately. Their existing reports remain in the workspace. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Removing the member immediately ends access.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "scope-permissions:8-wrong",
+      "source": "Workspace exports are available to owners. Members can view reports but cannot export a workspace.\n\nGuests may read published reports. Guests cannot edit report drafts.\n\nAn invitation link expires 48 hours after it is created.\n\nA workspace may contain at most 25 active members.\n\nOnly an owner can delete a workspace. Deletion requires entering the workspace name.\n\nArchived workspaces are read-only. Restoring a workspace makes it editable again.\n\nOwners can rotate an API key. Rotating a key immediately revokes the previous key.\n\nA failed sign-in is recorded in the audit log. Audit records are retained for 90 days.\n\nRemoving a member ends their workspace access immediately. Their existing reports remain in the workspace.\n\nA workspace name must contain between 3 and 60 characters.\n\nChanging the workspace time zone affects future scheduled reports, not reports already generated.\n\nA transfer of ownership must be accepted by the new owner before the old owner loses that role.",
+      "question": "What action immediately ends a member's workspace access after removal?",
+      "reference": "Removing a member ends their workspace access immediately. Their existing reports remain in the workspace.",
+      "criteria": [
+        "Correctly answers this question: What action immediately ends a member's workspace access after removal? Use this factual reference for meaning, including relevant conditions and restrictions: Removing a member ends their workspace access immediately. Their existing reports remain in the workspace. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Signing out is required to end access; removal does not end it.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "scope-sensor-spec:3-correct",
+      "source": "The temperature sensor accepts readings from minus 20 to 60 degrees Celsius. Values outside this range are rejected.\n\nThe sensor reports temperature every 30 seconds while connected to external power.\n\nOn battery power the sensor reports once every five minutes.\n\nThe sensor stores up to 500 readings while offline. The oldest reading is replaced when storage is full.\n\nAn amber indicator means the battery is below 15 percent.\n\nA red indicator means the temperature probe is disconnected.\n\nThe sensor uses two AA batteries. Rechargeable AA batteries are supported.\n\nFactory reset removes stored readings and Wi-Fi credentials.\n\nHold the reset button for ten seconds to start a factory reset.\n\nThe calibration offset can be set between minus 3 and plus 3 degrees Celsius.\n\nThe enclosure is rated for indoor use. It must not be exposed to rain.\n\nEach exported reading includes a UTC timestamp and a temperature in degrees Celsius.",
+      "question": "How many readings can the sensor store while offline under normal conditions?",
+      "reference": "The sensor stores up to 500 readings while offline. The oldest reading is replaced when storage is full.",
+      "criteria": [
+        "Correctly answers this question: How many readings can the sensor store while offline under normal conditions? Use this factual reference for meaning, including relevant conditions and restrictions: The sensor stores up to 500 readings while offline. The oldest reading is replaced when storage is full. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "500 readings.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "scope-sensor-spec:3-wrong",
+      "source": "The temperature sensor accepts readings from minus 20 to 60 degrees Celsius. Values outside this range are rejected.\n\nThe sensor reports temperature every 30 seconds while connected to external power.\n\nOn battery power the sensor reports once every five minutes.\n\nThe sensor stores up to 500 readings while offline. The oldest reading is replaced when storage is full.\n\nAn amber indicator means the battery is below 15 percent.\n\nA red indicator means the temperature probe is disconnected.\n\nThe sensor uses two AA batteries. Rechargeable AA batteries are supported.\n\nFactory reset removes stored readings and Wi-Fi credentials.\n\nHold the reset button for ten seconds to start a factory reset.\n\nThe calibration offset can be set between minus 3 and plus 3 degrees Celsius.\n\nThe enclosure is rated for indoor use. It must not be exposed to rain.\n\nEach exported reading includes a UTC timestamp and a temperature in degrees Celsius.",
+      "question": "How many readings can the sensor store while offline under normal conditions?",
+      "reference": "The sensor stores up to 500 readings while offline. The oldest reading is replaced when storage is full.",
+      "criteria": [
+        "Correctly answers this question: How many readings can the sensor store while offline under normal conditions? Use this factual reference for meaning, including relevant conditions and restrictions: The sensor stores up to 500 readings while offline. The oldest reading is replaced when storage is full. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "1,000 readings.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "v10-repair-booking-guide:5-correct",
+      "source": "A room booking may last at most four hours.\n\nBookings can be made up to 30 days in advance.\n\nA booking can be cancelled without a charge until two hours before its start.\n\nCancelling less than two hours before the start incurs a ten-credit charge.\n\nCheck in within 15 minutes of the start time. Otherwise the room is released.\n\nGuests need a host present throughout the booking.\n\nFood is permitted in rooms A and B. Food is prohibited in room C.\n\nThe projector must be requested when the booking is created.\n\nA recurring booking can include up to eight weekly occurrences.\n\nChanging a recurring booking affects only the selected occurrence unless all future\noccurrences are selected.\n\nRoom B accommodates six people. The occupancy limit must not be exceeded.\n\nThe booking receipt is sent to the organizer, not to every attendee.",
+      "question": "Who must be present throughout a booking involving guests?",
+      "reference": "A host must be present throughout a booking involving guests.",
+      "criteria": [
+        "Correctly answers this question: Who must be present throughout a booking involving guests? Use this factual reference for meaning, including relevant conditions and restrictions: A host must be present throughout a booking involving guests. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "A host must be there for the entire guest booking.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "v10-repair-booking-guide:5-wrong",
+      "source": "A room booking may last at most four hours.\n\nBookings can be made up to 30 days in advance.\n\nA booking can be cancelled without a charge until two hours before its start.\n\nCancelling less than two hours before the start incurs a ten-credit charge.\n\nCheck in within 15 minutes of the start time. Otherwise the room is released.\n\nGuests need a host present throughout the booking.\n\nFood is permitted in rooms A and B. Food is prohibited in room C.\n\nThe projector must be requested when the booking is created.\n\nA recurring booking can include up to eight weekly occurrences.\n\nChanging a recurring booking affects only the selected occurrence unless all future\noccurrences are selected.\n\nRoom B accommodates six people. The occupancy limit must not be exceeded.\n\nThe booking receipt is sent to the organizer, not to every attendee.",
+      "question": "Who must be present throughout a booking involving guests?",
+      "reference": "A host must be present throughout a booking involving guests.",
+      "criteria": [
+        "Correctly answers this question: Who must be present throughout a booking involving guests? Use this factual reference for meaning, including relevant conditions and restrictions: A host must be present throughout a booking involving guests. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Guests can attend the whole booking without a host.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "v10-repair-retention-exceptions:0-correct",
+      "source": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds.\n\nException to the ordinary support-message retention rule: messages under an\nactive legal hold are kept until the hold is released, even after 30 days.\n\nFinancial invoices are retained for seven years from their issue date.\n\nAn export request includes active records and archived records, but excludes\nrecords already deleted.\n\nOnly compliance administrators can apply a legal hold.\n\nReleasing a legal hold requires two different compliance administrators to approve\nthe release.\n\nDeleting an account disables sign-in immediately. Record retention continues under\nthe applicable retention rules.\n\nAn audit event records the actor, UTC time, and record identifier for every deletion.\n\nAttachments follow the retention period of the message to which they belong.\n\nA retention preview lists records scheduled for deletion during the next 24 hours.\n\nChanging a retention policy affects future deletion decisions and does not restore\nrecords already deleted.\n\nThe retention service pauses deletion when its policy database is unavailable.",
+      "question": "What is the ordinary support-message retention period, and how does an active legal hold change it?",
+      "reference": "Ordinary support messages are deleted after 30 days, except messages under an active legal hold are kept until that hold is released.",
+      "criteria": [
+        "Correctly answers this question: What is the ordinary support-message retention period, and how does an active legal hold change it? Use this factual reference for meaning, including relevant conditions and restrictions: Ordinary support messages are deleted after 30 days, except messages under an active legal hold are kept until that hold is released. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Delete ordinary messages after 30 days; keep held messages until release of the hold.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "v10-repair-retention-exceptions:0-wrong",
+      "source": "Ordinary support messages are deleted after 30 days. This rule has an exception\ndescribed on the following page; consult that exception before answering questions\nabout legal holds.\n\nException to the ordinary support-message retention rule: messages under an\nactive legal hold are kept until the hold is released, even after 30 days.\n\nFinancial invoices are retained for seven years from their issue date.\n\nAn export request includes active records and archived records, but excludes\nrecords already deleted.\n\nOnly compliance administrators can apply a legal hold.\n\nReleasing a legal hold requires two different compliance administrators to approve\nthe release.\n\nDeleting an account disables sign-in immediately. Record retention continues under\nthe applicable retention rules.\n\nAn audit event records the actor, UTC time, and record identifier for every deletion.\n\nAttachments follow the retention period of the message to which they belong.\n\nA retention preview lists records scheduled for deletion during the next 24 hours.\n\nChanging a retention policy affects future deletion decisions and does not restore\nrecords already deleted.\n\nThe retention service pauses deletion when its policy database is unavailable.",
+      "question": "What is the ordinary support-message retention period, and how does an active legal hold change it?",
+      "reference": "Ordinary support messages are deleted after 30 days, except messages under an active legal hold are kept until that hold is released.",
+      "criteria": [
+        "Correctly answers this question: What is the ordinary support-message retention period, and how does an active legal hold change it? Use this factual reference for meaning, including relevant conditions and restrictions: Ordinary support messages are deleted after 30 days, except messages under an active legal hold are kept until that hold is released. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "All support messages are deleted after 30 days, including messages under an active legal hold.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "v10-repair-editor-shortcuts:4-correct",
+      "source": "Control-S saves the active document without changing its file name.\n\nControl-Shift-S opens Save As for the active document.\n\nControl-Z undoes the most recent edit.\n\nControl-Y redoes an edit that was undone.\n\nThe editor autosaves every 60 seconds while the document has unsaved changes.\n\nAutosave does not run for documents opened in read-only mode.\n\nThe recovery panel offers the most recent autosaved version after an unexpected exit.\n\nClosing a document with unsaved changes prompts the user to save, discard, or cancel closing.\n\nFind searches only the active document. Find in Folder searches all supported files in the chosen folder.\n\nThe line-number display can be toggled from the View menu.\n\nThe editor preserves UTF-8 encoding when saving a UTF-8 text file.\n\nTabs are displayed as four spaces by default; this setting changes display width without rewriting the file.",
+      "question": "How often does autosave run for a document with unsaved changes, and what happens in read-only mode?",
+      "reference": "Autosave runs every 60 seconds while there are unsaved changes; it does not run for documents opened in read-only mode.",
+      "criteria": [
+        "Correctly answers this question: How often does autosave run for a document with unsaved changes, and what happens in read-only mode? Use this factual reference for meaning, including relevant conditions and restrictions: Autosave runs every 60 seconds while there are unsaved changes; it does not run for documents opened in read-only mode. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "It saves unsaved edits once a minute, but read-only documents are never autosaved.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "v10-repair-editor-shortcuts:4-wrong",
+      "source": "Control-S saves the active document without changing its file name.\n\nControl-Shift-S opens Save As for the active document.\n\nControl-Z undoes the most recent edit.\n\nControl-Y redoes an edit that was undone.\n\nThe editor autosaves every 60 seconds while the document has unsaved changes.\n\nAutosave does not run for documents opened in read-only mode.\n\nThe recovery panel offers the most recent autosaved version after an unexpected exit.\n\nClosing a document with unsaved changes prompts the user to save, discard, or cancel closing.\n\nFind searches only the active document. Find in Folder searches all supported files in the chosen folder.\n\nThe line-number display can be toggled from the View menu.\n\nThe editor preserves UTF-8 encoding when saving a UTF-8 text file.\n\nTabs are displayed as four spaces by default; this setting changes display width without rewriting the file.",
+      "question": "How often does autosave run for a document with unsaved changes, and what happens in read-only mode?",
+      "reference": "Autosave runs every 60 seconds while there are unsaved changes; it does not run for documents opened in read-only mode.",
+      "criteria": [
+        "Correctly answers this question: How often does autosave run for a document with unsaved changes, and what happens in read-only mode? Use this factual reference for meaning, including relevant conditions and restrictions: Autosave runs every 60 seconds while there are unsaved changes; it does not run for documents opened in read-only mode. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Autosave runs every 60 seconds for all documents with unsaved changes, including read-only documents.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "v10-readonly-correct",
+      "source": "Control-S saves the active document without changing its file name.\n\nControl-Shift-S opens Save As for the active document.\n\nControl-Z undoes the most recent edit.\n\nControl-Y redoes an edit that was undone.\n\nThe editor autosaves every 60 seconds while the document has unsaved changes.\n\nAutosave does not run for documents opened in read-only mode.\n\nThe recovery panel offers the most recent autosaved version after an unexpected exit.\n\nClosing a document with unsaved changes prompts the user to save, discard, or cancel closing.\n\nFind searches only the active document. Find in Folder searches all supported files in the chosen folder.\n\nThe line-number display can be toggled from the View menu.\n\nThe editor preserves UTF-8 encoding when saving a UTF-8 text file.\n\nTabs are displayed as four spaces by default; this setting changes display width without rewriting the file.",
+      "question": "Does autosave run for a document opened in read-only mode?",
+      "reference": "No. Autosave does not run for documents opened in read-only mode.",
+      "criteria": [
+        "Correctly answers this question: Does autosave run for a document opened in read-only mode? Use this factual reference for meaning, including relevant conditions and restrictions: No. Autosave does not run for documents opened in read-only mode. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "No, read-only mode disables autosave.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "v10-readonly-wrong",
+      "source": "Control-S saves the active document without changing its file name.\n\nControl-Shift-S opens Save As for the active document.\n\nControl-Z undoes the most recent edit.\n\nControl-Y redoes an edit that was undone.\n\nThe editor autosaves every 60 seconds while the document has unsaved changes.\n\nAutosave does not run for documents opened in read-only mode.\n\nThe recovery panel offers the most recent autosaved version after an unexpected exit.\n\nClosing a document with unsaved changes prompts the user to save, discard, or cancel closing.\n\nFind searches only the active document. Find in Folder searches all supported files in the chosen folder.\n\nThe line-number display can be toggled from the View menu.\n\nThe editor preserves UTF-8 encoding when saving a UTF-8 text file.\n\nTabs are displayed as four spaces by default; this setting changes display width without rewriting the file.",
+      "question": "Does autosave run for a document opened in read-only mode?",
+      "reference": "No. Autosave does not run for documents opened in read-only mode.",
+      "criteria": [
+        "Correctly answers this question: Does autosave run for a document opened in read-only mode? Use this factual reference for meaning, including relevant conditions and restrictions: No. Autosave does not run for documents opened in read-only mode. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Yes, every 60 seconds if it has unsaved changes.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "v10-repair-editor-shortcuts:8-correct",
+      "source": "Control-S saves the active document without changing its file name.\n\nControl-Shift-S opens Save As for the active document.\n\nControl-Z undoes the most recent edit.\n\nControl-Y redoes an edit that was undone.\n\nThe editor autosaves every 60 seconds while the document has unsaved changes.\n\nAutosave does not run for documents opened in read-only mode.\n\nThe recovery panel offers the most recent autosaved version after an unexpected exit.\n\nClosing a document with unsaved changes prompts the user to save, discard, or cancel closing.\n\nFind searches only the active document. Find in Folder searches all supported files in the chosen folder.\n\nThe line-number display can be toggled from the View menu.\n\nThe editor preserves UTF-8 encoding when saving a UTF-8 text file.\n\nTabs are displayed as four spaces by default; this setting changes display width without rewriting the file.",
+      "question": "What content does Find search?",
+      "reference": "Find searches only the active document.",
+      "criteria": [
+        "Correctly answers this question: What content does Find search? Use this factual reference for meaning, including relevant conditions and restrictions: Find searches only the active document. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Only the document currently active.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "v10-repair-editor-shortcuts:8-wrong",
+      "source": "Control-S saves the active document without changing its file name.\n\nControl-Shift-S opens Save As for the active document.\n\nControl-Z undoes the most recent edit.\n\nControl-Y redoes an edit that was undone.\n\nThe editor autosaves every 60 seconds while the document has unsaved changes.\n\nAutosave does not run for documents opened in read-only mode.\n\nThe recovery panel offers the most recent autosaved version after an unexpected exit.\n\nClosing a document with unsaved changes prompts the user to save, discard, or cancel closing.\n\nFind searches only the active document. Find in Folder searches all supported files in the chosen folder.\n\nThe line-number display can be toggled from the View menu.\n\nThe editor preserves UTF-8 encoding when saving a UTF-8 text file.\n\nTabs are displayed as four spaces by default; this setting changes display width without rewriting the file.",
+      "question": "What content does Find search?",
+      "reference": "Find searches only the active document.",
+      "criteria": [
+        "Correctly answers this question: What content does Find search? Use this factual reference for meaning, including relevant conditions and restrictions: Find searches only the active document. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "Every supported file in the chosen folder.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    },
+    {
+      "id": "v10-repair-conflicting-release-notes:8-correct",
+      "source": "The draft release note says uploads are limited to 8 MB. A second equally authoritative draft says uploads are limited to 12 MB. No approved limit is supplied.\n\nRelease 4.2 adds a progress indicator to uploads.\n\nRelease 4.2 fixes a crash when cancelling an upload.\n\nUploads paused by the user do not resume automatically after relaunch.\n\nThe retry button restarts the failed upload from the beginning.\n\nUpload filenames are preserved in the destination folder.\n\nThe destination folder must be writable before an upload can begin.\n\nAn interrupted network connection leaves the upload in the Failed state.\n\nA completed upload shows the destination path in its details.\n\nThe upload history retains the latest 100 jobs.\n\nRemoving a job from history does not delete its uploaded file.\n\nThe upload queue runs two jobs concurrently.",
+      "question": "What does a completed upload show in its details?",
+      "reference": "A completed upload shows the destination path in its details.",
+      "criteria": [
+        "Correctly answers this question: What does a completed upload show in its details? Use this factual reference for meaning, including relevant conditions and restrictions: A completed upload shows the destination path in its details. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "The path to its destination.",
+      "shouldPass": true,
+      "expectedRequirementPasses": [
+        true
+      ]
+    },
+    {
+      "id": "v10-repair-conflicting-release-notes:8-wrong",
+      "source": "The draft release note says uploads are limited to 8 MB. A second equally authoritative draft says uploads are limited to 12 MB. No approved limit is supplied.\n\nRelease 4.2 adds a progress indicator to uploads.\n\nRelease 4.2 fixes a crash when cancelling an upload.\n\nUploads paused by the user do not resume automatically after relaunch.\n\nThe retry button restarts the failed upload from the beginning.\n\nUpload filenames are preserved in the destination folder.\n\nThe destination folder must be writable before an upload can begin.\n\nAn interrupted network connection leaves the upload in the Failed state.\n\nA completed upload shows the destination path in its details.\n\nThe upload history retains the latest 100 jobs.\n\nRemoving a job from history does not delete its uploaded file.\n\nThe upload queue runs two jobs concurrently.",
+      "question": "What does a completed upload show in its details?",
+      "reference": "A completed upload shows the destination path in its details.",
+      "criteria": [
+        "Correctly answers this question: What does a completed upload show in its details? Use this factual reference for meaning, including relevant conditions and restrictions: A completed upload shows the destination path in its details. Reference details not requested by the question are optional. Paraphrases are allowed."
+      ],
+      "response": "It shows the Failed state.",
+      "shouldPass": false,
+      "expectedRequirementPasses": [
+        false
+      ]
+    }
+  ]
+}

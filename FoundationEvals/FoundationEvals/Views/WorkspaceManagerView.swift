@@ -98,7 +98,19 @@ struct WorkspaceManagerView: View {
 
 struct NewSuiteView: View {
     @Bindable var store: EvaluationStore
-    var body: some View { WorkspaceCreationView(store: store, isProject: false) }
+    @State private var fromDocument = false
+    var body: some View {
+        if fromDocument {
+            DocumentSuiteView(store: store)
+        } else {
+            VStack(spacing: 0) {
+                WorkspaceCreationView(store: store, isProject: false)
+                Divider()
+                Button("From document…", systemImage: "doc.text.magnifyingglass") { fromDocument = true }
+                    .padding(20).accessibilityIdentifier("New suite from document")
+            }
+        }
+    }
 }
 
 struct WorkspaceCreationView: View {

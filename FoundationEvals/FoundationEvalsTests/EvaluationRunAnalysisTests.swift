@@ -254,6 +254,38 @@ struct EvaluationRunAnalysisTests {
         #expect(comparison.caseComparisons.allSatisfy { $0.change == .notComparable })
     }
 
+    /// Prevent changed scoring requirements from producing misleading baseline deltas or automatic compatibility.
+    @Test func changedCaseRubricCannotCreateACompatibleBaseline() {
+        var changed = EvaluationCase(name: "Changed rubric", prompt: "Prompt", expected: "Expected")
+        changed.criteriaOverride = ["Original requirement"]
+        let unchanged = EvaluationCase(name: "Unchanged", prompt: "Other prompt", expected: "Other answer")
+        let baseline = makeRun(cases: [changed, unchanged], scoringMode: .modelJudge,
+            results: [sample(changed, repetition: 1, status: .failed), sample(unchanged, repetition: 1, status: .passed)])
+        var current = baseline
+        current.id = UUID()
+        current.startedAt = baseline.startedAt.addingTimeInterval(1)
+        current.plannedCases?[0].criteriaOverride = ["Different requirement"]
+        current.results[0] = sample(changed, repetition: 1, status: .passed)
+        let comparison = EvaluationRunComparison(current: current, baseline: baseline)
+        #expect(comparison.compatibility == .partialCoverage)
+        let affected = comparison.caseComparisons.first { $0.caseID == changed.id }
+        #expect(affected?.issue == .caseDefinitionChanged)
+        #expect(affected?.passRateDelta == nil)
+        #expect(comparison.caseComparisons.first { $0.caseID == unchanged.id }?.change == .unchanged)
+        #expect(RunBaselineSelection.defaultID(for: current, candidates: [baseline]) == nil)
+    }
+
+    /// Preserve valid comparisons when an explicit override and the fallback rubric express identical requirements.
+    @Test func identicalEffectiveCaseRubricRemainsComparable() {
+        let value = EvaluationCase(name: "Case", prompt: "Prompt", expected: "Expected")
+        let baseline = makeRun(cases: [value], scoringMode: .modelJudge,
+            results: [sample(value, repetition: 1, status: .passed)])
+        var current = baseline
+        current.id = UUID()
+        current.plannedCases?[0].criteriaOverride = [" Rubric "]
+        #expect(EvaluationRunComparison(current: current, baseline: baseline).compatibility == .compatible)
+    }
+
     @Test func changedFieldAssertionsAreNotComparable() {
         var evaluationCase = EvaluationCase(name: "Case", prompt: "Prompt", expected: "Expected")
         evaluationCase.fieldAssertions = [.init(pointer: "/score", operation: .minimum, expectedValue: "5")]

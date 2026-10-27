@@ -10,6 +10,8 @@ Use the **Project** menu at the top of the sidebar to change projects. This menu
 
 Select **New Suite** in **Model evaluations** or at the bottom of the sidebar. To duplicate or archive an existing suite, open its sidebar context menu.
 
+Use **New Suite → From document…** to draft and review questions, reference answers, and case-specific rubrics from a local specification or guide. See [Document suites](Document-suites.md) for source review, context limits, and export behavior.
+
 **Model evaluations** shows each active suite's latest check against its current definition. Search for a suite by name, or show only suites that need attention. Select a suite to open it. Select its play button to run it. Select **Refresh** to reload saved results.
 
 The sidebar **Runs** list belongs to the selected suite. Its filter accepts a suite name or version. The run context menu can delete a saved run. This deletes its results and trace from this Mac. The app cannot undo the deletion.
