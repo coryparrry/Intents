@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { downloadProperties, safeURL, startAnalytics } from '../dist/analytics.mjs';
 const origin = 'https://intents-workbench.coryparry.chatgpt.site';
 function browser(options = {}) {
@@ -16,7 +16,7 @@ function browser(options = {}) {
   };
   return { win, choice, scripts, listeners };
 }
-const link = (location = 'hero', path = 'tag/v1.4.0') => ({ href: `https://github.com/coryparrry/Intents/releases/${path}`, dataset: { downloadLocation: location } });
+const link = (location = 'hero', path = 'tag/v1.5.2') => ({ href: `https://github.com/coryparrry/Intents/releases/${path}`, dataset: { downloadLocation: location } });
 
 test('production initialization queues SDK calls and disables recordings and incidental capture', () => {
   const b = browser();
@@ -58,7 +58,8 @@ test('browser privacy signals, opt-out and previews never load the SDK', () => {
 });
 
 test('all tagged download links are tracked with placement and direct-vs-release intent', () => {
-  for (const [page, expectedCount] of [['index.html', 3], ['getting-started.html', 1]]) {
+  const editorial = ['compare.html', ...['compare', 'guides'].flatMap(dir => readdirSync(new URL(`../dist/${dir}/`, import.meta.url)).filter(name => name.endsWith('.html')).map(name => `${dir}/${name}`))];
+  for (const [page, expectedCount] of [['index.html', 3], ['getting-started.html', 1], ...editorial.map(page => [page, 1])]) {
     const html = readFileSync(new URL(`../dist/${page}`, import.meta.url), 'utf8');
     const tags = [...html.matchAll(/<a\b[^>]*data-download-location="([^"]+)"[^>]*>/g)];
     assert.equal(tags.length, expectedCount);
@@ -66,8 +67,8 @@ test('all tagged download links are tracked with placement and direct-vs-release
     for (const [tag, placement] of tags) {
       const props = downloadProperties({ href: tag.match(/href="([^"]+)"/)[1], dataset: { downloadLocation: placement } });
       assert.equal(props.download_location, placement);
-      assert.equal(props.release_version, 'v1.4.0');
-      assert.equal(props.download_type, page === 'index.html' ? 'release_page' : 'disk_image');
+      assert.equal(props.release_version, 'v1.5.2');
+      assert.equal(props.download_type, 'disk_image');
     }
   }
   assert.equal(downloadProperties({ href: 'https://example.com', dataset: { downloadLocation: 'hero' } }), null);

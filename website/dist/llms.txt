@@ -2,22 +2,25 @@
 
 > Test Apple Foundation Models before you ship: a free, open-source native Mac workbench for repeatable cases, responses, traces, and saved comparisons.
 
-Made by Cory Parry; MIT licensed. Intents was previously Foundation Evals. As checked 9 October 2026, the released download is Intents v1.4.0 (4 October 2026), including Review and Batch runs. Development source may include unshipped changes.
+Made by Cory Parry; MIT licensed. Intents was previously Foundation Evals. As checked 26 October 2026, the released download is Intents 1.5.2, including Review and Batch runs. Development source may include unshipped changes.
 
 macOS 27+. The default on-device model needs an Apple Intelligence-capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Xcode 27 is needed for source builds and Mac App Intent tests, not ordinary suites. Remote providers and judges use their configured services. The released app uses authenticated local MCP. Website examples are historical browser recreations, not model benchmarks.
 
-## Product and first use
+## Product
 
 - [Product overview](https://intents-workbench.coryparry.chatgpt.site/index.html.md): Release/source distinction, requirements, limitations, and historical example provenance.
 - [Getting started](https://intents-workbench.coryparry.chatgpt.site/getting-started.html.md): Choose a build, create a small evaluation, and inspect evidence.
 - [Interactive showcase](https://intents-workbench.coryparry.chatgpt.site/): Browser recreations of a recorded 17 September evaluation and a source-only Mac App Intent JSON example.
 
-## Released download
+## Install
 
-- [Intents 1.4.0 release](https://github.com/coryparrry/Intents/releases/tag/v1.4.0): Published installer, notes, and checksums.
-- [v1.4.0 instructions](https://github.com/coryparrry/Intents/blob/v1.4.0/README.md): Released interface and MCP behavior.
+- [Install with Homebrew](https://intents-workbench.coryparry.chatgpt.site/guides/install-intents-homebrew): `brew install --cask coryparrry/tap/intents`.
+- [Intents 1.5.2 DMG](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg): Current Apple silicon installer.
 
-## Development source and guides
+- [Intents 1.5.2 release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2): Published installer, notes, and checksums.
+- [v1.5.2 instructions](https://github.com/coryparrry/Intents/blob/v1.5.2/README.md): Released interface and MCP behavior.
+
+## Source docs
 
 - [Repository and builds](https://github.com/coryparrry/Intents): Current source; Xcode 27 needed to build.
 - [Getting started](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Getting-started.md): Current source controls.
@@ -32,3 +35,19 @@ macOS 27+. The default on-device model needs an Apple Intelligence-capable Apple
 ## Optional
 
 - [Issues and feedback](https://github.com/coryparrry/Intents/issues): Share a reproducible case without private data.
+
+## Comparisons
+
+- [Intents vs Foundation Evals](https://intents-workbench.coryparry.chatgpt.site/compare/foundation-evals)
+- [Intents vs Promptfoo](https://intents-workbench.coryparry.chatgpt.site/compare/promptfoo)
+- [Intents vs DeepEval](https://intents-workbench.coryparry.chatgpt.site/compare/deepeval)
+- [Intents vs Braintrust](https://intents-workbench.coryparry.chatgpt.site/compare/braintrust)
+- [Intents vs Apple’s Evaluations framework](https://intents-workbench.coryparry.chatgpt.site/compare/apple-evaluations)
+- [How Intents compares with other LLM evaluation tools](https://intents-workbench.coryparry.chatgpt.site/compare)
+
+## Guides
+
+- [How to evaluate Apple Foundation Models on a Mac before you ship](https://intents-workbench.coryparry.chatgpt.site/guides/evaluate-apple-foundation-models-mac)
+- [Install Intents with Homebrew on Apple silicon](https://intents-workbench.coryparry.chatgpt.site/guides/install-intents-homebrew)
+- [Connect Codex or Claude Code to Intents over MCP](https://intents-workbench.coryparry.chatgpt.site/guides/intents-mcp-coding-agents)
+- [On-device LLM evaluation on macOS 27 (without sending prompts to a vendor SaaS)](https://intents-workbench.coryparry.chatgpt.site/guides/on-device-llm-evaluation-macos)

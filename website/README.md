@@ -84,21 +84,21 @@ the app script. ResizeObserver supplies preview geometry without an immediate
 layout read.
 
 - `dist/robots.txt` permits crawlers and advertises the sitemap.
-- `dist/sitemap.xml` lists the homepage and getting-started HTML page. Update `lastmod` when
+- `dist/sitemap.xml` lists the homepage, getting-started guide, privacy page, comparison hub, five comparisons, and four practical guides. Update `lastmod` when
   its substantive content changes, not on every deployment.
 - `dist/llms.txt` is a concise reading guide following the optional llms.txt
   proposal. It is not an indexing requirement or a ranking guarantee.
 - `dist/index.html.md` is a linked Markdown product overview. Keep its facts
   and the JSON-LD consistent with the visible site and current product.
 - `dist/getting-started.html` and its Markdown alternate distinguish the
-  Intents v1.4.0 download from Intents development source, explain
+  Intents v1.5.2 download from Intents development source, explain
   a first evaluation, and link current source guides.
 - Sites serves that HTML at `/getting-started` and redirects its `.html` URL.
   Canonical, sitemap and internal links use the extensionless public route.
   A plain local static server may still require `/getting-started.html`.
-- Download facts were verified on 9 October 2026. Recheck published release
+- Download facts were verified on 26 October 2026. Recheck published release
   assets before publishing or updating version copy.
-  Review and Batch runs are also available in the v1.4.0 release.
+  Review and Batch runs are also available in the v1.5.2 release.
 - `.openai/hosting.json` disables the homepage fallback for nonexistent URLs,
   so missing pages return HTTP 404 instead of duplicate homepage content.
 - Alternate and canonical links are in the HTML head. Sites serves the text
@@ -118,20 +118,64 @@ The canonical and sitemap URLs must still refer to the public Site.
 Public Sites access is required. The checks use representative crawler
 user-agent headers; they do not prove visits from real crawler IPs, indexing,
 rankings, or inclusion in AI answers. Search Console / Bing Webmaster ownership
-verification and sitemap submission can be completed by the domain owner; no
-verification token has been invented or added to this site.
+verification and sitemap submission can be completed by the domain owner.
+IndexNow uses the separate generated ownership file described below; it does
+not establish Search Console or Bing Webmaster account ownership.
 
 References: [Google AI search guidance](https://developers.google.com/search/docs/appearance/ai-features),
 [OpenAI crawlers](https://developers.openai.com/api/docs/bots),
 [Anthropic crawlers](https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler),
 [llms.txt proposal](https://llmstxt.org/), and [Schema.org SoftwareApplication](https://schema.org/SoftwareApplication).
 
+## IndexNow after publication
+
+The root `dist/indexnow-key.txt` is the generated IndexNow ownership proof.
+Keep it stable across deployments and out of the sitemap. It must be publicly
+served before submitting URLs. The submission script uses its explicit root
+`keyLocation`, so it covers this Site's host without DNS or a custom domain.
+
+Preview the sitemap URLs without sending any network request:
+
+```sh
+node scripts/submit-indexnow.mjs
+```
+
+After a successful Sites deployment, verify production delivery, then submit
+only the pages that were just added, materially changed, or deleted. Use
+extensionless canonical paths; deleted pages do not need to remain in the
+sitemap. For example, after publishing changes to these two pages:
+
+```sh
+node scripts/check-discovery.mjs
+node scripts/submit-indexnow.mjs --submit /compare /guides/intents-mcp-coding-agents
+```
+
+`--submit` requires explicit paths or same-origin HTTPS URLs. The script
+deduplicates them, enforces the 10,000-URL batch limit, verifies the live key
+matches this checkout, and sends one JSON POST to `https://api.indexnow.org/indexnow`.
+It refuses redirects or a missing/mismatched key. It does not run from visitors'
+browsers or on a schedule, and ordinary discovery checks never send notifications.
+
+HTTP 200 means the URLs were received; HTTP 202 means key validation is still
+pending. Neither proves crawling, indexing, or ranking. Errors exit nonzero;
+there are no automatic retries. Investigate 403/422 responses and wait after
+429 rate limits instead of repeatedly resubmitting. Participating search engines
+share notifications, so there is no need to post the same batch to each one.
+
+References: [IndexNow protocol](https://www.indexnow.org/documentation) and
+[submission guidance](https://www.indexnow.org/faq). This is a publishing step,
+not an indexing guarantee or a Google Search Console submission.
+
 ## Website analytics
 
-PostHog EU project 266962 measures anonymous, cookieless traffic. Both product pages and the privacy page load `analytics.mjs` asynchronously. Preview/localhost domains do not initialize PostHog. Production events have `site: intents`, `analytics_source: website`, and `is_test: false`.
+PostHog EU project 266962 measures anonymous, cookieless traffic. All product, comparison, guide, and privacy pages load `analytics.mjs` asynchronously. Preview/localhost domains do not initialize PostHog. Production events have `site: intents`, `analytics_source: website`, and `is_test: false`.
 
 - `$pageview` / `$pageleave`: visits, daily anonymous visitors, pages, referrals, campaign sources and session duration.
-- `website_download_clicked`: `download_location` (navigation, hero, closing, getting_started), `download_type` (release_page or disk_image), `release_version`, `platform`, `download_url`. It measures clicks, not completed downloads or installs.
+- `website_download_clicked`: `download_location` (navigation, hero, closing, getting_started, comparison, guide), `download_type` (release_page or disk_image), `release_version`, `platform`, `download_url`. It measures clicks, not completed downloads or installs.
 - `?analytics_test=1` marks a manual verification visit and its clicks as `is_test: true`; the dedicated dashboard excludes these.
 
 Cookieless server hash mode is enabled in PostHog. IP-derived country enrichment and reliable returning-user counts across days are unavailable in this mode. No session replay, text/form autocapture, heatmaps or exception capture is enabled by this integration. Only UTM campaign parameters survive URL sanitization. Browser privacy signals prevent SDK loading. The privacy page can store an opt-out preference, propagated to other open tabs.
+
+## Editorial pages
+
+Comparison and practical guide routes use extensionless canonicals and matching `.html.md` alternates. Keep both formats in sync. Update the sitemap, llms.txt, homepage links, and checked dates when substantive facts change. Competitor statements link to official sources; “check” means unverified, not unsupported. `tests/guides.test.mjs` covers route resolution, metadata, release links, FAQ parity, and Markdown coverage.

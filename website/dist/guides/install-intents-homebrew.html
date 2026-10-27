@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install Intents with Homebrew on Apple silicon — Intents</title>
+<meta name="description" content="With Homebrew already installed, run brew install --cask coryparrry/tap/intents to install Intents on Apple silicon and macOS 27 or later. The cask currently points to Intents 1.5.2. Open the app from Applications, enable Apple Intelligence, and finish its model download before trying the default on-device evaluation provider."><meta name="author" content="Cory Parry">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<meta property="og:title" content="Install Intents with Homebrew on Apple silicon"><meta property="og:description" content="With Homebrew already installed, run brew install --cask coryparrry/tap/intents to install Intents on Apple silicon and macOS 27 or later. The cask currently points to Intents 1.5.2. Open the app from Applications, enable Apple Intelligence, and finish its model download before trying the default on-device evaluation provider.">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Intents"><meta property="og:url" content="https://intents-workbench.coryparry.chatgpt.site/guides/install-intents-homebrew">
+<meta property="og:image" content="https://intents-workbench.coryparry.chatgpt.site/assets/intents-icon.png"><meta name="twitter:card" content="summary">
+<link rel="canonical" href="https://intents-workbench.coryparry.chatgpt.site/guides/install-intents-homebrew"><link rel="alternate" type="text/markdown" href="https://intents-workbench.coryparry.chatgpt.site/guides/install-intents-homebrew.html.md" title="Read in Markdown">
+<link rel="describedby" type="text/plain" href="https://intents-workbench.coryparry.chatgpt.site/llms.txt"><link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="icon" href="/assets/favicon.png"><link rel="stylesheet" href="/styles.css"><script type="module" src="/analytics.mjs"></script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "Article", "headline": "Install Intents with Homebrew on Apple silicon", "name": "Install Intents with Homebrew on Apple silicon", "url": "https://intents-workbench.coryparry.chatgpt.site/guides/install-intents-homebrew", "description": "With Homebrew already installed, run brew install --cask coryparrry/tap/intents to install Intents on Apple silicon and macOS 27 or later. The cask currently points to Intents 1.5.2. Open the app from Applications, enable Apple Intelligence, and finish its model download before trying the default on-device evaluation provider.", "datePublished": "2026-10-26", "dateModified": "2026-10-26", "author": {"@type": "Person", "name": "Cory Parry"}, "isPartOf": {"@type": "WebSite", "name": "Intents", "url": "https://intents-workbench.coryparry.chatgpt.site/"}}]}</script>
+</head><body><a class="skip-link" href="#main">Skip to content</a><header class="site-header"><a class="brand" href="/"><img src="/assets/intents-icon-37.png" width="37" height="37" alt=""><span>Intents</span></a><nav aria-label="Main navigation"><a href="/getting-started">Get started</a><a href="/compare">Compare</a></nav><a class="nav-download" href="/getting-started#choose-a-build">Install</a></header>
+<main id="main" class="guide-body"><p class="eyebrow">PRACTICAL GUIDE</p><h1>Install Intents with Homebrew on Apple silicon</h1>
+<p class="guide-note">Checked 26 October 2026 · Intents 1.5.2</p>
+<h2>Short answer</h2>
+<p>With Homebrew already installed, run brew install --cask coryparrry/tap/intents to install Intents on Apple silicon and macOS 27 or later. The cask currently points to Intents 1.5.2. Open the app from Applications, enable Apple Intelligence, and finish its model download before trying the default on-device evaluation provider.</p>
+<h2>Check the requirements</h2>
+<p>The cask targets Apple silicon and macOS 27+. If Homebrew is not installed, follow the <a href="https://brew.sh">official Homebrew instructions</a>, or use the direct disk-image download below. Do not install a package manager just to try the app if the disk image suits you.</p>
+<h2>Install and open</h2>
+<pre><code>brew install --cask coryparrry/tap/intents</code></pre>
+<p>Open <strong>Intents</strong> from Applications. Enable Apple Intelligence and allow its model to download. Follow <a href="/getting-started#first-evaluation">Getting started</a> to create a small case. An ordinary on-device suite does not require Xcode.</p>
+<h2>Upgrade an existing Homebrew installation</h2>
+<pre><code>brew update
+brew upgrade --cask --greedy coryparrry/tap/intents</code></pre>
+<p>The cask declares automatic app updates, so <code>--greedy</code> includes it in Homebrew’s upgrade check. The command installs the version currently recorded in the tap; future releases may be newer than this guide’s checked version.</p>
+<h2>Inspect the cask before installing</h2>
+<pre><code>brew info --cask coryparrry/tap/intents</code></pre>
+<p>The <a href="https://github.com/coryparrry/homebrew-tap/blob/main/Casks/intents.rb">published cask</a> records version 1.5.2, its GitHub DMG URL, SHA-256 checksum, Apple silicon architecture, and macOS requirement. Check the <a href="https://github.com/coryparrry/Intents/releases/tag/v1.5.2">release notes and checksums</a> when investigating a version mismatch.</p>
+<h2>Prefer the disk image?</h2>
+<p>Download the DMG, open it, drag <strong>Intents</strong> to <strong>Applications</strong>, eject the disk image, and open the app. Intents was previously Foundation Evals; <a href="/compare/foundation-evals">the rename guide</a> explains old names. These instructions do not remove your existing evaluation workspace.</p>
+<h2>Try Intents 1.5.2</h2>
+<p><a data-download-location="guide" href="https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg">Download for macOS · v1.5.2</a> · <a href="/getting-started">Getting started</a></p>
+<pre><code>brew install --cask coryparrry/tap/intents</code></pre>
+<p>Free, MIT licensed, macOS 27+, Apple silicon. Enable Apple Intelligence and download its model for the default on-device provider. Ordinary model suites do not require Xcode.</p>
+<h2>Sources and corrections</h2>
+<p>Facts checked 26 October 2026. <a href="https://github.com/coryparrry/Intents/releases/tag/v1.5.2">Intents release</a> · <a href="https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md">User guide</a> · <a href="https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md">MCP guide</a>. <a href="https://github.com/coryparrry/Intents/issues">Report a correction</a>.</p>
+<p><a href="/compare">All comparisons</a> · <a href="/guides/evaluate-apple-foundation-models-mac">Evaluate on a Mac</a> · <a href="/guides/intents-mcp-coding-agents">Connect an agent</a></p>
+</main><footer class="site-footer section-shell"><div><a class="footer-brand" href="/">Intents</a><a href="/compare">Comparisons</a><a href="/privacy">Privacy</a><a href="https://github.com/coryparrry/Intents/issues">Corrections</a></div></footer></body></html>
