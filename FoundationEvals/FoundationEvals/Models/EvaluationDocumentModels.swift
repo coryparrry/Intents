@@ -56,11 +56,11 @@ struct EvaluationDocumentEvidence: Codable, Hashable, Sendable {
             return "This document case requires a newer version of Intents."
         }
         guard !sourceName.isEmpty, sourceName.count <= 255, sourceDigest.count == 64,
-              !passages.isEmpty, passages.count <= 256,
+              !passages.isEmpty, passages.count <= 512,
               Set(passages.map(\.id)).count == passages.count,
               passages.allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                   && !$0.id.isEmpty && $0.id.count <= 80 && $0.location.count <= 255 }),
-              contextText.count <= 128_000 else { return "The retained document context is missing or exceeds its limits." }
+              passages.reduce(0, { $0 + $1.text.count }) <= 128_000 else { return "The retained document context is missing or exceeds its limits." }
         guard !citations.isEmpty, citations.count <= 8,
               citations.allSatisfy({ citation in
                   !citation.quote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

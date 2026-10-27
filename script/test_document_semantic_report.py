@@ -55,13 +55,23 @@ class SemanticEvidenceTests(unittest.TestCase):
                        citations=case['documentEvidence']['citations'], existingQuestions=[], accepted=True)
         contract = dict(sources=dict(doc=dict(passages=case['documentEvidence']['passages'], fileDigest='source')),
                         controls=[dict(fixture, id=str(i)) for i in range(10)])
-        rows = [dict(id=str(i), candidate=case, review=review, expectedAcceptance=True, correct=True) for i in range(10)]
+        rows = [dict(id=str(i), candidate=case, review=copy.deepcopy(review), expectedAcceptance=True, correct=True) for i in range(10)]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             (path / 'acceptance-control-contract.json').write_text(json.dumps(contract))
             result = path / 'acceptance-controls.jsonl'
             result.write_text('\n'.join(map(json.dumps, rows)))
             validate_acceptance_controls(path, path, self.connection)
+            negative_contract = copy.deepcopy(contract)
+            negative_contract['controls'][0]['accepted'] = False
+            (path / 'acceptance-control-contract.json').write_text(json.dumps(negative_contract))
+            wrong_stage = copy.deepcopy(rows)
+            wrong_stage[0]['expectedAcceptance'] = False
+            wrong_stage[0]['review']['checks'][0]['score'] = 2
+            wrong_stage[0]['review']['rawResponse'] = json.dumps(dict(requirements=wrong_stage[0]['review']['checks']))
+            result.write_text('\n'.join(map(json.dumps, wrong_stage)))
+            with self.assertRaises(AssertionError): validate_acceptance_controls(path, path, self.connection)
+            (path / 'acceptance-control-contract.json').write_text(json.dumps(contract))
             result.write_text('\n'.join(map(json.dumps, rows[:-1])))
             with self.assertRaises(AssertionError): validate_acceptance_controls(path, path, self.connection)
             changed = copy.deepcopy(rows)

@@ -8,6 +8,8 @@ struct EvaluationCase: Identifiable, Codable, Hashable, Sendable {
     var expected: String
     var conversation = EvaluationConversationConfiguration()
     var fieldAssertions: [EvaluationFieldAssertion]? = nil
+    /// The standalone host rejects case rubric overrides; shared analysis uses the suite rubric.
+    var criteriaOverride: [String]? { nil }
 
     /// Creates an identified evaluation case while retaining its prompt, expected response, conversation, and optional field assertions verbatim.
     init(

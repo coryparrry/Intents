@@ -4,6 +4,79 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct EvaluationDocumentPersistenceTests {
+    @Test func importedSourcesAtPublishedLimitsRemainValidEvidence() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appending(path: "limits.txt")
+        let quote = "Owners can export a workspace."
+        for text in [(0..<512).map { quote + " Fact \($0)." }.joined(separator: "\n\n"),
+                     quote + String(repeating: "x", count: 128_000 - quote.count)] {
+            try Data(text.utf8).write(to: file)
+            let source = try EvaluationDocumentImporter.importFile(at: file)
+            #expect(source.validationIssue == nil)
+            let passage = try #require(source.passages.first)
+            let value = try #require(try EvaluationDocumentGenerator.validated(.init(name: "Boundary",
+                question: "Who can export?", answer: "Owners can export a workspace.", quotes: [quote], supported: true),
+                source: source, passage: passage, questionType: "Direct fact", existingQuestions: []))
+            #expect(value.documentValidationIssue == nil)
+        }
+        try Data((0..<513).map { "Fact \($0)." }.joined(separator: "\n\n").utf8).write(to: file)
+        #expect(throws: (any Error).self) { try EvaluationDocumentImporter.importFile(at: file) }
+    }
+
+    @Test func failedReviewerSetupPreservesRetryHistoryOnDisk() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let projectID = UUID()
+        let controller = EvaluationDocumentDraftController(directory: directory, projectID: projectID,
+            generate: { _, _, _, _, _ in Issue.record("Unauthorized retry"); return nil }, availability: { nil })
+        var draft = EvaluationDocumentDraft(projectID: projectID, name: "Retry", source: DocumentTestFixture.source,
+            selectedPassageIDs: [DocumentTestFixture.passage.id])
+        draft.issues = ["page-6-1:0": "Saved failure"]
+        draft.completedBatchIDs = ["page-6-1:0"]
+        controller.draft = draft
+        #expect(controller.persist())
+        controller.generate(retryFailures: true)
+        await controller.waitUntilIdle()
+        #expect(controller.draft?.issues == draft.issues)
+        #expect(controller.draft?.completedBatchIDs == draft.completedBatchIDs)
+        let saved = try #require(EvaluationDocumentDraftStorage.load(from: directory.appending(path: "DocumentDrafts/\(projectID.uuidString).json")))
+        #expect(saved.issues == draft.issues)
+        #expect(saved.completedBatchIDs == draft.completedBatchIDs)
+    }
+
+    @Test func exportedCasesWithDifferentRetainedContextsCanBeReviewedAfterImport() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = DocumentTestFixture.example()
+        var second = first
+        second.id = UUID(); second.prompt = "When are reports updated?"; second.expected = "Daily."
+        second.criteriaOverride = ["States daily."]
+        let passage = EvaluationDocumentPassage(id: "second", location: "Page 2", text: "Reports are updated daily.")
+        second.documentEvidence?.passages.append(passage)
+        second.documentEvidence?.citations = [.init(passageID: passage.id, quote: passage.text)]
+        second.acceptDocumentReview()
+        var suite = DocumentTestFixture.suite(); suite.cases = [first, second]
+        let projectID = UUID()
+        var imported = try EvaluationDocumentArchive.draft(from: EvaluationDocumentArchive.data(for: suite), projectID: projectID)
+        let connection = DocumentTestFixture.semanticConnection
+        imported.semanticJudgeID = connection.id
+        imported.semanticApprovalDigest = connection.disclosureDigest
+        let controller = EvaluationDocumentDraftController(directory: directory, projectID: projectID,
+            reviewerFactory: { _ in { value, source, questions in
+                #expect(source.passages == value.documentEvidence?.passages)
+                return try await DocumentTestFixture.semanticReviewer(value, source, questions)
+            } }, availability: { nil })
+        controller.draft = imported
+        for item in imported.cases {
+            controller.reviewAndAccept(caseID: item.id, judge: connection)
+            await controller.waitUntilIdle()
+            #expect(controller.error == nil)
+        }
+        let restored = try #require(controller.draft).makeSuite()
+        #expect(restored.cases.map { $0.documentEvidence?.passages.count } == [1, 2])
+    }
+
     @Test func textImportNormalizesUnicodeAndRefusesOversizedSelection() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

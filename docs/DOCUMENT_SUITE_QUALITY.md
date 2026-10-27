@@ -43,7 +43,9 @@ The runner snapshots the connection configuration, never its credential.
 Review complete extracted sources and every surfaced question, reference, rubric,
 and citation. The report emits review packets and checks source/candidate hashes,
 attempt completeness, terminal success, scoring inputs, source hashes, and runtime
-identity. Failed attempts remain in the denominator. Do not combine incompatible runs.
+identity. Failed attempts remain in the attempt-yield denominator. Source-support
+and acceptance rates use all surfaced candidates, including failed review labels;
+qualification separately requires at least 100 surfaced drafts. Do not combine incompatible runs.
 
 Human review is the default. An explicitly authorized automated review may use
 `--reviewer-kind automated`; it never counts as human approval. Qualification needs
@@ -78,6 +80,7 @@ compact-fixture decoding error; after correcting the loader, the ten-control
 replay completed successfully. These are targeted checks, not a completed combined
 campaign or a new broad-corpus qualification.
 
-The current source also passes 92 focused document/judge Swift tests, 20 Python
-report-integrity tests, 7 shared-source checks, 42 plugin compatibility/parity tests,
-and all 3 document UI flows. Light and dark source-review screenshots were inspected.
+The acceptance-stage validation at `35888b17b` passed 92 focused document/judge Swift
+tests and all 3 document UI flows; light and dark screenshots were inspected.
+The report-integrity, shared-source, and plugin checks also pass. Subsequent native
+feedback-fix regressions are checked by current-head CI.

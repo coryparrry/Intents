@@ -87,10 +87,6 @@ final class EvaluationDocumentDraftController {
         } catch { self.error = error.localizedDescription; return }
         draft?.requiresSemanticReview = true
         draft?.generationVersion = EvaluationDocumentGenerator.version
-        if retryFailures {
-            draft?.completedBatchIDs.subtract(Set(initial.issues.keys))
-            draft?.issues = [:]
-        }
         guard persist() else { return }
         let id = UUID()
         operationID = id
@@ -102,6 +98,11 @@ final class EvaluationDocumentDraftController {
                 reviewer = try await reviewerFactory(judge)
                 try Task.checkCancellation()
                 guard operationID == id else { return }
+                if retryFailures {
+                    draft?.completedBatchIDs.subtract(Set(initial.issues.keys))
+                    draft?.issues = [:]
+                    guard persist() else { isBusy = false; operation = nil; progress = ""; return }
+                }
             } catch {
                 if operationID == id { self.error = error.localizedDescription; isBusy = false; operation = nil; progress = "" }
                 return
@@ -185,7 +186,11 @@ final class EvaluationDocumentDraftController {
                 let reviewer = try await reviewerFactory(judge)
                 try Task.checkCancellation()
                 guard operationID == id else { return }
-                let review = try await reviewer(item.evaluationCase, current.source,
+                var source = current.source
+                if current.importedTemplate != nil, let evidence = item.evaluationCase.documentEvidence {
+                    source = .init(name: evidence.sourceName, fileDigest: evidence.sourceDigest, passages: evidence.passages)
+                }
+                let review = try await reviewer(item.evaluationCase, source,
                     current.cases.filter { $0.id != caseID && !$0.discarded }.map { $0.evaluationCase.prompt })
                 try Task.checkCancellation()
                 guard operationID == id, let index = draft?.cases.firstIndex(where: { $0.id == caseID }),

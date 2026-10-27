@@ -75,6 +75,9 @@ def validate_acceptance_controls(run, controls_path, connection):
         assert [dict(passageID=c['passageID'], quote=c['quote']) for c in evidence['citations']] == fixture['citations'], 'Acceptance citations changed'
         assert row['review'].get('reviewedQuestions', []) == question_digests(fixture['existingQuestions']), 'Acceptance sibling context changed'
         validate_review(row['review'], case, connection, fixture['accepted'])
+        if not fixture['accepted']:
+            assert any(c['score'] < 4 for c in row['review']['questionChecks']), 'Historical negative passed question review'
+            assert not row['review']['checks'] and not row['review']['rawResponse'], 'Historical negative reached reference review'
 
 
 def semantic_metrics(run, attempts, controls_path=None):

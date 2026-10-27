@@ -272,7 +272,9 @@ import Testing
             candidate.documentEvidence = .init(sourceName: source.name, sourceDigest: source.fileDigest,
                 passages: source.passages, citations: control.citations.map { .init(passageID: $0.passageID, quote: $0.quote) }, questionType: "Direct fact")
             let review = try await reviewer(candidate, source, control.existingQuestions)
-            let correct = review.matches(candidate) == control.accepted
+            let questionRejected = (review.questionChecks ?? []).contains { $0.score < 4 }
+                && review.checks.isEmpty && review.rawResponse.isEmpty
+            let correct = review.matches(candidate) == control.accepted && (control.accepted || questionRejected)
             try append(Result(id: control.id, expectedAcceptance: control.accepted, candidate: candidate, review: review, correct: correct), name: "acceptance-controls.jsonl", directory: directory)
             #expect(correct, "Historical false-approval control \(control.id): \(review.feedback)")
         }

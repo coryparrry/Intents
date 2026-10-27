@@ -44,7 +44,7 @@ enum EvaluationDocumentArchive {
         }
         var draft = EvaluationDocumentDraft(projectID: projectID, name: suite.name,
             source: .init(name: first.sourceName, fileDigest: first.sourceDigest, passages: passages,
-                warnings: ["Imported suite: retained source context is included. Model and judge settings reset to on-device. Review imported cases before creating a new suite."]),
+                warnings: ["Imported suite: each case keeps its own retained source context. Model and judge settings reset to on-device. Review imported cases before creating a new suite."]),
             selectedPassageIDs: Set(passages.map(\.id)))
         draft.importedTemplate = suite
         draft.cases = suite.cases.map { evaluationCase in

@@ -44,7 +44,7 @@ Questions, answers, criteria, citations, and context remain editable in **Cases*
 
 ## Export, restore, and limitations
 
-The export control in **Cases** saves document-only suites, including questions, reference answers, rubrics, and retained source passages. The file contains document content: share it only with intended recipients. Model/judge bindings are omitted. **Import saved document suite…** restores this evidence into a new draft with on-device defaults and requires fresh source review.
+The export control in **Cases** saves document-only suites, including questions, reference answers, rubrics, and retained source passages. The file contains document content: share it only with intended recipients. Model/judge bindings are omitted. **Import saved document suite…** restores this evidence into a new draft with on-device defaults and requires fresh source review. Each restored case is checked against its own retained context; the archive cannot recover text previously removed from all cases.
 
 Drafts and cases own their retained text locally. Discarding a draft does not remove evidence from a created suite or historical run. Source content is excluded from telemetry and routine diagnostic logging; local draft, suite, run, and export files intentionally contain it.
 
