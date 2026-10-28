@@ -88,7 +88,9 @@ struct ImageToolTests {
         #expect(EvaluationInputTokenCounter.historyWithoutImages(textOnlyHistory) == textOnlyHistory)
     }
 
-    @Test func imageReferenceResolvesOnlyFromTranscriptAndEmitsSafeMetadata() throws {
+    /// Verifies direct and union image references resolve from transcript attachments while exposing only safe metadata.
+    @Test(arguments: [false, true])
+    func imageReferenceResolvesOnlyFromTranscriptAndEmitsSafeMetadata(insideUnion: Bool) throws {
         let image = try #require(
             CGContext(
                 data: nil,
@@ -127,13 +129,12 @@ struct ImageToolTests {
             type: .object,
             children: [EvaluationSchemaField(name: "photo", type: .imageReference)]
         )
-        let fields = [
-            EvaluationSchemaField(
-                name: "payload",
-                type: .reference,
-                referenceName: "ImagePayload"
-            )
-        ]
+        let imagePayload = EvaluationSchemaField(name: "payload", type: .reference, referenceName: "ImagePayload")
+        let fields = [insideUnion
+            ? EvaluationSchemaField(name: "payload", type: .union, children: [
+                EvaluationSchemaField(name: "message", type: .string), imagePayload
+            ])
+            : imagePayload]
 
         let resolvedJSON = try EvaluationCustomTool.resolvedArgumentsJSON(
             argumentsJSON: arguments.jsonString,

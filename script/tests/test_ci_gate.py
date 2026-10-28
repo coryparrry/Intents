@@ -26,10 +26,12 @@ def results(selected, stability="false"):
 
 class GateTests(unittest.TestCase):
     def test_selected_coverage_shapes_accept_the_real_workers(self):
+        """Each valid selection, including production-only work, accepts matching workers."""
         cases = {
             "docs-only-ubuntu-noop": selection(),
             "portable-only-skipped-native-ancestry": selection(regression="true", swift_suites='["PortableTests"]'),
             "sdk-only": selection(regression="true", sdk_consumer="true"),
+            "production-only": selection(regression="true", production_evals="true"),
             "input-only": selection(regression="true", input_conversion="true"),
             "macos-only": selection(regression="true", macos_tests='["MacTests"]'),
             "native-build-only": selection(native="true"),
@@ -95,13 +97,15 @@ class GateTests(unittest.TestCase):
             self.assertTrue(ci_gate.evaluate(results(selection()), invalid, "false"))
 
     def test_regression_flag_agrees_with_every_mac_selection_permutation(self):
-        for swift, macos, core, sdk, inputs in itertools.product((False, True), repeat=5):
+        """Every independent Mac workload must allocate the regression worker."""
+        for swift, macos, core, sdk, inputs, production in itertools.product((False, True), repeat=6):
             selected = selection(native="true" if core else "false",
                                  swift_suites='["SwiftTests"]' if swift else "[]",
                                  macos_tests='["MacTests"]' if macos else "[]",
                                  native_tests='["CoreTests"]' if core else "[]",
-                                 sdk_consumer=str(sdk).lower(), input_conversion=str(inputs).lower())
-            expected = any((swift, macos, core, sdk, inputs))
+                                 sdk_consumer=str(sdk).lower(), input_conversion=str(inputs).lower(),
+                                 production_evals=str(production).lower())
+            expected = any((swift, macos, core, sdk, inputs, production))
             for regression in (False, True):
                 with self.subTest(swift=swift, macos=macos, core=core, sdk=sdk, inputs=inputs, regression=regression):
                     selected["regression"] = str(regression).lower()

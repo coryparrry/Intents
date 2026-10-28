@@ -47,6 +47,27 @@ identity. Failed attempts remain in the attempt-yield denominator. Source-suppor
 and acceptance rates use all surfaced candidates, including failed review labels;
 qualification separately requires at least 100 surfaced drafts. Do not combine incompatible runs.
 
+The manifest defines the complete document set and requested total. Imported
+sources and summary counts must match it exactly. Each document keeps its original
+ordered slots, starting at zero and limited to twice its requested draft count.
+Its ledger must reach the requested count, exhaust those slots, or end with a
+retained budget-rejection or semantic-error reason; neither terminal outcome may
+be followed by another attempt. A semantic error still fails semantic qualification.
+Current semantic runs require explicit outcomes and reconcile every outer attempt
+with its bounded correction/review events, including rejected and unsurfaced drafts.
+Missing batches, orphan events, and malformed rejection receipts cannot qualify.
+
+Historical v1-v15 records may omit outcomes. The report derives only surfaced or
+omitted status from candidate presence and still requires a satisfied request or
+the complete attempt bound; absent historical metadata cannot justify an early
+stop. Historical rejected semantic events retain a candidate fingerprint and
+verdict rather than the complete rejected case. Those receipts are checked against
+their retained fingerprint, raw verdict, judge, and sibling-question context; only
+surfaced cases support recomputing the full scoring-input fingerprint. Frozen
+scoring, semantic, and acceptance controls remain separate requirements. Raw
+verdicts are byte-bounded; the report does not substitute Python code-point lengths
+for the producer's Swift character-count limits.
+
 Human review is the default. An explicitly authorized automated review may use
 `--reviewer-kind automated`; it never counts as human approval. Qualification needs
 at least 10 documents, 100 requested and surfaced drafts, complete labels, 90% source

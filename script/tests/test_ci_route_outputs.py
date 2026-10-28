@@ -14,12 +14,14 @@ from script import ci_routes
 
 class RegressionOutputTests(unittest.TestCase):
     def test_only_selected_regression_work_allocates_a_mac(self):
+        """Each selected Apple workload, including production fixtures, needs a Mac."""
         cases = (
             ({}, False),
             ({"native": True}, False),
             ({"native": True, "native_tests": ["FoundationEvalsTests/CoreTests"]}, True),
             ({"input_conversion": True}, True),
             ({"sdk_consumer": True}, True),
+            ({"production_evals": True}, True),
             ({"swift_suites": ["CoreTests"]}, True),
             ({"macos_tests": ["script.tests.test_mac_fixture"]}, True),
         )

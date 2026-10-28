@@ -64,7 +64,9 @@ struct EvaluationDynamicProfile: LanguageModelSession.DynamicProfile {
     private let instructions: String
     private let tools: [any Tool]
     private let configuration: EvaluationProfileConfiguration
+    private let modelConfiguration: EvaluationModelConfiguration
     private let recorder: EvaluationProfileRecorder
+    private let initiallyAfterTool: Bool
 
     @LanguageModelSession.SessionProperty(\.evaluationProfileReceivedToolOutput)
     private var receivedToolOutput
@@ -79,15 +81,15 @@ struct EvaluationDynamicProfile: LanguageModelSession.DynamicProfile {
     private var afterToolProfileName: String { "\(configuration.name) · after tool" }
 
     var body: some LanguageModelSession.DynamicProfile {
-        if receivedToolOutput {
+        if initiallyAfterTool || receivedToolOutput {
             LanguageModelSession.Profile {
                 Instructions(afterToolInstructions)
             }
             .model(model)
-            .samplingMode(configuration.resolvedAfterToolSamplingMode)
-            .temperature(configuration.resolvedAfterToolTemperature)
-            .maximumResponseTokens(configuration.afterToolMaximumResponseTokens)
-            .reasoningLevel(configuration.resolvedAfterToolReasoningLevel)
+            .samplingMode(configuration.resolvedAfterToolSamplingMode ?? modelConfiguration.generationOptions.samplingMode)
+            .temperature(configuration.resolvedAfterToolTemperature ?? modelConfiguration.generationOptions.temperature)
+            .maximumResponseTokens(configuration.afterToolMaximumResponseTokens ?? modelConfiguration.maximumResponseTokens)
+            .reasoningLevel(configuration.resolvedAfterToolReasoningLevel ?? modelConfiguration.contextOptions.reasoningLevel)
             .toolCallingMode(.disallowed)
             .transcriptErrorHandlingPolicy(configuration.resolvedAfterToolTranscriptErrorPolicy)
             .onActivate {
@@ -117,6 +119,10 @@ struct EvaluationDynamicProfile: LanguageModelSession.DynamicProfile {
                 tools
             }
             .model(model)
+            .samplingMode(modelConfiguration.generationOptions.samplingMode)
+            .temperature(modelConfiguration.generationOptions.temperature)
+            .maximumResponseTokens(modelConfiguration.maximumResponseTokens)
+            .reasoningLevel(modelConfiguration.contextOptions.reasoningLevel)
             .toolCallingMode(configuration.requireToolFirst ? .required : .allowed)
             .onActivate {
                 await recorder.recordActivation(configuration.name)
@@ -144,6 +150,8 @@ struct EvaluationDynamicProfile: LanguageModelSession.DynamicProfile {
     }
 
     /// Creates a two-phase profile session, starting after-tool when restored history already contains tool output.
+    /// Restored phase state is immutable because session properties are not bound until the session is created.
+    /// Each phase owns its generation settings, inheriting unspecified overrides from the supplied model configuration.
     /// Applies an optional tool boundary and model-only history projection while retaining the supplied session history.
     static func makeSession(
         model: some LanguageModel,
@@ -151,6 +159,7 @@ struct EvaluationDynamicProfile: LanguageModelSession.DynamicProfile {
         tools: [any Tool],
         configuration: EvaluationProfileConfiguration,
         recorder: EvaluationProfileRecorder,
+        modelConfiguration: EvaluationModelConfiguration = .init(),
         history: [Transcript.Entry] = [],
         modelHistoryProjection: EvaluationModelHistoryProjection? = nil,
         toolBoundary: EvaluationBuiltinToolBoundary? = nil
@@ -160,13 +169,12 @@ struct EvaluationDynamicProfile: LanguageModelSession.DynamicProfile {
             instructions: instructions,
             tools: tools,
             configuration: configuration,
-            recorder: recorder
+            modelConfiguration: modelConfiguration,
+            recorder: recorder,
+            initiallyAfterTool: history.contains { entry in
+                if case .toolOutput = entry { true } else { false }
+            }
         )
-        if history.contains(where: { entry in
-            if case .toolOutput = entry { true } else { false }
-        }) {
-            profile.receivedToolOutput = true
-        }
         if let toolBoundary {
             let boundedProfile = profile.modifier(toolBoundary)
             guard let modelHistoryProjection else {

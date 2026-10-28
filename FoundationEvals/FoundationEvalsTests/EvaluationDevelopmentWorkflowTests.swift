@@ -1265,16 +1265,56 @@ struct EvaluationDevelopmentWorkflowTests {
         #expect(mixed.failures.contains { $0.contains("mixed judge") })
     }
 
-    @Test func releaseChecksRejectReassessmentsAndApprovalsFromAnotherScoringContract() throws {
+    /// Rejects another scoring mode and preserves the execution-error diagnostic when an explicit selection is unavailable.
+    @Test(arguments: [ScoringMode.exactMatch, .containsExpected, .review, .modelJudge])
+    func releaseChecksRejectSelectedAssessmentsFromAnotherScoringMode(mode: ScoringMode) throws {
         var suite = EvaluationSuite()
-        suite.scoringMode = .modelJudge
+        suite.scoringMode = mode
+        suite.releasePolicy.criticalCaseIDs = [suite.cases[0].id]
+        var run = makeRun(cases: suite.cases, statuses: [[.failed]])
+        run.suiteID = suite.id
+        run.scoringMode = mode
+        run.criteria = suite.criteria
+        run.suiteDefinition = EvaluationSuiteDefinition(suite: suite)
+        var assessmentSuite = suite
+        assessmentSuite.scoringMode = mode == .exactMatch ? .containsExpected : .exactMatch
+        let assessment = try makeAssessment(run: run, suite: assessmentSuite, status: .passed, judge: fixtureJudge())
+        run.assessments = [assessment]
+        run.selectedAssessmentID = assessment.id
+
+        let mismatch = EvaluationReleaseCheckEvaluator.report(projectID: UUID(), suite: suite,
+            currentSuiteRevision: "current", run: run, baseline: nil, approvedBaseline: nil)
+        #expect(mismatch.outcome == .incompleteOrIncompatibleEvidence)
+        #expect(mismatch.failures.contains { $0.contains("selected assessment used a different") })
+
+        let matching = try makeAssessment(run: run, suite: suite, status: .passed, judge: fixtureJudge())
+        run.assessments = [matching]
+        run.selectedAssessmentID = matching.id
+        #expect(EvaluationReleaseCheckEvaluator.report(projectID: UUID(), suite: suite,
+            currentSuiteRevision: "current", run: run, baseline: nil, approvedBaseline: nil).outcome == .passed)
+
+        run.selectedAssessmentID = UUID()
+        let missing = EvaluationReleaseCheckEvaluator.report(projectID: UUID(), suite: suite,
+            currentSuiteRevision: "current", run: run, baseline: nil, approvedBaseline: nil)
+        #expect(missing.outcome == .executionError)
+        #expect(missing.failures.contains { $0.contains("selected judge assessment is missing") })
+        #expect(run.effectiveResults.first?.judgeErrorCategory == "assessmentUnavailable")
+    }
+
+    /// Rejects both current and approved score sets whose captured mode or rubric differs from the release contract.
+    @Test(arguments: [ScoringMode.modelJudge, .exactMatch, .containsExpected, .review])
+    func releaseChecksRejectReassessmentsAndApprovalsFromAnotherScoringContract(mode: ScoringMode) throws {
+        var suite = EvaluationSuite()
+        suite.scoringMode = mode
         suite.releasePolicy.requireApprovedBaseline = true
         let judge = fixtureJudge()
         var easierSuite = suite
         easierSuite.criteria = "The response contains any text."
+        if mode != .modelJudge { easierSuite.scoringMode = mode == .exactMatch ? .containsExpected : .exactMatch }
 
         var current = makeRun(cases: suite.cases, statuses: [[.passed]])
         current.suiteID = suite.id
+        current.scoringMode = mode
         current.criteria = suite.criteria
         current.suiteRevision = "current"
         current.suiteDefinition = EvaluationSuiteDefinition(suite: suite)
@@ -1482,12 +1522,15 @@ struct EvaluationDevelopmentWorkflowTests {
         #expect(report.outcome == .regression)
     }
 
-    @Test func releaseChecksBindSelectedAssessmentToImmutableSubjectEvidence() throws {
+    /// Every scoring mode must bind its selected assessment to the original immutable subject evidence.
+    @Test(arguments: [ScoringMode.modelJudge, .exactMatch, .containsExpected, .review])
+    func releaseChecksBindSelectedAssessmentToImmutableSubjectEvidence(mode: ScoringMode) throws {
         var suite = EvaluationSuite()
-        suite.scoringMode = .modelJudge
+        suite.scoringMode = mode
         let judge = fixtureJudge()
         var run = makeRun(cases: suite.cases, statuses: [[.passed]])
         run.suiteID = suite.id
+        run.scoringMode = mode
         run.criteria = suite.criteria
         run.suiteRevision = "current"
         run.suiteDefinition = EvaluationSuiteDefinition(suite: suite)
@@ -1578,9 +1621,41 @@ struct EvaluationDevelopmentWorkflowTests {
         #expect(store.validationIssue(for: suite, includeModelReadiness: false)?.contains("critical release case") == true)
     }
 
-    @Test func releaseChecksKeepTheExplicitlyApprovedBaselineAssessment() {
+    /// An approval of original deterministic scores remains fixed after later assessments are selected.
+    @Test(arguments: [ScoringMode.exactMatch, .containsExpected, .review])
+    func releaseChecksKeepOriginalBaselineScoresWhenApprovalHasNoAssessment(mode: ScoringMode) throws {
         var suite = EvaluationSuite()
-        suite.scoringMode = .modelJudge
+        suite.scoringMode = mode
+        suite.releasePolicy.requireApprovedBaseline = true
+        var baseline = makeRun(cases: suite.cases, statuses: [[.passed]])
+        baseline.suiteID = suite.id
+        baseline.scoringMode = mode
+        baseline.criteria = suite.criteria
+        baseline.suiteDefinition = EvaluationSuiteDefinition(suite: suite)
+        let later = try makeAssessment(run: baseline, suite: suite, status: .failed, judge: fixtureJudge())
+        baseline.assessments = [later]
+        baseline.selectedAssessmentID = later.id
+        let approval = EvaluationBaselineApproval(id: UUID(), runID: baseline.id, assessmentID: nil,
+            suiteRevision: "current", approvedAt: Date(), note: nil, revokedAt: nil,
+            scoringContract: try EvaluationScoringContract(suite: suite))
+        var current = baseline
+        current.id = UUID()
+        current.results[0].id = UUID()
+        current.results[0].status = .failed
+        current.assessments = nil
+        current.selectedAssessmentID = nil
+
+        let report = EvaluationReleaseCheckEvaluator.report(projectID: UUID(), suite: suite,
+            currentSuiteRevision: "current", run: current, baseline: baseline, approvedBaseline: approval)
+        #expect(report.outcome == .regression)
+        #expect(report.failures.contains { $0.contains("Pass rate regressed") })
+    }
+
+    /// Later reassessments cannot replace the specifically approved score set in any scoring mode.
+    @Test(arguments: [ScoringMode.modelJudge, .exactMatch, .containsExpected, .review])
+    func releaseChecksKeepTheExplicitlyApprovedBaselineAssessment(mode: ScoringMode) {
+        var suite = EvaluationSuite()
+        suite.scoringMode = mode
         suite.releasePolicy.requireApprovedBaseline = true
         let suiteID = suite.id
         let judge = EvaluationJudgeIdentity(
@@ -1608,6 +1683,7 @@ struct EvaluationDevelopmentWorkflowTests {
 
         var baseline = makeRun(cases: suite.cases, statuses: [[.passed]])
         baseline.suiteID = suiteID
+        baseline.scoringMode = mode
         baseline.criteria = suite.criteria
         baseline.suiteRevision = "current"
         baseline.suiteDefinition = EvaluationSuiteDefinition(suite: suite)
@@ -1618,6 +1694,7 @@ struct EvaluationDevelopmentWorkflowTests {
 
         var current = makeRun(cases: suite.cases, statuses: [[.failed]])
         current.suiteID = suiteID
+        current.scoringMode = mode
         current.criteria = suite.criteria
         current.suiteRevision = "current"
         current.suiteDefinition = EvaluationSuiteDefinition(suite: suite)

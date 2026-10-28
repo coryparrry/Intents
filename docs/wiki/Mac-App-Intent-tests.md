@@ -22,6 +22,10 @@ process and verifies its signed code against the selected build. If the app is
 already running, quit it yourself after saving your work. Reload the catalog
 after rebuilding or replacing the selected app.
 
+Selecting an app inspects its bundle in the background. **Inspecting built app…**
+shows progress, and **Cancel** stops that inspection. Choosing another app cancels
+the earlier inspection before loading the new selection.
+
 Intents reads compiled App Intents metadata to produce a best-effort catalog.
 Missing metadata or an unsupported declaration may leave an action unavailable.
 Well-formed hidden actions are included too; an unsupported parameter type stays

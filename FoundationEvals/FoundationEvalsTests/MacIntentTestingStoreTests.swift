@@ -4,6 +4,49 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct MacIntentTestingStoreTests {
+    /// Cancels and joins a suspended catalog load without publishing its selection or an obsolete diagnostic.
+    @Test func closingDuringCatalogLoadingJoinsCancellation() async {
+        let (started, continuation) = AsyncStream<Void>.makeStream()
+        defer { continuation.finish() }
+        var events = started.makeAsyncIterator()
+        let store = MacIntentTestingStore(catalogLoader: { app in
+            continuation.yield(())
+            try await Task.sleep(for: .seconds(30))
+            return .init(bundleIdentifier: "example.never-published", appURL: app, actions: [])
+        })
+        store.load(appURL: URL(fileURLWithPath: "/synthetic.app"))
+        _ = await events.next()
+        #expect(store.isLoading)
+        await store.closeAndWait()
+        #expect(!store.isLoading)
+        #expect(store.catalog == nil)
+        #expect(store.diagnostic == nil)
+    }
+
+    /// Joins a superseded loader even if it returns after cancellation, then publishes only the newer app.
+    @Test func replacementCatalogCannotPublishASupersededSelection() async {
+        let (started, continuation) = AsyncStream<Void>.makeStream()
+        defer { continuation.finish() }
+        var events = started.makeAsyncIterator()
+        let store = MacIntentTestingStore(catalogLoader: { app in
+            if app.lastPathComponent == "first.app" {
+                continuation.yield(())
+                try? await Task.sleep(for: .seconds(30))
+            }
+            return .init(bundleIdentifier: app.lastPathComponent, appURL: app,
+                actions: [.init(id: "Echo", title: "Echo", parameters: [], outputType: "String")])
+        })
+        store.load(appURL: URL(fileURLWithPath: "/first.app"))
+        _ = await events.next()
+        store.load(appURL: URL(fileURLWithPath: "/second.app"))
+        await store.waitForLoad()
+        #expect(!store.isLoading)
+        #expect(store.catalog?.bundleIdentifier == "second.app")
+        #expect(store.selectedActionID == "Echo")
+        #expect(store.diagnostic == nil)
+    }
+
+    /// Clears saved verdicts after any draft edit once asynchronous catalog loading has completed.
     @Test func editingAnyTestFieldInvalidatesThePreviousVerdict() async throws {
         let app = try fixtureApp()
         defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
@@ -19,6 +62,8 @@ import Testing
         for change in changes {
             let store = successfulStore()
             store.load(appURL: app)
+
+            await store.waitForLoad()
             store.start()
             await store.waitForRun()
             #expect(store.result?.succeeded == true)
@@ -27,11 +72,12 @@ import Testing
         }
     }
 
+    /// Drops a previous successful verdict before invalid retry admission.
     @Test func invalidRetryNeverRetainsThePreviousPassedResult() async throws {
         let app = try fixtureApp()
         defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
         let store = successfulStore()
-        store.load(appURL: app); store.start(); await store.waitForRun()
+        store.load(appURL: app); await store.waitForLoad(); store.start(); await store.waitForRun()
         #expect(store.result?.succeeded == true)
         store.inputsJSON = "[]"
         store.start()
@@ -40,6 +86,7 @@ import Testing
         #expect(!store.isRunning)
     }
 
+    /// Rejects old-draft results after edits during asynchronous execution.
     @Test func changesDuringAnAwaitCannotPublishAResultForTheOldDraft() async throws {
         let app = try fixtureApp()
         defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
@@ -48,7 +95,7 @@ import Testing
             return .init(succeeded: true, resultBundleURL: nil, logURL: app, summary: "Passed")
         })
         store.signingIdentity = "test"; store.teamIdentifier = "test"
-        store.load(appURL: app); store.start()
+        store.load(appURL: app); await store.waitForLoad(); store.start()
         store.inputsJSON = "{\"new\":true}"
         await store.waitForRun()
         #expect(store.result == nil)
@@ -63,24 +110,32 @@ import Testing
         return store
     }
 
-    @Test func failedCatalogReplacementClearsThePreviousSelection() throws {
+    /// Clears selection and publishes the latest asynchronous load failure.
+    @Test func failedCatalogReplacementClearsThePreviousSelection() async throws {
         let app = try fixtureApp()
         defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
         let store = MacIntentTestingStore()
         store.load(appURL: app)
+
+        await store.waitForLoad()
         #expect(store.catalog?.bundleIdentifier == "example.MacIntentFixture")
         #expect(store.selectedActionID == "EchoIntent")
         store.load(appURL: app.appending(path: "missing.app"))
+
+        await store.waitForLoad()
         #expect(store.catalog == nil)
         #expect(store.selectedActionID.isEmpty)
         #expect(store.diagnostic != nil)
     }
 
-    @Test func expectedValueIsExplicitAndInputsMustBeAnObject() throws {
+    /// Preserves explicit comparison and input validation after asynchronous catalog loading.
+    @Test func expectedValueIsExplicitAndInputsMustBeAnObject() async throws {
         let app = try fixtureApp()
         defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
         let store = MacIntentTestingStore()
         store.load(appURL: app)
+
+        await store.waitForLoad()
         store.expectedValueJSON = "\"not asserted\""
         #expect(try store.testCase().expectedValueJSON == nil)
         store.checksExpectedValue = true
@@ -94,11 +149,14 @@ import Testing
         #expect(try store.testCase().inputsJSON == store.inputsJSON)
     }
 
-    @Test func missingSigningSetupPreventsDispatch() throws {
+    /// Rejects missing signing settings before native execution is dispatched.
+    @Test func missingSigningSetupPreventsDispatch() async throws {
         let app = try fixtureApp()
         defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
         let store = MacIntentTestingStore()
         store.load(appURL: app)
+
+        await store.waitForLoad()
         store.start()
         #expect(!store.isRunning)
         #expect(store.result == nil)

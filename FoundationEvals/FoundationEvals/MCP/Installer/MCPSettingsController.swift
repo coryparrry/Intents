@@ -72,6 +72,7 @@ final class MCPSettingsController {
     private let serverControl: MCPServerControl
     private let installer: CodexMCPInstaller
     private let credentialStore: MCPCredentialStore
+    private let pasteboardWriter: @MainActor (String) -> Void
     private let userDefaults: UserDefaults
     private let existingCredentialOnly: Bool
     private let configurationDirectory: URL
@@ -86,7 +87,8 @@ final class MCPSettingsController {
 
     /// Sets up connector dependencies and the Codex configuration directory, detects legacy-port
     /// migration, and refreshes installation state. Existing-credential-only mode skips preference
-    /// migration and installation inspection.
+    /// migration and installation inspection. An injectable pasteboard writer keeps isolated tests
+    /// from changing the general clipboard.
     init(
         serverControl: MCPServerControl,
         userDefaults: UserDefaults = .standard,
@@ -94,6 +96,11 @@ final class MCPSettingsController {
         credentialStore: MCPCredentialStore = .keychain,
         existingCredentialOnly: Bool = false,
         configurationDirectory: URL? = nil,
+        pasteboardWriter: @escaping @MainActor (String) -> Void = { value in
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(value, forType: .string)
+        },
         telemetry: TelemetryController? = nil
     ) {
         self.telemetry = telemetry
@@ -101,6 +108,7 @@ final class MCPSettingsController {
         self.userDefaults = userDefaults
         self.installer = installer
         self.credentialStore = credentialStore
+        self.pasteboardWriter = pasteboardWriter
         self.existingCredentialOnly = existingCredentialOnly
         self.configurationDirectory = configurationDirectory ?? FileManager.default.homeDirectoryForCurrentUser
             .appending(path: ".codex", directoryHint: .isDirectory)
@@ -223,14 +231,31 @@ final class MCPSettingsController {
         notice = "MCP endpoint copied."
     }
 
-    /// Copies the credential-bearing manual TOML snippet, creating a credential if needed.
-    /// Existing-credential-only mode refuses the action; credential errors become a safe notice.
+    /// Copies the credential-bearing manual TOML snippet and starts its connector without editing
+    /// Codex configuration. Serializes settings actions and reports copied-but-failed startup
+    /// separately; existing-credential-only mode refuses the action.
     func copyManualConfiguration() async {
         guard !existingCredentialOnly else { notice = MCPSettingsAccessError.configurationReadOnly.localizedDescription; return }
+        guard !isBusy else { return }
+        let diagnostic = telemetry?.begin(.mcpStart)
+        var diagnosticFailure: TelemetryFailure?
+        isBusy = true
+        defer {
+            isBusy = false
+            telemetry?.end(diagnostic, failure: diagnosticFailure)
+        }
         do {
-            copyToPasteboard(try currentConfiguration().manualSnippet)
-            notice = "Codex configuration copied."
+            let configuration = try currentConfiguration()
+            copyToPasteboard(configuration.manualSnippet)
+            do {
+                try await startServer(using: configuration)
+                notice = "Codex configuration copied. The local connector is running. Add the configuration to your client, then reconnect."
+            } catch {
+                diagnosticFailure = .classify(error)
+                notice = "Codex configuration copied, but the local connector could not start. " + safeDescription(for: error)
+            }
         } catch {
+            diagnosticFailure = .classify(error)
             notice = safeDescription(for: error)
         }
     }
@@ -322,11 +347,9 @@ final class MCPSettingsController {
         configurationDirectory
     }
 
-    /// Replaces the general pasteboard contents with a plain-text value.
+    /// Sends plain text to the configured writer, which replaces the general pasteboard by default.
     private func copyToPasteboard(_ value: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(value, forType: .string)
+        pasteboardWriter(value)
     }
 
     /// Returns localized descriptions for recognized connector errors and a generic message for other

@@ -328,6 +328,56 @@ struct ReferenceLookupToolBoundaryTests {
         }
     }
 
+    /// Verifies references fitting the excerpt budget retain facts before matching terms, including original whitespace and Unicode.
+    @Test func shortReferenceExcerptsRetainCompleteSourceText() throws {
+        let references = [
+            "£120 is the annual fee.",
+            "  £120 is the annual fee.\n",
+            "€120 is " + String(repeating: "é", count: 164) + " annual fee."
+        ]
+        for text in references {
+            let index = ReferenceSearchIndex(attachments: [attachment(name: "reference.txt", kind: .text, text: text)])
+            let result = try #require(index.search(query: "annual fee", maximumResults: 1).first)
+            #expect(text.utf8.count <= 350)
+            #expect(result.excerpt == text)
+        }
+    }
+
+    /// Verifies a long reference retains the answer immediately before matching terms within its whole-character byte budget.
+    @Test func longReferenceExcerptsRetainPrecedingFacts() throws {
+        let passage = "£120 is the annual fee."
+        let text = String(repeating: "background ", count: 80)
+            + passage + String(repeating: " More details.", count: 80)
+        let index = ReferenceSearchIndex(attachments: [attachment(name: "reference.txt", kind: .text, text: text)])
+        let result = try #require(index.search(query: "annual fee", maximumResults: 1).first)
+
+        #expect(result.excerpt.hasPrefix("…"))
+        #expect(result.excerpt.contains(passage))
+        #expect(result.excerpt.utf8.count <= 350)
+        #expect(!result.excerpt.contains("�"))
+    }
+
+    /// Verifies ranking and excerpt anchoring share punctuation boundaries and preserve original indices through Unicode normalization.
+    @Test func referenceExcerptsShareRankingTokenBoundaries() throws {
+        let cases = [
+            ("customer", "The customer's return window is 30 days."),
+            ("customer", "The customer’s return window is 30 days."),
+            ("service", "The self-service return window is 30 days."),
+            ("50", "The rate is 12.50 percent."),
+            ("eleve", "£120 is E\u{0301}LE\u{0300}VE’s annual fee.")
+        ]
+        for (query, passage) in cases {
+            let text = String(repeating: "cafe\u{0301} ", count: 100) + passage
+            let index = ReferenceSearchIndex(attachments: [attachment(name: "reference.txt", kind: .text, text: text)])
+            let result = try #require(index.search(query: query, maximumResults: 1).first)
+
+            #expect(result.excerpt.hasPrefix("…"))
+            #expect(result.excerpt.contains(passage))
+            #expect(result.excerpt.utf8.count <= 350)
+            #expect(!result.excerpt.contains("�"))
+        }
+    }
+
     /// Verifies the excerpt byte cap retains exact-budget Unicode text and drops an overflowing whole combining or emoji character.
     @Test func excerptByteBoundsPreserveWholeCharacters() throws {
         let family = "👨‍👩‍👧‍👦"

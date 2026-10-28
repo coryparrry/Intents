@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { suite, id, object, nativeResult, MAX_OUTPUT_BYTES } from './validation.mjs';
+import { suite, id, object, nativeResult, MAX_OUTPUT_BYTES, MAX_SUITE_BUNDLE_BYTES } from './validation.mjs';
 import { isAppSuite, revision, portableSuite, parseImport, sampleEnvelope, applyAssessment, validateAppEvidence, importedTimestamp } from './app-format.mjs';
 import { addReferenceFile, exportReferences, importReferences } from './references.mjs';
 import { importCases } from './case-import.mjs';
@@ -15,6 +15,13 @@ export async function initProjects(app) {
 }
 /** Resolves an explicit or default project UUID and requires the owning project record to exist. */
 async function project(app, value) { const projectId = id(value || app.defaultProjectId, 'projectId'); await app.store.read('projects', projectId); return projectId; }
+/** Serializes the complete portable suite and optional files, rejecting an oversized bundle before extraction or a successful export. */
+function suiteBundleJSON(definition, files, pretty = false) {
+  const value = files?.length ? { suite: definition, referenceFiles: files } : definition;
+  const json = JSON.stringify(value, null, pretty ? 2 : undefined);
+  if (Buffer.byteLength(json) > MAX_SUITE_BUNDLE_BYTES) throw new Error('Portable suite bundle exceeds 32 MiB; export or import fewer reference files');
+  return json;
+}
 /** Normalizes an editor draft, resets imported Spotlight authorization, verifies project ownership, and transactionally saves against the supplied or embedded revision. */
 export async function saveSuite(app, args, { imported = false } = {}) {
   const value = args.suite;
@@ -52,8 +59,8 @@ export async function workspaceDispatch(app, name, args) {
       await app.store.write('projects', saved); return { project: saved };
     }
     case 'eval_project_overview': return overview(app, args.projectId);
-    case 'eval_import_suite': { const imported = parseImport(args, 'suite'); let definition = imported.suite || imported; const files = args.referenceFiles || imported.referenceFiles; if (files) definition = await importReferences(app, definition, files); return saveSuite(app, { ...args, suite: definition }, { imported: true }); }
-    case 'eval_export_suite': { const saved = await app.store.read('suites', id(args.suiteId, 'suiteId')); const value = portableSuite(saved); const referenceFiles = await exportReferences(app, saved); return { suite: value, ...(referenceFiles.length ? { referenceFiles } : {}), revision: saved.revision, json: JSON.stringify(referenceFiles.length ? { suite: value, referenceFiles } : value, null, 2), filename: `${saved.name.replace(/[^a-z0-9_-]/gi, '-')}.json` }; }
+    case 'eval_import_suite': { const imported = parseImport(args, 'suite'); let definition = imported.suite || imported; const files = args.referenceFiles || imported.referenceFiles; suiteBundleJSON(definition, files); if (files) definition = await importReferences(app, definition, files); return saveSuite(app, { ...args, suite: definition }, { imported: true }); }
+    case 'eval_export_suite': { const saved = await app.store.read('suites', id(args.suiteId, 'suiteId')); const value = portableSuite(saved); const referenceFiles = await exportReferences(app, saved); return { suite: value, ...(referenceFiles.length ? { referenceFiles } : {}), revision: saved.revision, json: suiteBundleJSON(value, referenceFiles, true), filename: `${saved.name.replace(/[^a-z0-9_-]/gi, '-')}.json` }; }
     case 'eval_import_cases': {
       const saved = await app.store.read('suites', id(args.suiteId, 'suiteId'));
       const cases = importCases(args, isAppSuite(saved));
@@ -93,7 +100,7 @@ export async function workspaceDispatch(app, name, args) {
 function importedAppRunStatus(run) {
   return run.cancelled ? 'cancelled' : run.terminationReason || run.results?.some((sample) => sample.status === 'error') ? 'failed' : 'completed';
 }
-/** Validates local terminal trace identity, timestamps, suite snapshots, and sample evidence. persist=false returns the parsed view without writes; persistence creates evidence without overwriting an existing run. */
+/** Validates local terminal trace identity, timestamps, suite snapshots, and sample evidence. persist=false previews external ownership without local project requirements or writes; persistence requires local ownership and never overwrites an existing run. */
 async function importRun(app, args, { persist = true } = {}) {
   let value = object(parseImport(args, 'run'), 'run'); value = value.run || value;
   const evidence = value.appRun || value;
@@ -115,7 +122,8 @@ async function importRun(app, args, { persist = true } = {}) {
     const finishedAt = importedTimestamp(value.finishedAt);
     if (id(args.suiteId || value.suiteId, 'suiteId') !== snapshot.id) throw new Error('Run suite identity does not match its snapshot');
     const { ownerPid, ...safeValue } = value;
-    saved = { ...safeValue, startedAt, finishedAt, id: id(value.id, 'run id'), suiteId: id(args.suiteId || value.suiteId, 'suiteId'), suite: snapshot, projectId: await project(app, args.projectId || value.projectId || snapshot.projectId), suiteRevision: revision(snapshot) };
+    const owner = args.projectId || value.projectId || snapshot.projectId;
+    saved = { ...safeValue, startedAt, finishedAt, id: id(value.id, 'run id'), suiteId: id(args.suiteId || value.suiteId, 'suiteId'), suite: snapshot, projectId: persist ? await project(app, owner) : id(owner || app.defaultProjectId, 'projectId'), suiteRevision: revision(snapshot) };
   } else {
     if (value.developerExecution || value.execution?.configuration?.provider && value.execution.configuration.provider !== 'onDevice' || value.results?.some((sample) => sample.judgeIdentity?.mode === 'connection') || value.assessments?.some((assessment) => assessment.judge?.mode === 'connection')) throw new Error('Only local on-device evaluation evidence is supported');
     validateAppEvidence(value);
@@ -136,7 +144,8 @@ async function importRun(app, args, { persist = true } = {}) {
     results = applyAssessment(value, results);
     const startedAt = importedTimestamp(value.startedAt, { apple: true });
     const finishedAt = importedTimestamp(value.completedAt, { apple: true });
-    saved = { id: id(value.id, 'run id'), suiteId, projectId: await project(app, args.projectId || snapshot.projectId), suite: snapshot, suiteRevision: revision(snapshot), status, startedAt, finishedAt, durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)), model: value.environment?.model, results, appRun: value, importedAt: new Date().toISOString() };
+    const owner = args.projectId || snapshot.projectId;
+    saved = { id: id(value.id, 'run id'), suiteId, projectId: persist ? await project(app, owner) : id(owner || app.defaultProjectId, 'projectId'), suite: snapshot, suiteRevision: revision(snapshot), status, startedAt, finishedAt, durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)), model: value.environment?.model, results, appRun: value, importedAt: new Date().toISOString() };
   }
   if (persist && await app.store.readOptional('runs', saved.id)) throw new Error('A run with this id already exists; imports never overwrite evidence');
   if (persist) await app.store.write('runs', saved, { createOnly: true }); const { ownerPid, ...publicRun } = saved; return { run: publicRun };

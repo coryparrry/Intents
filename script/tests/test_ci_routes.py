@@ -39,11 +39,16 @@ class CoverageTests(unittest.TestCase):
         self.assertEqual(plan["ui_matrix"], [])
 
     def test_native_intent_cli_changes_select_parser_and_manifest_contracts(self):
+        """CLI runtime edits retain signal cleanup integration beside parser contracts."""
         self.assert_selection(["Sources/MacIntentTestingCLI/NativeTestsOptions.swift"],
-                              swift=("NativeTestsCLITests",))
+                              swift=("NativeTestsCLITests", "NativeTestsSignalTests"))
         plan = routes.coverage(["Sources/MacIntentTestingCLI/NativeTestsMain.swift"])
         self.assertEqual(plan["native_tests"], [])
         self.assertEqual(plan["ui_matrix"], [])
+        for source in ("NativeTestsMain.swift", "NativeTestsSignals.swift"):
+            with self.subTest(source=source):
+                selected = routes.coverage(["Sources/MacIntentTestingCLI/" + source])
+                self.assertEqual(selected["swift_suites"], ["NativeTestsCLITests", "NativeTestsSignalTests"])
 
     def test_mac_intent_unit_changes_select_the_declared_suite(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -53,6 +58,27 @@ class CoverageTests(unittest.TestCase):
             plan = routes.coverage([str(source.relative_to(directory))], Path(directory))
         self.assertEqual(plan["swift_suites"], ["MacIntentTestingTests"])
         self.assertFalse(plan["native"])
+
+    def test_production_qualification_includes_release_sources_and_affected_inputs(self):
+        """Full and version-only coverage qualify production without relying on path-filtered workflows."""
+        for paths in (None, ["version.txt"], [".release-please-manifest.json"],
+                      ["Sources/ProductionEvalsCLI/main.swift"],
+                      ["Packages/ProductionEvals/Tests/ProductionEvalsTests/ProductionWorkflowTests.swift"],
+                      *([path] for path in sorted(routes.PRODUCTION_QUALIFICATION_PATHS))):
+            with self.subTest(paths=paths):
+                self.assertTrue(routes.coverage(paths)["production_evals"])
+        self.assertFalse(routes.coverage(["README.md"])["production_evals"])
+
+    def test_document_reports_retain_native_coverage_and_select_both_validator_suites(self):
+        """Report input changes run both report modules alongside their native owners."""
+        for path in sorted(routes.DOCUMENT_REPORT_INPUTS):
+            with self.subTest(path=path):
+                plan = routes.coverage([path])
+                self.assertTrue(plan["native"])
+                self.assertTrue(routes.DOCUMENT_REPORT_TESTS <= set(plan["python_tests"]))
+        for script in ("script/document_quality_report.py", "script/document_semantic_report.py"):
+            with self.subTest(script=script):
+                self.assertEqual(set(routes.coverage([script])["python_tests"]), routes.DOCUMENT_REPORT_TESTS)
 
     def test_evaluation_cli_changes_select_macos_integration_checks(self):
         self.assert_selection(["script/foundation-evals"], macos=("script.tests.test_foundation_evals_cli",))

@@ -391,7 +391,7 @@ enum MCPStoreAuthority {
 
     /// Applies a legacy suite declaration to the current suite while retaining its identity and
     /// attachments. Preserves omitted feature/provider/customization fields and matching-case
-    /// conversation/assertion metadata.
+    /// conversation/assertion metadata and server-owned regression provenance.
     private static func suite(
         from declaration: MCPSuiteDeclaration,
         current: EvaluationSuite
@@ -405,7 +405,7 @@ enum MCPStoreAuthority {
         suite.repetitions = declaration.repetitions
         suite.cases = declaration.cases.map { declaredCase in
             let currentCase = current.cases.first { $0.id == declaredCase.id }
-            return EvaluationCase(
+            var updated = EvaluationCase(
                 id: declaredCase.id,
                 name: declaredCase.name,
                 prompt: declaredCase.prompt,
@@ -413,6 +413,8 @@ enum MCPStoreAuthority {
                 conversation: declaredCase.conversation ?? currentCase?.conversation ?? EvaluationConversationConfiguration(),
                 fieldAssertions: declaredCase.fieldAssertions ?? currentCase?.fieldAssertions
             )
+            updated.reviewSource = currentCase?.reviewSource
+            return updated
         }
         var configuration = current.modelConfiguration
         configuration.customization = declaration.modelConfiguration.customization ?? current.modelConfiguration.customization

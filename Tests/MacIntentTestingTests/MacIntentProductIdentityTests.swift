@@ -1,8 +1,42 @@
 import Foundation
+import Dispatch
 import Testing
 @testable import MacIntentTesting
 
 struct MacIntentProductIdentityTests {
+    /// Keeps the main actor responsive while paused inspection joins either explicit runner or caller cancellation.
+    @MainActor @Test(arguments: [true, false]) func offActorInspectionJoinsCancellation(cancelRunner: Bool) async throws {
+        let (started, continuation) = AsyncStream<Void>.makeStream()
+        var events = started.makeAsyncIterator()
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal(); continuation.finish() }
+        let runner = MacIntentRunner()
+        let inspection = Task {
+            try await runner.inspect {
+                #expect(!Thread.isMainThread)
+                continuation.yield(())
+                guard release.wait(timeout: .now() + 5) == .success else {
+                    throw MacIntentTestingError("The main actor did not release the paused inspection.")
+                }
+                try Task.checkCancellation()
+            }
+        }
+        _ = await events.next()
+        // Reaching this actor while inspection is paused is the UI heartbeat.
+        if cancelRunner { runner.cancel() } else { inspection.cancel() }
+        release.signal()
+        await #expect(throws: CancellationError.self) { try await inspection.value }
+    }
+
+    /// Rejects cancelled bundle inspection before filesystem enumeration instead of treating it as a load failure.
+    @Test func cancelledCaptureStopsBeforeReadingBundleBytes() async {
+        let inspection = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try MacIntentProductIdentity.capture(URL(fileURLWithPath: "/nonexistent-cancelled-fixture.app"))
+        }
+        await #expect(throws: CancellationError.self) { try await inspection.value }
+    }
+
     @Test func publicDynamicCodeValidationRejectsADifferentExecutingBuild() throws {
         let child = Process()
         child.executableURL = URL(fileURLWithPath: "/bin/sleep"); child.arguments = ["10"]

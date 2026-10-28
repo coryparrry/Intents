@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from release_validation import (
+    PRODUCTION_QUALIFICATION_STEP,
     REQUIRED_CHECKS,
     validate_app_metadata,
     validate_checks,
@@ -15,11 +16,25 @@ from release_validation import (
 
 class ReleaseValidationTests(unittest.TestCase):
     def test_all_required_jobs_must_succeed(self):
-        jobs = [{"name": name, "conclusion": "success"} for name in REQUIRED_CHECKS]
+        """Source release gates require successful workers and production qualification."""
+        jobs = [{"name": name, "conclusion": "success", "steps": [
+            {"name": PRODUCTION_QUALIFICATION_STEP, "conclusion": "success"},
+        ]} for name in REQUIRED_CHECKS]
         validate_checks(jobs)
         for conclusion in ("failure", "cancelled", "skipped", "neutral", None):
             with self.subTest(conclusion=conclusion), self.assertRaises(ValueError):
                 validate_checks([dict(job, conclusion=conclusion) for job in jobs])
+
+    def test_missing_skipped_or_failed_production_qualification_cannot_authorize_release(self):
+        """Legacy successful runs and unexecuted qualification cannot approve an installer."""
+        for conclusion in (None, "failure", "cancelled", "skipped", "neutral"):
+            with self.subTest(conclusion=conclusion):
+                jobs = [{"name": name, "conclusion": "success"} for name in REQUIRED_CHECKS]
+                regression = next(job for job in jobs if job["name"] == "Portable regression tests")
+                if conclusion is not None:
+                    regression["steps"] = [{"name": PRODUCTION_QUALIFICATION_STEP, "conclusion": conclusion}]
+                with self.assertRaisesRegex(ValueError, "production recovery"):
+                    validate_checks(jobs)
 
     def test_legacy_compile_only_ci_cannot_authorize_release(self):
         with self.assertRaises(ValueError):

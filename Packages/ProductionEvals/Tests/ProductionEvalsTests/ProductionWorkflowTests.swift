@@ -592,4 +592,160 @@ private actor Calls {
         configuration.scoringRevision = ProductionCodec.digest(Data("changed-scoring".utf8))
         #expect(throws: ProductionFailure.self) { try fixture.storage.createJob(name: "Incompatible", datasetRevision: dataset.revision, configuration: configuration) }
     }
+
+    /// A later pause must not reuse authority granted for an earlier pause, while cost-only checkpoints remain compatible.
+    @Test func controlRevisionsRejectRestoredFlagValuesAndIgnoreCostCheckpoints() throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input")]), job = try fixture.job(dataset)
+        try fixture.storage.setControl(jobID: job.id, paused: true)
+        let firstPause = try fixture.storage.controlRevision(job)
+        try fixture.storage.setControl(jobID: job.id, paused: false, expectedControlRevision: firstPause)
+        try fixture.storage.setControl(jobID: job.id, paused: true)
+        let laterPause = try fixture.storage.controlRevision(job)
+        #expect(firstPause != laterPause)
+        #expect(throws: ProductionFailure.self) {
+            try fixture.storage.setControl(jobID: job.id, paused: false, expectedControlRevision: firstPause)
+        }
+        #expect(try fixture.storage.control(job).paused)
+        try fixture.storage.setControl(jobID: job.id, paused: true, expectedControlRevision: laterPause)
+        #expect(try fixture.storage.controlRevision(job) == laterPause)
+        var checkpoint = try fixture.storage.control(job)
+        checkpoint.startedAt = Date(); checkpoint.reportedCost = 1
+        checkpoint.costReservations = ["fixture": 2]; checkpoint.costReservationSlots = ["fixture": 0]
+        #expect(ProductionStorage.controlRevision(checkpoint) == laterPause)
+    }
+
+    /// Legacy threshold spellings still match a unique observed identity when either its key or value contains '='.
+    @Test(arguments: [false, true])
+    func cohortThresholdsPreserveUnambiguousDelimiterNames(keyContainsDelimiter: Bool) async throws {
+        let fixture = try Fixture()
+        let metadata = keyContainsDelimiter ? ["task=a": "b"] : ["task": "a=b"]
+        let dataset = try fixture.dataset([.init(id: "a", prompt: "input", metadata: metadata)])
+        var configuration = try fixture.job(dataset).configuration
+        configuration.gate.cohortMinimumPassRates = ["task=a=b": 0.5]
+        let job = try fixture.storage.createJob(name: "Legacy cohort", datasetRevision: dataset.revision, configuration: configuration)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: .passed, cost: 0) }
+        let report = try fixture.storage.report(jobID: job.id)
+        #expect(report.exitCode == 0)
+        #expect(report.cohorts["task=a=b"]?.samples == 1 && report.cohorts["task=a=b"]?.passRate == 1)
+    }
+
+    /// Distinct observed dimensions sharing a threshold spelling cannot dilute a failure into passing aggregate evidence.
+    @Test func cohortThresholdsRejectAmbiguousObservedDimensions() async throws {
+        let fixture = try Fixture()
+        let dataset = try fixture.dataset([.init(id: "failed", prompt: "input", metadata: ["task": "a=b"]),
+                                           .init(id: "passed", prompt: "input", metadata: ["task=a": "b"])])
+        var configuration = try fixture.job(dataset).configuration
+        configuration.gate.minimumPassRate = 0; configuration.gate.cohortMinimumPassRates = ["task=a=b": 0.5]
+        let job = try fixture.storage.createJob(name: "Colliding threshold", datasetRevision: dataset.revision, configuration: configuration)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) {
+            .init(requestID: $0.requestID, outcome: $0.example.id == "failed" ? .failed : .passed, cost: 0)
+        }
+        #expect(throws: ProductionFailure.self) { try fixture.storage.report(jobID: job.id) }
+    }
+
+    /// Legacy report keys remain unchanged, but unrepresentable distinct dimensions fail explicitly rather than merge.
+    @Test func selectedCohortDisplayCollisionsCannotProduceAPassingReport() async throws {
+        let fixture = try Fixture()
+        let dataset = try fixture.dataset([.init(id: "a", prompt: "input", metadata: ["task": "a=b", "task=a": "b"])])
+        var configuration = try fixture.job(dataset).configuration
+        configuration.gate.requiredCohorts = ["task=a": "b"]
+        let job = try fixture.storage.createJob(name: "Ambiguous cohort", datasetRevision: dataset.revision, configuration: configuration)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: .passed, cost: 0) }
+        #expect(throws: ProductionFailure.self) { try fixture.storage.report(jobID: job.id) }
+    }
+
+    /// A present dimension cannot satisfy a different required key/value pair with the same legacy display name.
+    @Test func requiredCohortsKeepDelimiterKeysSeparate() async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input", metadata: ["task=a": "b"])])
+        var configuration = try fixture.job(dataset).configuration
+        configuration.gate.requiredCohorts = ["task": "a=b", "task=a": "b"]
+        let job = try fixture.storage.createJob(name: "Missing required dimension", datasetRevision: dataset.revision, configuration: configuration)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: .passed, cost: 0) }
+        let report = try fixture.storage.report(jobID: job.id)
+        #expect(report.exitCode == 20)
+        #expect(report.issues.contains("Required cohort task=a=b is missing."))
+    }
+
+    /// Decimal policy boundaries permit exactly the configured regression without accepting a genuinely smaller allowance.
+    @Test func passRateRegressionUsesExactCountBoundaries() async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset((0..<10).map { .init(id: String($0), prompt: "input") })
+        var configuration = try fixture.job(dataset).configuration; configuration.gate.minimumPassRate = 0
+        let baseline = try fixture.storage.createJob(name: "Baseline", datasetRevision: dataset.revision, configuration: configuration)
+        let runner = ProductionBatchRunner(storage: fixture.storage)
+        _ = try await runner.run(jobID: baseline.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: $0.slot < 8 ? .passed : .failed, cost: 0) }
+        configuration.baselineJobID = baseline.id
+        for (passing, allowance, expected) in [(7, 0.1, 0), (7, Double(0.1).nextDown, 10), (6, 0.1, 10), (7, 1e-300, 10)] {
+            configuration.gate.maximumPassRateRegression = allowance
+            let candidate = try fixture.storage.createJob(name: "Candidate", datasetRevision: dataset.revision, configuration: configuration)
+            _ = try await runner.run(jobID: candidate.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: $0.slot < passing ? .passed : .failed, cost: 0) }
+            #expect(try fixture.storage.report(jobID: candidate.id).exitCode == expected)
+        }
+    }
+
+    /// Finite measurements near Double's maximum retain a finite mean and conservative P95 that can be exported as JSON.
+    @Test(arguments: [Double.greatestFiniteMagnitude, 1e308])
+    func extremeFiniteLatenciesProduceSerializableReports(latency: Double) async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input"), .init(id: "b", prompt: "input")]), job = try fixture.job(dataset)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: .passed, latencyMilliseconds: latency, cost: 0) }
+        let report = try fixture.storage.report(jobID: job.id)
+        #expect(report.exitCode == 0 && report.baselineEligible == true)
+        #expect(report.averageMilliseconds == latency)
+        #expect(try #require(report.p95UpperMilliseconds).isFinite)
+        #expect(try #require(report.p95UpperMilliseconds) >= latency)
+        _ = try ProductionCodec.encode(report)
+    }
+
+    /// Costs beyond the report's numeric range remain finite diagnostic evidence and cannot qualify or receive baseline approval.
+    @Test func overflowingReportedCostsFailQualificationWithoutBreakingJSON() async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input"), .init(id: "b", prompt: "input")]), job = try fixture.job(dataset)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) { .init(requestID: $0.requestID, outcome: .passed, cost: 1e308) }
+        let report = try fixture.storage.report(jobID: job.id)
+        #expect(report.exitCode == 20 && report.baselineEligible == false)
+        #expect(report.reportedCost == .greatestFiniteMagnitude)
+        #expect(report.issues.contains("Cost evidence exceeds the supported numeric range."))
+        _ = try ProductionCodec.encode(report)
+        #expect(throws: ProductionFailure.self) {
+            try fixture.storage.approveBaseline(jobID: job.id, expectedJobRevision: job.revision,
+                expectedEvidenceRevision: #require(report.evidenceRevision), note: "Cannot approve unrepresentable charges")
+        }
+    }
+
+    /// A retry whose combined charges overflow pauses with retained output and an outstanding reservation instead of writing infinity.
+    @Test func overflowingRetryCostsPauseWithReadableUncertainEvidence() async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input"), .init(id: "b", prompt: "input")])
+        var configuration = try fixture.job(dataset).configuration
+        configuration.maximumCost = .greatestFiniteMagnitude; configuration.maximumCostPerAttempt = 0
+        let job = try fixture.storage.createJob(name: "Retry cost overflow", datasetRevision: dataset.revision, configuration: configuration), calls = Calls()
+        let count = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) { request in
+            let first = await calls.record(request.requestID)
+            return .init(requestID: request.requestID, outcome: first ? .error : .passed, output: "retained", cost: 1e308, retryable: first)
+        }
+        #expect(count == 1)
+        #expect(await calls.total() == 2)
+        let record = try fixture.storage.record(jobID: job.id, slot: 0), control = try fixture.storage.control(job)
+        #expect(record.response.outcome == .needsEvidence && record.response.cost == nil && record.response.output == "retained")
+        #expect(control.paused && control.reportedCost == 1e308 && control.costReservations.count == 1)
+        #expect(try fixture.storage.chunk(job, index: 0).attempts[0]?.reportedCost == 1e308)
+        _ = try ProductionCodec.encode(control)
+        _ = try ProductionCodec.encode(fixture.storage.report(jobID: job.id))
+    }
+
+    /// Recovery refuses an overflowing settled charge without changing the finite ledger or the pending cost checkpoint.
+    @Test func overflowingCostRecoveryPreservesLedgerAndPendingEvidence() async throws {
+        let fixture = try Fixture(), dataset = try fixture.dataset([.init(id: "a", prompt: "input"), .init(id: "b", prompt: "input")])
+        var configuration = try fixture.job(dataset).configuration
+        configuration.maximumCost = .greatestFiniteMagnitude; configuration.maximumCostPerAttempt = 0
+        let job = try fixture.storage.createJob(name: "Recovery cost overflow", datasetRevision: dataset.revision, configuration: configuration)
+        _ = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker, maximumResponses: 1) { .init(requestID: $0.requestID, outcome: .passed, cost: 1e308) }
+        var chunk = try #require(try fixture.storage.claim(job, worker: fixture.worker))
+        let requestID = fixture.storage.requestID(job, slot: 1)
+        try fixture.storage.reserveCost(job, requestID: requestID, slot: 1, attempt: 1)
+        var attempt = ProductionAttempt(requestID: requestID, number: 1, startedAt: Date(), worker: fixture.worker)
+        attempt.pendingCost = 1e308; attempt.pendingCostAttempt = 1
+        chunk.attempts[1] = attempt; chunk.lease = nil
+        try ProductionCodec.write(chunk, to: fixture.storage.chunkURL(job, 0))
+        #expect(throws: ProductionFailure.self) { try fixture.storage.report(jobID: job.id) }
+        #expect(try fixture.storage.control(job).reportedCost == 1e308)
+        #expect(try fixture.storage.chunk(job, index: 0).attempts[1]?.pendingCost == 1e308)
+    }
 }

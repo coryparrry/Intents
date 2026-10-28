@@ -4,7 +4,10 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from document_semantic_report import semantic_metrics
+try:
+    from document_semantic_report import semantic_metrics
+except ModuleNotFoundError:
+    from script.document_semantic_report import semantic_metrics
 
 
 def load_lines(path):
@@ -20,6 +23,8 @@ def validate_sources(run, attempts):
     by_name = {source["name"]: source for source in sources}
     assert len(by_name) == len(sources), "Conflicting source records"
     assert len(documents) == len(manifest["documents"]), "Duplicate corpus documents"
+    expected_names = {document["id"] + "." + document["format"] for document in documents.values()}
+    assert set(by_name) == expected_names, "Imported sources do not match the complete corpus manifest"
     for document in documents.values():
         name = document["id"] + "." + document["format"]
         assert Path(name).name == name, "Source paths must stay within the run"
@@ -41,6 +46,66 @@ def validate_sources(run, attempts):
                     assert citation["passageID"] == item["passage"]["id"] and citation["quote"] in item["passage"]["text"], "Unsupported source quote"
             assert any(c["passageID"] == item["passage"]["id"] for c in evidence["citations"]), "Missing focus citation"
     return manifest
+
+
+def validate_attempt_ledger(manifest, attempts, summary, generation_version):
+    """Reconcile every manifest document with the harness's ordered, bounded attempts and stopping rules.
+
+    Pre-semantic v1-v15 ledgers may omit outcomes; candidate presence then proves only
+    surfaced versus omitted. Such ledgers must still reach the request or exhaust
+    all slots. Current ledgers require explicit outcomes, including an evidenced
+    terminal budget rejection or semantic error when a document stops early.
+    """
+    documents = manifest["documents"]
+    assert documents, "The corpus manifest must contain documents"
+    assert all(type(document["requested"]) is int and document["requested"] > 0
+               for document in documents), "Each corpus document needs a positive requested count"
+    expected_ids = [document["id"] for document in documents]
+    by_document = {document_id: [] for document_id in expected_ids}
+    outcomes = []
+    legacy = int(generation_version.removeprefix("document-draft-v")) <= 15
+    supported = {"surfaced", "duplicate", "runtime_failure", "suite_budget_rejection",
+                 "semantic_rejection_or_unsupported", "semantic_review_error"}
+    if legacy:
+        supported -= {"semantic_rejection_or_unsupported", "semantic_review_error"}
+    for row in attempts:
+        assert row["documentID"] in by_document, "Attempt document is absent from the corpus manifest"
+        slot = row["slot"]
+        assert type(slot) is int, "Attempt slots must be integers"
+        group = by_document[row["documentID"]]
+        assert slot == len(group), "Attempt slots must be unique, contiguous, and start at zero"
+        group.append(row)
+        if legacy and "outcome" not in row:
+            outcome = "surfaced" if row.get("candidate") is not None else "legacy_omitted"
+        else:
+            outcome = row.get("outcome")
+            assert outcome in supported, "Missing or unsupported attempt outcome"
+        assert (row.get("candidate") is not None) == (outcome == "surfaced"), "Attempt outcome disagrees with its candidate"
+        outcomes.append(outcome)
+    expected_order = [document_id for document_id in expected_ids for _ in by_document[document_id]]
+    assert [row["documentID"] for row in attempts] == expected_order, "Corpus attempts must retain manifest document order"
+    outcome_by_identity = {(row["documentID"], row["slot"]): outcome for row, outcome in zip(attempts, outcomes)}
+    for document in documents:
+        group = by_document[document["id"]]
+        requested = document["requested"]
+        assert group, "Every corpus document requires an attempt ledger"
+        assert len(group) <= requested * 2, "Attempt slot exceeds the document's bounded attempt count"
+        surfaced = 0
+        for index, row in enumerate(group):
+            assert surfaced < requested, "Attempt recorded after the requested draft count was satisfied"
+            outcome = outcome_by_identity[(row["documentID"], row["slot"])]
+            surfaced += outcome == "surfaced"
+            if outcome in {"suite_budget_rejection", "semantic_review_error"}:
+                assert index == len(group) - 1, "Attempt recorded after a terminal document outcome"
+                assert isinstance(row.get("issue"), str) and row["issue"].strip(), "Terminal document outcome needs its retained reason"
+        last_outcome = outcome_by_identity[(document["id"], group[-1]["slot"])]
+        assert (surfaced == requested or len(group) == requested * 2
+                or last_outcome in {"suite_budget_rejection", "semantic_review_error"}), "Incomplete document attempt ledger"
+    expected_counts = {"documents": len(documents), "requested": sum(document["requested"] for document in documents),
+                       "attempts": len(attempts), "surfaced": sum(row.get("candidate") is not None for row in attempts)}
+    for field, expected in expected_counts.items():
+        assert type(summary[field]) is int and summary[field] == expected, "Summary does not match the corpus manifest and attempt ledger: " + field
+    return outcomes
 
 
 def compatible_controls(run, controls_path, manifest):
@@ -77,10 +142,9 @@ def report(run, labels_path=None, controls_path=None, reviewer_kind="human", sem
     assert generation_version in {f'document-draft-v{i}' for i in range(1, 20)}, 'Missing or unknown generation version'
     assert not candidate_versions or candidate_versions == {generation_version}, 'Summary/candidate generation version mismatch'
     manifest = validate_sources(run, attempts)
+    outcomes = validate_attempt_ledger(manifest, attempts, summary, generation_version)
     labels = json.loads(labels_path.read_text()) if labels_path else {}
     candidates = [item for item in attempts if item.get("candidate") is not None]
-    identities = [(item["documentID"], item["slot"]) for item in attempts]
-    assert len(set(identities)) == len(identities), "Duplicate attempts cannot count toward quality gates"
     rows, reviews, template = [], [], {}
     source_rows = ["# Complete extracted source corpus", "", "Consult these complete sources when checking cross-passage conditions and exceptions.", ""]
     for source in load_lines(run / "sources.jsonl"):
@@ -90,15 +154,11 @@ def report(run, labels_path=None, controls_path=None, reviewer_kind="human", sem
             source_rows += [f"### {passage['location']} ({passage['id']})", "", passage["text"], ""]
     (run / "sources.md").write_text("\n".join(source_rows))
     per_document = {}
-    for item in attempts:
+    for item, outcome in zip(attempts, outcomes):
         totals = per_document.setdefault(item["documentID"], {"attempts": 0, "surfaced": 0, "omitted_or_failed": 0})
         totals["attempts"] += 1
-        totals["surfaced" if item.get("candidate") else "omitted_or_failed"] += 1
-        outcome = item.get("outcome", "legacy_unknown")
+        totals["surfaced" if item.get("candidate") is not None else "omitted_or_failed"] += 1
         totals.setdefault("outcomes", {})[outcome] = totals.setdefault("outcomes", {}).get(outcome, 0) + 1
-    assert summary["surfaced"] == len(candidates), "Summary does not match the attempt ledger"
-    assert summary["attempts"] == len(attempts), "Summary does not match the attempt ledger"
-    assert summary["documents"] == len(per_document), "Summary document count does not match the ledger"
     for number, item in enumerate(candidates, 1):
         case = item["candidate"]
         key = f'{item["documentID"]}:{item["slot"]}'

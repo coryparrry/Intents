@@ -24,6 +24,41 @@ struct FeaturePersistenceTests {
         #expect(reopened.suiteRevision == store.suiteRevision)
     }
 
+    /// Admission reserves larger reachable profile responses while leaving an unreachable after-tool phase out of the budget.
+    @Test func profileResponseLimitsReserveSubjectAndJudgeCapacity() async throws {
+        var suite = EvaluationSuite()
+        suite.scoringMode = .review
+        suite.instructions = ""
+        suite.cases = [.init(name: "Profile budget", prompt: "Return ready.", expected: "")]
+        suite.modelConfiguration.maximumResponseTokens = 128
+        suite.features.profile.enabled = true
+        suite.features.profile.afterToolMaximumResponseTokens = 4_096
+        #expect(suite.responseTokenReserve() == 128)
+        #expect(suite.responseTokenReserve(afterToolProfileIsReachable: true) == 4_096)
+        var restored = suite
+        let history = Transcript(entries: [
+            .prompt(Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: "Synthetic setup"))])),
+            .toolOutput(Transcript.ToolOutput(id: "setup-tool", toolName: "fixture",
+                segments: [.text(Transcript.TextSegment(content: "Synthetic result"))])),
+            .response(Transcript.Response(assetIDs: [], segments: [.text(Transcript.TextSegment(content: "Ready"))]))
+        ])
+        restored.cases[0].conversation.restoredTranscriptJSON = String(decoding: try JSONEncoder().encode(history), as: UTF8.self)
+        #expect(restored.responseTokenReserve() == 4_096)
+        let initial = suite.modelConfiguration.contextAllocation(contextSize: 8_192, includesModelJudge: true)
+        let transitioned = suite.modelConfiguration.contextAllocation(contextSize: 8_192, includesModelJudge: true,
+            maximumSubjectResponseTokens: suite.responseTokenReserve(afterToolProfileIsReachable: true))
+        #expect(transitioned.effectiveInputLimit == initial.effectiveInputLimit - (4_096 - 128))
+        #expect(transitioned.judgeOverheadReserve == initial.judgeOverheadReserve + (4_096 - 128))
+        let runner = EvaluationRunner()
+        let counter = EvaluationPortablePromptInputTokenCounter()
+        _ = try await runner.preparedPrompt(for: suite.cases[0], suite: suite, images: [], contextSize: 4_096,
+            tools: [], tokenCounter: counter)
+        await #expect(throws: (any Error).self) {
+            _ = try await runner.preparedPrompt(for: suite.cases[0], suite: suite, images: [], contextSize: 4_096,
+                tools: [], profileHasTransitioned: true, tokenCounter: counter)
+        }
+    }
+
     @Test func customToolOutputsReduceBothSubjectAndJudgeInputBudgets() {
         let configuration = EvaluationModelConfiguration()
         let baseline = configuration.contextAllocation(contextSize: 8_192, includesModelJudge: true)

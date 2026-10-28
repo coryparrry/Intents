@@ -2,6 +2,9 @@ import { appSuite, isAppSuite, validateAppEvidence, applyAssessment, sampleEnvel
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export const MAX_REQUEST_BYTES = 65 * 1024 * 1024;
 export const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+// The complete portable definition and embedded reference files share the same
+// byte ceiling; JSON-RPC string escaping still fits the 65 MiB request frame.
+export const MAX_SUITE_BUNDLE_BYTES = MAX_OUTPUT_BYTES;
 export const MAX_NATIVE_OUTPUT_BYTES = 16 * 1024 * 1024;
 
 /** Requires a non-null, non-array object and returns it for continued validation. */

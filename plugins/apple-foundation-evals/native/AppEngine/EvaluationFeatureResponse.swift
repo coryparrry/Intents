@@ -20,7 +20,7 @@ struct EvaluationFeatureResponse {
     var firstContentMilliseconds: Double?
 
     /// Generates a suite response using its model options, metadata, streaming policy, and optional output schema.
-    /// Dynamic profiles own their tool policy; structured responses are validated before being returned.
+    /// Dynamic profiles own generation settings and tool policy; structured responses are validated before being returned.
     static func generate(
         session: LanguageModelSession,
         prompt: Prompt,
@@ -28,15 +28,17 @@ struct EvaluationFeatureResponse {
         metadata: [String: any ConvertibleToGeneratedContent],
         onPartial: @Sendable (String) async -> Void = { _ in }
     ) async throws -> Self {
-        var options = suite.modelConfiguration.generationOptions
-        // A dynamic profile supplies its own changing tool policy.
+        // Per-request values override every profile phase. Leave them unset so
+        // the profile can apply global defaults first and after-tool overrides later.
+        var options = suite.features.profile.enabled ? GenerationOptions() : suite.modelConfiguration.generationOptions
         options.toolCallingMode = suite.features.profile.enabled ? nil
             : suite.modelConfiguration.toolCallingMode(
                 hasTools: !suite.features.tools.isEmpty || suite.modelConfiguration.referenceMode == .lookupTool
                     || !suite.modelConfiguration.customizationSettings.visionSettings.isEmpty
                     || suite.features.spotlightSearch.enabled
             )
-        let context = suite.modelConfiguration.contextOptions
+        var context = suite.modelConfiguration.contextOptions
+        if suite.features.profile.enabled { context.reasoningLevel = nil }
         let schema = suite.features.outputFields.isEmpty ? nil
             : try EvaluationSchemaBuilder.schema(
                 fields: suite.features.outputFields,

@@ -58,11 +58,11 @@ private struct ReviewSamplesPane: View {
     @State private var diverse = true
     @State private var availableWidth: CGFloat = 900
 
-    private var samples: [EvaluationReviewSample] {
-        let ordered = diverse ? EvaluationReviewWorkflow.diverseQueue(store.reviewSamples) : store.reviewSamples
+    /// Filters the current projection without rebuilding source digests or rescanning saved annotations for each row.
+    private func filteredSamples(_ projection: EvaluationReviewProjection) -> [EvaluationReviewSample] {
+        let ordered = diverse ? EvaluationReviewWorkflow.diverseQueue(projection.samples) : projection.samples
         return ordered.filter { sample in
-            let annotation = store.suiteLocalState.review.annotation(runID: sample.run.id, sampleID: sample.sample.id)
-            let current = annotation.flatMap { EvaluationReviewWorkflow.isCurrent($0, sample: sample) ? $0 : nil }
+            let current = projection.currentAnnotationsByID[sample.id]
             let matchesFilter = switch filter {
             case .all: true
             case .unreviewed: current == nil
@@ -78,6 +78,9 @@ private struct ReviewSamplesPane: View {
     }
 
     var body: some View {
+        let projection = EvaluationReviewWorkflow.projection(runs: store.runs, suiteID: store.selectedSuiteID,
+                                                           state: store.suiteLocalState.review)
+        let samples = filteredSamples(projection)
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Picker("Review filter", selection: $filter) { ForEach(ReviewSampleFilter.allCases) { Text($0.title).tag($0) } }
@@ -97,14 +100,14 @@ private struct ReviewSamplesPane: View {
                 ? AnyLayout(HStackLayout(alignment: .top, spacing: 20))
                 : AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
             layout {
-                sampleList.frame(width: availableWidth >= 680 ? 250 : nil)
+                sampleList(samples, projection: projection).frame(width: availableWidth >= 680 ? 250 : nil)
                 if let sample = samples.first(where: { $0.id == selectedID }) {
                     ReviewSampleEditor(store: store, sample: sample, showCases: showCases, showCompare: showCompare)
                         .id(sample.id + sample.sourceDigest)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     WorkspaceEmptyState(symbol: "text.bubble", title: "Choose a saved output",
-                                        detail: store.reviewSamples.isEmpty ? "Run a suite or collect app feature responses to start reviewing." : "Select a sample to review its output and captured evidence.")
+                                        detail: projection.samples.isEmpty ? "Run a suite or collect app feature responses to start reviewing." : "Select a sample to review its output and captured evidence.")
                         .frame(maxWidth: .infinity).workspaceSurface()
                 }
             }
@@ -115,7 +118,8 @@ private struct ReviewSamplesPane: View {
         }
     }
 
-    private var sampleList: some View {
+    /// Renders the already-filtered rows using the shared latest/current annotation indexes.
+    private func sampleList(_ samples: [EvaluationReviewSample], projection: EvaluationReviewProjection) -> some View {
         VStack(spacing: 0) {
             WorkspacePanelHeader("Saved outputs", count: samples.count)
             WorkspaceSearchField(prompt: "Find an output", text: $search, identifier: "Search review samples")
@@ -124,8 +128,8 @@ private struct ReviewSamplesPane: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(samples) { sample in
-                        let annotation = store.suiteLocalState.review.annotation(runID: sample.run.id, sampleID: sample.sample.id)
-                        let current = annotation.flatMap { EvaluationReviewWorkflow.isCurrent($0, sample: sample) ? $0 : nil }
+                        let annotation = projection.annotationsByID[sample.id]
+                        let current = projection.currentAnnotationsByID[sample.id]
                         Button { selectedID = sample.id } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(sample.sample.caseName).font(.callout.weight(sample.id == selectedID ? .semibold : .medium)).lineLimit(1)

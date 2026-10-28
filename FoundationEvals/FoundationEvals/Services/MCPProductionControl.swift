@@ -37,7 +37,7 @@ import Foundation
       switch call.name {
       case "eval_production_dataset_snapshot":
         try MCPWorkspaceControl.requireTarget(call, store: control.store)
-        let suite = control.store.draftSuite
+        let suite = control.store.suite
         guard !suite.hasDocumentCases else {
           throw EvaluationStoreError.invalidSuite("Document suites cannot be flattened into production datasets. Run or export the document suite in the native app.")
         }
@@ -75,7 +75,7 @@ import Foundation
             try storage.createCapturedJob(name: name, datasetRevision: revision, id: id)
           }.value
         } else {
-          var config = try control.production.nativeConfiguration(store: control.store)
+          var config = try control.production.nativeConfiguration(store: control.store, suite: control.store.suite)
           if let options = call.optionalText("optionsJSON") {
             config = try optionsConfiguration(options, base: config)
           }
@@ -337,17 +337,7 @@ import Foundation
     case "eval_production_export":
       let value = try job()
       let id = try call.id("operationID")
-      let folder = storage.root.appendingPathComponent("MCPExports")
-      try FileManager.default.createDirectory(
-        at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-      guard
-        try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
-          .count < 100
-      else {
-        throw ProductionFailure.invalid(
-          "Export retention limit reached; preserve exports before operator cleanup.")
-      }
-      try storage.exportJob(value.id, to: folder.appendingPathComponent(id.uuidString))
+      _ = try storage.exportManagedJob(jobID: value.id, exportID: id)
       return ["exportID": .string(id.uuidString)]
     case "eval_production_export_list":
       let root = try exportRoot(storage: storage, id: call.id("exportID"))

@@ -462,8 +462,15 @@ public final class DeveloperRunnerClient {
 
     /// Records a discovered endpoint, supplies a placeholder or saved identity, and invites
     /// trusted candidates automatically when no different runner owns the session.
+    /// Rediscovery only refreshes availability for an authenticated peer; its advertised
+    /// runner ID cannot replace the identity, features or state established by authentication.
     func found(_ box: DeveloperPeerBox, runnerID advertisedRunnerID: UUID?) {
         let endpoint = box.peer.displayName
+        if authenticatedPeersByRunnerID.values.contains(where: { $0.peer == box.peer }) {
+            candidatesByPeer[box.peer]?.endpoint = endpoint
+            candidatesByPeer[box.peer]?.isDiscoverable = true
+            return
+        }
         let runnerID = advertisedRunnerID ?? candidatesByPeer[box.peer]?.runnerID ?? UUID()
         if let authenticated = authenticatedPeersByRunnerID[runnerID], authenticated.peer != box.peer { return }
         if candidatesByPeer[box.peer]?.runnerID == runnerID {

@@ -109,11 +109,17 @@ struct EvaluationCompatibleJudgeCompletion: Decodable, Sendable {
 }
 
 enum EvaluationCompatibleJudgeResponseDecoder {
-    /// Decodes JSON or an SSE stream and rejects explicit abnormal finish reasons before returning content.
+    /// Decodes JSON or SSE, treating malformed completion envelopes as protocol failures and rejecting abnormal finish reasons.
     static func decode(_ data: Data) throws -> EvaluationCompatibleJudgeCompletion {
         let trimmed = data.drop { $0 == 0x20 || $0 == 0x09 || $0 == 0x0A || $0 == 0x0D }
         if trimmed.first == 0x7B {
-            let response = try JSONDecoder().decode(EvaluationCompatibleJudgeCompletion.self, from: data)
+            let response: EvaluationCompatibleJudgeCompletion
+            do {
+                response = try JSONDecoder().decode(EvaluationCompatibleJudgeCompletion.self, from: data)
+            } catch is DecodingError {
+                throw EvaluationCompatibleJudgeResponseFailure(
+                    kind: .malformed, detail: "The response contained an invalid completion envelope.")
+            }
             for choice in response.choices {
                 try validateFinishReason(choice.finishReason, content: choice.message.content)
             }

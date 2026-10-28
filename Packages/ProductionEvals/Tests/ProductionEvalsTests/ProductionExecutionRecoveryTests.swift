@@ -8,7 +8,8 @@ private final class ExecutionFixture {
     let worker = ProductionWorker(id: "execution-test", name: "Fixture", platform: "macOS", operatingSystem: "27", hardware: "fixture", locale: "en_GB", model: "fixture")
     init() throws { storage = try ProductionStorage(root: root) }
     deinit { try? FileManager.default.removeItem(at: root) }
-    func job(count: Int = 2, safety: ProductionReplaySafety = .inference, chunkSize: Int = 2) throws -> ProductionJob {
+    /// Creates isolated jobs with a short deadline by default; cancellation cases can avoid racing that separate mechanism.
+    func job(count: Int = 2, safety: ProductionReplaySafety = .inference, chunkSize: Int = 2, timeoutSeconds: Double = 0.1) throws -> ProductionJob {
         let file = root.appendingPathComponent("examples.jsonl")
         var bytes = Data()
         for index in 0..<count {
@@ -19,7 +20,7 @@ private final class ExecutionFixture {
         let dataset = try storage.importDataset(from: file, name: "Fixture", version: "1", sampling: .curated, productionData: false, redactionConfirmed: false)
         let context = Data("execution-fixture".utf8)
         var config = ProductionJobConfiguration(scoringRevision: ProductionCodec.digest(context), executionRevision: ProductionCodec.digest(context), executionContext: context)
-        config.timeoutSeconds = 0.1; config.maximumAttempts = 3
+        config.timeoutSeconds = timeoutSeconds; config.maximumAttempts = 3
         config.chunkSize = chunkSize; config.replaySafety = safety
         return try storage.createJob(name: "Fixture", datasetRevision: dataset.revision, configuration: config)
     }
@@ -99,8 +100,9 @@ private func waitForExecution(_ condition: () async -> Bool) async throws -> Boo
         #expect(try fixture.storage.record(jobID: job.id, slot: 0).response == record.response)
     }
 
+    /// Keeps the request deadline outside this bounded cancellation check so a loaded executor cannot win by timing out first.
     @Test func cancellationReturnsBeforeNonCooperativeWorkAndRetainsItsAttempt() async throws {
-        let fixture = try ExecutionFixture(), job = try fixture.job(), calls = ExecutionCalls()
+        let fixture = try ExecutionFixture(), job = try fixture.job(timeoutSeconds: 60), calls = ExecutionCalls()
         let task = Task {
             do {
                 let count = try await ProductionBatchRunner(storage: fixture.storage).run(jobID: job.id, worker: fixture.worker) {

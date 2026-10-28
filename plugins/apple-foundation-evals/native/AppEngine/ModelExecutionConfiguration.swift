@@ -57,19 +57,21 @@ extension EvaluationModelConfiguration {
     }
 
     /// Allocates the input ceiling after reserving response, tool-output, and optional same-model judge capacity.
-    /// An explicit shared tool reserve replaces separately computed tool reserves; the configured input cap can further reduce the returned limit.
+    /// Explicit shared-tool and reachable-profile response reserves replace their defaults; the configured input cap can further reduce the returned limit.
     func contextAllocation(
         contextSize: Int,
         includesModelJudge: Bool,
         customToolOutputReserve: Int = 0,
-        sharedToolOutputReserve: Int? = nil
+        sharedToolOutputReserve: Int? = nil,
+        maximumSubjectResponseTokens: Int? = nil
     ) -> (effectiveInputLimit: Int, toolOutputReserve: Int, judgeOverheadReserve: Int) {
         let toolOutputReserve = sharedToolOutputReserve ?? ((referenceMode == .lookupTool
             ? maximumToolCalls * ReferenceLookupTool.contextTokenReservePerCall
             : 0) + customToolOutputReserve)
-        let subjectAvailableInput = contextSize - maximumResponseTokens - toolOutputReserve
+        let responseReserve = maximumSubjectResponseTokens ?? maximumResponseTokens
+        let subjectAvailableInput = contextSize - responseReserve - toolOutputReserve
         let judgeOverheadReserve = includesModelJudge
-            ? Self.judgeResponseTokenReserve + Self.judgeFixedTokenReserve + maximumResponseTokens + toolOutputReserve
+            ? Self.judgeResponseTokenReserve + Self.judgeFixedTokenReserve + responseReserve + toolOutputReserve
             : 0
         let judgeAvailableInput = includesModelJudge ? contextSize - judgeOverheadReserve : contextSize
         let availableInput = max(1, min(subjectAvailableInput, judgeAvailableInput))
@@ -109,6 +111,21 @@ extension EvaluationModelConfiguration {
 
 @available(macOS 27.0, *)
 extension EvaluationSuite {
+    /// Reserves the largest response limit reachable before or after a tool, including restored tool history.
+    /// Callers that already know the active session state can avoid decoding restored history again.
+    func responseTokenReserve(afterToolProfileIsReachable: Bool? = nil) -> Int {
+        guard features.profile.enabled, let afterToolLimit = features.profile.afterToolMaximumResponseTokens else {
+            return modelConfiguration.maximumResponseTokens
+        }
+        let reachable = afterToolProfileIsReachable ?? (hasConfiguredTools || cases.contains { evaluationCase in
+            (try? EvaluationConversationRuntime.restoredHistory(from: evaluationCase.conversation))?.contains { entry in
+                if case .toolOutput = entry { true } else { false }
+            } == true
+        })
+        return reachable ? max(modelConfiguration.maximumResponseTokens, afterToolLimit)
+            : modelConfiguration.maximumResponseTokens
+    }
+
     var hasConfiguredTools: Bool {
         modelConfiguration.referenceMode == .lookupTool || !features.tools.isEmpty
             || !modelConfiguration.customizationSettings.visionSettings.isEmpty || features.spotlightSearch.enabled

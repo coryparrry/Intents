@@ -18,6 +18,19 @@ def job(name):
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def test_production_qualification_is_inside_the_required_regression_worker(self):
+        """Full source CI and the standalone workflow execute one maintained qualifier."""
+        worker = job("swift-tests")
+        step = worker.split("      - name: Qualify production recovery and worker protocol\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("needs.changes.outputs.production_evals == 'true'", step)
+        self.assertIn("!cancelled() && steps.source.outcome == 'success'", step)
+        self.assertIn("run: bash script/ci_production_evals.sh", step)
+        self.assertNotIn("continue-on-error:", step)
+        self.assertIn("swift-tests", job("build").split("    steps:", 1)[0])
+        standalone = (Path(__file__).resolve().parents[2] / ".github/workflows/production-evals.yml").read_text()
+        self.assertIn("run: bash script/ci_production_evals.sh", standalone)
+        self.assertEqual(standalone.count("      - 'script/ci_production_evals.sh'"), 2)
+
     def test_changes_installs_coverage_parsers_before_python_tests(self):
         workflow = job("changes")
         node = workflow.index("uses: actions/setup-node@")
@@ -82,6 +95,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("GITHUB_TOKEN: ${{ github.token }}", summary)
 
     def test_fast_checks_and_route_share_one_linux_checkout(self):
+        """Fast checks expose every routing output consumed by selected workers."""
         workflow = job("changes")
         self.assertIn("runs-on: ubuntu-24.04", workflow)
         self.assertEqual(workflow.count("uses: actions/checkout@"), 1)
@@ -92,7 +106,7 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn(check, workflow)
         self.assertIn("CI_TEST_SELECTION: ${{ steps.route.outputs.python_tests }}", workflow)
         self.assertIn("python3 script/ci_run_tests.py python", workflow)
-        for output in ("native", "ui", "input_conversion", "sdk_consumer",
+        for output in ("native", "ui", "input_conversion", "sdk_consumer", "production_evals",
                        "native_tests", "regression", "swift_suites", "python_tests", "macos_tests", "ui_matrix"):
             self.assertIn(output + ": ${{ steps.route.outputs." + output + " }}", workflow)
 

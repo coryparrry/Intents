@@ -85,11 +85,16 @@ The macOS 26 legacy runner remains for old flat requests, while the complete
 app-format engine and its compilation require macOS/Xcode 27.
 
 Suites, runs, references, baselines, experiments and corrections live under
-`~/Library/Application Support/Apple Foundation Evals Codex/`. Use
+`~/.local/share/apple-foundation-evals/`. Use
 `FOUNDATION_EVALS_PLUGIN_DATA` to choose a separate store. The plugin needs no
 running app, app database or app credentials. MCP tool results requested in a
 chat become that chat's context. Exports include prompts, responses and
 references, so share them only within the user's requested scope.
+
+Portable suite JSON bundles have a 32 MiB limit for the complete definition and
+embedded reference files. Exports also limit encoded reference files to 16 MB;
+reduce attachments if export reports that limit. File previews preserve the
+source project's identity without requiring that project in the local workspace.
 
 ## Develop and verify
 

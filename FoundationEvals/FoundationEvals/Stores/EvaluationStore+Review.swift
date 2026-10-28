@@ -76,6 +76,20 @@ extension EvaluationStore {
         try EvaluationReviewJudgePartitions.assign(partition, caseID: sample.sample.caseID, state: &state, runs: runs)
         try commitReviewLocalState(state)
     }
+
+    /// Removes one judge example, including an unavailable source, without changing human reviews or other case partitions.
+    /// Persists through the existing rollback path and rejects removal while execution or file work owns the suite.
+    func removeJudgeCheckExample(id: UUID) throws {
+        guard !isRunning, !isReassessing, !isProcessingFiles else {
+            throw EvaluationReviewError.invalid("Wait for the current operation to finish before removing a judge example.")
+        }
+        guard suiteLocalState.reviewedJudgeExamples.contains(where: { $0.id == id }) else {
+            throw EvaluationReviewError.invalid("The judge example is no longer available.")
+        }
+        var state = suiteLocalState
+        state.reviewedJudgeExamples.removeAll { $0.id == id }
+        try commitReviewLocalState(state)
+    }
 }
 
 /// Every repetition and every saved run of one case belongs to a single partition.

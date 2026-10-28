@@ -208,13 +208,15 @@ enum EvaluationReleaseCheckEvaluator {
         if (try? EvaluationScoringContract(run: run)) != currentScoringContract {
             incomplete.append("The run's captured cases or scoring configuration do not match the current suite.")
         }
-        if run.scoringMode == .modelJudge {
+        if run.scoringMode == .modelJudge || run.selectedAssessment != nil || run.selectedAssessmentID != nil {
             let resultIDs = Set(run.results.map(\.id))
             if run.selectedAssessment.map({ assessment in
                 assessment.runID == run.id
+                    && run.assessments?.count(where: { $0.id == assessment.id }) == 1
                     && assessment.samples.count == run.results.count
                     && Set(assessment.samples.map(\.sampleID)) == resultIDs
-                    && assessment.samples.allSatisfy({ $0.status == .passed || $0.status == .failed })
+                    && assessment.samples.allSatisfy({ ($0.status == .passed || $0.status == .failed)
+                        && $0.errorCategory == nil && $0.errorMessage == nil })
             }) != true {
                 incomplete.append("The selected judge assessment is missing, incomplete, or contains unscored evidence.")
             }
@@ -287,13 +289,15 @@ enum EvaluationReleaseCheckEvaluator {
             }
             var approvedBaselineRun = baseline
             var approvedContract = approvedBaseline.scoringContract
-            if baseline.scoringMode == .modelJudge {
+            if baseline.scoringMode == .modelJudge || approvedBaseline.assessmentID != nil {
                 guard let assessmentID = approvedBaseline.assessmentID,
                       let approvedAssessment = baseline.assessments?.first(where: { $0.id == assessmentID }),
+                      baseline.assessments?.count(where: { $0.id == assessmentID }) == 1,
                       approvedAssessment.runID == baseline.id,
                       approvedAssessment.samples.count == baseline.results.count,
                       Set(approvedAssessment.samples.map(\.sampleID)) == Set(baseline.results.map(\.id)),
-                      approvedAssessment.samples.allSatisfy({ $0.status == .passed || $0.status == .failed }),
+                      approvedAssessment.samples.allSatisfy({ ($0.status == .passed || $0.status == .failed)
+                        && $0.errorCategory == nil && $0.errorMessage == nil }),
                       baseline.subjectEvidence == nil
                         || approvedAssessment.subjectEvidenceDigest == baseline.subjectEvidence?.digest,
                       (approvedAssessment.observedJudgeIdentities ?? [approvedAssessment.judge]).count == 1 else {
@@ -309,8 +313,12 @@ enum EvaluationReleaseCheckEvaluator {
                                   incomplete: incomplete, regressions: regressions, execution: execution)
                 }
                 approvedBaselineRun.selectedAssessmentID = assessmentID
-            } else if approvedContract == nil {
-                approvedContract = try? EvaluationScoringContract(run: baseline)
+            } else {
+                // An approval without an assessment selected the original deterministic
+                // scores. Later reassessments must not change that approved baseline.
+                approvedBaselineRun.assessments = nil
+                approvedBaselineRun.selectedAssessmentID = nil
+                if approvedContract == nil { approvedContract = try? EvaluationScoringContract(run: baseline) }
             }
             guard approvedContract == currentScoringContract else {
                 incomplete.append("The approved baseline uses incompatible cases or scoring conditions.")
@@ -414,19 +422,21 @@ enum EvaluationReleaseCheckEvaluator {
         )
     }
 
-    /// Derives an assessment's scoring contract from its captured rubric and cases, accepting a stored contract only if it agrees.
+    /// Reconstructs an assessment's scoring mode, rubric and case contract, accepting a captured contract only if it agrees.
     private static func resolvedScoringContract(
         for assessment: EvaluationAssessment,
         run: EvaluationRun
     ) -> EvaluationScoringContract? {
+        let mode = assessment.scoringContract?.scoringMode ?? run.scoringMode
+        let semantic = mode == .modelJudge
         let derived = try? EvaluationScoringContract(
-            scoringMode: run.scoringMode,
-            rubricCriteria: assessment.rubric
+            scoringMode: mode,
+            rubricCriteria: semantic ? assessment.rubric
                 .split(whereSeparator: \Character.isNewline)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty },
-            judgePromptVersion: assessment.promptVersion,
-            judgePassingScore: assessment.passingScore,
+                .filter { !$0.isEmpty } : [],
+            judgePromptVersion: semantic ? assessment.promptVersion : nil,
+            judgePassingScore: semantic ? assessment.passingScore : nil,
             cases: run.plannedCases ?? run.suiteDefinition?.cases ?? []
         )
         guard let scoringContract = assessment.scoringContract else { return derived }

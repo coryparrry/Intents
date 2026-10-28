@@ -201,10 +201,10 @@ final class ProductionWorkspaceStore {
             return try storage.importDataset(from: file, name: suite.name, version: suite.version)
         }
     }
-    /// Freezes verified native execution setup and scoring digests into a production configuration.
+    /// Freezes an explicit suite or the native UI draft into verified execution setup and scoring digests.
     /// Copies release gates and marks HTTP model/tool execution as potentially side-effecting; snapshot or encoding errors propagate.
-    func nativeConfiguration(store: EvaluationStore) throws -> ProductionJobConfiguration {
-        let context = try store.productionSnapshot(), data = try ProductionCodec.encode(context)
+    func nativeConfiguration(store: EvaluationStore, suite: EvaluationSuite? = nil) throws -> ProductionJobConfiguration {
+        let context = try store.productionSnapshot(of: suite ?? store.draftSuite), data = try ProductionCodec.encode(context)
         struct Scoring: Codable { var mode: ScoringMode; var criteria: String; var judge: EvaluationJudgeConfiguration; var features: EvaluationFeatureConfiguration }
         let scoring = Scoring(mode: context.suite.scoringMode, criteria: context.suite.criteria, judge: context.suite.judgeConfiguration, features: context.suite.features)
         var configuration = ProductionJobConfiguration(scoringRevision: ProductionCodec.digest(try ProductionCodec.encode(scoring)),

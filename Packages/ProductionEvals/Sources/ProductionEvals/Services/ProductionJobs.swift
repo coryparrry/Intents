@@ -88,14 +88,15 @@ extension ProductionStorage {
     public func control(_ job: ProductionJob) throws -> ProductionControl {
         try ProductionCodec.read(ProductionControl.self, from: jobDirectory(job.id).appendingPathComponent("control.json"), maximumBytes: 1_000_000)
     }
-    /// Reads the job control state and hashes its pause and cancellation flags for an optimistic control update.
+    /// Reads a control revision bound to the flags and their latest mutation, excluding timing and cost changes.
     public func controlRevision(_ job: ProductionJob) throws -> String {
         let value = try control(job)
         return Self.controlRevision(value)
     }
-    /// Hashes only the pause and cancellation flags used to detect competing control changes.
+    /// Hashes control flags and their mutation identity so a restored flag value cannot authorize a stale update.
+    /// Timing and cost checkpoints do not invalidate this optimistic control revision.
     public static func controlRevision(_ value: ProductionControl) -> String {
-        ProductionCodec.digest(Data("\(value.paused)/\(value.cancelled)".utf8))
+        ProductionCodec.digest(Data("\(value.paused)/\(value.cancelled)/\(value.evidenceMutationID?.uuidString ?? "legacy")".utf8))
     }
     /// Changes supplied control flags under the store lock and invalidates baseline evidence when flags change.
     /// - Parameter expectedControlRevision: Optional pause/cancel revision that must still match.

@@ -9,18 +9,21 @@ public final class MacIntentRunner {
     private var unresolvedSubject: NSRunningApplication?
     private var running = false
     private var cancelled = false
+    private var cancelInspection: (@Sendable () -> Void)?
     /// Creates a serial native runner that retains unresolved process ownership between runs.
     public init() {}
 
     /// Requests cancellation of the active run and owned command while allowing resource cleanup to finish.
     public func cancel() {
         cancelled = true
+        cancelInspection?()
         command.cancel()
     }
 
     /// Generates, signs, and executes native App Intents tests against the selected installed build, retaining logs and result evidence.
     /// Requires an unchanged catalog/build identity, a stopped subject app, compatible Xcode, and matching signing team.
-    /// Only the explicitly launched subject is closed; unresolved command/host resources prevent another run.
+    /// Retains admission during off-actor inspection; only the explicitly launched subject is closed.
+    /// Unresolved command/host resources prevent another run.
     /// - Returns: A verdict with evidence paths, selected product identity, and frozen authored cases. Execution/setup failures after evidence setup are captured in a failed result.
     /// - Throws: Early validation, setup, cancellation, or file errors before result capture is established.
     public func run(catalog: MacIntentCatalog, cases: [MacIntentTestCase],
@@ -47,7 +50,9 @@ public final class MacIntentRunner {
         guard let xcodegen = ["/opt/homebrew/bin/xcodegen", "/usr/local/bin/xcodegen"].first(where: {
             FileManager.default.isExecutableFile(atPath: $0)
         }) else { throw MacIntentTestingError("XcodeGen is required. Install it with brew install xcodegen.") }
-        let current = try MacIntentCatalog.load(appURL: catalog.appURL)
+        running = true; cancelled = false
+        defer { running = false }
+        let current = try await inspect { try MacIntentCatalog.load(appURL: catalog.appURL) }
         guard current.bundleIdentifier == catalog.bundleIdentifier, current.actions == catalog.actions,
               let identity = catalog.productIdentity, current.productIdentity == identity else {
             throw MacIntentTestingError("The selected app changed. Reload its intent catalog before testing.")
@@ -59,8 +64,6 @@ public final class MacIntentRunner {
         }
         try Task.checkCancellation()
         let source = try MacIntentSource.tests(catalog: current, cases: cases)
-        running = true; cancelled = false
-        defer { running = false }
         let fm = FileManager.default
         let identifier = UUID().uuidString.lowercased()
         unresolvedHostBundleIDs = Self.generatedHostBundleIdentifiers(identifier)
@@ -105,15 +108,15 @@ public final class MacIntentRunner {
             guard signingStatus == 0, Self.signingTeam(in: String(decoding: signingData, as: UTF8.self)) == configuration.teamIdentifier else {
                 throw MacIntentTestingError("The selected app must be signed by the same development team as the test runner (\(configuration.teamIdentifier)). Select that app's team and signing identity; the subject app is never re-signed.")
             }
-            codeIdentity = try MacIntentCodeIdentity(appURL: current.appURL)
-            try identity.validate()
+            codeIdentity = try await inspect { try MacIntentCodeIdentity(appURL: current.appURL) }
+            try await inspect { try identity.validate() }
             guard try await execute(executable: URL(fileURLWithPath: xcodegen),
                                     arguments: ["generate", "--spec", "project.json"], directory: directory,
                                     environment: environment, log: log, timeout: 60) == 0 else {
                 throw MacIntentTestingError("The native test project could not be generated.")
             }
             try checkCancellation()
-            try identity.validate()
+            try await inspect { try identity.validate() }
             try Self.requireStoppedSubject(bundleIdentifier: current.bundleIdentifier)
             let opening = NSWorkspace.OpenConfiguration()
             opening.activates = false
@@ -123,7 +126,7 @@ public final class MacIntentRunner {
             // close or adopt an app that was already running with user work.
             launchedSubject = subject
             subjectLaunchDate = subject.launchDate
-            try validateSubject(subject, launchedAt: subjectLaunchDate, identity: identity, code: codeIdentity)
+            try await validateSubject(subject, launchedAt: subjectLaunchDate, identity: identity, code: codeIdentity)
             guard let subjectLaunchDate else {
                 throw MacIntentTestingError("The test app's launch identity could not be observed.")
             }
@@ -137,7 +140,7 @@ public final class MacIntentRunner {
                                            directory: directory, environment: environment, log: log, timeout: configuration.timeoutSeconds)
             try checkCancellation()
             if !subject.isTerminated {
-                try validateSubject(subject, launchedAt: subjectLaunchDate, identity: identity, code: codeIdentity)
+                try await validateSubject(subject, launchedAt: subjectLaunchDate, identity: identity, code: codeIdentity)
             }
             if status == 0 {
                 let summaryURL = directory.appendingPathComponent("test-summary.json")
@@ -157,15 +160,15 @@ public final class MacIntentRunner {
                 try checkCancellation()
                 await lifetime.deliverPendingObservations()
                 try checkCancellation()
-                try lifetime.validateCompletion(
+                try await lifetime.validateCompletion(
                     subjectTerminated: subject.isTerminated,
                     hasOtherRunningCopy: NSRunningApplication.runningApplications(withBundleIdentifier: current.bundleIdentifier)
                         .contains { !$0.isTerminated && $0.processIdentifier != subject.processIdentifier },
                     summary: Data(contentsOf: summaryURL), expectedCount: cases.count,
                     validateLiveSubject: {
-                        try self.validateSubject(subject, launchedAt: subjectLaunchDate, identity: identity, code: codeIdentity)
+                        try await self.validateSubject(subject, launchedAt: subjectLaunchDate, identity: identity, code: codeIdentity)
                     },
-                    validateProduct: { try identity.validate() }
+                    validateProduct: { try await self.inspect { try identity.validate() } }
                 )
             }
             result = .init(succeeded: status == 0, resultBundleURL: fm.fileExists(atPath: resultURL.path) ? resultURL : nil,
@@ -189,19 +192,21 @@ public final class MacIntentRunner {
         do {
             if let subjectLifetime {
                 try await subjectLifetime.finishObserving(
-                    afterProductValidation: { try identity.validate() },
+                    afterProductValidation: { try await self.inspect { try identity.validate() } },
                     hasOtherRunningCopy: {
                         NSRunningApplication.runningApplications(withBundleIdentifier: current.bundleIdentifier)
                             .contains { !$0.isTerminated }
                     }
                 )
             } else {
-                try await Task.detached { try identity.validate() }.value
+                try await inspect { try identity.validate() }
             }
         }
         catch {
+            let message = cancelled || Task.isCancelled || error is CancellationError
+                ? "Run cancelled. See run.log." : error.localizedDescription
             return .init(succeeded: false, resultBundleURL: result.resultBundleURL, logURL: logURL,
-                summary: error.localizedDescription, productIdentity: identity, cases: cases)
+                summary: message, productIdentity: identity, cases: cases)
         }
         return result
     }
@@ -221,6 +226,23 @@ public final class MacIntentRunner {
     private func checkCancellation() throws {
         if cancelled { throw CancellationError() }
         try Task.checkCancellation()
+    }
+
+    /// Retains and joins off-actor inspection so either explicit runner cancellation or caller cancellation stops scanning.
+    func inspect<Value: Sendable>(
+        _ operation: @escaping @Sendable () throws -> Value
+    ) async throws -> Value {
+        try checkCancellation()
+        let inspection = Task { try await MacIntentInspection.perform(operation) }
+        cancelInspection = { inspection.cancel() }
+        defer { cancelInspection = nil }
+        let value = try await withTaskCancellationHandler {
+            try await inspection.value
+        } onCancel: {
+            inspection.cancel()
+        }
+        try checkCancellation()
+        return value
     }
 
     /// Requests termination of the subject launched by this run, then force-terminates after a grace interval if needed.
@@ -247,18 +269,29 @@ public final class MacIntentRunner {
     }
 
     /// Checks the launched process timestamp, resolved bundle path, exclusive running copy, signed code identity, and unchanged bundle bytes.
-    /// Throws if result evidence can no longer be tied to the selected process and build.
+    /// Checks process continuity around off-actor code and bundle inspection, observing cancellation before accepting evidence.
     private func validateSubject(_ app: NSRunningApplication, launchedAt: Date?, identity: MacIntentProductIdentity,
-                                 code: MacIntentCodeIdentity?) throws {
+                                 code: MacIntentCodeIdentity?) async throws {
+        try requireCurrentSubject(app, launchedAt: launchedAt, identity: identity, code: code)
+        guard let code else { throw MacIntentTestingError("The selected app has no verified signed identity.") }
+        let processIdentifier = app.processIdentifier
+        try await inspect {
+            try code.validate(processIdentifier: processIdentifier)
+            try identity.validate()
+        }
+        try requireCurrentSubject(app, launchedAt: launchedAt, identity: identity, code: code)
+    }
+
+    /// Rejects ended, replaced, unverified, or competing subject processes without scanning bundle bytes.
+    private func requireCurrentSubject(_ app: NSRunningApplication, launchedAt: Date?, identity: MacIntentProductIdentity,
+                                       code: MacIntentCodeIdentity?) throws {
         guard !app.isTerminated, let launchedAt, app.launchDate == launchedAt,
               app.bundleURL.map({ Self.sameApplicationPath($0, URL(fileURLWithPath: identity.bundlePath)) }) == true,
-              let code,
+              code != nil,
               NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleIdentifier ?? "")
                 .allSatisfy({ $0.isTerminated || $0.processIdentifier == app.processIdentifier }) else {
             throw MacIntentTestingError("The test app process changed or another copy started. Its result cannot be bound to the selected build.")
         }
-        try code.validate(processIdentifier: app.processIdentifier)
-        try identity.validate()
     }
 
     /// Checks that every generated host/runner identifier has no live application and clears the retained list only after release.
@@ -464,15 +497,15 @@ final class MacIntentSubjectLifetime {
         }
     }
 
-    /// Keeps event observation active during detached product validation, then seals evidence on the main queue and removes observers.
+    /// Keeps observation active while the caller joins asynchronous product validation, then seals evidence and removes observers.
     /// Throws if hashing fails or accumulated/final state detects a replacement; the cutoff describes local delivery only.
-    func finishObserving(afterProductValidation: @escaping @Sendable () throws -> Void,
+    func finishObserving(afterProductValidation: @MainActor () async throws -> Void,
                          hasOtherRunningCopy: @escaping @MainActor @Sendable () -> Bool) async throws {
         // Keep the main run loop available to receive workspace events during
         // expensive hashing. Then drain already queued main-queue delivery and
         // seal a snapshot before removing observers. This is a local delivery
         // cutoff, not proof that no application can launch in the future.
-        try await Task.detached { try afterProductValidation() }.value
+        try await afterProductValidation()
         let final: (Observation, Bool) = await withCheckedContinuation { continuation in
             DispatchQueue.main.async {
                 let final = (self.ledger.seal(), hasOtherRunningCopy())
@@ -484,20 +517,22 @@ final class MacIntentSubjectLifetime {
     }
 
     /// Validates authored-test counts, unchanged product, and subject continuity before accepting completion.
-    /// A terminated subject needs its own observed termination; a live subject must pass the supplied live-identity check.
+    /// A terminated subject needs its own observed termination; asynchronous inspections keep notification delivery available.
     func validateCompletion(subjectTerminated: Bool, hasOtherRunningCopy: Bool,
                             summary: Data, expectedCount: Int,
-                            validateLiveSubject: () throws -> Void,
-                            validateProduct: () throws -> Void) throws {
+                            validateLiveSubject: () async throws -> Void,
+                            validateProduct: () async throws -> Void) async throws {
         try MacIntentSummary.validate(summary, expectedCount: expectedCount)
         try validateNoReplacement(hasOtherRunningCopy: hasOtherRunningCopy)
-        try validateProduct()
         if subjectTerminated {
             guard ledger.snapshot().terminated else {
                 throw MacIntentTestingError("The test app ended without an observed termination of its verified process. Native test success could not be bound to that process.")
             }
-        } else {
-            try validateLiveSubject()
         }
+        try await validateProduct()
+        if !subjectTerminated {
+            try await validateLiveSubject()
+        }
+        try validateNoReplacement(hasOtherRunningCopy: hasOtherRunningCopy)
     }
 }

@@ -6,6 +6,8 @@ struct ReviewJudgeChecksPane: View {
     @State private var error: String?
     private var examples: [EvaluationReviewedJudgeExample] { store.suiteLocalState.reviewedJudgeExamples }
     var body: some View {
+        let projection = EvaluationReviewWorkflow.projection(runs: store.runs, suiteID: store.selectedSuiteID,
+                                                           state: store.suiteLocalState.review)
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Keep examples used to refine your judge in Development. Reserve Held-out test for examples you have not used to tune its rubric. Moving an example moves every repetition and run of the same case.")
@@ -33,7 +35,7 @@ struct ReviewJudgeChecksPane: View {
                 if !errors.isEmpty {
                     DisclosureGroup("Unavailable checks · \(errors.count)") {
                         ForEach(errors) { result in
-                            let source = store.reviewSamples.first { $0.run.id == result.example.sourceRunID && $0.sample.id == result.example.sampleID }
+                            let source = projection.samplesByID["\(result.example.sourceRunID)/\(result.example.sampleID)"]
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("\(source?.sample.caseName ?? "Source unavailable") · \((result.example.partition ?? .development).title)")
                                     .font(.callout.weight(.medium))
@@ -56,7 +58,7 @@ struct ReviewJudgeChecksPane: View {
                 VStack(alignment: .leading, spacing: 0) {
                     WorkspacePanelHeader("Reviewed examples", count: examples.count)
                     ForEach(examples) { example in
-                        let sample = store.reviewSamples.first { $0.run.id == example.sourceRunID && $0.sample.id == example.sampleID }
+                        let sample = projection.samplesByID["\(example.sourceRunID)/\(example.sampleID)"]
                         HStack(alignment: .top, spacing: 16) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(sample?.sample.caseName ?? "Source unavailable").font(.callout.weight(.medium))
@@ -71,6 +73,13 @@ struct ReviewJudgeChecksPane: View {
                                 }
                             )) { ForEach(EvaluationJudgeCheckPartition.allCases) { Text($0.title).tag($0) } }
                                 .labelsHidden().fixedSize().disabled(store.isReassessing)
+                            Button("Remove judge example", systemImage: "trash", role: .destructive) {
+                                do { try store.removeJudgeCheckExample(id: example.id) }
+                                catch { self.error = error.localizedDescription }
+                            }
+                            .labelStyle(.iconOnly)
+                            .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
+                            .help("Remove this judge check. Its human review and other examples keep their existing groups.")
                         }.padding(.horizontal, 18).padding(.vertical, 12)
                         Divider()
                     }
@@ -78,7 +87,7 @@ struct ReviewJudgeChecksPane: View {
             }
         }
         .onAppear { connectionID = store.draftSuite.judgeConfiguration.connectionID }
-        .alert("Could not change judge group", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+        .alert("Could not update judge examples", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK") { error = nil }
         } message: { Text(error ?? "") }
     }

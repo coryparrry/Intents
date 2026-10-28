@@ -25,7 +25,7 @@
       "sha256": "b6a07a40570bfa063a772375cecdf082346064cbc85cb49652db2af7b8a4afb3",
       "bundled": "AppEngineValidation.swift",
       "excerpt": "validation/limits or attachment preparation only; standalone boundary wrappers",
-      "bundledSHA256": "86c85829101fa8600a09f2183a961434378bcd83bf32a1d9c691a351d3be3e63"
+      "bundledSHA256": "7fb0b97ad632e00b5444dd23c260f30c4cda85b5aedd2ccc0ce954c536542283"
     },
     {
       "source": "Stores/EvaluationStore.swift",
@@ -94,10 +94,10 @@
     },
     {
       "bundled": "EvaluationCustomTool.swift",
-      "bundledSHA256": "55d7b34ba15067b8c42f9b18947cbf1ffa926cfb69f7f67e0bafbad4ca7d7bee",
+      "bundledSHA256": "ae06879cb24f6c0b15e2ecaa98df8ca836bfd5045bf1cacafcdd642014e97749",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present",
       "canonicalSource": "plugins/apple-foundation-evals/native/AppEngine/EvaluationCustomTool.swift",
-      "canonicalSHA256": "55d7b34ba15067b8c42f9b18947cbf1ffa926cfb69f7f67e0bafbad4ca7d7bee",
+      "canonicalSHA256": "ae06879cb24f6c0b15e2ecaa98df8ca836bfd5045bf1cacafcdd642014e97749",
       "formerSource": "FoundationEvals/FoundationEvals/Services/EvaluationCustomTool.swift",
       "formerSourceSHA256": "cb6a08d1f3b0b1c73121cda0d50a1a09ffc92b9164a1c08d535a9fd69962c44f"
     },
@@ -106,15 +106,15 @@
       "canonicalSource": "plugins/apple-foundation-evals/native/AppEngine/EvaluationDevelopmentAnalysis.swift",
       "formerSource": "FoundationEvals/FoundationEvals/Services/EvaluationDevelopmentAnalysis.swift",
       "formerSourceSHA256": "bb5f604123e505131525e0a16b355b1099bc7bcaa86e1a4ee4d8ee5a246e1dcc",
-      "bundledSHA256": "f19794dee863140ac8f7d37d44dcbb3d84c0858d5a28fbf16db06cae799a1a93",
-      "canonicalSHA256": "f19794dee863140ac8f7d37d44dcbb3d84c0858d5a28fbf16db06cae799a1a93"
+      "bundledSHA256": "578497d7fd1b50c484ddbb72a72d50a479a8cecc313a4483edd029bbfa45cb48",
+      "canonicalSHA256": "578497d7fd1b50c484ddbb72a72d50a479a8cecc313a4483edd029bbfa45cb48"
     },
     {
       "bundled": "EvaluationDynamicProfile.swift",
-      "bundledSHA256": "607341ceedf27b952a4c25667df70dd5a9c67233a32f5de4ddc80c34d5178502",
+      "bundledSHA256": "f91765367741a6ec6f9a5a7c9ff6c848a7af450c601c8a9dbc37b266975c24b9",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present",
       "canonicalSource": "plugins/apple-foundation-evals/native/AppEngine/EvaluationDynamicProfile.swift",
-      "canonicalSHA256": "607341ceedf27b952a4c25667df70dd5a9c67233a32f5de4ddc80c34d5178502",
+      "canonicalSHA256": "f91765367741a6ec6f9a5a7c9ff6c848a7af450c601c8a9dbc37b266975c24b9",
       "formerSource": "FoundationEvals/FoundationEvals/Services/EvaluationDynamicProfile.swift",
       "formerSourceSHA256": "9d790faea7daa28d960d8be553b68cd5e533163212f00eb4b8e32ba610c4d316"
     },
@@ -145,7 +145,7 @@
       "source": "Services/EvaluationFeatureResponse.swift",
       "sha256": "8820506169dd146823ddb8c6bb6716f4f94609a26acac7fced8398344bb827d2",
       "bundled": "EvaluationFeatureResponse.swift",
-      "bundledSHA256": "6a7902620913c3957deaaf0b213c735cb365f1b78e435e12713902a5a7bf1b79",
+      "bundledSHA256": "189d4d9816ac5a56850cf3d3257dc19fc987ac765e27189f5eca945295c31b1b",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present"
     },
     {
@@ -232,7 +232,7 @@
       "source": "Services/EvaluationRunner+Prompt.swift",
       "sha256": "20cf11bdbd9ec2cc527b829d0bb642c233be043c80b070e82cdc240382b3c5e7",
       "bundled": "EvaluationRunner+Prompt.swift",
-      "bundledSHA256": "bb5f8fb2b018cf36b52ad10b8ef609dca25f0ebcdaf46b51bbc9051ea6a53483",
+      "bundledSHA256": "fdc593437aca98eb633be026984f672be3090a35560de2e76644a1f85f3d8c82",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present"
     },
     {
@@ -246,7 +246,7 @@
       "source": "Services/EvaluationRunner.swift",
       "sha256": "510730160608dff0f7129fa97467865d333f1c2b69a0aeed2f2791a0387a61ea",
       "bundled": "EvaluationRunner.swift",
-      "bundledSHA256": "56851f25bae4cb3d673053fd5766903d5f8a5a7e174a3036c178e93ec090414a",
+      "bundledSHA256": "d35397d41d29afa03bdc82f1e329a9d885312692d6e76485c5d1a50e9e9280af",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present; custom HTTP input-limit admission remains outside the on-device-only standalone executor"
     },
     {
@@ -342,19 +342,19 @@
     },
     {
       "bundled": "ModelExecutionConfiguration.swift",
-      "bundledSHA256": "38ce55af29b1563d4d7c6f085d7c359a3db7c95c992ce092ece77dbc353c4f3d",
+      "bundledSHA256": "cf83d137eb772775e1956442010f64bea30263ff8c51b0aa16966fe0f34c9dd4",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present",
       "canonicalSource": "plugins/apple-foundation-evals/native/AppEngine/ModelExecutionConfiguration.swift",
-      "canonicalSHA256": "38ce55af29b1563d4d7c6f085d7c359a3db7c95c992ce092ece77dbc353c4f3d",
+      "canonicalSHA256": "cf83d137eb772775e1956442010f64bea30263ff8c51b0aa16966fe0f34c9dd4",
       "formerSource": "FoundationEvals/FoundationEvals/Services/ModelExecutionConfiguration.swift",
       "formerSourceSHA256": "3e44764fb1a1dc184196c22856305d354d2c1f4ae4c926e65aab353d83734d69"
     },
     {
       "bundled": "ReferenceLookupTool.swift",
-      "bundledSHA256": "27bd77ffc39162611f0a399152f65f74eb637dc3d9a072bc15c27a34ed1e9889",
+      "bundledSHA256": "4110452b03310054422923dccdc0a617ca2630ec6aae6f9ed157af464bdaa76e",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present",
       "canonicalSource": "plugins/apple-foundation-evals/native/AppEngine/ReferenceLookupTool.swift",
-      "canonicalSHA256": "27bd77ffc39162611f0a399152f65f74eb637dc3d9a072bc15c27a34ed1e9889",
+      "canonicalSHA256": "4110452b03310054422923dccdc0a617ca2630ec6aae6f9ed157af464bdaa76e",
       "formerSource": "FoundationEvals/FoundationEvals/Services/ReferenceLookupTool.swift",
       "formerSourceSHA256": "0cedffbb729acaa133ea3d484a811c4d87dd7849804b4087c2a0f134752809e5"
     },
@@ -370,9 +370,9 @@
     {
       "bundled": "EvaluationSchemaValidator.swift",
       "adaptation": "macOS 27 availability annotations; final structured output and tool argument schema validation",
-      "bundledSHA256": "b8a786c8ce678e7b00e12f512dec8b96829ff845dc692aa944b43f39a00ac3b6",
+      "bundledSHA256": "a44af2a8daef8cdfacb5f10118c03a138d34e36f7653b63a0717ab43488b5aed",
       "canonicalSource": "plugins/apple-foundation-evals/native/AppEngine/EvaluationSchemaValidator.swift",
-      "canonicalSHA256": "b8a786c8ce678e7b00e12f512dec8b96829ff845dc692aa944b43f39a00ac3b6",
+      "canonicalSHA256": "a44af2a8daef8cdfacb5f10118c03a138d34e36f7653b63a0717ab43488b5aed",
       "formerSource": "FoundationEvals/FoundationEvals/Services/EvaluationSchemaValidator.swift",
       "formerSourceSHA256": "a353029b8bc595ba9b0cfea43df0fbbb2d33413373eeda7985ee70d94092fa2d"
     }

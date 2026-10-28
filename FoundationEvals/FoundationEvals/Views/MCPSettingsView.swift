@@ -54,7 +54,7 @@ struct MCPSettingsView: View {
                     Button("Copy Manual Configuration") {
                         Task { await controller.copyManualConfiguration() }
                     }
-                    .help("Copy the connection settings to add to Codex yourself.")
+                    .help("Copy the connection settings for manual setup and start the local connector.")
 
                     Button("Remove from Codex", role: .destructive) {
                         isConfirmingRemoval = true

@@ -4,6 +4,135 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationReviewWorkflowTests {
+    /// Preserves saved review hashes when batching captured or legacy runs with optional context and Unicode evidence.
+    @Test(arguments: [false, true], 0..<4)
+    func batchedSourceDigestsPreserveTheExistingRepresentation(legacy: Bool, optionalFields: Int) throws {
+        var fixture = try ReviewFixture()
+        fixture.suite.instructions = "Escaped \"instructions\" / e\u{0301} 👨‍👩‍👧‍👦\nSecond line"
+        try fixture.refresh()
+        if legacy { fixture.run.subjectEvidence = nil }
+        if optionalFields == 0 {
+            fixture.run.suiteDefinition = nil
+            fixture.run.plannedCases = nil
+        }
+        if optionalFields >= 1 {
+            fixture.run.execution = .init(behaviorVersion: "Unicode / \"é\"", configuration: fixture.suite.modelConfiguration,
+                modelDisplayName: "Fixture", capabilities: ["text"], toolNames: ["reference / lookup"], features: fixture.suite.features)
+        }
+        if optionalFields >= 2 {
+            fixture.run.developerExecution = .init(runnerID: UUID(), runnerName: "Runner 👩🏽‍💻", platform: "macOS",
+                operatingSystem: "Fixture", hardwareModel: "Fixture", appBundleIdentifier: "test.review",
+                appVersion: "1", featureID: "review", featureVersion: "1", protocolMajorVersion: 1, protocolMinorVersion: 0)
+        }
+        if optionalFields == 3 {
+            fixture.run.attachments = [.init(name: "é / reference", kind: .text, byteCount: 4, sha256: "fixture")]
+            fixture.run.plannedCases = nil
+            if var evidence = fixture.run.subjectEvidence {
+                evidence.attachments = [.init(id: UUID(), name: "é / reference", kind: .text, byteCount: 4,
+                    sha256: "fixture", storedFilename: nil, text: "Source \"sample\":null 👩🏽‍💻")]
+                evidence.digest = try EvaluationSubjectEvidenceSnapshot.digest(instructions: evidence.instructions,
+                    cases: evidence.cases, attachments: evidence.attachments)
+                fixture.run.subjectEvidence = evidence
+            }
+        }
+        fixture.run.results = (1...8).map { repetition in
+            var sample = fixture.run.results[0]
+            sample.id = UUID()
+            sample.repetition = repetition
+            sample.response = "\(repetition): \"sample\":null / e\u{0301} 👨‍👩‍👧‍👦\n"
+            return sample
+        }
+        let batch = EvaluationReviewWorkflow.samples(runs: [fixture.run], suiteID: fixture.suite.id)
+        #expect(batch.count == fixture.run.results.count)
+        for sample in batch {
+            #expect(sample.sourceDigest == (try EvaluationReviewWorkflow.sourceDigest(run: fixture.run, sample: sample.sample)))
+        }
+    }
+
+    /// Indexes the latest label once while preserving stale-source and corrupt-evidence presentation rules.
+    @Test(arguments: [false, true])
+    func reviewProjectionUsesLatestLabelsAndChecksSourceIntegrity(corrupt: Bool) throws {
+        var fixture = try ReviewFixture()
+        if corrupt { fixture.run.subjectEvidence?.digest = "invalid" }
+        let first = fixture.annotation(verdict: .failed)
+        var latest = first
+        latest.id = UUID()
+        latest.note = "Most recent human review"
+        let projection = EvaluationReviewWorkflow.projection(runs: [fixture.run], suiteID: fixture.suite.id,
+            state: .init(annotations: [first, latest]))
+        #expect(projection.samplesByID[fixture.sample.id]?.sourceDigest == fixture.sample.sourceDigest)
+        #expect(projection.annotationsByID[fixture.sample.id]?.id == latest.id)
+        #expect(projection.currentAnnotationsByID[fixture.sample.id]?.id == (corrupt ? nil : latest.id))
+        latest.sourceDigest = "stale"
+        let stale = EvaluationReviewWorkflow.projection(runs: [fixture.run], suiteID: fixture.suite.id,
+            state: .init(annotations: [first, latest]))
+        #expect(stale.currentAnnotationsByID.isEmpty)
+    }
+
+    /// Recovers from ordinary source-run deletion through explicit example removal without moving other held-out cases.
+    @MainActor @Test func removingUnavailableJudgeExampleRestoresEnrollmentAndPartitionChanges() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        store.draftSuite.scoringMode = .modelJudge
+        store.draftSuite.cases = (0..<3).map { .init(name: "Case \($0)", prompt: "Question \($0)", expected: "Answer \($0)") }
+        #expect(store.saveSuite())
+        let suiteDirectory = EvaluationWorkspacePersistence.suiteDirectory(supportDirectory: directory,
+            projectID: store.selectedProjectID, suiteID: store.selectedSuiteID)
+        var fixtures: [ReviewFixture] = []
+        for evaluationCase in store.suite.cases {
+            var sourceSuite = store.suite
+            sourceSuite.cases = [evaluationCase]
+            var fixture = try ReviewFixture(suite: sourceSuite)
+            _ = try fixture.addAssessment()
+            fixtures.append(fixture)
+            store.runs.append(fixture.run)
+            try CanonicalJSON.data(for: fixture.run).write(to: suiteDirectory.appending(path: "Runs/\(fixture.run.id).json"))
+            let review = fixture.annotation(verdict: .failed)
+            try store.saveReview(review)
+            try store.addReviewToJudgeChecks(reviewID: review.id, partition: .test)
+        }
+        let orphan = try #require(store.suiteLocalState.reviewedJudgeExamples.first)
+        let live = try #require(store.suiteLocalState.reviewedJudgeExamples.dropFirst().first)
+        let heldOut = try #require(store.suiteLocalState.reviewedJudgeExamples.last)
+        #expect(try store.deleteRunDurably(id: fixtures[0].run.id))
+        #expect(throws: EvaluationReviewError.self) { try store.setJudgeCheckPartition(exampleID: live.id, partition: .development) }
+        try store.removeJudgeCheckExample(id: orphan.id)
+        try store.setJudgeCheckPartition(exampleID: live.id, partition: .development)
+        let liveReview = try #require(store.suiteLocalState.review.annotation(runID: live.sourceRunID, sampleID: live.sampleID))
+        try store.addReviewToJudgeChecks(reviewID: liveReview.id, partition: .development)
+        #expect(store.suiteLocalState.review.annotations.count == 3)
+        #expect(store.suiteLocalState.reviewedJudgeExamples.count == 2)
+        #expect(store.suiteLocalState.reviewedJudgeExamples.first(where: { $0.id == heldOut.id })?.partition == .test)
+        let reopened = EvaluationStore(supportDirectory: directory)
+        #expect(reopened.suiteLocalState.reviewedJudgeExamples.count == 2)
+        #expect(reopened.suiteLocalState.review.annotations.count == 3)
+        #expect(reopened.suiteLocalState.reviewedJudgeExamples.first(where: { $0.id == heldOut.id })?.partition == .test)
+    }
+
+    /// Leaves orphan evidence available for retry when its explicit removal cannot be saved.
+    @MainActor @Test func failedJudgeExampleRemovalRestoresState() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var failWrites = false
+        let store = EvaluationStore(supportDirectory: directory, suiteLocalStateWriter: { data, url in
+            if failWrites { throw CocoaError(.fileWriteNoPermission) }
+            try data.write(to: url, options: .atomic)
+        })
+        let example = EvaluationReviewedJudgeExample(partition: .test, id: UUID(), sourceRunID: UUID(),
+            sourceAssessmentID: UUID(), sampleID: UUID(), expectedStatus: .failed, reason: "Retained held-out label", createdAt: Date())
+        var state = store.suiteLocalState
+        state.reviewedJudgeExamples = [example]
+        try store.commitReviewLocalState(state)
+        failWrites = true
+        #expect(throws: EvaluationStoreError.self) { try store.removeJudgeCheckExample(id: example.id) }
+        #expect(store.suiteLocalState.reviewedJudgeExamples.first?.id == example.id)
+        #expect(EvaluationStore(supportDirectory: directory).suiteLocalState.reviewedJudgeExamples.first?.partition == .test)
+        failWrites = false
+        try store.removeJudgeCheckExample(id: example.id)
+        #expect(store.suiteLocalState.reviewedJudgeExamples.isEmpty)
+    }
+
     @Test func reviewSamplesFollowSavedHistoryAfterClockRollback() throws {
         let fixture = try ReviewFixture()
         var first = fixture.run
@@ -139,6 +268,7 @@ struct EvaluationReviewWorkflowTests {
         #expect(EvaluationReviewWorkflow.patterns(samples: [changed.sample], state: state).isEmpty)
     }
 
+    /// Retains the original discovery order when sort keys are prepared once instead of recomputed by each comparison.
     @Test func diverseQueueIsStableUniqueAndIncludesSuccessesAndAllCases() throws {
         var fixture = try ReviewFixture()
         var samples: [EvaluationReviewSample] = []
@@ -156,6 +286,27 @@ struct EvaluationReviewWorkflowTests {
         #expect(Set(first.map(\.id)).count == samples.count)
         #expect(Set(first.prefix(4).map { $0.sample.caseID }).count == 2)
         #expect(first.contains { $0.sample.status == .passed })
+        let groups = Dictionary(grouping: samples) {
+            "\($0.sample.caseID)/\($0.run.environment.model)/\($0.run.environment.locale)/\($0.sample.status.rawValue)"
+        }
+        let representatives = groups.keys.sorted().compactMap { groups[$0]?.first }
+        let represented = Set(representatives.map(\.id))
+        /// Reconstructs the previous comparator's exact lowercase SHA-256 ordering key for compatibility evidence.
+        func originalOrder(_ sample: EvaluationReviewSample) -> String {
+            SHA256.hash(data: Data(sample.id.utf8)).map { String(format: "%02x", $0) }.joined()
+        }
+        let remainder = samples.filter { !represented.contains($0.id) }.sorted { originalOrder($0) < originalOrder($1) }
+        var expected: [EvaluationReviewSample] = []
+        var next = 0
+        for (offset, representative) in representatives.enumerated() {
+            expected.append(representative)
+            if offset % 2 == 1, next < remainder.count {
+                expected.append(remainder[next])
+                next += 1
+            }
+        }
+        expected.append(contentsOf: remainder.dropFirst(next))
+        #expect(first.map(\.id) == expected.map(\.id))
     }
 
     @Test func promotionPreservesContextAndRequiresCorrectExpectedAnswer() throws {

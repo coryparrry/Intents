@@ -13,6 +13,7 @@ import { imageInputs, REFERENCE_LIMITS } from './references.mjs';
 import { validateSchema } from './app-schema.mjs';
 import { recoveryResponse, recoveryDispatch } from './catalog-recovery.mjs';
 import { MAX_OUTPUT_BYTES } from './validation.mjs';
+import { RunCatalog } from './run-catalog.mjs';
 
 const pluginURL = new URL('../', import.meta.url);
 const UNCHECKED = { available: null, reason: 'Check model availability' };
@@ -30,6 +31,15 @@ export function summary(run) {
   const timestampIssue = Object.keys(invalidTimestamps).length ? { timestampWarning: 'Stored run has invalid timestamps', invalidTimestamps } : {};
   return { id: run.id, suiteId: run.suiteId, suiteName: run.suite.name, projectId: run.projectId || run.suite.projectId, suiteRevision: run.suiteRevision, revision: publicRecord(run).revision, status: run.status, ...timestamps, ...timestampIssue, ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}), ...(run.model ? { model: run.model } : {}), totalResults: results.length, plannedResults: run.suite.cases.length * run.suite.repetitions, passed: results.filter((item) => item.passed === true).length, failed: results.filter((item) => item.passed === false).length, unscored: results.filter((item) => item.passed === null).length, ...(run.error ? { error: run.error } : {}) };
 }
+/** Projects only the evidence needed for catalog counts, freshness and selected-assessment health. */
+function catalogRun(run) {
+  return { id: run.id, status: run.status, ownerPid: run.ownerPid, experimentId: run.experimentId,
+    summary: summary(run),
+    healthSource: { status: run.status, suiteRevision: run.suiteRevision || (run.suite ? revision(run.suite) : null),
+      appRun: run.appRun ? { selectedAssessmentID: run.appRun.selectedAssessmentID,
+        assessments: run.appRun.assessments?.map(assessment => ({ id: assessment.id,
+          samples: [{ errorCategory: assessment.samples?.some(item => item.errorCategory || item.errorMessage) }] })) } : undefined } };
+}
 /** Rejects unknown tools, unexpected or missing arguments, and values outside the tool input schema. */
 function validateCall(name, args) {
   const tool = TOOLS.find((entry) => entry.name === name);
@@ -42,6 +52,7 @@ export class EvaluationApp {
   /** Creates a local store and injectable native execution dependencies without starting storage or inference. */
   constructor({ dataDir, env = process.env, resolveBinary = nativeBinary, invoke = invokeNative, timeoutMs } = {}) {
     this.store = new Store(dataDir);
+    this.runCatalog = new RunCatalog(this.store, catalogRun);
     this.env = env;
     this.resolveBinary = resolveBinary;
     this.invoke = invoke;
@@ -88,10 +99,10 @@ export class EvaluationApp {
       }
     } finally { await this.store.releaseRunLock(recoveryID); }
   }
-  /** Marks abandoned runs failed and retains interrupted paired outputs before removing staged public runs; experiment cleanup rereads records under the inference lease. */
-  async recover() {
+  /** Marks abandoned runs failed using optional shared catalog metadata; all mutation candidates are reread before recovery. */
+  async recover(catalog) {
     await this.recoverPendingRuns();
-    for (const run of await this.store.list('runs', ({ id, status, ownerPid }) => ({ id, status, ownerPid }))) {
+    for await (const run of catalog || await this.store.list('runs', ({ id, status, ownerPid }) => ({ id, status, ownerPid }))) {
       if (run.status === 'running' && !processAlive(run.ownerPid)) {
         const fullRun = await this.store.read('runs', run.id);
         await this.store.write('runs', { ...fullRun, status: 'failed', finishedAt: new Date().toISOString(), durationMs: Date.now() - Date.parse(fullRun.startedAt), error: 'Evaluation interrupted before completion' });
@@ -225,12 +236,21 @@ export class EvaluationApp {
     }
     return run;
   }
-  /** Recovers interrupted work, then returns newest-first public run summaries with suite freshness and optional project filtering. */
+  /** Recovers interrupted work and revalidates cached metadata before returning independent public summaries and current suite health. */
   async runs(projectId = null) {
-    await this.recover();
+    await this.recover(this.runCatalog.scan());
     const experiments = new Map((await this.store.list('experiments', ({ id, status, experiment }) => ({ id, status, experiment: { runIDs: experiment?.runIDs } }))).map((item) => [item.id, item]));
     const suites = new Map((await this.store.list('suites', (saved) => ({ id: saved.id, revision: saved.revision || revision(saved) }))).map((item) => [item.id, item]));
-    return (await this.store.list('runs', (run) => { const experiment = run.experimentId ? experiments.get(run.experimentId) : null; return run.experimentId && (experiment?.status !== 'completed' || !experiment.experiment?.runIDs?.some((key) => key.toLowerCase() === run.id)) ? null : { ...summary(run), health: health(run, suites.get(run.suiteId)) }; })).filter(Boolean).filter((run) => !projectId || run.projectId === projectId).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    const results = []; let totalBytes = 2;
+    for await (const run of this.runCatalog.scan()) {
+      const experiment = run.experimentId ? experiments.get(run.experimentId) : null;
+      const visible = !run.experimentId || experiment?.status === 'completed' && experiment.experiment?.runIDs?.some(key => key.toLowerCase() === run.id);
+      const result = visible ? { ...structuredClone(run.summary), health: health(run.healthSource, suites.get(run.summary.suiteId)) } : null;
+      totalBytes += Buffer.byteLength(JSON.stringify(result)) + (results.length ? 1 : 0);
+      if (totalBytes > MAX_OUTPUT_BYTES) throw new CatalogLimitError('runs');
+      results.push(result);
+    }
+    return results.filter(Boolean).filter(run => !projectId || run.projectId === projectId).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
   }
   /** Runs one unscored prompt under a guarded lease, exposes live preview state, and waits for lease release before settling. */
   async preview(source, prompt, previewId) {

@@ -18,7 +18,7 @@ Intents adds a managed block to Codex settings. It starts the connector automati
 
 The endpoint alone cannot authenticate a client. An authenticated local client can read or change evaluation data. Keep the managed settings and credential private.
 
-The **Advanced** section has **Copy Endpoint** and **Copy Manual Configuration** for manual setup. **Remove from Codex** removes the managed block. Restart Codex after removal. The installer keeps unrelated Codex MCP settings.
+The **Advanced** section has **Copy Endpoint** and **Copy Manual Configuration** for manual setup. Copying manual configuration also starts the authenticated connector for the current Intents session. If automatic installation cannot recognize your manually maintained configuration, copy it again after a later app launch to start the connector. **Remove from Codex** removes the managed block. Restart Codex after removal. The installer keeps unrelated Codex MCP settings.
 
 ## Use the connection
 

@@ -1,5 +1,10 @@
 import Foundation
 import Testing
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
 
 @testable import ProductionEvals
 
@@ -17,6 +22,246 @@ struct ProductionUploadTests {
       data.append(10)
     }
     return data
+  }
+  /// Creates a valid captured job from synthetic source bytes for export destination checks.
+  private func capturedJob(in storage: ProductionStorage) throws -> ProductionJob {
+    let file = storage.root.appendingPathComponent("source.jsonl")
+    try source().write(to: file)
+    let dataset = try storage.importDataset(from: file, name: "Export fixture", version: "1")
+    return try storage.createCapturedJob(name: "Captured", datasetRevision: dataset.revision)
+  }
+  /// Observes a second open handle to the held lock, proving export passed preflight and reached its blocked transaction.
+  private func hasWaitingExportDescriptor(matching descriptor: Int32) throws -> Bool {
+    var held = stat()
+    guard fstat(descriptor, &held) == 0 else { throw ProductionFailure.unavailable("Cannot inspect test lock.") }
+    return try FileManager.default.contentsOfDirectory(atPath: "/dev/fd").contains { name in
+      guard let candidate = Int32(name), candidate != descriptor else { return false }
+      var value = stat()
+      return fstat(candidate, &value) == 0 && value.st_dev == held.st_dev && value.st_ino == held.st_ino
+    }
+  }
+  /// Freezes aliases before lock contention and rejects a frozen parent retargeted into storage before lock acquisition.
+  @Test(arguments: [false, true])
+  func exportKeepsDestinationSafeWhenAliasesChangeWhileWaiting(retargetCanonicalParent: Bool) async throws {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("export-waiting-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: base) }
+    let storage = try ProductionStorage(root: base.appendingPathComponent("store"))
+    let job = try capturedJob(in: storage)
+    let originalPaths = try FileManager.default.subpathsOfDirectory(atPath: storage.root.path).sorted()
+    let external = base.appendingPathComponent("external"), alias = base.appendingPathComponent("alias")
+    try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: external)
+    let descriptor = open(storage.root.appendingPathComponent(".store.lock").path, O_RDWR)
+    try #require(descriptor >= 0)
+    defer { _ = flock(descriptor, LOCK_UN); close(descriptor) }
+    try #require(flock(descriptor, LOCK_EX) == 0)
+    let export = Task.detached { try storage.exportJob(job.id, to: alias.appendingPathComponent("export")) }
+    var reachedLock = false
+    do {
+      for _ in 0..<500 {
+        if try hasWaitingExportDescriptor(matching: descriptor) { reachedLock = true; break }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      let switched = retargetCanonicalParent ? external : alias
+      try FileManager.default.removeItem(at: switched)
+      try FileManager.default.createSymbolicLink(at: switched, withDestinationURL: storage.root.appendingPathComponent("Jobs"))
+    } catch {
+      _ = flock(descriptor, LOCK_UN)
+      _ = await export.result
+      throw error
+    }
+    _ = flock(descriptor, LOCK_UN)
+    let result = await export.result
+    #expect(reachedLock)
+    if retargetCanonicalParent {
+      if case .failure(let error) = result { #expect(error is ProductionFailure) }
+      else { Issue.record("Export accepted a frozen destination retargeted into storage.") }
+    } else {
+      try result.get()
+      #expect(FileManager.default.fileExists(atPath: external.appendingPathComponent("export/report.json").path))
+    }
+    #expect(try FileManager.default.subpathsOfDirectory(atPath: storage.root.path).sorted() == originalPaths)
+    #expect(try storage.jobs().map(\.id) == [job.id])
+  }
+  /// Rejects every active-store collection and copied source descendant before creating export staging.
+  @Test func exportRejectsStoreDescendantsWithoutChangingTheStore() throws {
+    let storage = try storage()
+    defer { try? FileManager.default.removeItem(at: storage.root) }
+    let job = try capturedJob(in: storage)
+    let paths = try FileManager.default.subpathsOfDirectory(atPath: storage.root.path).sorted()
+    let destinations = ["Jobs/export", "Jobs/missing/export", "Datasets/export", "Reviews/export",
+      "Schedules/export", "Workers/export", "Jobs/\(job.id)/export", "Datasets/\(job.datasetRevision)/export"]
+    for path in destinations {
+      #expect(throws: ProductionFailure.self) {
+        try storage.exportJob(job.id, to: storage.root.appendingPathComponent(path))
+      }
+      #expect(try FileManager.default.subpathsOfDirectory(atPath: storage.root.path).sorted() == paths)
+      #expect(try storage.jobs().map(\.id) == [job.id])
+    }
+  }
+  /// Resolves destination and storage aliases, including missing parents, traversal, and case aliases where supported.
+  @Test(arguments: [false, true])
+  func exportRejectsSymlinkAliasesIntoTheStore(aliasedStorage: Bool) throws {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("export-alias-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: base) }
+    let original = try ProductionStorage(root: base.appendingPathComponent("store"))
+    let alias = base.appendingPathComponent("alias")
+    try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: original.root)
+    let storage = aliasedStorage ? try ProductionStorage(root: alias) : original
+    let job = try capturedJob(in: storage)
+    let jobAlias = base.appendingPathComponent("job-alias")
+    try FileManager.default.createSymbolicLink(at: jobAlias, withDestinationURL: original.jobDirectory(job.id))
+    let paths = try FileManager.default.subpathsOfDirectory(atPath: original.root.path).sorted()
+    var destinations = [alias.appendingPathComponent("Jobs/export"), alias.appendingPathComponent("Jobs/missing/export"),
+      jobAlias.appendingPathComponent("export"), jobAlias.appendingPathComponent("../export"),
+      base.appendingPathComponent("missing/../alias/Jobs/export")]
+    let caseAlias = base.appendingPathComponent("STORE")
+    if FileManager.default.fileExists(atPath: caseAlias.path) {
+      destinations.append(caseAlias.appendingPathComponent("Jobs/export"))
+      destinations.append(caseAlias.appendingPathComponent("Jobs/missing/export"))
+    }
+    for destination in destinations {
+      #expect(throws: ProductionFailure.self) { try storage.exportJob(job.id, to: destination) }
+      #expect(try FileManager.default.subpathsOfDirectory(atPath: original.root.path).sorted() == paths)
+      #expect(!FileManager.default.fileExists(atPath: base.appendingPathComponent("missing").path))
+    }
+    #expect(try storage.jobs().map(\.id) == [job.id])
+  }
+  /// Allows an external sibling whose name shares the store prefix and retains a readable evidence bundle.
+  @Test func exportAllowsSiblingPrefixOutsideTheStore() throws {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("export-sibling-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: base) }
+    let storage = try ProductionStorage(root: base.appendingPathComponent("store"))
+    let job = try capturedJob(in: storage)
+    let destination = base.appendingPathComponent("store-export/missing/export")
+    try storage.exportJob(job.id, to: destination)
+    #expect(FileManager.default.fileExists(atPath: destination.appendingPathComponent("report.json").path))
+    #expect(try Data(contentsOf: destination.appendingPathComponent("Dataset/examples.jsonl"))
+      == Data(contentsOf: storage.datasetDirectory(job.datasetRevision).appendingPathComponent("examples.jsonl")))
+    #expect(try storage.jobs().map(\.id) == [job.id])
+  }
+  /// The typed managed API accepts storage-root aliases while keeping bundles in its canonical UUID spool and preserving existing exports.
+  @Test(arguments: [false, true])
+  func managedExportsUseCanonicalSpoolWithoutWeakeningExternalPolicy(aliasedStorage: Bool) throws {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("managed-export-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: base) }
+    let original = try ProductionStorage(root: base.appendingPathComponent("store"))
+    let alias = base.appendingPathComponent("alias")
+    try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: original.root)
+    let storage = aliasedStorage ? try ProductionStorage(root: alias) : original
+    let job = try capturedJob(in: storage), exportID = UUID()
+    let destination = try storage.exportManagedJob(jobID: job.id, exportID: exportID)
+    #expect(destination == original.root.resolvingSymlinksInPath().appendingPathComponent("MCPExports/\(exportID)", isDirectory: true))
+    let report = destination.appendingPathComponent("report.json"), bytes = try Data(contentsOf: report)
+    #expect(try ProductionCodec.decode(ProductionReport.self, bytes).job.id == job.id)
+    #expect(throws: ProductionFailure.self) { try storage.exportManagedJob(jobID: job.id, exportID: exportID) }
+    #expect(try Data(contentsOf: report) == bytes)
+    #expect(throws: ProductionFailure.self) {
+      try storage.exportJob(job.id, to: original.root.appendingPathComponent("MCPExports/\(UUID())"))
+    }
+    #expect(try storage.jobs().map(\.id) == [job.id])
+  }
+  /// Managed spooling rejects existing live or dangling symlinks before it creates or enumerates through their targets.
+  @Test(arguments: ["Jobs", "external", "missing"])
+  func managedExportsRejectSymlinkedSpool(target: String) throws {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("managed-spool-link-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: base) }
+    let storage = try ProductionStorage(root: base.appendingPathComponent("store")), job = try capturedJob(in: storage)
+    let targetURL = target == "Jobs" ? storage.root.appendingPathComponent("Jobs") : base.appendingPathComponent(target)
+    if target == "external" { try FileManager.default.createDirectory(at: targetURL, withIntermediateDirectories: false) }
+    try FileManager.default.createSymbolicLink(at: storage.root.appendingPathComponent("MCPExports"), withDestinationURL: targetURL)
+    #expect(throws: ProductionFailure.self) { try storage.exportManagedJob(jobID: job.id, exportID: UUID()) }
+    #expect(try storage.jobs().map(\.id) == [job.id])
+    if target == "missing" { #expect(!FileManager.default.fileExists(atPath: targetURL.path)) }
+    if target == "external" { #expect(try FileManager.default.contentsOfDirectory(atPath: targetURL.path).isEmpty) }
+  }
+  /// A UUID component cannot redirect managed publication through either a live or dangling symlink.
+  @Test(arguments: [false, true])
+  func managedExportsRejectSymlinkedUUIDDestination(dangling: Bool) throws {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("managed-id-link-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: base) }
+    let storage = try ProductionStorage(root: base.appendingPathComponent("store")), job = try capturedJob(in: storage), exportID = UUID()
+    let folder = storage.root.appendingPathComponent("MCPExports"), target = base.appendingPathComponent("target")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+    if !dangling { try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false) }
+    try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent(exportID.uuidString), withDestinationURL: target)
+    #expect(throws: ProductionFailure.self) { try storage.exportManagedJob(jobID: job.id, exportID: exportID) }
+    #expect(try storage.jobs().map(\.id) == [job.id])
+    if dangling { #expect(!FileManager.default.fileExists(atPath: target.path)) }
+    else { #expect(try FileManager.default.contentsOfDirectory(atPath: target.path).isEmpty) }
+  }
+  /// The typed spool API preserves the connector's existing retention ceiling under the same transaction as publication.
+  @Test func managedExportsEnforceRetentionWithoutPublishingAnotherBundle() throws {
+    let storage = try storage()
+    defer { try? FileManager.default.removeItem(at: storage.root) }
+    let job = try capturedJob(in: storage), folder = storage.root.appendingPathComponent("MCPExports"), exportID = UUID()
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+    for _ in 0..<100 { try FileManager.default.createDirectory(at: folder.appendingPathComponent(UUID().uuidString), withIntermediateDirectories: false) }
+    #expect(throws: ProductionFailure.self) { try storage.exportManagedJob(jobID: job.id, exportID: exportID) }
+    #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).count == 100)
+    #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent(exportID.uuidString).path))
+  }
+  /// Refuses corrupted current and compatible legacy revisions without replacing immutable retained evidence.
+  @Test(arguments: [false, true], ["examples.jsonl", "offsets.bin"])
+  func retainedDatasetImportVerifiesPublishedBytes(legacy: Bool, fileName: String) throws {
+    let storage = try storage()
+    defer { try? FileManager.default.removeItem(at: storage.root) }
+    let file = storage.root.appendingPathComponent("source.jsonl")
+    try source().write(to: file)
+    var dataset = try storage.importDataset(from: file, name: "Retained", version: "1")
+    if legacy {
+      let fields = [dataset.name, dataset.version, dataset.sampling.rawValue, String(dataset.productionData),
+        dataset.dataDigest, dataset.indexDigest, String(dataset.count),
+        try ProductionCodec.digest(ProductionCodec.encode(dataset.partitionCounts))]
+      let original = try storage.datasetDirectory(dataset.revision)
+      dataset.revision = ProductionCodec.digest(Data(fields.joined(separator: "\n").utf8))
+      let retained = try storage.datasetDirectory(dataset.revision)
+      try FileManager.default.moveItem(at: original, to: retained)
+      try ProductionCodec.write(dataset, to: retained.appendingPathComponent("manifest.json"))
+    }
+    #expect(try storage.importDataset(from: file, name: "Retained", version: "1").revision == dataset.revision)
+    let folder = try storage.datasetDirectory(dataset.revision)
+    let manifest = try Data(contentsOf: folder.appendingPathComponent("manifest.json"))
+    let published = folder.appendingPathComponent(fileName), original = try Data(contentsOf: published)
+    var corrupted = original
+    corrupted[0] ^= 1
+    try corrupted.write(to: published)
+    #expect(throws: ProductionFailure.self) { try storage.importDataset(from: file, name: "Retained", version: "1") }
+    #expect(try Data(contentsOf: published) == corrupted)
+    #expect(try Data(contentsOf: folder.appendingPathComponent("manifest.json")) == manifest)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: storage.root.appendingPathComponent("Datasets").path)
+      == [dataset.revision])
+    try original.write(to: published)
+    #expect(try storage.importDataset(from: file, name: "Retained", version: "1").revision == dataset.revision)
+  }
+  /// Refuses successful completion retries when published example or offset bytes no longer match the upload's revision.
+  @Test(arguments: ["examples.jsonl", "offsets.bin"])
+  func completedUploadRetryVerifiesPublishedDatasetBytes(fileName: String) throws {
+    let storage = try storage()
+    defer { try? FileManager.default.removeItem(at: storage.root) }
+    let bytes = try source()
+    let upload = ProductionUpload(id: UUID(), name: "Retained upload", version: "1", expectedChunks: 1,
+      expectedBytes: bytes.count, expectedDigest: ProductionCodec.digest(bytes))
+    _ = try storage.beginUpload(upload)
+    try storage.appendUpload(upload.id, index: 0, data: bytes)
+    _ = try storage.previewUpload(upload.id)
+    let dataset = try storage.finishUpload(upload.id, previewDigest: upload.expectedDigest, redactionConfirmed: false)
+    let manifestFile = storage.root.appendingPathComponent("Uploads/\(upload.id)/upload.json")
+    let manifest = try Data(contentsOf: manifestFile)
+    let published = try storage.datasetDirectory(dataset.revision).appendingPathComponent(fileName)
+    let original = try Data(contentsOf: published)
+    var corrupted = original
+    corrupted[0] ^= 1
+    try corrupted.write(to: published)
+    #expect(throws: ProductionFailure.self) {
+      try storage.finishUpload(upload.id, previewDigest: upload.expectedDigest, redactionConfirmed: false)
+    }
+    #expect(try Data(contentsOf: published) == corrupted)
+    #expect(try Data(contentsOf: manifestFile) == manifest)
+    #expect(try storage.upload(upload.id).datasetRevision == dataset.revision)
+    try original.write(to: published)
+    #expect(try storage.finishUpload(upload.id, previewDigest: upload.expectedDigest, redactionConfirmed: false)
+      .revision == dataset.revision)
   }
   @Test(arguments: [false, true])
   func rejectsUnreadableManifestBeforeAdmittingUpload(completionOnly: Bool) throws {

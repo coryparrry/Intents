@@ -9,7 +9,9 @@ public struct MacIntentProductIdentity: Codable, Equatable, Sendable {
 
     /// Hashes sorted bundle entries, regular-file bytes, directory names, and internal symlink targets into a build identity.
     /// Rejects external links, unsupported file types, read-time file changes, and bundles exceeding file/byte limits.
+    /// Observes task cancellation before inspection, between entries, and between one-megabyte reads.
     static func capture(_ app: URL) throws -> Self {
+        try Task.checkCancellation()
         let root = app.standardizedFileURL.resolvingSymlinksInPath()
         let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]
         var enumerationFailed = false
@@ -20,6 +22,7 @@ public struct MacIntentProductIdentity: Codable, Equatable, Sendable {
         struct Entry: Encodable { let path: String; let digest: String; let link: String? }
         var entries: [Entry] = [], bytes: UInt64 = 0
         for case let file as URL in files {
+            try Task.checkCancellation()
             guard entries.count < 100_000 else { throw MacIntentTestingError("The selected app exceeds the file limit.") }
             let relative = String(file.path.dropFirst(root.path.count + 1))
             let values = try file.resourceValues(forKeys: Set(keys))
@@ -35,6 +38,7 @@ public struct MacIntentProductIdentity: Codable, Equatable, Sendable {
                 var hash = SHA256()
                 do {
                     while let block = try input.read(upToCount: 1_048_576), !block.isEmpty {
+                        try Task.checkCancellation()
                         bytes += UInt64(block.count)
                         guard bytes <= 8_589_934_592 else { throw MacIntentTestingError("The selected app exceeds the size limit.") }
                         hash.update(data: block)
@@ -55,6 +59,7 @@ public struct MacIntentProductIdentity: Codable, Equatable, Sendable {
             }
         }
         guard !enumerationFailed else { throw MacIntentTestingError("The selected app's files could not all be read.") }
+        try Task.checkCancellation()
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let digest = SHA256.hash(data: try encoder.encode(entries.sorted { $0.path < $1.path }))
         return .init(bundlePath: root.path, sha256: digest.map { String(format: "%02x", $0) }.joined())
@@ -68,14 +73,36 @@ public struct MacIntentProductIdentity: Codable, Equatable, Sendable {
     }
 }
 
+/// Runs synchronous bundle and Security inspections on the concurrent executor while retaining caller cancellation.
+enum MacIntentInspection {
+    /// Joins inspection before returning and checks cancellation on both sides of the synchronous operation.
+    @concurrent static func perform<Value: Sendable>(
+        _ operation: @Sendable () throws -> Value
+    ) async throws -> Value {
+        try Task.checkCancellation()
+        let value = try operation()
+        try Task.checkCancellation()
+        return value
+    }
+}
+
+public extension MacIntentCatalog {
+    /// Loads and hashes a catalog away from the caller's actor, observing cancellation throughout the scan.
+    static func loadAsync(appURL: URL) async throws -> Self {
+        try await MacIntentInspection.perform { try load(appURL: appURL) }
+    }
+}
+
 /// Public Security APIs validate the running code against the selected signed code.
 /// Dynamic validation checks kernel-held identity, including replaced executables.
-struct MacIntentCodeIdentity {
+// SecRequirement is immutable after creation; inspections share no mutable Security state.
+struct MacIntentCodeIdentity: @unchecked Sendable {
     private let requirement: SecRequirement
 
     /// Validates signed application code and constructs a requirement accepting the captured hashes of supported architecture slices.
-    /// Throws when signing validation or requirement creation fails.
+    /// Checks cancellation between Security operations and throws when signing or requirement validation fails.
     init(appURL: URL) throws {
+        try Task.checkCancellation()
         var code: SecStaticCode?
         guard SecStaticCodeCreateWithPath(appURL as CFURL, [], &code) == errSecSuccess, let code,
               SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckAllArchitectures), nil) == errSecSuccess else {
@@ -85,6 +112,7 @@ struct MacIntentCodeIdentity {
         // (for example arm64e system binaries or a translated x86_64 app).
         var hashes = Set<Data>()
         for architecture in ["arm64", "arm64e", "x86_64", "x86_64h"] {
+            try Task.checkCancellation()
             var slice: SecStaticCode?, information: CFDictionary?
             let attributes = [kSecCodeAttributeArchitecture as String: architecture] as CFDictionary
             guard SecStaticCodeCreateWithPathAndAttributes(appURL as CFURL, [], attributes, &slice) == errSecSuccess,
@@ -102,14 +130,16 @@ struct MacIntentCodeIdentity {
     }
 
     /// Validates the live process against the selected signed architecture hashes using kernel-held code identity.
-    /// Throws when the process cannot be inspected or no longer meets the captured requirement.
+    /// Observes cancellation around Security calls and rejects processes that cannot prove the captured requirement.
     func validate(processIdentifier: Int32) throws {
+        try Task.checkCancellation()
         var code: SecCode?
         let lookup = SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid as String: processIdentifier] as CFDictionary, [], &code)
         guard lookup == errSecSuccess, let code else {
             throw MacIntentTestingError("The running app's code identity could not be read (Security error \(lookup)). Quit it and reload the app before testing.")
         }
         let validation = SecCodeCheckValidity(code, [], requirement)
+        try Task.checkCancellation()
         guard validation == errSecSuccess else {
             throw MacIntentTestingError("The running app could not be verified as the selected signed build (Security error \(validation)). Quit it and reload the app before testing.")
         }

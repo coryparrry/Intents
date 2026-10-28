@@ -20,6 +20,26 @@ private actor JudgeIntegrityTransport {
 // Keep these in the existing curated CI suite so selecting that suite also
 // exercises its new cross-boundary regressions.
 extension EvaluationCompatibleJudgeClientTests {
+    /// Reject malformed protocol envelopes before a valid second fixture can hide the failure behind a verdict repair.
+    @MainActor
+    @Test(arguments: ["{\"choices\": [", "{\"unexpected\":true}"])
+    func malformedJSONCompletionEnvelopeCannotScoreOrRetry(payload: String) async throws {
+        let fixture = JudgeIntegrityTransport([
+            Data(payload.utf8), try Self.integrityJSON(content: Self.integrityVerdict)
+        ])
+        let client = EvaluationCompatibleJudgeClient(transport: { try await fixture.send($0) })
+        let (suite, connection) = Self.integritySuite(policy: .portable)
+        do {
+            _ = try await Self.integrityJudge(client, suite: suite, connection: connection)
+            Issue.record("A malformed completion envelope was accepted or repaired")
+        } catch let failure as EvaluationCompatibleJudgeAttemptFailure {
+            #expect(failure.attempts.count == 1)
+            #expect(failure.attempts[0].validationError != nil)
+            #expect(EvaluationRunner.externalJudgeErrorCategory(failure) == "judgeNetworkFailure")
+        }
+        #expect(await fixture.bodies().count == 1)
+    }
+
     @MainActor
     @Test(arguments: ["\n", "\r\n", "\r"])
     func providerFailureAfterCompleteVerdictCannotScoreOrRetry(newline: String) async throws {

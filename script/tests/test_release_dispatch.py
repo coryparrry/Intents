@@ -10,6 +10,7 @@ from pathlib import Path
 
 class ReleaseDispatchTests(unittest.TestCase):
     def setUp(self):
+        """Create isolated Git source and recording release services with explicit qualification evidence."""
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -50,7 +51,8 @@ if args[:2] == ["run", "list"]:
     print("" if os.environ.get("NO_CI") else "123")
 elif args[:2] == ["run", "view"]:
     names = ["Compile app and tests", "Portable regression tests", "Workflow and script checks"]
-    print(json.dumps({"jobs": [{"name": name, "conclusion": "failure" if os.environ.get("FAILED_JOB") else "success"} for name in names]}))
+    steps = [] if os.environ.get("MISSING_PRODUCTION") else [{"name": "Qualify production recovery and worker protocol", "conclusion": "failure" if os.environ.get("FAILED_PRODUCTION") else "success"}]
+    print(json.dumps({"jobs": [{"name": name, "conclusion": "failure" if os.environ.get("FAILED_JOB") else "success", "steps": steps} for name in names]}))
 elif args[0] == "api" and "/git/matching-refs/" in args[1]:
     if os.environ.get("FAIL_API"):
         sys.exit(1)
@@ -128,12 +130,15 @@ else:
                 self.run_dispatch(success=False, **variables)
 
     def test_reject_missing_release_or_source_mismatch(self):
+        """Reject mismatched source, unavailable core CI, or missing production qualification."""
         for variables in (
             {"MISSING_RELEASE": "1"},
             {"REMOTE_SHA": "a" * 40},
             {"FAIL_API": "1"},
             {"NO_CI": "1"},
             {"FAILED_JOB": "1"},
+            {"MISSING_PRODUCTION": "1"},
+            {"FAILED_PRODUCTION": "1"},
         ):
             with self.subTest(variables=variables):
                 self.run_dispatch(success=False, **variables)

@@ -102,6 +102,163 @@ import Testing
     request["operationID"] = .string(UUID().uuidString); request["expectedEvidenceRevision"] = .string(String(repeating: "0", count: 64))
     #expect(try await call("eval_production_baseline_approve", request, control: control).isError)
   }
+  /// Rejects stale inspected consent without persisting a draft's changed destination or image-sharing policy.
+  @Test(arguments: [false, true])
+  func disclosureApprovalRejectsDivergentDraftWithoutMutation(changesConnection: Bool) async throws {
+    let (control, root) = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = control.store
+    let first = EvaluationJudgeConnection(id: UUID(), name: "A", kind: .localCompatible,
+      baseURL: "http://127.0.0.1:1234", modelID: "fixture")
+    let second = EvaluationJudgeConnection(id: UUID(), name: "B", kind: .localCompatible,
+      baseURL: "http://127.0.0.1:1235", modelID: "fixture")
+    try store.saveJudgeConnection(first, apiKey: nil)
+    try store.saveJudgeConnection(second, apiKey: nil)
+    store.draftSuite.scoringMode = .review
+    store.draftSuite.judgeConfiguration.mode = .connection
+    store.draftSuite.judgeConfiguration.connectionID = first.id
+    store.draftSuite.judgeConfiguration.includeReferenceAttachments = false
+    #expect(store.saveSuite())
+    let canonical = store.suite
+    var request = try workspace(control)
+    request["projectID"] = .string(store.selectedProjectID.uuidString)
+    request["suiteID"] = .string(store.selectedSuiteID.uuidString)
+    request["expectedRevision"] = .string(store.suiteRevision)
+    request["disclosureDigest"] = .string(first.disclosureDigest)
+    request["confirm"] = .bool(true)
+    if changesConnection { store.draftSuite.judgeConfiguration.connectionID = second.id }
+    else { store.draftSuite.judgeConfiguration.includeReferenceAttachments = true }
+    let draft = store.draftSuite
+    #expect(draft != canonical)
+    let result = try await call("eval_judge_disclosure_approve", request, control: control)
+    #expect(result.isError)
+    #expect(store.suite == canonical)
+    #expect(store.draftSuite == draft)
+    #expect(store.draftSuite.judgeConfiguration.externalEvidenceApprovedAt == nil)
+    let reloaded = EvaluationStore(supportDirectory: root)
+    #expect(reloaded.suite == canonical)
+    await control.mcp.closeAndWait()
+  }
+
+  /// Commits the exact canonical approval when no draft content differs from the inspected revision.
+  @Test func disclosureApprovalCommitsMatchingCanonicalPolicy() async throws {
+    let (control, root) = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = control.store
+    let connection = EvaluationJudgeConnection(id: UUID(), name: "Fixture", kind: .localCompatible,
+      baseURL: "http://127.0.0.1:1234", modelID: "fixture")
+    try store.saveJudgeConnection(connection, apiKey: nil)
+    store.draftSuite.scoringMode = .review
+    store.draftSuite.judgeConfiguration.mode = .connection
+    store.draftSuite.judgeConfiguration.connectionID = connection.id
+    #expect(store.saveSuite())
+    var request = try workspace(control)
+    request["projectID"] = .string(store.selectedProjectID.uuidString)
+    request["suiteID"] = .string(store.selectedSuiteID.uuidString)
+    request["expectedRevision"] = .string(store.suiteRevision)
+    request["disclosureDigest"] = .string(connection.disclosureDigest)
+    request["confirm"] = .bool(true)
+    #expect(!(try await call("eval_judge_disclosure_approve", request, control: control)).isError)
+    #expect(store.suite.judgeConfiguration.hasCurrentExternalEvidenceApproval(for: connection))
+    #expect(store.draftSuite == store.suite)
+    #expect(EvaluationStore(supportDirectory: root).suite.judgeConfiguration.hasCurrentExternalEvidenceApproval(for: connection))
+    await control.mcp.closeAndWait()
+  }
+
+  /// Rejects buffered prompt edits before approval without flushing them into canonical storage.
+  @Test func disclosureApprovalRejectsBufferedPromptsBeforeSaving() async throws {
+    let (control, root) = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = control.store
+    let connection = EvaluationJudgeConnection(id: UUID(), name: "Fixture", kind: .localCompatible,
+      baseURL: "http://127.0.0.1:1234", modelID: "unused")
+    try store.saveJudgeConnection(connection, apiKey: nil)
+    store.draftSuite.scoringMode = .review
+    store.draftSuite.judgeConfiguration.mode = .connection
+    store.draftSuite.judgeConfiguration.connectionID = connection.id
+    #expect(store.saveSuite())
+    let canonical = store.suite
+    store.editPrompt("Buffered edit", for: canonical.cases[0].id)
+    #expect(throws: EvaluationStoreError.self) {
+      try store.approveExternalJudgeDisclosure(expectedRevision: store.suiteRevision,
+        disclosureDigest: connection.disclosureDigest)
+    }
+    #expect(store.suite == canonical)
+    #expect(store.draftSuite.judgeConfiguration.externalEvidenceApprovedAt == nil)
+    await store.closeAndWait()
+    await control.mcp.closeAndWait()
+  }
+
+  /// Rolls back canonical disclosure approval when its catalog publication cannot be persisted.
+  @Test func disclosureApprovalWriteFailureLeavesPolicyUnapproved() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "mcp-approval-rollback-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    var rejectWrite = false
+    let store = EvaluationStore(supportDirectory: root, workspaceCatalogWriter: { catalog, directory in
+      if rejectWrite { throw CocoaError(.fileWriteNoPermission) }
+      try EvaluationWorkspacePersistence.save(catalog, in: directory)
+    })
+    let connection = EvaluationJudgeConnection(id: UUID(), name: "Fixture", kind: .localCompatible,
+      baseURL: "http://127.0.0.1:1234", modelID: "unused")
+    try store.saveJudgeConnection(connection, apiKey: nil)
+    store.draftSuite.scoringMode = .review
+    store.draftSuite.judgeConfiguration.mode = .connection
+    store.draftSuite.judgeConfiguration.connectionID = connection.id
+    #expect(store.saveSuite())
+    let canonical = store.suite
+    rejectWrite = true
+    #expect(throws: EvaluationStoreError.self) {
+      try store.approveExternalJudgeDisclosure(expectedRevision: store.suiteRevision,
+        disclosureDigest: connection.disclosureDigest)
+    }
+    #expect(store.suite == canonical)
+    #expect(store.draftSuite == canonical)
+    #expect(EvaluationStore(supportDirectory: root).suite == canonical)
+  }
+
+  /// Freezes canonical dataset cases and execution configuration even while the UI has a different unsaved draft.
+  @Test func productionSnapshotsBindTheInspectedCanonicalRevision() async throws {
+    let (control, root) = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = control.store
+    store.draftSuite.scoringMode = .review
+    store.draftSuite.instructions = "Canonical instructions"
+    store.draftSuite.cases[0].prompt = "Canonical prompt"
+    #expect(store.saveSuite())
+    let canonical = store.suite
+    store.draftSuite.instructions = "Pending instructions"
+    store.draftSuite.cases[0].prompt = "Pending prompt"
+    let target: [String: MCPJSONValue] = [
+      "operationID": .string(UUID().uuidString),
+      "projectID": .string(store.selectedProjectID.uuidString),
+      "suiteID": .string(store.selectedSuiteID.uuidString),
+      "expectedRevision": .string(store.suiteRevision),
+    ]
+    let snapshot = try await call("eval_production_dataset_snapshot", target, control: control)
+    #expect(!snapshot.isError)
+    let datasetValue = try #require(snapshot.structuredContent.objectValue?["dataset"])
+    let dataset = try ProductionCodec.decode(ProductionDataset.self, Data(try datasetValue.jsonText().utf8))
+    let storage = try #require(control.production.storage)
+    let reader = try ProductionDatasetReader(storage: storage, revision: dataset.revision)
+    #expect(try reader.example(at: 0).prompt == canonical.cases[0].prompt)
+    let jobID = UUID()
+    var creation = target
+    creation["operationID"] = .string(UUID().uuidString)
+    creation["jobID"] = .string(jobID.uuidString)
+    creation["datasetRevision"] = .string(dataset.revision)
+    creation["name"] = .string("Canonical batch")
+    creation["kind"] = .string("native")
+    #expect(!(try await call("eval_production_job_create", creation, control: control)).isError)
+    let job = try storage.loadJob(jobID)
+    let context = try ProductionCodec.decode(NativeProductionContext.self, job.configuration.executionContext)
+    #expect(context.suite.instructions == canonical.instructions)
+    #expect(store.draftSuite.instructions == "Pending instructions")
+    #expect(store.suite == canonical)
+    let nativeDraft = try store.productionSnapshot()
+    #expect(nativeDraft.suite.instructions == "Pending instructions")
+    await control.mcp.closeAndWait()
+  }
+
   @Test func discoveryAndStrictSchemas() throws {
     let definitions = MCPToolCatalog.allDefinitions
     #expect(Set(definitions.map(\.name)).count == definitions.count)

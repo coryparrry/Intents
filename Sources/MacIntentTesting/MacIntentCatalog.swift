@@ -4,20 +4,31 @@ import CoreFoundation
 extension MacIntentCatalog {
     /// Compiled metadata is a best-effort discovery index, not proof that the
     /// system runtime can invoke an action. Apple does not expose iterable definitions.
+    /// Reads the current Info.plist directly so rebuilding an app at the same path cannot reuse Foundation's cached bundle metadata.
     /// - Returns: Discovered actions bound to a captured identity of the compiled native Mac app.
     /// - Throws: Invalid bundle, unavailable/unsupported metadata, changed build evidence, or file-read errors.
     public static func load(appURL: URL) throws -> MacIntentCatalog {
         let appURL = appURL.standardizedFileURL.resolvingSymlinksInPath()
+        let infoURL = appURL.appendingPathComponent("Contents/Info.plist")
         guard appURL.pathExtension == "app",
-              let bundle = Bundle(url: appURL), let executable = bundle.executableURL,
-              FileManager.default.isExecutableFile(atPath: executable.path),
-              bundle.object(forInfoDictionaryKey: "CFBundlePackageType") as? String == "APPL",
-              let identifier = bundle.bundleIdentifier, !identifier.isEmpty else {
+              let infoData = try? Data(contentsOf: infoURL),
+              let info = try? PropertyListSerialization.propertyList(from: infoData, options: [], format: nil) as? [String: Any],
+              info["CFBundlePackageType"] as? String == "APPL",
+              let identifier = info["CFBundleIdentifier"] as? String, !identifier.isEmpty,
+              let executableName = info["CFBundleExecutable"] as? String, !executableName.isEmpty,
+              executableName != ".", executableName != "..",
+              !executableName.contains("/"), !executableName.contains("\0") else {
             throw MacIntentTestingError("Choose a compiled macOS .app with a bundle identifier and executable.")
         }
         guard FileManager.default.fileExists(atPath: appURL.appendingPathComponent("Contents/MacOS").path),
-              bundle.object(forInfoDictionaryKey: "LSRequiresIPhoneOS") as? Bool != true else {
+              info["LSRequiresIPhoneOS"] as? Bool != true else {
             throw MacIntentTestingError("Only native macOS application bundles are supported.")
+        }
+        let executable = appURL.appendingPathComponent("Contents/MacOS").appendingPathComponent(executableName)
+            .standardizedFileURL.resolvingSymlinksInPath()
+        guard executable.path.hasPrefix(appURL.path + "/"),
+              FileManager.default.isExecutableFile(atPath: executable.path) else {
+            throw MacIntentTestingError("The app's executable must be an executable file inside its bundle.")
         }
         let metadata = appURL.appendingPathComponent("Contents/Resources/Metadata.appintents/extract.actionsdata")
         guard let data = try? Data(contentsOf: metadata), data.count <= 16 * 1024 * 1024 else {
@@ -25,7 +36,7 @@ extension MacIntentCatalog {
         }
         let decoded = try decode(data: data, bundleIdentifier: identifier, appURL: appURL)
         let identity = try MacIntentProductIdentity.capture(appURL)
-        guard try Data(contentsOf: metadata) == data else {
+        guard try Data(contentsOf: metadata) == data, try Data(contentsOf: infoURL) == infoData else {
             throw MacIntentTestingError("The app's metadata changed while its catalog was being read. Select the app again.")
         }
         return .init(bundleIdentifier: identifier, appURL: appURL, actions: decoded.actions, productIdentity: identity)
