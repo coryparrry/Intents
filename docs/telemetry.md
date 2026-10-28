@@ -23,15 +23,20 @@ is disabled; PostHog still handles the source network address.
 | Release/environment | Compare affected builds and platforms | App version/build, full macOS version, processor architecture, schema version, generated diagnostic session ID |
 | Upload result, on this Mac | Distinguish missing instrumentation from delivery problems | Last upload queued, accepted, failed or sharing off |
 
-Instrumented boundaries include workspace loading and suite saving, evaluation
-execution, result persistence/checkpoints, Core AI loading, Private Cloud Compute
-metadata, and Codex
-connector startup/installation/removal. Timings use a monotonic clock and are bounded
+Instrumented boundaries include workspace loading and suite saving; document generation;
+document, case, reference and dataset imports; suite, result and transcript exports;
+review decisions; standard, batch, local App Intent and remote runner execution;
+result persistence/checkpoints; Core AI loading; Private Cloud Compute metadata;
+and Codex connector startup/installation/removal. Timings use a monotonic clock and are bounded
 to 24 hours. Categories include timeout, network, permission, storage, unavailable
 model/device, build, invalid evidence, provider, generation and judge errors.
 Unknown categories become `unexpected`; their original text is never uploaded.
 Cancellation is a separate outcome. A failed model assertion is evidence about the
 subject being evaluated and does not automatically become an app runtime error.
+Workspace outcomes include typed failures from subsidiary loads and repairs. Initial,
+terminal and recovery checkpoint writes have operation spans; intermediate progress
+writes emit at most one failure issue per run, avoiding a stream of checkpoint events.
+Unexpected connector stops after successful startup emit a diagnostic issue.
 
 The three diagnostic event names are:
 
@@ -46,10 +51,27 @@ on; it is not an installation or download count. Successful feature events carry
 only a fixed feature category, not results or diagnostic error details. Legacy
 evaluation telemetry names and automatic SDK events are rejected.
 
+Feature adoption records completed work: `evaluation`, `suite_saved`,
+`document_generated`, `document_imported`, `suite_imported`, `references_imported`,
+`dataset_imported`, `suite_exported`, `results_exported`, `review_saved`, `batch_run`,
+`app_intent_run`, `mcp_installed`, and `mcp_connected`. The legacy `mcp_started`
+category remains available but is excluded from the adoption chart because automatic
+listener startup does not establish use. `mcp_connected` means the first authenticated
+request admitted during each listener run; it does not claim a successful tool call.
+
+Imports count after durable storage; duplicate reference imports and other no-op work
+do not count. Exports count after the actual write callback. Generation counts when
+the requested questions have been saved, including successful recovery from rejected
+candidates; recoverable attempt errors remain separate issues. Batch adoption requires
+newly committed results and a complete durable report. Cancellation, partial work and
+failed persistence do not count as completed features. Local App Intent test failures
+use the fixed `test_failure` category because that runner returns a combined verdict.
+
 Every shared event has `app=intents`, `environment=production`, `platform=macOS`,
 `schema_version=2`, app version/build, OS version and processor architecture. Safe
 SDK session IDs and library/version fields are retained; content-bearing SDK
-properties are removed. Intents is a Mac app.
+properties are removed. Explicit usage events recover a missing SDK session after
+background expiry; valid sessions and diagnostic-only events are unchanged. Intents is a Mac app.
 
 Debug builds, simulators, tests, previews, demos and verification/fixture launches
 cannot initialize the bundled production recorder. No verification argument can
@@ -63,7 +85,7 @@ reopen that capture gate. Network-free tests inject a fake destination instead.
    build has no PostHog configuration. It contains timestamps, operation IDs,
    outcomes, categories and release information. The in-memory history ends when
    the app closes; it is not a durable crash report.
-3. Open the [Intents diagnostics dashboard](https://eu.posthog.com/project/266962/dashboard/998410). Its charts cover active installations, completed features, activation, weekly return usage, screen paths, operation outcomes, issues and successful-operation p95 duration. All require production Mac schema 2. They are expected to be empty until an updated release supplies eligible data; diagnostic charts also require diagnostic sharing. Historical unlabeled opens are retained but excluded from these charts. For shared diagnostics, enable **Share diagnostic statistics**, reproduce the
+3. Open the [Intents diagnostics dashboard](https://eu.posthog.com/project/266962/dashboard/998410). Its charts cover active installations, feature adoption, reporting coverage, activation, weekly return usage, screen paths, operation outcomes, issues and successful-operation p95 duration. All require production Mac schema 2. Usage from 1.5.2 is present; expanded workflow signals require an updated release. Diagnostic charts also require diagnostic sharing. The coverage chart counts installations sending opens and operation outcomes separately; independent consent means it is not an opt-in percentage. Activation and return usage count completed evaluations, batches and App Intent tests. Historical unlabeled opens are retained but excluded from these charts. For shared diagnostics, enable **Share diagnostic statistics**, reproduce the
    problem, then filter PostHog events by the diagnostic prefix, app build, operation
    or error category. A start with no finish is a clue requiring investigation,
    not proof of a crash; offline delivery, cancellation, and shutdown can also cause it.
@@ -115,13 +137,22 @@ an intercepted HTTPS request must not depend on the Mac’s network state.
 
 Run the native `TelemetryControllerTests`, `TelemetryTransportTests`,
 `TelemetryDiagnosticsTests`, `TelemetryUsageTests`, `TelemetryPayloadFilterTests`,
-`TelemetryCrashTests`, `TelemetryCrashSDKTests`,
+`TelemetryCrashTests`, `TelemetryCrashSDKTests`, `TelemetryPersistenceTests`,
+`TelemetryWorkflowTests`, `TelemetryWorkflowContractTests`, `TelemetryExecutionTests`,
+`TelemetryDeveloperRunnerTests`, `TelemetryConnectorTests`,
 `EvaluationStoreRunLifecycleTests`, and
 `MCPTransportRegressionTests` suites. Coverage includes independent consent,
 revocation/re-enable, stale delivery callbacks, mid-operation consent, bounded reports,
 secret exclusion, real SDK serialization/transport, HTTP rejection, retained-batch
 filtering, corrupted storage, local HTTP evaluation success/failure,
-connector failures, real-SDK identity persistence, SDK session rotation, production gates, and evaluation lifecycle outcomes. Check Privacy in the built app and close the app afterwards.
+connector failures, real-SDK identity persistence, foreground session expiry and missing-session recovery,
+offline disk-queue close/reopen without purging, production gates, and real workflow
+completion/failure/cancellation/persistence boundaries. Queue restart coverage recreates
+the SDK in-process; it does not qualify separate-process relaunch delivery. The SDK's
+background-expiry trigger is source-inspected; its recovery callback is tested without
+mutating the process-wide application lifecycle. Automatic
+native crash capture, signed-release ingestion and matching-symbol verification remain
+separate qualification steps. Check Privacy in the built app and close the app afterwards.
 
 ## Research and design decisions
 

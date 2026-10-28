@@ -1,5 +1,11 @@
 import Foundation
 
+/// The verified imported dataset and whether this operation atomically published its immutable revision.
+public struct ProductionDatasetImportResult: Sendable {
+    public let dataset: ProductionDataset
+    public let didPublish: Bool
+}
+
 extension ProductionStorage {
     /// Validates JSONL examples and publishes immutable example bytes, offsets, and a content-addressed manifest.
     /// Duplicate example IDs, sources crossing partitions, oversized data, and unconfirmed production data are rejected.
@@ -10,6 +16,16 @@ extension ProductionStorage {
     /// - Throws: Validation, decoding, integrity, or file-system errors before publication completes.
     public func importDataset(from file: URL, name: String, version: String, sampling: ProductionSampling = .curated,
                               productionData: Bool = false, redactionConfirmed: Bool = false) throws -> ProductionDataset {
+        try importDatasetWithOutcome(from: file, name: name, version: version, sampling: sampling,
+                                     productionData: productionData, redactionConfirmed: redactionConfirmed).dataset
+    }
+
+    /// Imports with the same validation and idempotency as `importDataset`, additionally reporting durable publication.
+    /// The existing-revision decision and new-revision publication share the storage transaction, including legacy identity reuse.
+    /// - Returns: The verified dataset and `didPublish` false when this operation reused an existing immutable revision.
+    /// - Throws: Validation, decoding, integrity, or file-system errors before publication completes.
+    public func importDatasetWithOutcome(from file: URL, name: String, version: String, sampling: ProductionSampling = .curated,
+                                         productionData: Bool = false, redactionConfirmed: Bool = false) throws -> ProductionDatasetImportResult {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 200,
               !version.isEmpty, version.count <= 100,
               !name.utf8.contains(where: { $0 == 13 || $0 == 10 }),
@@ -56,15 +72,19 @@ extension ProductionStorage {
         try ProductionCodec.write(dataset, to: directory.appendingPathComponent("manifest.json"), maximumBytes: 100_000)
         return try transaction {
             let destination = try datasetDirectory(dataset.revision)
-            if FileManager.default.fileExists(atPath: destination.path) { return try loadDataset(dataset.revision, verifyFiles: true) }
+            if FileManager.default.fileExists(atPath: destination.path) {
+                return .init(dataset: try loadDataset(dataset.revision, verifyFiles: true), didPublish: false)
+            }
             // Preserve existing references and import idempotency, but never reuse a
             // legacy newline-delimited hash for different name/version boundaries.
             if FileManager.default.fileExists(atPath: try datasetDirectory(revisions.legacy).path) {
                 let existing = try loadDataset(revisions.legacy, verifyFiles: true)
-                if try Self.datasetRevisions(existing).current == revisions.current { return existing }
+                if try Self.datasetRevisions(existing).current == revisions.current {
+                    return .init(dataset: existing, didPublish: false)
+                }
             }
             try FileManager.default.moveItem(at: directory, to: destination)
-            return dataset
+            return .init(dataset: dataset, didPublish: true)
         }
     }
     /// Loads published dataset manifests in descending creation order, excluding staging directories.

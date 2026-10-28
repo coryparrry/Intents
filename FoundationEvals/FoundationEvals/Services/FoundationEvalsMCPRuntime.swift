@@ -63,7 +63,7 @@ final class FoundationEvalsMCPRuntime {
             authority: MCPStoreAuthority.make(store: store, control: control),
             credential: configuration.credential,
             onRequest: { [weak self] date in
-                await self?.settingsController?.recordConnection(at: date)
+                await self?.serverDidReceiveRequest(generation: generation, at: date)
             },
             onUnexpectedStop: { [weak self] error in
                 await self?.serverDidStop(generation: generation, error: error)
@@ -116,6 +116,13 @@ final class FoundationEvalsMCPRuntime {
         await control.production.closeAndWait()
         await store.closeAndWait()
         await control.mcp.closeAndWait()
+    }
+
+    /// Forwards authenticated request admission only while its listener generation remains current,
+    /// preventing drained requests from updating connection time or usage for a replacement listener.
+    private func serverDidReceiveRequest(generation: UUID, at date: Date) {
+        guard serverGeneration == generation else { return }
+        settingsController?.recordConnection(at: date)
     }
 
     /// Clears only the stopped server's current generation and reports its failure to settings,

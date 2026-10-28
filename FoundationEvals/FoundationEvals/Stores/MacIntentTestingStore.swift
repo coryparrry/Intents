@@ -20,15 +20,18 @@ import Observation
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var catalogLoadID: UUID?
     @ObservationIgnored private var isClosing = false
+    @ObservationIgnored private let telemetry: TelemetryController?
     @ObservationIgnored private let catalogLoader: @Sendable (URL) async throws -> MacIntentCatalog
     @ObservationIgnored private let runOverride: (@MainActor (MacIntentCatalog, [MacIntentTestCase], MacIntentRunConfiguration) async throws -> MacIntentRunResult)?
     @ObservationIgnored private var draftRevision = 0
 
-    /// Creates an intent test session with injectable asynchronous execution and catalog loading for isolated checks.
-    init(runOverride: (@MainActor (MacIntentCatalog, [MacIntentTestCase], MacIntentRunConfiguration) async throws -> MacIntentRunResult)? = nil,
+    /// Creates an intent test session with optional content-free telemetry and injectable execution/catalog loading.
+    init(telemetry: TelemetryController? = nil,
+         runOverride: (@MainActor (MacIntentCatalog, [MacIntentTestCase], MacIntentRunConfiguration) async throws -> MacIntentRunResult)? = nil,
          catalogLoader: @escaping @Sendable (URL) async throws -> MacIntentCatalog = { try await MacIntentCatalog.loadAsync(appURL: $0) }) {
         self.runOverride = runOverride
         self.catalogLoader = catalogLoader
+        self.telemetry = telemetry
     }
 
     /// Advances draft identity and clears result and diagnostic so edits cannot display an older successful result.
@@ -103,9 +106,10 @@ import Observation
     }
 
     /// Validates signing and test inputs, then launches a generated test-host run for the loaded catalog.
-    /// Publishes results only if the draft revision still matches; validation/execution errors become diagnostics.
+    /// Publishes results only if the draft revision still matches; records one content-free outcome after owned execution finishes.
     func start() {
         guard !isClosing, !isRunning, !isLoading, let catalog else { return }
+        let span = telemetry?.begin(.appIntentRun)
         result = nil
         diagnostic = nil
         do {
@@ -122,16 +126,28 @@ import Observation
             let revision = draftRevision
             isRunning = true
             task = Task {
-                defer { isRunning = false; task = nil }
+                var failure: TelemetryFailure?
+                defer {
+                    telemetry?.end(span, failure: failure)
+                    isRunning = false; task = nil
+                }
                 do {
                     let completed: MacIntentRunResult
                     if let runOverride { completed = try await runOverride(catalog, [test], configuration) }
                     else { completed = try await runner.run(catalog: catalog, cases: [test], configuration: configuration) }
+                    // Native results retain detailed evidence locally; the telemetry vocabulary never reads their summary or paths.
+                    failure = Task.isCancelled ? .cancelled : (completed.succeeded ? nil : .testFailure)
                     if draftRevision == revision { result = completed }
                 }
-                catch { diagnostic = error.localizedDescription }
+                catch {
+                    failure = Task.isCancelled ? .cancelled : .classify(error)
+                    diagnostic = error.localizedDescription
+                }
             }
-        } catch { diagnostic = error.localizedDescription }
+        } catch {
+            telemetry?.end(span, failure: .validation)
+            diagnostic = error.localizedDescription
+        }
     }
 
     /// Closes admission, requests cancellation, and joins catalog loading and native execution before returning.

@@ -7,13 +7,14 @@ import Observation
     let store: EvaluationStore
     let production: ProductionWorkspaceStore
     let runners: DeveloperRunnerStore
-    let appIntentTesting = MacIntentTestingStore()
+    let appIntentTesting: MacIntentTestingStore
 
     /// Creates production and runner controls rooted in the evaluation store's workspace storage,
-    /// sharing that store with authenticated app control.
+    /// sharing that store and its content-free telemetry with authenticated app control and local intent testing.
     init(store: EvaluationStore) {
         self.store = store
-        production = ProductionWorkspaceStore(root: store.overviewStorageDirectory)
+        production = ProductionWorkspaceStore(root: store.overviewStorageDirectory, telemetry: store.telemetry)
         runners = DeveloperRunnerStore(evaluationStore: store)
+        appIntentTesting = MacIntentTestingStore(telemetry: store.telemetry)
     }
 }

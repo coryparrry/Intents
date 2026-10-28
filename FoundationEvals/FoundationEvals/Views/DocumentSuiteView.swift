@@ -12,11 +12,11 @@ struct DocumentSuiteView: View {
     @State private var rangeStart = ""
     @State private var rangeEnd = ""
 
-    /// Bind the view to the workspace store and restore its selected project document draft.
+    /// Restore the selected project draft and use the workspace recorder for completed document workflows.
     init(store: EvaluationStore) {
         self.store = store
         _controller = State(initialValue: EvaluationDocumentDraftController(
-            directory: store.overviewStorageDirectory, projectID: store.selectedProjectID))
+            directory: store.overviewStorageDirectory, projectID: store.selectedProjectID, telemetry: store.telemetry))
     }
 
     var body: some View {

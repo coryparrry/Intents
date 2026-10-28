@@ -78,6 +78,7 @@ final class MCPSettingsController {
     private let configurationDirectory: URL
     private var needsFixedPortMigration: Bool
     private var runningConfiguration: CodexMCPConfiguration?
+    private var hasRecordedConnection = false
 
     private(set) var serverState: MCPConnectorServerState = .stopped
     private(set) var installationState: CodexMCPInstallationState = .notConfigured
@@ -194,8 +195,8 @@ final class MCPSettingsController {
     }
 
     /// Removes the managed Codex entry, stops the connector, and deletes its stored credential in that
-    /// order. Updates notices and installation state on failure; existing-credential-only mode refuses
-    /// removal.
+    /// order. Marks intentional shutdown before awaiting it, restoring the previous state if shutdown
+    /// fails. Updates notices on failure; existing-credential-only mode refuses removal.
     func removeFromCodex() async {
         guard !existingCredentialOnly else { notice = MCPSettingsAccessError.configurationReadOnly.localizedDescription; return }
         guard !isBusy else { return }
@@ -208,7 +209,14 @@ final class MCPSettingsController {
         }
         do {
             let receipt = try installer.remove(from: codexConfigurationDirectory)
-            try await serverControl.stop()
+            let previousState = serverState
+            serverState = .stopping
+            do {
+                try await serverControl.stop()
+            } catch {
+                serverState = previousState
+                throw error
+            }
             serverState = .stopped
             runningConfiguration = nil
             try credentialStore.remove()
@@ -260,15 +268,25 @@ final class MCPSettingsController {
         }
     }
 
-    /// Records the latest admitted connection time for display.
+    /// Records the latest authenticated, admitted request time and counts connector use once per
+    /// listener run while usage sharing is enabled. An opted-out request does not consume the later
+    /// consented event. Admission establishes contact, not successful initialization or tool execution.
     func recordConnection(at date: Date = .now) {
+        guard serverState == .starting || serverState == .running else { return }
         lastConnection = date
+        guard !hasRecordedConnection, let telemetry, telemetry.isEnabled, telemetry.isConfigured else { return }
+        hasRecordedConnection = true
+        telemetry.capture(.featureUsed(.mcpConnected))
     }
 
     /// Marks an active or starting connector as failed and clears its remembered configuration. Ignores
-    /// failures reported after settings have moved to another state.
+    /// deliberate stops and duplicate failures. Reports a running listener failure as a separate issue;
+    /// startup failures remain owned by their existing operation span.
     func recordServerFailure(_ error: MCPServerError) {
         guard serverState == .starting || serverState == .running else { return }
+        if serverState == .running {
+            telemetry?.issue(.mcpStart, .classify(error))
+        }
         serverState = .failed
         runningConfiguration = nil
         notice = safeDescription(for: error)
@@ -317,7 +335,8 @@ final class MCPSettingsController {
     }
 
     /// Reuses a running server with identical configuration or stops it before starting a changed
-    /// configuration. Restores running state if stop fails and records failed state if start throws.
+    /// configuration. Resets connection-use tracking only for a new listener, restores running state
+    /// if stop fails, and records failed state if start throws.
     private func startServer(using configuration: CodexMCPConfiguration) async throws {
         if serverState == .running {
             guard runningConfiguration != configuration else { return }
@@ -331,6 +350,7 @@ final class MCPSettingsController {
             serverState = .stopped
             runningConfiguration = nil
         }
+        hasRecordedConnection = false
         serverState = .starting
         do {
             try await serverControl.start(configuration)

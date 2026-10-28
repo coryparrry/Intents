@@ -13,16 +13,21 @@ final class EvaluationDocumentDraftController {
     @ObservationIgnored private let projectID: UUID
     @ObservationIgnored private var operation: Task<Void, Never>?
     @ObservationIgnored private var operationID: UUID?
+    @ObservationIgnored private var generationTelemetry: TelemetrySpan?
+    @ObservationIgnored private var importTelemetry: TelemetrySpan?
+    @ObservationIgnored private let telemetry: TelemetryController?
     @ObservationIgnored private let generateCase: Generator
     @ObservationIgnored private let reviewerFactory: EvaluationDocumentSemanticReviewer.Factory
     @ObservationIgnored private let availability: @Sendable () -> String?
 
-    /// Restore the project draft from isolated storage and retain injected generation, review, and availability dependencies.
+    /// Restore the project draft from isolated storage and retain injected generation, review, availability, and telemetry dependencies.
     init(directory: URL, projectID: UUID,
+         telemetry: TelemetryController? = nil,
          generate: @escaping Generator = EvaluationDocumentGenerator.generate,
          reviewerFactory: @escaping EvaluationDocumentSemanticReviewer.Factory = EvaluationDocumentSemanticReviewer.configured,
          availability: @escaping @Sendable () -> String? = { EvaluationDocumentGenerator.availabilityIssue }) {
         self.projectID = projectID
+        self.telemetry = telemetry
         self.generateCase = generate
         self.availability = availability
         self.reviewerFactory = reviewerFactory
@@ -37,7 +42,7 @@ final class EvaluationDocumentDraftController {
         }
     }
 
-    /// Start a cancellable source import and persist its draft only while the operation still owns the controller.
+    /// Import a source into durable draft storage, reporting extraction, persistence, and cancellation outcomes.
     func importFile(_ file: URL, selection: ClosedRange<Int>?) {
         guard !isBusy, !storageBlocked, draft == nil else { return }
         let id = UUID()
@@ -45,69 +50,108 @@ final class EvaluationDocumentDraftController {
         isBusy = true
         error = nil
         progress = "Extracting document text…"
+        let span = telemetry?.begin(.documentImport)
+        importTelemetry = span
         operation = Task {
+            var failure: TelemetryFailure?
+            defer {
+                telemetry?.end(span, failure: failure)
+                if operationID == id { importTelemetry = nil }
+            }
             let extraction = Task.detached { try EvaluationDocumentImporter.importFile(at: file, selection: selection) }
             do {
                 let source = try await withTaskCancellationHandler {
                     try await extraction.value
                 } onCancel: { extraction.cancel() }
                 try Task.checkCancellation()
-                guard operationID == id else { return }
+                guard operationID == id else { failure = .cancelled; return }
                 draft = .init(projectID: projectID, name: file.deletingPathExtension().lastPathComponent,
                     source: source, selectedPassageIDs: Set(source.passages.map(\.id)))
                 draft?.requiresSemanticReview = true
-                persist()
+                if !persist() { failure = .storage }
             } catch is CancellationError {
+                failure = .cancelled
                 // Completed draft data is retained by cancellation; an incomplete extraction is discarded.
-            } catch { if operationID == id { self.error = error.localizedDescription } }
+            } catch {
+                failure = .classify(error)
+                if operationID == id { self.error = error.localizedDescription }
+            }
             if operationID == id { isBusy = false; operation = nil; progress = "" }
         }
     }
 
-    /// Import retained suite evidence into an editable project draft without replacing an existing draft.
+    /// Import retained suite evidence and report completion only after its editable draft is saved.
     func importArchive(_ file: URL) {
         guard !isBusy, !storageBlocked, draft == nil else { return }
+        let span = telemetry?.begin(.suiteImport)
         let accessed = file.startAccessingSecurityScopedResource()
         defer { if accessed { file.stopAccessingSecurityScopedResource() } }
         do {
             let data = try EvaluationAttachmentStorage.readCaseImportFile(at: file, maximumBytes: EvaluationDocumentDraftStorage.maximumBytes)
             draft = try EvaluationDocumentArchive.draft(from: data, projectID: projectID)
             draft?.requiresSemanticReview = true
-            persist()
-        } catch { self.error = error.localizedDescription }
+            telemetry?.end(span, failure: persist() ? nil : .storage)
+        } catch {
+            self.error = error.localizedDescription
+            telemetry?.end(span, failure: .classify(error))
+        }
     }
 
-    /// Generate source-backed drafts with authorized review, bounded retries, cancellation, and persisted progress.
+    /// Generate source-backed drafts, keeping recovered attempts separate and reporting incomplete saved batches as failures.
     func generate(retryFailures: Bool = false, judge: EvaluationJudgeConnection? = nil) {
         guard !isBusy, !storageBlocked, let initial = draft,
               [5, 10, 20].contains(initial.requestedCount), !initial.selectedPassageIDs.isEmpty else { return }
-        if let issue = availability() { error = issue; return }
+        let span = telemetry?.begin(.documentGenerate)
+        if let issue = availability() {
+            error = issue
+            telemetry?.end(span, failure: .modelUnavailable)
+            return
+        }
         do {
             if let judge {
                 guard initial.semanticJudgeID == judge.id, initial.semanticApprovalDigest == judge.disclosureDigest else {
                     throw EvaluationStoreError.invalidSuite("Authorize the selected semantic judge before sending document text.")
                 }
             }
-        } catch { self.error = error.localizedDescription; return }
+        } catch {
+            self.error = error.localizedDescription
+            telemetry?.end(span, failure: .validation)
+            return
+        }
         draft?.requiresSemanticReview = true
         draft?.generationVersion = EvaluationDocumentGenerator.version
-        guard persist() else { return }
+        guard persist() else { telemetry?.end(span, failure: .storage); return }
         let id = UUID()
         operationID = id
+        generationTelemetry = span
         isBusy = true
         error = nil
         operation = Task {
+            var completionFailure: TelemetryFailure?
+            var recoverableFailure: TelemetryFailure?
+            var generatedAny = false
+            defer {
+                let completedRequestedCount = (draft?.cases.filter { !$0.discarded }.count ?? 0) >= initial.requestedCount
+                let batchFailure: TelemetryFailure? = completedRequestedCount ? nil : (recoverableFailure ?? .generation)
+                if completedRequestedCount, completionFailure == nil, let recoverableFailure {
+                    telemetry?.issue(.documentGenerate, recoverableFailure, relatedTo: span)
+                }
+                telemetry?.end(span, failure: completionFailure ?? batchFailure,
+                    recordsFeature: generatedAny && completedRequestedCount)
+                if operationID == id { generationTelemetry = nil }
+            }
             let reviewer: EvaluationDocumentSemanticReviewer.Reviewer
             do {
                 reviewer = try await reviewerFactory(judge)
                 try Task.checkCancellation()
-                guard operationID == id else { return }
+                guard operationID == id else { completionFailure = .cancelled; return }
                 if retryFailures {
                     draft?.completedBatchIDs.subtract(Set(initial.issues.keys))
                     draft?.issues = [:]
-                    guard persist() else { isBusy = false; operation = nil; progress = ""; return }
+                    guard persist() else { completionFailure = .storage; isBusy = false; operation = nil; progress = ""; return }
                 }
             } catch {
+                completionFailure = error is CancellationError ? .cancelled : .judge
                 if operationID == id { self.error = error.localizedDescription; isBusy = false; operation = nil; progress = "" }
                 return
             }
@@ -116,7 +160,7 @@ final class EvaluationDocumentDraftController {
             // Spread a bounded number of attempts across the entire selection, not just its beginning.
             let attemptCount = initial.requestedCount * 2
             for slot in 0..<attemptCount {
-                guard !Task.isCancelled, operationID == id, let current = draft else { break }
+                guard !Task.isCancelled, operationID == id, let current = draft else { completionFailure = .cancelled; break }
                 if current.cases.filter({ !$0.discarded }).count >= initial.requestedCount { break }
                 let index = passages.count >= attemptCount
                     ? min(passages.count - 1, slot * passages.count / attemptCount) : slot % passages.count
@@ -138,33 +182,44 @@ final class EvaluationDocumentDraftController {
                         }
                     let result = reviewed.candidate
                     try Task.checkCancellation()
-                    guard operationID == id else { break }
+                    guard operationID == id else { completionFailure = .cancelled; break }
                     if let result, let issue = EvaluationSuite.documentContextBudgetIssue(for:
                         current.cases.filter { !$0.discarded }.map(\.evaluationCase) + [result]) {
                         draft?.issues[batchID] = "\(passage.location): \(issue) The completed drafts remain usable."
-                        persist()
+                        completionFailure = persist() ? .validation : .storage
                         break
                     }
                     if let result, !EvaluationDocumentGenerator.repeatsFact(result,
                         among: current.cases.filter { !$0.discarded }.map(\.evaluationCase)) {
                         draft?.cases.append(.init(evaluationCase: result, semanticReview: reviewed.review))
+                        generatedAny = true
                     }
-                    else { draft?.issues[batchID] = "\(passage.location): no distinct supported question was returned." }
+                    else {
+                        draft?.issues[batchID] = "\(passage.location): no distinct supported question was returned."
+                        recoverableFailure = .generation
+                    }
                     draft?.completedBatchIDs.insert(batchID)
-                } catch is CancellationError { break }
+                } catch is CancellationError { completionFailure = .cancelled; break }
                 catch let failure as EvaluationDocumentDraftPipeline.ReviewUnavailable {
+                    completionFailure = .judge
                     guard operationID == id else { break }
                     draft?.issues[batchID] = failure.localizedDescription
                     self.error = failure.localizedDescription
-                    persist()
+                    if !persist() { completionFailure = .storage }
                     break
                 }
                 catch {
+                    let category = TelemetryFailure.classify(error)
+                    if category == .storage || category == .permission { completionFailure = category }
+                    else { recoverableFailure = category == .unexpected ? .generation : category }
                     guard operationID == id else { break }
                     draft?.issues[batchID] = "\(passage.location): \(error.localizedDescription)"
-                    if availability() != nil { persist(); break }
+                    if availability() != nil {
+                        completionFailure = persist() ? .modelUnavailable : .storage
+                        break
+                    }
                 }
-                guard persist() else { break }
+                guard persist() else { completionFailure = .storage; break }
             }
             if operationID == id { isBusy = false; operation = nil; progress = "Draft progress saved. Review each question against its source." }
         }
@@ -212,9 +267,13 @@ final class EvaluationDocumentDraftController {
         }
     }
 
-    /// Cancel owned asynchronous work and invalidate late completions before clearing the busy state.
+    /// Cancel owned work and its telemetry span before invalidating late completions and clearing busy state.
     func cancel() {
         operation?.cancel()
+        telemetry?.end(importTelemetry, failure: .cancelled)
+        importTelemetry = nil
+        telemetry?.end(generationTelemetry, failure: .cancelled)
+        generationTelemetry = nil
         operationID = nil
         operation = nil
         isBusy = false

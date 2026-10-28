@@ -7,6 +7,10 @@ enum TelemetryOperation: String, Codable, Sendable {
     case evaluation, runSave = "run_save", runCheckpoint = "run_checkpoint"
     case modelLoad = "model_load", cloudMetadata = "cloud_metadata"
     case mcpStart = "mcp_start", mcpInstall = "mcp_install", mcpStop = "mcp_stop"
+    case documentGenerate = "document_generate", suiteImport = "suite_import", suiteExport = "suite_export"
+    case reviewSave = "review_save", batchRun = "batch_run", appIntentRun = "app_intent_run"
+    case documentImport = "document_import", referenceImport = "reference_import"
+    case datasetImport = "dataset_import", resultExport = "results_export"
 }
 
 /// Fixed diagnostic categories that avoid carrying free-form failure messages.
@@ -51,16 +55,21 @@ enum TelemetryFailure: String, Codable, Sendable {
         return nil
     }
 
-    /// Maps known evaluation error-category strings to the fixed telemetry vocabulary, using unexpected for unknown categories.
+    /// Maps runner-produced categories and legacy aliases to content-free diagnostic groups; unknown strings remain unexpected.
     static func evaluationCategory(_ category: String) -> Self {
         switch category {
         case "cancelled": .cancelled
         case "modelUnavailable", "modelAssetsUnavailable": .modelUnavailable
-        case "invalidConfiguration": .validation
-        case "generation", "contextWindowExceeded", "guardrailViolation", "refusal": .generation
-        case "network", "http", "transport": .network
-        case "customProviderError": .provider
+        case "invalidConfiguration", "inputTooLarge", "invalidRestoredTranscript", "unsupportedCapability", "unsupportedTranscriptContent",
+             "unsupportedGenerationGuide", "unsupportedLanguageOrLocale": .validation
+        case "generation", "contextWindowExceeded", "contextSizeExceeded", "guardrailViolation", "refusal",
+             "toolCallFailed", "concurrentRequests", "transcriptMutationWhileResponding", "sessionError",
+             "languageModelError": .generation
+        case "network", "http", "transport", "networkFailure": .network
+        case "customProviderError", "rateLimited", "quotaLimitReached", "serviceUnavailable",
+             "privateCloudComputeError": .provider
         case "timeout": .timeout
+        case "judgeInputTooLarge": .judge
         default: .unexpected
         }
     }
@@ -97,14 +106,29 @@ enum TelemetryScreen: String, Sendable, CaseIterable {
 enum TelemetryFeature: String, Sendable, CaseIterable {
     case evaluation
     case suiteSaved = "suite_saved", mcpStarted = "mcp_started", mcpInstalled = "mcp_installed"
+    case documentGenerated = "document_generated", suiteImported = "suite_imported", suiteExported = "suite_exported"
+    case reviewSaved = "review_saved", batchRun = "batch_run", appIntentRun = "app_intent_run"
+    case mcpConnected = "mcp_connected"
+    case documentImported = "document_imported", referencesImported = "references_imported"
+    case datasetImported = "dataset_imported", resultsExported = "results_exported"
 
-    /// Maps supported operations to feature-use events, returning nil for operations outside that usage vocabulary.
+    /// Maps successfully completed workflows to feature use; background storage and model preparation do not count as adoption.
     init?(operation: TelemetryOperation) {
         switch operation {
         case .evaluation: self = .evaluation
         case .suiteSave: self = .suiteSaved
         case .mcpStart: self = .mcpStarted
         case .mcpInstall: self = .mcpInstalled
+        case .documentGenerate: self = .documentGenerated
+        case .suiteImport: self = .suiteImported
+        case .suiteExport: self = .suiteExported
+        case .reviewSave: self = .reviewSaved
+        case .batchRun: self = .batchRun
+        case .appIntentRun: self = .appIntentRun
+        case .documentImport: self = .documentImported
+        case .referenceImport: self = .referencesImported
+        case .datasetImport: self = .datasetImported
+        case .resultExport: self = .resultsExported
         default: return nil
         }
     }

@@ -6,26 +6,44 @@ extension EvaluationStore {
         EvaluationReviewWorkflow.samples(runs: runs, suiteID: selectedSuiteID)
     }
 
-    /// Validates an annotation against its current saved sample and persists it through suite-local rollback.
+    /// Validates and durably saves an annotation, reporting success only after suite-local persistence.
     func saveReview(_ annotation: EvaluationReviewAnnotation) throws {
-        let sample = try reviewSample(runID: annotation.runID, sampleID: annotation.sampleID)
-        try updateReviewState { try EvaluationReviewWorkflow.save(annotation, sample: sample, state: &$0) }
+        try recordReviewSave {
+            let sample = try reviewSample(runID: annotation.runID, sampleID: annotation.sampleID)
+            try updateReviewState { try EvaluationReviewWorkflow.save(annotation, sample: sample, state: &$0) }
+        }
     }
 
-    /// Validates and persists a review proposal against its saved source sample without confirming the annotation.
+    /// Validates and saves a proposal without confirming the annotation, recording validation or persistence failures.
     func proposeReview(_ proposal: EvaluationReviewProposal) throws {
-        let sample = try reviewSample(runID: proposal.annotation.runID, sampleID: proposal.annotation.sampleID)
-        try updateReviewState { try EvaluationReviewWorkflow.propose(proposal, sample: sample, state: &$0) }
+        try recordReviewSave {
+            let sample = try reviewSample(runID: proposal.annotation.runID, sampleID: proposal.annotation.sampleID)
+            try updateReviewState { try EvaluationReviewWorkflow.propose(proposal, sample: sample, state: &$0) }
+        }
     }
 
-    /// Accepts or rejects an existing proposal against its current saved source and persists the decision.
+    /// Accepts or rejects a proposal and reports a saved review decision only after persistence succeeds.
     /// Throws when the proposal or its source is no longer available or workflow validation fails.
     func decideReviewProposal(id: UUID, accept: Bool) throws {
-        guard let proposal = suiteLocalState.review.proposals.first(where: { $0.id == id }) else {
-            throw EvaluationReviewError.invalid("The proposal is no longer available.")
+        try recordReviewSave {
+            guard let proposal = suiteLocalState.review.proposals.first(where: { $0.id == id }) else {
+                throw EvaluationReviewError.invalid("The proposal is no longer available.")
+            }
+            let sample = try reviewSample(runID: proposal.annotation.runID, sampleID: proposal.annotation.sampleID)
+            try updateReviewState { try EvaluationReviewWorkflow.decideProposal(id: id, accept: accept, sample: sample, state: &$0) }
         }
-        let sample = try reviewSample(runID: proposal.annotation.runID, sampleID: proposal.annotation.sampleID)
-        try updateReviewState { try EvaluationReviewWorkflow.decideProposal(id: id, accept: accept, sample: sample, state: &$0) }
+    }
+
+    /// Measures a complete review mutation, emitting only fixed failure categories and rethrowing the original error.
+    private func recordReviewSave(_ action: () throws -> Void) throws {
+        let span = telemetry?.begin(.reviewSave)
+        do {
+            try action()
+            telemetry?.end(span)
+        } catch {
+            telemetry?.end(span, failure: error is EvaluationReviewError ? .validation : .classify(error))
+            throw error
+        }
     }
 
     /// Finds a saved review sample in the selected suite, throwing when either requested ID is unavailable.

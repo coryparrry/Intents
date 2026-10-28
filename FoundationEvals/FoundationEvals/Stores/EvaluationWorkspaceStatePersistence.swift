@@ -1,13 +1,18 @@
 import CryptoKit
 import Foundation
 
+/// A content-free failure returned independently of user-facing recovery notices.
+enum EvaluationWorkspaceLoadFailure: Sendable {
+    case storage
+}
+
 enum EvaluationWorkspaceStatePersistence {
     /// Loads canonical suite JSON and optionally checks its workspace identity.
-    /// Missing storage returns no suite; unreadable or mismatched bytes are backed up when possible, with a write blocker if preservation fails.
+    /// Returns a typed storage failure for unreadable or mismatched data. Missing storage returns no suite; unreadable or mismatched bytes are backed up when possible, with a write blocker if preservation fails.
     static func loadSuite(from directory: URL, expectedSuiteID: UUID? = nil)
-        -> (suite: EvaluationSuite?, notice: String?, persistenceBlocker: String?) {
+        -> (suite: EvaluationSuite?, notice: String?, persistenceBlocker: String?, failure: EvaluationWorkspaceLoadFailure?) {
         let url = directory.appending(path: "suite.json")
-        guard FileManager.default.fileExists(atPath: url.path) else { return (nil, nil, nil) }
+        guard FileManager.default.fileExists(atPath: url.path) else { return (nil, nil, nil, nil) }
         do {
             let data = try Data(contentsOf: url)
             let suite = try CanonicalJSON.decode(EvaluationSuite.self, from: data)
@@ -15,14 +20,14 @@ enum EvaluationWorkspaceStatePersistence {
                 let preservation = preserveUnreadableFile(at: url, prefix: "suite-mismatched")
                 let suffix = preservation.map { " It was preserved as \($0)." } ?? ""
                 return (nil, "The saved suite belongs to a different workspace suite.\(suffix)",
-                        preservation == nil ? suitePreservationBlocker : nil)
+                        preservation == nil ? suitePreservationBlocker : nil, .storage)
             }
-            return (suite, nil, nil)
+            return (suite, nil, nil, nil)
         } catch {
             let preservation = preserveUnreadableFile(at: url, prefix: "suite-unreadable")
             let suffix = preservation.map { " It was preserved as \($0)." } ?? ""
             return (nil, "The saved suite could not be read.\(suffix)",
-                    preservation == nil ? suitePreservationBlocker : nil)
+                    preservation == nil ? suitePreservationBlocker : nil, .storage)
         }
     }
 
@@ -30,11 +35,11 @@ enum EvaluationWorkspaceStatePersistence {
         "The saved suite could not be preserved. Resolve the storage conflict and reopen the app before saving workspace changes."
 
     /// Loads local approvals and reviews, returning empty state for missing or unreadable storage.
-    /// Optionally preserves unreadable bytes and reports a blocker when that preservation fails; missing migrated state produces a recovery notice.
+    /// Returns typed failures independently of notices. Optionally preserves unreadable bytes and reports a blocker when that preservation fails; missing migrated state produces a recovery notice.
     static func loadSuiteLocalState(
         from url: URL,
         preserveUnreadable: Bool = true
-    ) -> (state: EvaluationSuiteLocalState, notice: String?, persistenceBlocker: String?) {
+    ) -> (state: EvaluationSuiteLocalState, notice: String?, persistenceBlocker: String?, failure: EvaluationWorkspaceLoadFailure?) {
         guard FileManager.default.fileExists(atPath: url.path) else {
             let migrated = EvaluationWorkspacePersistence.hasCompletedLegacyStateMigration(
                 in: url.deletingLastPathComponent()
@@ -42,12 +47,13 @@ enum EvaluationWorkspaceStatePersistence {
             return (
                 EvaluationSuiteLocalState(),
                 migrated ? "The saved suite state is missing after migration. Legacy approvals were not restored; review the suite state before release." : nil,
-                nil
+                nil,
+                migrated ? .storage : nil
             )
         }
         do {
             let data = try Data(contentsOf: url)
-            return (try CanonicalJSON.decode(EvaluationSuiteLocalState.self, from: data), nil, nil)
+            return (try CanonicalJSON.decode(EvaluationSuiteLocalState.self, from: data), nil, nil, nil)
         } catch {
             let preservation = preserveUnreadable
                 ? preserveUnreadableFile(at: url, prefix: "state-unreadable")
@@ -59,26 +65,27 @@ enum EvaluationWorkspaceStatePersistence {
             return (
                 EvaluationSuiteLocalState(),
                 blocker ?? "The saved suite state could not be read.\(suffix)",
-                blocker
+                blocker,
+                .storage
             )
         }
     }
 
     /// Loads judge metadata or returns an empty list and recovery notice when unreadable bytes cannot be decoded.
-    /// Attempts to preserve damaged metadata before later replacement.
+    /// Returns a typed storage failure and attempts to preserve damaged metadata before later replacement.
     static func loadJudgeConnections(
         from url: URL
-    ) -> (connections: [EvaluationJudgeConnection], notice: String?) {
-        guard FileManager.default.fileExists(atPath: url.path) else { return ([], nil) }
+    ) -> (connections: [EvaluationJudgeConnection], notice: String?, failure: EvaluationWorkspaceLoadFailure?) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return ([], nil, nil) }
         do {
             let data = try Data(contentsOf: url)
-            return (try CanonicalJSON.decode([EvaluationJudgeConnection].self, from: data), nil)
+            return (try CanonicalJSON.decode([EvaluationJudgeConnection].self, from: data), nil, nil)
         } catch {
             let preservation = preserveUnreadableFile(
                 at: url, prefix: "judge-connections-unreadable"
             )
             let suffix = preservation.map { " It was preserved as \($0)." } ?? ""
-            return ([], "The saved judge connections could not be read.\(suffix)")
+            return ([], "The saved judge connections could not be read.\(suffix)", .storage)
         }
     }
 

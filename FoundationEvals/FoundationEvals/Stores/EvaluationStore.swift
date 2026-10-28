@@ -63,6 +63,9 @@ final class EvaluationStore {
     private let suiteLocalStateWriter: (Data, URL) throws -> Void
     private let workspaceCatalogWriter: (EvaluationWorkspaceCatalog, URL) throws -> Void
     private let runWriter: (Data, URL) throws -> Void
+    private let checkpointWriter: (Data, URL) throws -> Void
+    @ObservationIgnored private var reportedCheckpointFailureRunID: UUID?
+    @ObservationIgnored private var checkpointTelemetryContext: (runID: UUID, span: TelemetrySpan)?
     private let pendingCompletedRunsWriter: (Data, URL) throws -> Void
     var overviewStorageDirectory: URL { supportDirectory }
     @ObservationIgnored lazy var reviewDrafts = EvaluationReviewDraftStore(directory: supportDirectory.appending(path: "ReviewDrafts"))
@@ -107,6 +110,7 @@ final class EvaluationStore {
 
     /// Restores the workspace, selected suite, local decisions, drafts, and run recovery records.
     /// Unreadable files produce notices and may block writes when their original bytes cannot be preserved.
+    /// Typed subsidiary load outcomes determine diagnostics; recovery notice wording never determines success.
     /// The optional support directory and writer closures select storage and allow persistence failures to be exercised.
     init(
         supportDirectory customSupportDirectory: URL? = nil,
@@ -119,6 +123,9 @@ final class EvaluationStore {
             try EvaluationWorkspacePersistence.save($0, in: $1)
         },
         runWriter: @escaping (Data, URL) throws -> Void = {
+            try $0.write(to: $1, options: .atomic)
+        },
+        checkpointWriter: @escaping (Data, URL) throws -> Void = {
             try $0.write(to: $1, options: .atomic)
         },
         pendingCompletedRunsWriter: @escaping (Data, URL) throws -> Void = {
@@ -134,15 +141,17 @@ final class EvaluationStore {
         self.suiteLocalStateWriter = suiteLocalStateWriter
         self.workspaceCatalogWriter = workspaceCatalogWriter
         self.runWriter = runWriter
+        self.checkpointWriter = checkpointWriter
         self.pendingCompletedRunsWriter = pendingCompletedRunsWriter
 
         let startupDiagnostic = telemetry?.begin(.workspaceLoad)
         var startupNotice: String?
         var startupDiagnosticFailure: TelemetryFailure?
-        defer { telemetry?.end(startupDiagnostic, failure: startupDiagnosticFailure ?? (startupNotice == nil ? nil : .storage)) }
+        defer { telemetry?.end(startupDiagnostic, failure: startupDiagnosticFailure) }
         do {
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         } catch {
+            startupDiagnosticFailure = .storage
             startupNotice = "Could not create local storage: \(error.localizedDescription)"
         }
 
@@ -199,6 +208,7 @@ final class EvaluationStore {
         do {
             try EvaluationWorkspacePersistence.createSuiteDirectories(at: activeDirectory)
         } catch {
+            startupDiagnosticFailure = .storage
             startupNotice = [startupNotice, "Could not create suite storage: \(error.localizedDescription)"]
                 .compactMap { $0 }.joined(separator: "\n")
         }
@@ -207,6 +217,7 @@ final class EvaluationStore {
                 try EvaluationWorkspacePersistence.save(bootstrap.catalog, in: base)
             } catch {
                 catalogRecoveryCanPublish = false
+                startupDiagnosticFailure = .storage
                 startupNotice = [startupNotice, "The recovery workspace could not be saved: \(error.localizedDescription)"]
                     .compactMap { $0 }.joined(separator: "\n")
             }
@@ -230,7 +241,7 @@ final class EvaluationStore {
         var restoredHistorySequence = Self.maximumRunHistorySequence(
             catalog: bootstrap.catalog, supportDirectory: base
         )
-        let snapshotRecoveryNotice = Self.recoverSnapshotRuns(
+        let snapshotRecovery = Self.recoverSnapshotRuns(
             catalog: bootstrap.catalog, supportDirectory: base, historySequence: &restoredHistorySequence
         )
         var loadedRuns = Self.loadRuns(
@@ -254,9 +265,14 @@ final class EvaluationStore {
         let loadedLocalState = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(
             from: activeDirectory.appending(path: "state.json")
         )
+        if [bootstrap.failure, legacySuite.failure, loadedSuite.failure, loadedDraft.failure, loadedRuns.failure,
+            recovery.failure, snapshotRecovery.failure, loadedJudgeConnections.failure,
+            loadedLocalState.failure].contains(where: { $0 != nil }) {
+            startupDiagnosticFailure = .storage
+        }
         let initialNotice = [startupNotice, legacySuite.notice, loadedSuite.notice, loadedSuite.persistenceBlocker,
                              loadedDraft.notice, loadedRuns.notice, recovery.notice,
-                             snapshotRecoveryNotice,
+                             snapshotRecovery.notice,
                              loadedJudgeConnections.notice, loadedLocalState.notice]
             .compactMap { $0 }
             .joined(separator: "\n")
@@ -276,7 +292,7 @@ final class EvaluationStore {
         activeRunEvidence = recovery.pending?.subjectEvidence
         activeRunResults = recovery.pending?.results ?? []
         unsavedRun = recovery.pending?.completedRun
-        loadPendingCompletedRuns()
+        if loadPendingCompletedRuns() != nil { startupDiagnosticFailure = .storage }
         if let pendingCompletedRuns {
             let pendingIDs = Set(pendingCompletedRuns.runs.map(\.id))
             runs.removeAll { pendingIDs.contains($0.id) }
@@ -289,19 +305,23 @@ final class EvaluationStore {
         migrationNotice = bootstrap.notice
         notice = initialNotice.isEmpty ? nil : initialNotice
         do {
-            try loadSelectedSuite()
+            if try loadSelectedSuite() != nil { startupDiagnosticFailure = .storage }
             let combinedNotice = [initialNotice.isEmpty ? nil : initialNotice, notice]
                 .compactMap { $0 }
                 .joined(separator: "\n")
             notice = combinedNotice.isEmpty ? nil : combinedNotice
         } catch {
+            startupDiagnosticFailure = .storage
             notice = [initialNotice.isEmpty ? nil : initialNotice, error.localizedDescription]
                 .compactMap { $0 }
                 .joined(separator: "\n")
         }
         if migratedRubric || (loadedSuite.suite == nil && loadedSuite.notice == nil) {
             if !catalogRecoveryAttempted || catalogRecoveryCanPublish {
-                saveSuite()
+                if !saveSuite() {
+                    startupDiagnosticFailure = startupDiagnosticFailure
+                        ?? (validationIssue(for: draftSuite, includeModelReadiness: false) == nil ? .storage : .validation)
+                }
             }
         }
     }
@@ -844,7 +864,9 @@ final class EvaluationStore {
 
     /// Restores the selected suite's decisions, compatible draft, history, and recovery state.
     /// Applies uncontested repository changes, preserves conflicting drafts, and throws if required suite loading fails.
-    private func loadSelectedSuite() throws {
+    /// Returns typed subsidiary load failures even when usable fallback state was restored.
+    @discardableResult
+    private func loadSelectedSuite() throws -> EvaluationWorkspaceLoadFailure? {
         // Repository parsing and refresh may fail. Keep the selected suite's
         // durable decisions in memory before any of those operations can throw.
         let loadedLocalState = EvaluationWorkspaceStatePersistence.loadSuiteLocalState(from: suiteStateURL)
@@ -890,7 +912,7 @@ final class EvaluationStore {
         activeRunResults = recovery.pending?.results ?? []
         unsavedRun = recovery.pending?.completedRun
         completedSamples = recovery.pending?.summary.completedSamples ?? 0
-        loadPendingCompletedRuns()
+        let pendingFailure = loadPendingCompletedRuns()
         if let pendingCompletedRuns {
             let pendingIDs = Set(pendingCompletedRuns.runs.map(\.id))
             runs.removeAll { pendingIDs.contains($0.id) }
@@ -911,6 +933,8 @@ final class EvaluationStore {
             .compactMap { $0 }
             .joined(separator: "\n")
         notice = messages.isEmpty ? nil : messages
+        return [loadedLocalState.failure, loaded.failure, localDraft.failure, draft.failure,
+                loadedRuns.failure, recovery.failure, pendingFailure].compactMap { $0 }.first
     }
 
     // MARK: Judge connections, reassessment, and human approval
@@ -2664,27 +2688,36 @@ final class EvaluationStore {
         return max(0, min(remainingCases, maximumCasesBySamples - draftSuite.cases.count))
     }
 
-    /// Appends imported cases within the remaining case and sample capacity while idle.
-    /// Saves the candidate and restores the prior draft and draft file if saving fails.
+    /// Appends imported cases within capacity and records completion only after the candidate is durably saved.
+    /// Restores the prior draft and draft file if saving fails, without reporting successful adoption.
     func appendImportedCases(_ imported: [EvaluationCase]) throws {
-        try requireIdle()
-        guard !imported.isEmpty else { return }
-        let remaining = remainingCaseImportCapacity
-        guard imported.count <= remaining else {
-            throw EvaluationCaseImportError.tooManyRows(maximum: remaining)
-        }
-        applyPendingPromptEdits()
-        let previousDraft = draftSuite
-        let previousDraftFile = try snapshotFile(at: draftSuiteURL)
-        draftSuite.cases.append(contentsOf: imported)
-        guard saveSuite() else {
-            let failure = notice ?? "The imported cases could not be saved."
-            try restoreDraftAfterFailedSave(
-                previousDraft,
-                fileSnapshot: previousDraftFile,
-                failureMessage: failure
-            )
-            throw EvaluationStoreError.invalidSuite(failure)
+        let span = imported.isEmpty ? nil : telemetry?.begin(.suiteImport)
+        var completionFailure: TelemetryFailure?
+        do {
+            try requireIdle()
+            guard !imported.isEmpty else { return }
+            let remaining = remainingCaseImportCapacity
+            guard imported.count <= remaining else {
+                throw EvaluationCaseImportError.tooManyRows(maximum: remaining)
+            }
+            applyPendingPromptEdits()
+            let previousDraft = draftSuite
+            let previousDraftFile = try snapshotFile(at: draftSuiteURL)
+            draftSuite.cases.append(contentsOf: imported)
+            guard saveSuite() else {
+                completionFailure = validationIssue(for: draftSuite, includeModelReadiness: false) == nil ? .storage : .validation
+                let failure = notice ?? "The imported cases could not be saved."
+                try restoreDraftAfterFailedSave(
+                    previousDraft,
+                    fileSnapshot: previousDraftFile,
+                    failureMessage: failure
+                )
+                throw EvaluationStoreError.invalidSuite(failure)
+            }
+            telemetry?.end(span)
+        } catch {
+            telemetry?.end(span, failure: completionFailure ?? (error is EvaluationCaseImportError ? .validation : .classify(error)))
+            throw error
         }
     }
 
@@ -3127,12 +3160,14 @@ final class EvaluationStore {
         liveResponse = nil
     }
 
-    /// Imports selected local files in a returned task, or returns nil when run, reassessment, or file processing is active.
+    /// Imports selected references and records adoption only after revision-bound attachment persistence succeeds.
     /// Reads bounded security-scoped files off the main actor, enforces 20-file/four-image capacity, and binds commit to the captured revision.
     /// Failures become notices; the task completes after processing state is cleared.
     @discardableResult
     func importFiles(_ urls: [URL]) -> Task<Void, Never>? {
+        let span = urls.isEmpty ? nil : telemetry?.begin(.referenceImport)
         guard !isRunning, !isReassessing, !isProcessingFiles else {
+            telemetry?.end(span, failure: .validation)
             notice = "Wait for the current operation to finish before changing files."
             return nil
         }
@@ -3173,13 +3208,15 @@ final class EvaluationStore {
                     }
                 }.value
                 try await importAttachments(inputs, expectedRevision: expectedRevision)
+                telemetry?.end(span, failure: Task.isCancelled ? .cancelled : nil, recordsFeature: !urls.isEmpty)
             } catch {
+                telemetry?.end(span, failure: error is ImportError ? .validation : .classify(error))
                 notice = "Could not import files: \(error.localizedDescription)"
             }
         }
     }
 
-    /// Imports bounded text, PDF, or image data under a caller-supplied attachment ID and returns metadata with the resulting revision.
+    /// Imports reference data and records completed new attachments, excluding idempotent duplicates from adoption.
     /// New IDs require an idle workspace and matching revision before and after preparation off the main actor.
     /// Matching duplicates accept stale revisions or active runs, but still verify image bytes and reject changed selection or content.
     func importAttachment(
@@ -3189,51 +3226,62 @@ final class EvaluationStore {
         data: Data,
         expectedRevision: String
     ) async throws -> EvaluationAttachmentImportResult {
-        // Duplicate fast-path: re-preparing and comparing performs no mutation,
-        // so it intentionally skips requireIdle/requireRevision and stays usable
-        // with a stale revision or while a run is in progress. This keeps
-        // at-least-once callers (notably MCP upload retries) idempotent: a retry
-        // of an already-imported attachment reports "duplicate" with the current
-        // revision instead of stale_revision (see
-        // attachmentToolsAreBoundedAndNaturallyIdempotent). The selection guard
-        // and post-prepare re-read still apply: if the suite changes mid-prepare
-        // we report a conflict, and if the attachment disappears we report
-        // not_found (surfaced to MCP as not_found).
-        if suite.attachments.contains(where: { $0.id == id }) {
-            let projectID = selectedProjectID
-            let suiteID = selectedSuiteID
+        let span = telemetry?.begin(.referenceImport)
+        var failure: TelemetryFailure?
+        var importedNewReference = false
+        defer { telemetry?.end(span, failure: failure ?? (Task.isCancelled ? .cancelled : nil), recordsFeature: importedNewReference) }
+        do {
+            // Duplicate fast-path: re-preparing and comparing performs no mutation,
+            // so it intentionally skips requireIdle/requireRevision and stays usable
+            // with a stale revision or while a run is in progress. This keeps
+            // at-least-once callers (notably MCP upload retries) idempotent: a retry
+            // of an already-imported attachment reports "duplicate" with the current
+            // revision instead of stale_revision (see
+            // attachmentToolsAreBoundedAndNaturallyIdempotent). The selection guard
+            // and post-prepare re-read still apply: if the suite changes mid-prepare
+            // we report a conflict, and if the attachment disappears we report
+            // not_found (surfaced to MCP as not_found).
+            if suite.attachments.contains(where: { $0.id == id }) {
+                let projectID = selectedProjectID
+                let suiteID = selectedSuiteID
+                let prepared = try await Task.detached(priority: .userInitiated) {
+                    try Self.prepareAttachment(id: id, name: name, mediaType: mediaType, data: data)
+                }.value
+                guard selectedProjectID == projectID, selectedSuiteID == suiteID else {
+                    throw EvaluationStoreError.resourceConflict("The selected workspace changed during attachment import.")
+                }
+                guard let existing = suite.attachments.first(where: { $0.id == id }) else {
+                    throw EvaluationStoreError.resourceNotFound("Attachment")
+                }
+                guard existing == prepared.attachment else {
+                    throw EvaluationStoreError.resourceConflict("Attachment ID already exists with different content.")
+                }
+                if existing.kind == .image {
+                    _ = try attachmentData(id: existing.id)
+                }
+                return EvaluationAttachmentImportResult(
+                    attachment: existing,
+                    truncated: existing.text?.hasSuffix("\n[File truncated during import.]") == true,
+                    duplicate: true,
+                    revision: try currentSuiteRevision()
+                )
+            }
+            try requireIdle()
+            try requireRevision(expectedRevision)
+
             let prepared = try await Task.detached(priority: .userInitiated) {
                 try Self.prepareAttachment(id: id, name: name, mediaType: mediaType, data: data)
             }.value
-            guard selectedProjectID == projectID, selectedSuiteID == suiteID else {
-                throw EvaluationStoreError.resourceConflict("The selected workspace changed during attachment import.")
-            }
-            guard let existing = suite.attachments.first(where: { $0.id == id }) else {
-                throw EvaluationStoreError.resourceNotFound("Attachment")
-            }
-            guard existing == prepared.attachment else {
-                throw EvaluationStoreError.resourceConflict("Attachment ID already exists with different content.")
-            }
-            if existing.kind == .image {
-                _ = try attachmentData(id: existing.id)
-            }
-            return EvaluationAttachmentImportResult(
-                attachment: existing,
-                truncated: existing.text?.hasSuffix("\n[File truncated during import.]") == true,
-                duplicate: true,
-                revision: try currentSuiteRevision()
-            )
+
+            try requireIdle()
+            try requireRevision(expectedRevision)
+            let result = try commitPreparedAttachments([prepared]).first!
+            importedNewReference = !result.duplicate
+            return result
+        } catch {
+            failure = error is ImportError ? .validation : .classify(error)
+            throw error
         }
-        try requireIdle()
-        try requireRevision(expectedRevision)
-
-        let prepared = try await Task.detached(priority: .userInitiated) {
-            try Self.prepareAttachment(id: id, name: name, mediaType: mediaType, data: data)
-        }.value
-
-        try requireIdle()
-        try requireRevision(expectedRevision)
-        return try commitPreparedAttachments([prepared]).first!
     }
 
     /// Flushes the draft, then attempts revision-bound attachment removal, reporting errors through notice.
@@ -3736,18 +3784,22 @@ final class EvaluationStore {
 
     /// Finalizes only the current run, assigns history order, and publishes saved history and selection.
     /// On write failure retains terminal evidence and attempts a recovery checkpoint for retry before clearing task ownership.
+    /// Records completion after the history write, preserving cancellation or execution failure over storage failure.
     private func finish(_ run: EvaluationRun) {
         guard activeRun?.id == run.id else { return }
         let run = runPreparedForHistory(run)
-        telemetry?.end(evaluationTelemetry, failure: TelemetryFailure.evaluationFailure(results: run.results, cancelled: run.cancelled))
-        evaluationTelemetry = nil
+        let executionFailure = TelemetryFailure.evaluationFailure(results: run.results, cancelled: run.cancelled)
         do {
             try persistRun(run)
+            telemetry?.end(evaluationTelemetry, failure: executionFailure)
+            evaluationTelemetry = nil
             runs.removeAll { $0.id == run.id }
             runs.insert(run, at: 0)
             selection = .run(run.id)
             try? FileManager.default.removeItem(at: activeRunURL)
         } catch {
+            telemetry?.end(evaluationTelemetry, failure: executionFailure ?? .classify(error))
+            evaluationTelemetry = nil
             unsavedRun = run
             if let activeRun, let activeRunSuite {
                 try? persistActiveRun(ActiveRunRecord(
@@ -3796,7 +3848,7 @@ final class EvaluationStore {
                     ActiveRunRecord(
                         summary: active, suite: activeRunSuite, results: activeRunResults,
                         subjectEvidence: activeRunEvidence
-                    )
+                    ), recordOperation: false
                 )
             } catch {
                 notice = "Run progress could not be checkpointed: \(error.localizedDescription)"
@@ -4525,6 +4577,7 @@ final class EvaluationStore {
     /// Writes a run through the configured selected-suite history writer and records save telemetry.
     /// Wraps encoding or storage failures as persistence errors.
     private func persistRun(_ run: EvaluationRun) throws {
+        defer { clearCheckpointTelemetry(for: run.id) }
         let diagnostic = telemetry?.begin(.runSave)
         do {
             try runWriter(CanonicalJSON.data(for: run),
@@ -4545,30 +4598,42 @@ final class EvaluationStore {
         .appending(path: "\(id.uuidString).json")
     }
 
-    /// Creates the checkpoint directory and atomically writes a snapshot recovery record, wrapping storage failures.
-    private func persistSnapshotCheckpoint(_ record: ActiveRunRecord, at url: URL) throws {
+    /// Writes a snapshot recovery record and reports boundary outcomes or one progress failure per run.
+    /// Progress writes omit spans so sample count cannot inflate diagnostic volume.
+    private func persistSnapshotCheckpoint(
+        _ record: ActiveRunRecord, at url: URL, recordOperation: Bool = true
+    ) throws {
+        let diagnostic = recordOperation ? beginCheckpointTelemetry(for: record.summary.id) : nil
         do {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(), withIntermediateDirectories: true
             )
-            try CanonicalJSON.data(for: record).write(to: url, options: .atomic)
+            try checkpointWriter(CanonicalJSON.data(for: record), url)
+            telemetry?.end(diagnostic)
         } catch {
+            reportCheckpointFailure(error, runID: record.summary.id, diagnostic: diagnostic)
             throw EvaluationStoreError.persistence("Snapshot checkpoint could not be saved: \(error.localizedDescription)")
         }
     }
 
-    /// Appends progress to a readable unfinished snapshot checkpoint; checkpoint failure publishes a notice.
+    /// Appends progress to an unfinished snapshot checkpoint; unreadable records and failed writes emit bounded issues.
     private func checkpointSnapshotProgress(
         result: EvaluationSampleResult,
         completed: Int,
         checkpointURL: URL
     ) {
-        guard var record = Self.loadActiveRun(from: checkpointURL),
-              record.completedRun == nil else { return }
+        guard var record = Self.loadActiveRun(from: checkpointURL) else {
+            if let runID = UUID(uuidString: checkpointURL.deletingPathExtension().lastPathComponent) {
+                reportCheckpointFailure(EvaluationStoreError.persistence("Unreadable checkpoint"),
+                                        runID: runID, diagnostic: nil)
+            }
+            return
+        }
+        guard record.completedRun == nil else { return }
         record.results = (record.results ?? []) + [result]
         record.summary.completedSamples = completed
         do {
-            try persistSnapshotCheckpoint(record, at: checkpointURL)
+            try persistSnapshotCheckpoint(record, at: checkpointURL, recordOperation: false)
         } catch {
             notice = "Run progress could not be checkpointed: \(error.localizedDescription)"
         }
@@ -4604,10 +4669,14 @@ final class EvaluationStore {
         }
         let runURL = checkpointURL.deletingLastPathComponent().deletingLastPathComponent()
             .appending(path: "Runs/\(id.uuidString).json")
+        defer { clearCheckpointTelemetry(for: id) }
+        let diagnostic = telemetry?.begin(.runSave)
         do {
             try runWriter(CanonicalJSON.data(for: run), runURL)
             try FileManager.default.removeItem(at: checkpointURL)
+            telemetry?.end(diagnostic)
         } catch {
+            telemetry?.end(diagnostic, failure: .classify(error))
             throw EvaluationStoreError.persistence(
                 "The app action finished, but its run could not be saved: \(error.localizedDescription). Retry saving without rerunning the app."
             )
@@ -4665,13 +4734,45 @@ final class EvaluationStore {
         return nil
     }
 
-    /// Atomically writes the selected suite's active-run recovery record, wrapping encoding and storage failures.
-    private func persistActiveRun(_ record: ActiveRunRecord) throws {
+    /// Writes the active recovery record and reports boundary outcomes or one progress failure per run.
+    /// A successful write stays successful when the evaluation itself has been cancelled.
+    private func persistActiveRun(_ record: ActiveRunRecord, recordOperation: Bool = true) throws {
+        let diagnostic = recordOperation ? beginCheckpointTelemetry(for: record.summary.id) : nil
         do {
-            try CanonicalJSON.data(for: record).write(to: activeRunURL, options: .atomic)
+            try checkpointWriter(CanonicalJSON.data(for: record), activeRunURL)
+            telemetry?.end(diagnostic)
         } catch {
+            reportCheckpointFailure(error, runID: record.summary.id, diagnostic: diagnostic)
             throw EvaluationStoreError.persistence(error.localizedDescription)
         }
+    }
+
+    /// Starts a boundary span and retains the first checkpoint's consent generation for later progress issues.
+    private func beginCheckpointTelemetry(for runID: UUID) -> TelemetrySpan? {
+        let span = telemetry?.begin(.runCheckpoint)
+        if checkpointTelemetryContext?.runID != runID, let span {
+            checkpointTelemetryContext = (runID, span)
+            reportedCheckpointFailureRunID = nil
+        }
+        return span
+    }
+
+    /// Releases a settled run's local correlation and deduplication state after its history save attempt.
+    private func clearCheckpointTelemetry(for runID: UUID) {
+        if checkpointTelemetryContext?.runID == runID { checkpointTelemetryContext = nil }
+        if reportedCheckpointFailureRunID == runID { reportedCheckpointFailureRunID = nil }
+    }
+
+    /// Ends an explicit checkpoint boundary or emits at most one issue for a run's progress writes.
+    /// Only fixed error categories enter telemetry; run IDs remain local deduplication keys.
+    private func reportCheckpointFailure(_ error: any Error, runID: UUID, diagnostic: TelemetrySpan?) {
+        if let diagnostic {
+            telemetry?.end(diagnostic, failure: .classify(error))
+        } else if reportedCheckpointFailureRunID != runID {
+            let context = checkpointTelemetryContext.flatMap { $0.runID == runID ? $0.span : nil }
+            telemetry?.issue(.runCheckpoint, .classify(error), relatedTo: evaluationTelemetry ?? context)
+        }
+        reportedCheckpointFailureRunID = runID
     }
 
     /// Retries retained single-run completion followed by pending batch persistence, throwing while completed evidence remains unsaved.
@@ -4687,18 +4788,22 @@ final class EvaluationStore {
 
     /// Restores a pending completed-run batch and its durability flag from the selected suite.
     /// Unreadable recovery data is left in place and recorded as a blocker for new completed batches.
-    private func loadPendingCompletedRuns() {
+    /// Returns a typed storage failure without deriving the outcome from its recovery message.
+    @discardableResult
+    private func loadPendingCompletedRuns() -> EvaluationWorkspaceLoadFailure? {
         pendingCompletedRuns = nil
         pendingCompletedRunsIsDurable = false
         pendingCompletedRunsLoadError = nil
-        guard FileManager.default.fileExists(atPath: pendingCompletedRunsURL.path) else { return }
+        guard FileManager.default.fileExists(atPath: pendingCompletedRunsURL.path) else { return nil }
         do {
             pendingCompletedRuns = try CanonicalJSON.decode(
                 PendingCompletedRuns.self, from: Data(contentsOf: pendingCompletedRunsURL)
             )
             pendingCompletedRunsIsDurable = true
+            return nil
         } catch {
             pendingCompletedRunsLoadError = "Completed-run recovery data is unreadable. Preserve it for inspection before starting another run."
+            return .storage
         }
     }
 
@@ -4719,13 +4824,20 @@ final class EvaluationStore {
         return preserved
     }
 
-    /// Writes the retained completed-run retry record and marks it durable only after the configured writer succeeds.
+    /// Records a checkpoint boundary and marks a completed-run retry record durable only after its write succeeds.
     private func persistPendingCompletedRuns() throws {
         guard let pendingCompletedRuns else { return }
-        try pendingCompletedRunsWriter(
-            CanonicalJSON.data(for: pendingCompletedRuns), pendingCompletedRunsURL
-        )
-        pendingCompletedRunsIsDurable = true
+        let diagnostic = telemetry?.begin(.runCheckpoint)
+        do {
+            try pendingCompletedRunsWriter(
+                CanonicalJSON.data(for: pendingCompletedRuns), pendingCompletedRunsURL
+            )
+            pendingCompletedRunsIsDurable = true
+            telemetry?.end(diagnostic)
+        } catch {
+            telemetry?.end(diagnostic, failure: .classify(error))
+            throw error
+        }
     }
 
     /// Retains completed runs as a retryable batch and saves its recovery record before writing history.
@@ -5273,13 +5385,13 @@ final class EvaluationStore {
     }
 
     /// Loads only a draft bound to the canonical suite's ID and revision.
-    /// Moves stale or unreadable drafts to named backups when possible and returns recovery notices without throwing.
+    /// Moves stale or unreadable drafts to named backups and returns typed failures separately from benign recovery notices.
     private static func loadDraft(
         from directory: URL,
         canonicalSuite: EvaluationSuite
-    ) -> (suite: EvaluationSuite?, notice: String?) {
+    ) -> (suite: EvaluationSuite?, notice: String?, failure: EvaluationWorkspaceLoadFailure?) {
         let url = directory.appending(path: "suite-draft.json")
-        guard FileManager.default.fileExists(atPath: url.path) else { return (nil, nil) }
+        guard FileManager.default.fileExists(atPath: url.path) else { return (nil, nil, nil) }
         do {
             let record = try CanonicalJSON.decode(SuiteDraftRecord.self, from: Data(contentsOf: url))
             guard record.suite.id == canonicalSuite.id,
@@ -5287,34 +5399,37 @@ final class EvaluationStore {
                 let backup = directory.appending(path: "suite-draft-stale-\(UUID().uuidString).json")
                 do {
                     try FileManager.default.moveItem(at: url, to: backup)
-                    return (nil, "An older draft did not match the current suite. It was ignored and preserved as \(backup.lastPathComponent).")
+                    return (nil, "An older draft did not match the current suite. It was ignored and preserved as \(backup.lastPathComponent).", nil)
                 } catch {
-                    return (nil, "An older draft did not match the current suite and was ignored. It could not be moved: \(error.localizedDescription)")
+                    return (nil, "An older draft did not match the current suite and was ignored. It could not be moved: \(error.localizedDescription)", .storage)
                 }
             }
-            return (record.suite, nil)
+            return (record.suite, nil, nil)
         } catch {
             let backup = directory.appending(path: "suite-draft-unreadable-\(UUID().uuidString).json")
             do {
                 try FileManager.default.moveItem(at: url, to: backup)
-                return (nil, "The saved draft could not be read. It was preserved as \(backup.lastPathComponent).")
+                return (nil, "The saved draft could not be read. It was preserved as \(backup.lastPathComponent).", .storage)
             } catch {
-                return (nil, "The saved draft could not be read and was left unchanged for recovery: \(error.localizedDescription)")
+                return (nil, "The saved draft could not be read and was left unchanged for recovery: \(error.localizedDescription)", .storage)
             }
         }
     }
 
     /// Loads JSON history belonging to the requested suite/project and orders it by sequence, dates, and filename.
-    /// Leaves unreadable or mismatched files untouched, returning notices and an unreadable-file flag for release checks.
+    /// Leaves unreadable or mismatched files untouched, returning typed failures and an unreadable-file flag for release checks.
     private static func loadRuns(
         from directory: URL,
         projectID: UUID,
         suiteID: UUID
-    ) -> (runs: [EvaluationRun], notice: String?, hasUnreadableFiles: Bool) {
+    ) -> (runs: [EvaluationRun], notice: String?, hasUnreadableFiles: Bool, failure: EvaluationWorkspaceLoadFailure?) {
         guard let urls = try? FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil
-        ) else { return ([], nil, false) }
+        ) else {
+            let exists = FileManager.default.fileExists(atPath: directory.path)
+            return ([], exists ? "Saved run history could not be read." : nil, exists, exists ? .storage : nil)
+        }
 
         var unreadableCount = 0
         var ignoredCount = 0
@@ -5361,7 +5476,7 @@ final class EvaluationStore {
             : "\(ignoredCount) run file\(ignoredCount == 1 ? "" : "s") did not belong to this suite and was ignored."
         let messages = [unreadableNotice, ignoredNotice].compactMap { $0 }
         let notice = messages.isEmpty ? nil : messages.joined(separator: "\n")
-        return (runs, notice, unreadableCount > 0)
+        return (runs, notice, unreadableCount > 0, unreadableCount > 0 || ignoredCount > 0 ? .storage : nil)
     }
 
     /// Decodes an active-run checkpoint, returning nil for missing, unreadable, or invalid data.
@@ -5390,13 +5505,14 @@ final class EvaluationStore {
     }
 
     /// Recovers snapshot checkpoints across the catalog and advances the shared history sequence.
-    /// Returns combined notices for recoveries or checkpoints whose evidence still needs a successful save.
+    /// Returns recovery notices and typed load/save failures without treating recovered interrupted runs as failures.
     private static func recoverSnapshotRuns(
         catalog: EvaluationWorkspaceCatalog,
         supportDirectory: URL,
         historySequence: inout UInt64
-    ) -> String? {
+    ) -> (notice: String?, failure: EvaluationWorkspaceLoadFailure?) {
         var notices: [String] = []
+        var failure: EvaluationWorkspaceLoadFailure?
         for project in catalog.projects {
             for suite in project.suites {
                 let directory = EvaluationWorkspacePersistence.suiteDirectory(
@@ -5405,7 +5521,10 @@ final class EvaluationStore {
                 let checkpoints = directory.appending(path: "SnapshotRuns", directoryHint: .isDirectory)
                 guard let urls = try? FileManager.default.contentsOfDirectory(
                     at: checkpoints, includingPropertiesForKeys: [.isRegularFileKey]
-                ) else { continue }
+                ) else {
+                    if FileManager.default.fileExists(atPath: checkpoints.path) { failure = .storage }
+                    continue
+                }
                 let runsDirectory = directory.appending(path: "Runs", directoryHint: .isDirectory)
                 let existing = loadRuns(
                     from: runsDirectory, projectID: project.id, suiteID: suite.id
@@ -5418,6 +5537,7 @@ final class EvaluationStore {
                         from: url, runsDirectory: runsDirectory, existingRuns: existing,
                         minimumHistorySequence: historySequence
                     )
+                    failure = failure ?? recovery.failure
                     historySequence = max(historySequence, recovery.run?.historySequence ?? 0,
                                           recovery.pending?.completedRun?.historySequence ?? 0)
                     if recovery.pending != nil || recovery.notice != nil {
@@ -5426,25 +5546,29 @@ final class EvaluationStore {
                 }
             }
         }
-        return notices.isEmpty ? nil : notices.joined(separator: "\n")
+        return (notices.isEmpty ? nil : notices.joined(separator: "\n"), failure)
     }
 
     /// Converts an unfinished checkpoint into interrupted history or retries its captured completed run.
     /// Leaves unreadable checkpoints untouched; failed history writes return a pending record retaining terminal evidence.
-    /// Removes settled recovery markers when possible and reports preservation or cleanup outcomes.
+    /// Removes settled markers and returns typed failures separately from successful preservation notices.
     private static func recoverInterruptedRun(
         from activeRunURL: URL,
         runsDirectory: URL,
         existingRuns: [EvaluationRun],
         minimumHistorySequence: UInt64
-    ) -> (run: EvaluationRun?, pending: ActiveRunRecord?, notice: String?) {
-        guard FileManager.default.fileExists(atPath: activeRunURL.path) else { return (nil, nil, nil) }
+    ) -> (run: EvaluationRun?, pending: ActiveRunRecord?, notice: String?, failure: EvaluationWorkspaceLoadFailure?) {
+        guard FileManager.default.fileExists(atPath: activeRunURL.path) else { return (nil, nil, nil, nil) }
         guard let record = loadActiveRun(from: activeRunURL) else {
-            return (nil, nil, "An unreadable active-run record was left unchanged for recovery.")
+            return (nil, nil, "An unreadable active-run record was left unchanged for recovery.", .storage)
         }
         if existingRuns.contains(where: { $0.id == record.summary.id }) {
-            try? FileManager.default.removeItem(at: activeRunURL)
-            return (nil, nil, nil)
+            do {
+                try FileManager.default.removeItem(at: activeRunURL)
+                return (nil, nil, nil, nil)
+            } catch {
+                return (nil, nil, "A saved run's recovery marker could not be removed.", .storage)
+            }
         }
 
         let suite = record.suite
@@ -5508,13 +5632,13 @@ final class EvaluationStore {
             pending.completedRun = run
             pending.results = run.results
             pending.summary.completedSamples = run.results.count
-            return (nil, pending, "The previous run could not be saved. Restore storage access and try again: \(error.localizedDescription)")
+            return (nil, pending, "The previous run could not be saved. Restore storage access and try again: \(error.localizedDescription)", .storage)
         }
         do {
             try FileManager.default.removeItem(at: activeRunURL)
-            return (run, nil, "A run from the previous app session was preserved in history.")
+            return (run, nil, "A run from the previous app session was preserved in history.", nil)
         } catch {
-            return (run, nil, "The interrupted run was preserved, but its recovery marker could not be removed: \(error.localizedDescription)")
+            return (run, nil, "The interrupted run was preserved, but its recovery marker could not be removed: \(error.localizedDescription)", .storage)
         }
     }
 

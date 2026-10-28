@@ -35,7 +35,7 @@ struct ProductionWorkspaceView: View {
     @State private var cancellingJobID: UUID?
     @State private var scheduleHours = 24.0
     @State private var scheduleRuns = 1
-    /// Presents batch panes and restarts refresh/polling whenever the selected pane changes.
+    /// Presents batch panes with scoped trace-export telemetry and restarts refresh/polling when the selected pane changes.
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -49,6 +49,7 @@ struct ProductionWorkspaceView: View {
                 case .datasets: datasetPane
                 case .jobs: jobsPane
                 case .review: ProductionReviewPane(model: model)
+                    .environment(\.workflowTelemetry, store.telemetry)
                 case .reports: ProductionReportPane(model: model)
                 case .workers: workersPane
                 }

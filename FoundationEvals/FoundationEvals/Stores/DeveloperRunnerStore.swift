@@ -13,17 +13,23 @@ final class DeveloperRunnerStore {
     var selectedFeatureID: String?
 
     @ObservationIgnored private let evaluationStore: EvaluationStore
+    @ObservationIgnored private let runnerSnapshots: (@MainActor () -> [DeveloperRunnerSnapshot])?
+    @ObservationIgnored private let runOverride: (@MainActor (UUID, String) async throws -> EvaluationRun)?
     @ObservationIgnored private var isClosing = false
     @ObservationIgnored private var runTasks: [UUID: Task<Void, Never>] = [:]
 
     /// Creates a main-actor runner coordinator using workspace-local identity and trust storage.
-    /// Optional desktop ID and client override the persisted identity and default browsing client.
+    /// Optional transport snapshots and execution support isolated fixtures; production uses the connected client and persisted feature-run path.
     init(
         evaluationStore: EvaluationStore,
         desktopID: UUID? = nil,
-        client: DeveloperRunnerClient? = nil
+        client: DeveloperRunnerClient? = nil,
+        runnerSnapshots: (@MainActor () -> [DeveloperRunnerSnapshot])? = nil,
+        runOverride: (@MainActor (UUID, String) async throws -> EvaluationRun)? = nil
     ) {
         self.evaluationStore = evaluationStore
+        self.runnerSnapshots = runnerSnapshots
+        self.runOverride = runOverride
         let directory = evaluationStore.overviewStorageDirectory
             .appending(path: "DeveloperRunners", directoryHint: .isDirectory)
         let resolvedDesktopID = desktopID ?? Self.loadOrCreateDesktopID(
@@ -35,7 +41,7 @@ final class DeveloperRunnerStore {
         )
     }
 
-    var runners: [DeveloperRunnerSnapshot] { client.runners }
+    var runners: [DeveloperRunnerSnapshot] { runnerSnapshots?() ?? client.runners }
 
     var selectedRunnerID: UUID? {
         get { client.selectedRunnerID }
@@ -105,61 +111,109 @@ final class DeveloperRunnerStore {
 
     /// Starts the selected canonical suite on a connected runner feature and returns its tracking ID.
     /// Rejects concurrent execution or unsupported features; captures the suite revision before dispatch and publishes terminal status.
+    /// Records one content-free operation through admission and durable completion, treating assertion failures as completed executions.
     @discardableResult
     func runSelectedSuite(
         on runnerID: UUID,
         featureID: String,
         timeout: Duration = .seconds(120)
     ) throws -> UUID {
-        guard !isClosing,
-              executingRunID == nil, !evaluationStore.hasActiveExecution else {
-            throw EvaluationStoreError.resourceConflict("Another evaluation is already running.")
-        }
-        guard let runner = runners.first(where: { $0.id == runnerID && $0.state == .connected }) else {
-            throw DeveloperExecutionFailure(code: .disconnected, message: "Connect the runner before starting a run.")
-        }
-        guard let feature = runner.features.first(where: { $0.id == featureID }) else {
-            throw DeveloperExecutionFailure(
-                code: .featureNotFound,
-                message: "The selected feature is not available on this runner."
-            )
-        }
-        try EvaluationDeveloperFeatureAdapter.validate(feature)
-
-        let revision = try evaluationStore.currentSuiteRevision()
-        let runID = UUID()
-        let total = evaluationStore.suite.cases.count * evaluationStore.suite.repetitions
-        activeRuns[runID] = .init(
-            id: runID,
-            runnerID: runnerID,
-            featureID: featureID,
-            phase: .preparing,
-            completedSamples: 0,
-            totalSamples: total
-        )
-        selectedRunnerID = runnerID
-        selectedFeatureID = featureID
-
-        startTrackedExecution(runID: runID) { [weak self] in
-            guard let self else { return }
-            self.activeRuns[runID]?.phase = .dispatching
-            do {
-                let run = try await self.evaluationStore.runDeveloperFeature(
-                    id: runID,
-                    expectedRevision: revision,
-                    runner: runner,
-                    feature: feature,
-                    client: self.client,
-                    timeout: timeout
-                ) { [weak self] completed, total in
-                    await self?.updateProgress(runID: runID, completed: completed, total: total)
-                }
-                self.projectCompletion(.success(run), for: runID)
-            } catch {
-                self.projectCompletion(.failure(error), for: runID)
+        let telemetry = evaluationStore.telemetry
+        let span = telemetry?.begin(.appIntentRun)
+        do {
+            guard !isClosing,
+                  executingRunID == nil, !evaluationStore.hasActiveExecution else {
+                throw EvaluationStoreError.resourceConflict("Another evaluation is already running.")
             }
+            guard let runner = runners.first(where: { $0.id == runnerID && $0.state == .connected }) else {
+                throw DeveloperExecutionFailure(code: .disconnected, message: "Connect the runner before starting a run.")
+            }
+            guard let feature = runner.features.first(where: { $0.id == featureID }) else {
+                throw DeveloperExecutionFailure(
+                    code: .featureNotFound,
+                    message: "The selected feature is not available on this runner."
+                )
+            }
+            try EvaluationDeveloperFeatureAdapter.validate(feature)
+
+            let revision = try evaluationStore.currentSuiteRevision()
+            let runID = UUID()
+            let total = evaluationStore.suite.cases.count * evaluationStore.suite.repetitions
+            activeRuns[runID] = .init(
+                id: runID,
+                runnerID: runnerID,
+                featureID: featureID,
+                phase: .preparing,
+                completedSamples: 0,
+                totalSamples: total
+            )
+            selectedRunnerID = runnerID
+            selectedFeatureID = featureID
+
+            startTrackedExecution(runID: runID) { [self] in
+                self.activeRuns[runID]?.phase = .dispatching
+                do {
+                    let run: EvaluationRun
+                    if let runOverride {
+                        run = try await runOverride(runID, revision)
+                    } else {
+                        run = try await self.evaluationStore.runDeveloperFeature(
+                            id: runID,
+                            expectedRevision: revision,
+                            runner: runner,
+                            feature: feature,
+                            client: self.client,
+                            timeout: timeout
+                        ) { [weak self] completed, total in
+                            await self?.updateProgress(runID: runID, completed: completed, total: total)
+                        }
+                    }
+                    self.projectCompletion(.success(run), for: runID)
+                    telemetry?.end(span, failure: Self.telemetryFailure(for: run))
+                } catch {
+                    self.projectCompletion(.failure(error), for: runID)
+                    telemetry?.end(span, failure: Self.telemetryFailure(for: error))
+                }
+            }
+            return runID
+        } catch {
+            telemetry?.end(span, failure: Self.telemetryFailure(for: error))
+            throw error
         }
-        return runID
+    }
+
+    /// Waits for retained execution without cancellation, including its terminal status and telemetry publication.
+    func waitForRun(_ runID: UUID) async {
+        await runTasks[runID]?.value
+    }
+
+    /// Maps terminal runner evidence without transmitting any runner identity, response, or error description.
+    private static func telemetryFailure(for run: EvaluationRun) -> TelemetryFailure? {
+        if run.cancelled { return .cancelled }
+        switch run.terminationReason {
+        case "cancelled", "developerRunner:cancelled": return .cancelled
+        case "developerRunner:deadlineExceeded": return .timeout
+        case "developerRunner:disconnected": return .deviceUnavailable
+        case "assessmentUnavailable": return .judge
+        case .some: return .unexpected
+        case nil: break
+        }
+        if run.results.contains(where: { $0.errorCategory == "featureAdapterFailure" }) { return .generation }
+        return TelemetryFailure.evaluationFailure(results: run.effectiveResults, cancelled: false)
+    }
+
+    /// Maps structured transport and persistence failures to fixed categories, never their localized messages.
+    private static func telemetryFailure(for error: any Error) -> TelemetryFailure {
+        guard let failure = error as? DeveloperExecutionFailure else { return .classify(error) }
+        switch failure.code {
+        case .cancelled: return .cancelled
+        case .deadlineExceeded: return .timeout
+        case .disconnected: return .deviceUnavailable
+        case .untrustedPeer: return .permission
+        case .executionFailed: return .generation
+        case .featureNotFound, .incompatibleFeatureVersion, .invalidInput, .unsupportedInputContract, .protocolMismatch:
+            return .validation
+        }
     }
 
     /// Cancels owned work for the run and immediately publishes cancellation-requested detail in its UI status.
