@@ -45,9 +45,8 @@ struct ReferenceSearchIndex: Sendable {
 
         return documents.compactMap { document in
             let lowerText = Self.normalized(document.text)
-            let lowerName = Self.normalized(document.filename)
-            let textTokens = Self.tokenCounts(in: lowerText)
-            let nameTokens = Set(Self.terms(in: lowerName))
+            let textTokens = Self.tokenCounts(in: document.text)
+            let nameTokens = Set(Self.terms(in: document.filename))
             let score = terms.reduce(into: 0) { total, term in
                 total += Self.occurrenceCount(of: term, in: textTokens)
                 if nameTokens.contains(term) { total += 4 }
@@ -71,9 +70,8 @@ struct ReferenceSearchIndex: Sendable {
 
     /// Extracts up to twelve distinct normalized query terms, omitting short terms and common stop words.
     private static func terms(in query: String) -> [String] {
-        normalized(query)
-            .split { !$0.isLetter && !$0.isNumber }
-            .map(String.init)
+        tokens(in: query)
+            .map { normalized(String($0)) }
             .filter { $0.count >= 2 }
             .filter { !stopWords.contains($0) }
             .uniqued()
@@ -86,10 +84,15 @@ struct ReferenceSearchIndex: Sendable {
         text.folding(options: .diacriticInsensitive, locale: .current).lowercased(with: .current)
     }
 
-    /// Counts letter-and-number tokens in already normalized reference text.
-    private static func tokenCounts(in text: String) -> [String: Int] {
+    /// Splits query, filename, and document text on the same boundaries while retaining indices into the original string.
+    private static func tokens(in text: String) -> [Substring] {
         text.split { !$0.isLetter && !$0.isNumber }
-            .map(String.init)
+    }
+
+    /// Counts normalized letter-and-number tokens from original reference text using the query and excerpt boundaries.
+    private static func tokenCounts(in text: String) -> [String: Int] {
+        tokens(in: text)
+            .map { normalized(String($0)) }
             .reduce(into: [:]) { counts, token in counts[token, default: 0] += 1 }
     }
 
@@ -113,16 +116,21 @@ struct ReferenceSearchIndex: Sendable {
         "of", "on", "or", "that", "the", "this", "to", "was", "what", "when", "where", "which", "who", "why", "with"
     ]
 
-    /// Returns an excerpt of at most 350 UTF-8 bytes anchored at the first matching word when present, marking omitted leading text with an ellipsis.
+    /// Retains complete references within 350 UTF-8 bytes; longer excerpts include up to 80 bytes before the first matching token.
+    /// Uses original string indices and whole characters, marking omitted leading text with an ellipsis inside the byte budget.
     private static func excerpt(from text: String, matching terms: [String]) -> String {
-        var anchor = text.startIndex
-        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: .byWords) { substring, range, _, stop in
-            guard let substring else { return }
-            let token = normalized(substring)
-            if terms.contains(where: { matches(term: $0, token: token) }) {
-                anchor = range.lowerBound
-                stop = true
-            }
+        guard text.utf8.count > 350 else { return text }
+        var anchor = tokens(in: text).first { token in
+            let normalizedToken = normalized(String(token))
+            return terms.contains { matches(term: $0, token: normalizedToken) }
+        }?.startIndex ?? text.startIndex
+        var precedingBytes = 0
+        while anchor > text.startIndex {
+            let previous = text.index(before: anchor)
+            let characterBytes = text[previous..<anchor].utf8.count
+            guard precedingBytes + characterBytes <= 80 else { break }
+            precedingBytes += characterBytes
+            anchor = previous
         }
         let marker = anchor == text.startIndex ? "" : "…"
         let excerpt = boundedUTF8Prefix(String(text[anchor...]), maximumBytes: 350 - marker.utf8.count)

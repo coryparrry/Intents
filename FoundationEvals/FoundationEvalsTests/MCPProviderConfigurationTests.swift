@@ -201,6 +201,24 @@ struct MCPProviderConfigurationTests {
         #expect(store.suite.modelConfiguration.customProvider?.tokenizerEndpoint == tokenizerEndpoint)
     }
 
+    /// Retains server-owned regression provenance through an ordinary legacy suite rename.
+    @MainActor @Test func legacyReplacementPreservesRegressionProvenance() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let source = EvaluationRegressionSource(reviewID: UUID(), runID: UUID(), sampleID: UUID(), sourceDigest: "fixture")
+        store.draftSuite.scoringMode = .review
+        store.draftSuite.cases[0].reviewSource = source
+        #expect(store.saveSuite())
+        var replacement = suiteDeclaration(from: store.suite)
+        replacement.name = "Renamed suite"
+        let result = await MCPStoreAuthority.make(store: store).call(.replaceSuite(.init(
+            expectedRevision: store.suiteRevision, confirmDeletes: false, suite: replacement)))
+        #expect(!result.isError)
+        #expect(store.suite.cases[0].reviewSource == source)
+        #expect(EvaluationStore(supportDirectory: directory).suite.cases[0].reviewSource == source)
+    }
+
     private func suiteDeclaration(from suite: EvaluationSuite) -> MCPSuiteDeclaration {
         let configuration = suite.modelConfiguration
         return MCPSuiteDeclaration(

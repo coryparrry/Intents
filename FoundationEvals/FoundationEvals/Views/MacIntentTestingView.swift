@@ -17,6 +17,13 @@ struct MacIntentTestingView: View {
                         .foregroundStyle(.secondary)
                     Button("Choose built macOS app…") { choosingApp = true }
                         .disabled(model.isRunning)
+                    if model.isLoading {
+                        HStack {
+                            ProgressView().controlSize(.small)
+                            Text("Inspecting built app…")
+                            Button("Cancel") { model.cancel() }
+                        }
+                    }
                     if let catalog = model.catalog {
                         LabeledContent("Application", value: catalog.appURL.path)
                         LabeledContent("Bundle identifier", value: catalog.bundleIdentifier)

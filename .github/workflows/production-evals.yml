@@ -5,6 +5,7 @@ on:
       - 'Packages/ProductionEvals/**'
       - 'Sources/ProductionEvalsCLI/**'
       - 'Sources/FoundationEvalsDeveloper/DeveloperProductionCapture.swift'
+      - 'script/ci_production_evals.sh'
       - 'script/test_production_evals.py'
       - 'Package.swift'
       - '.github/workflows/production-evals.yml'
@@ -13,8 +14,11 @@ on:
     paths:
       - 'Packages/ProductionEvals/**'
       - 'Sources/ProductionEvalsCLI/**'
+      - 'Sources/FoundationEvalsDeveloper/DeveloperProductionCapture.swift'
+      - 'script/ci_production_evals.sh'
       - 'script/test_production_evals.py'
       - 'Package.swift'
+      - '.github/workflows/production-evals.yml'
   workflow_dispatch:
   workflow_call:
 permissions:
@@ -30,9 +34,5 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Verify datasets, recovery and 10000-response capacity
-        run: swift test --package-path Packages/ProductionEvals -j 2
-      - name: Build standalone CLI
-        run: swift build -j 2 --product intents-evals
-      - name: Verify real worker protocol and release exits
-        run: python3 script/test_production_evals.py .build/debug/intents-evals
+      - name: Qualify production recovery and worker protocol
+        run: bash script/ci_production_evals.sh

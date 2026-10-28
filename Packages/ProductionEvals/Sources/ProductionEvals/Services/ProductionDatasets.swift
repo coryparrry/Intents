@@ -6,7 +6,7 @@ extension ProductionStorage {
     /// - Parameters:
     ///   - productionData: Whether the source requires explicit redaction confirmation.
     ///   - redactionConfirmed: Caller confirmation required when `productionData` is true.
-    /// - Returns: The published dataset, or a compatible existing revision for an identical import.
+    /// - Returns: The published dataset, or a compatible existing revision whose retained bytes are verified for an identical import.
     /// - Throws: Validation, decoding, integrity, or file-system errors before publication completes.
     public func importDataset(from file: URL, name: String, version: String, sampling: ProductionSampling = .curated,
                               productionData: Bool = false, redactionConfirmed: Bool = false) throws -> ProductionDataset {
@@ -56,11 +56,11 @@ extension ProductionStorage {
         try ProductionCodec.write(dataset, to: directory.appendingPathComponent("manifest.json"), maximumBytes: 100_000)
         return try transaction {
             let destination = try datasetDirectory(dataset.revision)
-            if FileManager.default.fileExists(atPath: destination.path) { return try loadDataset(dataset.revision) }
+            if FileManager.default.fileExists(atPath: destination.path) { return try loadDataset(dataset.revision, verifyFiles: true) }
             // Preserve existing references and import idempotency, but never reuse a
             // legacy newline-delimited hash for different name/version boundaries.
             if FileManager.default.fileExists(atPath: try datasetDirectory(revisions.legacy).path) {
-                let existing = try loadDataset(revisions.legacy)
+                let existing = try loadDataset(revisions.legacy, verifyFiles: true)
                 if try Self.datasetRevisions(existing).current == revisions.current { return existing }
             }
             try FileManager.default.moveItem(at: directory, to: destination)

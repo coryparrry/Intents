@@ -23,6 +23,15 @@ enum EvaluationSchemaValidator {
             explicitNil: representNilExplicitlyInGeneratedContent, path: "$")
     }
 
+    /// Checks one alternative of an already validated schema, including nested types, constraints, references, and closed object properties.
+    static func matches(
+        _ content: GeneratedContent,
+        field: EvaluationSchemaField,
+        definitions: [String: EvaluationSchemaField]
+    ) -> Bool {
+        (try? validate(content, field: field, definitions: definitions, path: "$")) != nil
+    }
+
     /// Validates a closed JSON object and each configured property, requiring explicit nulls for missing optional values when that mode is enabled.
     private static func validateObject(
         _ content: GeneratedContent,

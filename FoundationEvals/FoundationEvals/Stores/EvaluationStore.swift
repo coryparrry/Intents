@@ -718,6 +718,7 @@ final class EvaluationStore {
         let previousDraft = draftSuite
         let previousRuns = runs
         let previousLocalState = suiteLocalState
+        let previousJudgeCheck = latestJudgeCheck
         let previousLocalStatePersistenceBlocker = suiteLocalStatePersistenceBlocker
         let previousNotice = notice
         let previousSelection = selection
@@ -755,6 +756,7 @@ final class EvaluationStore {
             draftSuite = previousDraft
             runs = previousRuns
             suiteLocalState = previousLocalState
+            latestJudgeCheck = previousJudgeCheck
             suiteLocalStatePersistenceBlocker = previousLocalStatePersistenceBlocker
             notice = previousNotice
             selection = previousSelection
@@ -877,6 +879,7 @@ final class EvaluationStore {
             loadedRuns.runs.sort { ($0.historySequence ?? 0, $0.startedAt) > ($1.historySequence ?? 0, $1.startedAt) }
         }
         suite = canonical
+        latestJudgeCheck = nil
         draftSuite = draft.suite ?? canonical
         runs = loadedRuns.runs
         latestRunHistorySequence = max(latestRunHistorySequence, recovery.run?.historySequence ?? 0,
@@ -952,6 +955,10 @@ final class EvaluationStore {
             throw error
         }
         judgeConnections = updatedConnections
+        if latestJudgeCheck?.connectionID == connection.id,
+           previousConnections.first(where: { $0.id == connection.id }) != storedConnection {
+            latestJudgeCheck = nil
+        }
     }
 
     /// Deletes unused judge metadata and its Keychain secret.
@@ -983,6 +990,7 @@ final class EvaluationStore {
             throw error
         }
         judgeConnections = updatedConnections
+        if latestJudgeCheck?.connectionID == id { latestJudgeCheck = nil }
     }
 
     /// Checks the connection asynchronously and persists its latest check result if it still exists.
@@ -1038,6 +1046,32 @@ final class EvaluationStore {
         draftSuite.judgeConfiguration.approvedConnectionDigest = connection.disclosureDigest
         draftSuite.judgeConfiguration.approvedEvidencePolicyVersion = EvaluationJudgeConfiguration.currentEvidencePolicyVersion
         _ = saveSuite()
+    }
+
+    /// Approves only the canonical disclosure inspected by an agent, rejecting pending draft edits before any mutation.
+    /// The exact revision, destination digest, and attachment policy are committed together; save failures leave approval unchanged.
+    func approveExternalJudgeDisclosure(expectedRevision: String, disclosureDigest: String) throws {
+        guard draftSuite == suite, pendingPromptEdits.isEmpty else {
+            throw EvaluationStoreError.resourceConflict("Save or discard pending suite edits, then inspect the current disclosure before approval.")
+        }
+        guard expectedRevision == (try currentSuiteRevision()) else {
+            throw EvaluationStoreError.staleRevision(current: try currentSuiteRevision())
+        }
+        try requireIdle()
+        guard suite.judgeConfiguration.usesExternalConnection,
+              let connectionID = suite.judgeConfiguration.connectionID,
+              let connection = judgeConnections.first(where: { $0.id == connectionID }),
+              connection.disclosureDigest == disclosureDigest else {
+            throw EvaluationStoreError.resourceConflict("External judge disclosure changed. Inspect it again before approval.")
+        }
+        var approved = suite
+        approved.judgeConfiguration.externalEvidenceApprovedAt = Date()
+        approved.judgeConfiguration.approvedConnectionID = connectionID
+        approved.judgeConfiguration.approvedIncludeReferenceAttachments = approved.judgeConfiguration.includeReferenceAttachments
+        approved.judgeConfiguration.approvedConnectionDigest = disclosureDigest
+        approved.judgeConfiguration.approvedEvidencePolicyVersion = EvaluationJudgeConfiguration.currentEvidencePolicyVersion
+        try commitSuite(approved)
+        draftSuite = approved
     }
 
     /// Rejudges a saved run from historical evidence and appends and selects the persisted assessment.
@@ -1132,6 +1166,7 @@ final class EvaluationStore {
         suiteLocalState = candidate
         do { try persistSuiteLocalState() }
         catch { suiteLocalState = previous; throw error }
+        latestJudgeCheck = nil
     }
 
     /// Creates and saves a regression case from a current reviewed sample and verified expected text.
@@ -1222,14 +1257,7 @@ final class EvaluationStore {
                 subjectEvidenceDigest: assessment.subjectEvidenceDigest ?? run.subjectEvidence?.digest
             ))
         }
-        let previousState = suiteLocalState
-        suiteLocalState = candidateState
-        do {
-            try persistSuiteLocalState()
-        } catch {
-            suiteLocalState = previousState
-            throw error
-        }
+        try commitReviewLocalState(candidateState)
     }
 
     /// Runs reviewed judge examples against a connection and publishes the latest report on the main actor.
@@ -1248,7 +1276,11 @@ final class EvaluationStore {
             do {
                 try Task.checkCancellation()
                 let resolved = try resolvedJudge(connectionID: connectionID)
-                let sources = suiteLocalState.reviewedJudgeExamples.map { example -> EvaluationJudgeCheckSource in
+                let checkedProjectID = selectedProjectID, checkedSuiteID = selectedSuiteID
+                let checkedRevision = try currentSuiteRevision()
+                let checkedExamples = suiteLocalState.reviewedJudgeExamples
+                let checkedExamplesData = try CanonicalJSON.data(for: checkedExamples)
+                let sources = checkedExamples.map { example -> EvaluationJudgeCheckSource in
                     do {
                         guard let run = self.runs.first(where: { $0.id == example.sourceRunID }),
                               let assessment = run.assessments?.first(where: { $0.id == example.sourceAssessmentID }) else {
@@ -1283,6 +1315,12 @@ final class EvaluationStore {
                     resolved: resolved
                 )
                 try Task.checkCancellation()
+                guard selectedProjectID == checkedProjectID, selectedSuiteID == checkedSuiteID,
+                      try currentSuiteRevision() == checkedRevision,
+                      try CanonicalJSON.data(for: suiteLocalState.reviewedJudgeExamples) == checkedExamplesData,
+                      judgeConnections.first(where: { $0.id == connectionID }) == resolved.connection else {
+                    throw EvaluationStoreError.resourceConflict("The suite, examples, or judge changed during checks. Run the checks again.")
+                }
                 latestJudgeCheck = report
             } catch is CancellationError {
             } catch {
@@ -1293,7 +1331,7 @@ final class EvaluationStore {
     }
 
     /// Approves a complete saved run and revokes earlier current approvals in suite-local state.
-    /// AI rubric baselines require a complete, compatible assessment with one observed judge identity.
+    /// Any supplied assessment must be complete and bound to the run scoring contract; AI rubrics always require one.
     /// Restores prior approvals if persistence fails.
     func approveBaseline(runID: UUID, assessmentID: UUID?, note: String? = nil) throws {
         guard let run = runs.first(where: { $0.id == runID }),
@@ -1302,13 +1340,15 @@ final class EvaluationStore {
             throw EvaluationStoreError.resourceConflict("Only a complete saved run can become a baseline.")
         }
         let scoringContract: EvaluationScoringContract
-        if run.scoringMode == .modelJudge {
+        if run.scoringMode == .modelJudge || assessmentID != nil {
             guard let assessmentID,
                   let assessment = run.assessments?.first(where: { $0.id == assessmentID }),
                   assessment.runID == run.id,
+                  run.assessments?.count(where: { $0.id == assessmentID }) == 1,
                   assessment.samples.count == run.results.count,
                   Set(assessment.samples.map(\.sampleID)) == Set(run.results.map(\.id)),
-                  assessment.samples.allSatisfy({ $0.status == .passed || $0.status == .failed }),
+                  assessment.samples.allSatisfy({ ($0.status == .passed || $0.status == .failed)
+                    && $0.errorCategory == nil && $0.errorMessage == nil }),
                   (assessment.observedJudgeIdentities ?? [assessment.judge]).count == 1,
                   run.subjectEvidence == nil
                     || assessment.subjectEvidenceDigest == run.subjectEvidence?.digest else {
@@ -1316,12 +1356,12 @@ final class EvaluationStore {
             }
             let derivedContract = try EvaluationScoringContract(
                 scoringMode: run.scoringMode,
-                rubricCriteria: assessment.rubric
+                rubricCriteria: run.scoringMode == .modelJudge ? assessment.rubric
                     .split(whereSeparator: \Character.isNewline)
                     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty },
-                judgePromptVersion: assessment.promptVersion,
-                judgePassingScore: assessment.passingScore,
+                    .filter { !$0.isEmpty } : [],
+                judgePromptVersion: run.scoringMode == .modelJudge ? assessment.promptVersion : nil,
+                judgePassingScore: run.scoringMode == .modelJudge ? assessment.passingScore : nil,
                 cases: run.plannedCases ?? run.suiteDefinition?.cases ?? []
             )
             if let captured = assessment.scoringContract {
@@ -1333,6 +1373,9 @@ final class EvaluationStore {
                 scoringContract = captured
             } else {
                 scoringContract = derivedContract
+            }
+            if run.scoringMode != .modelJudge, scoringContract != (try EvaluationScoringContract(run: run)) {
+                throw EvaluationStoreError.resourceConflict("The selected assessment used a different scoring contract from the saved run.")
             }
         } else {
             scoringContract = try EvaluationScoringContract(run: run)
@@ -2981,6 +3024,7 @@ final class EvaluationStore {
             // Publish in-memory state only after all persistent pieces commit.
             workspace = committedWorkspace
             suite = blank
+            latestJudgeCheck = nil
             draftSuite = blank
         } catch {
             var rollbackErrors: [String] = []
@@ -3971,7 +4015,8 @@ final class EvaluationStore {
             let allocation = configuration.contextAllocation(
                 contextSize: modelContextSize,
                 includesModelJudge: candidate.usesSubjectModelForJudging,
-                sharedToolOutputReserve: candidate.sharedToolOutputReserve
+                sharedToolOutputReserve: candidate.sharedToolOutputReserve,
+                maximumSubjectResponseTokens: candidate.responseTokenReserve()
             )
             let contextSizeIsAuthoritative = candidate.modelConfiguration.provider != .onDevice
                 || !onDeviceContextSizes.usedFallback(for: configuration)
@@ -4428,6 +4473,7 @@ final class EvaluationStore {
                 record.updatedAt = Date()
             }
             suite = candidate
+            if canonicalChanged { latestJudgeCheck = nil }
             draftSaveFailed = false
         } catch {
             suite = previousSuite
@@ -5607,14 +5653,20 @@ extension EvaluationStore {
     /// Freezes the draft's execution/scoring setup and verified image bytes for production, excluding dataset cases.
     /// Requires idle admission and rejects changed image evidence or an encoded context larger than 64 MB.
     func productionSnapshot() throws -> NativeProductionContext {
+        try productionSnapshot(of: draftSuite)
+    }
+
+    /// Freezes an explicit suite snapshot so agent revision checks bind the exact canonical content they inspected.
+    /// Verifies the candidate's image bytes and retains the same idle and encoded-size admission as native draft snapshots.
+    func productionSnapshot(of candidate: EvaluationSuite) throws -> NativeProductionContext {
         try requireIdle()
-        guard !draftSuite.hasDocumentCases else {
+        guard !candidate.hasDocumentCases else {
             throw ProductionFailure.invalid("Document suites cannot be converted to production datasets yet. Run this suite in Cases and Results to preserve its source evidence and case criteria.")
         }
-        var snapshot = draftSuite
+        var snapshot = candidate
         // Cases belong to the versioned dataset; retain only the execution/scoring contract here.
         snapshot.cases = []; snapshot.repetitions = 1
-        let frozenImages = try zip(draftSuite.attachments.filter { $0.kind == .image }, imageInputs(for: draftSuite)).map { attachment, image in
+        let frozenImages = try zip(candidate.attachments.filter { $0.kind == .image }, imageInputs(for: candidate)).map { attachment, image in
             let bytes = try Data(contentsOf: image.url)
             guard bytes.count == attachment.byteCount, Self.sha256(bytes) == attachment.sha256 else {
                 throw EvaluationStoreError.persistence("Image evidence does not match its saved digest.")

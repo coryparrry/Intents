@@ -42,6 +42,7 @@ import {
 } from "./native-results.js";
 
 let resumeRecoveryAutosave;
+let teardownTask;
 const transport = createAppTransport(),
   /** Looks up a workspace element by its DOM ID. */
   $ = (id) => document.getElementById(id);
@@ -499,6 +500,30 @@ function markDirty() {
 /** Waits for pending autosaves and preserves the promise continuation boundary before navigation or teardown proceeds. */
 async function flush() {
   await autosave.flush();
+}
+/**
+ * Releases recovery's snapshot pause and saves pending edits before disposing workspace services.
+ * A save failure restores the recovery pause and rejects closing without discarding the draft.
+ */
+async function teardownWorkspace() {
+  if (state.disposed) return {};
+  if (teardownTask) return teardownTask;
+  teardownTask = (async () => {
+    workspaceScope.navigate();
+    resumeRecoveryAutosave?.(); resumeRecoveryAutosave = null;
+    try { await flush(); }
+    catch (error) {
+      // Recovery may arrive while the save is pending; retain its existing pause owner.
+      if (state.catalogRecovery && !state.disposed && !resumeRecoveryAutosave) resumeRecoveryAutosave = autosave.pause();
+      throw error;
+    }
+    state.disposed = true;
+    statusPoller.dispose();
+    autosave.dispose();
+    setTimeout(() => transport.dispose(), 0);
+    return {};
+  })();
+  try { return await teardownTask; } finally { teardownTask = null; }
 }
 /** Flushes draft edits before changing pages, discarding a superseded navigation and resetting imported-view state and scroll. */
 async function setPage(page) {
@@ -1635,19 +1660,7 @@ transport.on("ui/notifications/tool-result", (payload) =>
 transport.on("ui/notifications/tool-input", (payload) => {
   if (payload.arguments?.file) openFile(payload.arguments.file).catch(fail);
 });
-/**
- * Invalidates earlier navigation and awaits autosave before disposing workspace services.
- * A flush failure rejects teardown before disposal; transport disposal is deferred until after the response.
- */
-transport.handle("ui/resource-teardown", async () => {
-  workspaceScope.navigate();
-  await flush();
-  state.disposed = true;
-  statusPoller.dispose();
-  autosave.dispose();
-  setTimeout(() => transport.dispose(), 0);
-  return {};
-});
+transport.handle("ui/resource-teardown", teardownWorkspace);
 transport.on("ui/notifications/host-context-changed", (payload) =>
   applyHostContext(payload.hostContext || payload, document),
 );

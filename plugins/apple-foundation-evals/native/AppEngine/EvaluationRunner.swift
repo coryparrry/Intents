@@ -125,7 +125,8 @@ actor EvaluationRunner {
         let allocation = suite.modelConfiguration.contextAllocation(
             contextSize: contextSize,
             includesModelJudge: suite.needsModelJudge,
-            sharedToolOutputReserve: suite.sharedToolOutputReserve
+            sharedToolOutputReserve: suite.sharedToolOutputReserve,
+            maximumSubjectResponseTokens: suite.responseTokenReserve()
         )
         var run = EvaluationRun(
             id: runID,
@@ -296,6 +297,7 @@ actor EvaluationRunner {
             let activeSession = suite.features.profile.enabled
                 ? EvaluationDynamicProfile.makeSession(model: model, instructions: suite.instructions,
                     tools: tools, configuration: suite.features.profile, recorder: profileRecorder,
+                    modelConfiguration: suite.modelConfiguration,
                     history: restoredHistory,
                     modelHistoryProjection: evaluationCase.conversation.modelHistoryProjection,
                     toolBoundary: visionToolBoundary)

@@ -202,7 +202,8 @@ enum AppEngineValidation {
         let allocation = configuration.contextAllocation(
             contextSize: modelContextSize,
             includesModelJudge: candidate.needsModelJudge,
-            sharedToolOutputReserve: candidate.sharedToolOutputReserve
+            sharedToolOutputReserve: candidate.sharedToolOutputReserve,
+            maximumSubjectResponseTokens: candidate.responseTokenReserve()
         )
         let contextSizeIsAuthoritative = reportedSize > 0
         if contextSizeIsAuthoritative, modelContextSize > 0, allocation.effectiveInputLimit < 512 {

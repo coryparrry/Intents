@@ -7,13 +7,14 @@ import Testing
 struct MacIntentSubjectLifetimeTests {
     private let launchDate = Date(timeIntervalSince1970: 1_700_000_000)
 
-    @Test func observedSubjectTerminationAcceptsOnlyCompletePassingEvidence() throws {
+    /// Accepts terminated-subject evidence only after joined product inspection completes.
+    @Test func observedSubjectTerminationAcceptsOnlyCompletePassingEvidence() async throws {
         let lifetime = MacIntentSubjectLifetime(processIdentifier: 101, launchedAt: launchDate)
         lifetime.observeTermination(processIdentifier: 101, launchedAt: launchDate)
         var productValidated = false
         var liveValidationCalled = false
 
-        try lifetime.validateCompletion(subjectTerminated: true, hasOtherRunningCopy: false,
+        try await lifetime.validateCompletion(subjectTerminated: true, hasOtherRunningCopy: false,
             summary: summary(), expectedCount: 1,
             validateLiveSubject: { liveValidationCalled = true },
             validateProduct: { productValidated = true })
@@ -23,7 +24,8 @@ struct MacIntentSubjectLifetimeTests {
     }
 
     @Test(arguments: ["unobserved", "replacement-exited", "reused-pid", "unknown-launch", "unknown-termination", "other-running", "incomplete-summary"])
-    func terminationDoesNotHideReplacementOrUnverifiedEvidence(condition: String) throws {
+    /// Rejects unobserved termination, replacements, competing apps, and incomplete test evidence.
+    func terminationDoesNotHideReplacementOrUnverifiedEvidence(condition: String) async throws {
         let lifetime = MacIntentSubjectLifetime(processIdentifier: 101, launchedAt: launchDate)
         if condition != "unobserved" {
             lifetime.observeTermination(processIdentifier: 101, launchedAt: launchDate)
@@ -41,21 +43,22 @@ struct MacIntentSubjectLifetimeTests {
         default: break
         }
 
-        #expect(throws: MacIntentTestingError.self) {
-            try lifetime.validateCompletion(subjectTerminated: true,
+        await #expect(throws: MacIntentTestingError.self) {
+            try await lifetime.validateCompletion(subjectTerminated: true,
                 hasOtherRunningCopy: condition == "other-running",
                 summary: summary(passed: condition == "incomplete-summary" ? 0 : 1), expectedCount: 1,
                 validateLiveSubject: {}, validateProduct: {})
         }
     }
 
-    @Test func aLiveSubjectStillRequiresItsSignedProcessValidation() throws {
+    /// Preserves live-code validation when asynchronous product inspection finishes.
+    @Test func aLiveSubjectStillRequiresItsSignedProcessValidation() async throws {
         let lifetime = MacIntentSubjectLifetime(processIdentifier: 101, launchedAt: launchDate)
         // A stale termination notification must not skip validation of a live app.
         lifetime.observeTermination(processIdentifier: 101, launchedAt: launchDate)
         var validatedLiveCode = false
-        #expect(throws: MacIntentTestingError.self) {
-            try lifetime.validateCompletion(subjectTerminated: false, hasOtherRunningCopy: false,
+        await #expect(throws: MacIntentTestingError.self) {
+            try await lifetime.validateCompletion(subjectTerminated: false, hasOtherRunningCopy: false,
                 summary: summary(), expectedCount: 1,
                 validateLiveSubject: {
                     validatedLiveCode = true
@@ -65,7 +68,8 @@ struct MacIntentSubjectLifetimeTests {
         #expect(validatedLiveCode)
     }
 
-    @Test func terminatedSubjectCannotQualifyAModifiedBundle() throws {
+    /// Rejects modified bundle bytes even when the selected process has ended.
+    @Test func terminatedSubjectCannotQualifyAModifiedBundle() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("TerminatedSubject-\(UUID()).app")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -76,17 +80,18 @@ struct MacIntentSubjectLifetimeTests {
         lifetime.observeTermination(processIdentifier: 101, launchedAt: launchDate)
         try Data("A different build".utf8).write(to: resource)
 
-        #expect(throws: MacIntentTestingError.self) {
-            try lifetime.validateCompletion(subjectTerminated: true, hasOtherRunningCopy: false,
+        await #expect(throws: MacIntentTestingError.self) {
+            try await lifetime.validateCompletion(subjectTerminated: true, hasOtherRunningCopy: false,
                 summary: summary(), expectedCount: 1,
                 validateLiveSubject: {}, validateProduct: { try identity.validate() })
         }
     }
 
-    @Test func replacementObservedDuringCleanupStillInvalidatesTheVerdict() throws {
+    /// Keeps replacement observation authoritative after asynchronous completion validation.
+    @Test func replacementObservedDuringCleanupStillInvalidatesTheVerdict() async throws {
         let lifetime = MacIntentSubjectLifetime(processIdentifier: 101, launchedAt: launchDate)
         lifetime.observeTermination(processIdentifier: 101, launchedAt: launchDate)
-        try lifetime.validateCompletion(subjectTerminated: true, hasOtherRunningCopy: false,
+        try await lifetime.validateCompletion(subjectTerminated: true, hasOtherRunningCopy: false,
             summary: summary(), expectedCount: 1, validateLiveSubject: {}, validateProduct: {})
         lifetime.observeLaunch(processIdentifier: 202, launchedAt: launchDate.addingTimeInterval(1))
 
@@ -96,6 +101,7 @@ struct MacIntentSubjectLifetimeTests {
     }
 
     @Test(arguments: ["original", "unobserved", "replacement", "incomplete-summary"])
+    /// Drains queued lifecycle evidence before the asynchronous completion verdict.
     func queuedTerminationIsDeliveredBeforeTheCompletionVerdict(condition: String) async throws {
         let center = NotificationCenter()
         let bundleIdentifier = "dev.intents.lifecycle.\(UUID())"
@@ -116,18 +122,18 @@ struct MacIntentSubjectLifetimeTests {
         }
         // The process is already known to have ended, but the adapter has not
         // received its queued termination event while this actor is occupied.
-        #expect(throws: MacIntentTestingError.self) {
-            try lifetime.validateCompletion(subjectTerminated: true, hasOtherRunningCopy: false,
+        await #expect(throws: MacIntentTestingError.self) {
+            try await lifetime.validateCompletion(subjectTerminated: true, hasOtherRunningCopy: false,
                 summary: summary(), expectedCount: 1, validateLiveSubject: {}, validateProduct: {})
         }
         await lifetime.deliverPendingObservations()
         let validate = {
-            try lifetime.validateCompletion(subjectTerminated: true, hasOtherRunningCopy: false,
+            try await lifetime.validateCompletion(subjectTerminated: true, hasOtherRunningCopy: false,
                 summary: summary(passed: condition == "incomplete-summary" ? 0 : 1), expectedCount: 1,
                 validateLiveSubject: {}, validateProduct: {})
         }
         if condition == "original" {
-            try validate()
+            try await validate()
             // Completion delivery does not end observation: cleanup still
             // rejects a later replacement before the final cutoff.
             Self.postReplacement(to: center, bundleIdentifier: bundleIdentifier, launchedAt: launchDate)
@@ -135,7 +141,7 @@ struct MacIntentSubjectLifetimeTests {
                 try lifetime.validateNoReplacement(hasOtherRunningCopy: false)
             }
         } else {
-            #expect(throws: MacIntentTestingError.self) { try validate() }
+            await #expect(throws: MacIntentTestingError.self) { try await validate() }
         }
     }
 

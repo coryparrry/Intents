@@ -48,6 +48,8 @@ Development examples can help tune a rubric. Reserve Held-out test for examples 
 
 Checks replay recorded outputs; they do not execute the app feature again. Summaries are grouped by scoring contract. A missing class has no estimated error rate, and unavailable evidence remains visible. Small held-out sets provide limited evidence. Calibration does not approve a baseline or certify a release.
 
+If you delete a source run or clear its history, its judge examples remain listed as **Source unavailable**. Use the trash button beside an example to **Remove judge example** before enrolling new examples or changing groups. Removal keeps its human review and the groups of all other examples; it does not restore the deleted response. Restore the saved run instead if you need to keep using that evidence.
+
 External judge credentials are bound to the saved connection ID, provider, and exact endpoint. Re-enter an older unbound key, or a key after changing provider or endpoint, in judge settings. A model change alone keeps the endpoint binding. Never add keys to exported evidence.
 
 ## Review agent suggestions

@@ -60,7 +60,8 @@ test('actual entry mounts React navigation, preserves case contracts and guards 
     assert.equal(dialogClosed, 1);
     dialogBody.close();
     assert.equal(dialogClosed, 1);
-    let saveResponse;
+    /** Accepts ordinary debounce saves during a long rendered flow while retaining its initial revision. */
+    let saveResponse = async args => ({ ...args.suite, projectId: args.projectId, revision: 'r1' });
     const savedRequests = [];
     app.transport.request = async (_method, params) => {
       assert.equal(params.name, 'eval_save_suite');
@@ -125,8 +126,10 @@ test('actual entry mounts React navigation, preserves case contracts and guards 
     assert.equal(app.state.suiteTab, 'cases'); assert.equal(main.classList.contains('legacy-view'), false);
     assert.ok(within(main).getByLabelText('Prompt'));
 
+    await act(async () => app.autosave.flush()); savedRequests.length = 0;
     let resolveSave;
     saveResponse = args => new Promise(resolve => { resolveSave = () => resolve({ ...args.suite, projectId: args.projectId, revision: 'r2' }); });
+    await act(async () => fireEvent.change(within(main).getByLabelText('Prompt'), { target: { value: 'Pending navigation prompt' } }));
     await act(async () => fireEvent.keyDown(within(sidebar).getByRole('combobox', { name: 'Project' }), { key: 'ArrowDown' }));
     await act(async () => fireEvent.click(within(document.body).getByRole('option', { name: 'Project B' })));
     assert.equal(savedRequests.length, 1); assert.equal(app.state.projectId, 'project-a'); assert.equal(app.state.draft, draft);
@@ -151,6 +154,34 @@ test('actual entry mounts React navigation, preserves case contracts and guards 
     fireEvent.keyDown(document, { key: 'Escape' }); assert.equal(sidebar.inert, true);
     fireEvent.keyDown(document, { key: 'f', metaKey: true }); assert.equal(sidebar.inert, false); assert.equal(document.activeElement, within(sidebar).getByLabelText('Search workspace'));
     fireEvent.keyDown(document, { key: 'Escape' }); assert.equal(sidebar.inert, true);
+    /** Delivers recovery during the pending close save, then rejects persistence without discarding the draft. */
+    saveResponse = async () => {
+      await app.acceptResult({ structuredContent: { page: 'catalogRecovery', message: 'Size limit reached', catalogRecovery: { kind: 'suites', totalRecords: 1, records: [], nextCursor: null } } });
+      throw Error('Revision conflict');
+    };
+    /** Delivers the host teardown request to the actual entry's transport and observes its terminal response. */
+    async function teardown(id) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { dom.window.removeEventListener('message', receive); reject(Error('Teardown did not answer')); }, 1000);
+        /** Captures only this request's JSON-RPC response. */
+        function receive(event) {
+          if (event.data?.id !== id || event.data.method) return;
+          clearTimeout(timer); dom.window.removeEventListener('message', receive); resolve(event.data);
+        }
+        dom.window.addEventListener('message', receive);
+        dom.window.dispatchEvent(new dom.window.MessageEvent('message', { source: dom.window.parent, data: { jsonrpc: '2.0', id, method: 'ui/resource-teardown' } }));
+      });
+    }
+    let failedCloses;
+    await act(async () => { failedCloses = await Promise.all([teardown('close-failed-one'), teardown('close-failed-two')]); });
+    assert.ok(failedCloses.every(response => /Revision conflict/.test(response.error.message)));
+    assert.equal(app.state.disposed, false); assert.equal(app.state.draft, failedDraft); assert.equal(app.state.dirty, true);
+    /** Allows the retained dirty draft to save on a later teardown retry. */
+    saveResponse = async args => ({ ...args.suite, id: failedDraft.id, revision: 'saved-recovery-draft', projectId: 'project-a' });
+    let closed;
+    await act(async () => { closed = await teardown('close-saved'); });
+    assert.deepEqual(closed.result, {}); assert.equal(app.state.disposed, true); assert.equal(app.state.dirty, false);
+    assert.equal(savedRequests.at(-1).suite.cases[0].prompt, 'Unsaved edit');
   } finally {
     if (app) {
       app.autosave.dispose(); app.statusPoller.dispose(); app.transport.dispose();

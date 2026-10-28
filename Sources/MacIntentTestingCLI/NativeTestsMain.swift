@@ -4,13 +4,13 @@ import MacIntentTesting
 
 @main
 struct NativeTestsMain {
-    /// Runs help, catalog discovery, or native tests; emits structured JSON and preserves issued-case mappings before execution.
+    /// Runs help, off-actor catalog discovery, or native tests; preserves issued-case mappings and emits structured JSON.
     /// Uses exit 1 for a failed/cancelled native attempt and exit 2 for invalid arguments or setup failures.
     @MainActor static func main() async {
         do {
             let options = try NativeTestsOptions(Array(CommandLine.arguments.dropFirst()))
             if options.command == .help { print(NativeTestsOptions.help); return }
-            let catalog = try MacIntentCatalog.load(appURL: options.url("app"))
+            let catalog = try await MacIntentCatalog.loadAsync(appURL: options.url("app"))
             if options.command == .catalog { try emit(catalog); return }
             let cases = try NativeTestsManifest.load(options.url("cases"))
             let issued = cases.map(NativeTestsIssuedCase.init)

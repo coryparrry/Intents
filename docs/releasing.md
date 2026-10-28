@@ -5,7 +5,7 @@
 Before merging the version/changelog PR, merge the documentation update and confirm that the release branch includes it. **Release Me** packages and publishes automatically after that PR merges; documentation work must be in the source beforehand.
 
 - Check the [README](../README.md), [user wiki](wiki/Home.md), [Review guide](EVAL_REVIEW_GUIDE.md), [production guide](PRODUCTION_EVALS_GUIDE.md), and [MCP guide](MCP_CONTROL_GUIDE.md) against the selected source commit. Keep release notes aligned with user-visible changes.
-- Run relevant regression checks and confirm CI on the exact release source. For batches, use `swift test --package-path Packages/ProductionEvals -j 2`, build `intents-evals`, and run `python3 script/test_production_evals.py .build/debug/intents-evals`.
+- Run relevant regression checks and confirm CI on the exact release source. For batches, use `bash script/ci_production_evals.sh` to run production package tests, build `intents-evals`, and test its real worker protocol.
 - Inspect the native Review and Batch runs flows on an interactive Mac, including incomplete evidence, baseline approval, and credential-change messages. Check light/dark appearance and narrow windows. Record the source and what was actually observed.
 - Keep fixture, on-device, physical-device, live-service, and signed-installer evidence distinct. A development build, a passing gate, or a judge calibration report does not establish distribution or live Siri coverage.
 - After packaging, use installer verification for signing, notarization, source SHA, architecture, and update assets. Verify an upgrade from an older installed version before claiming automatic installation and relaunch work.
@@ -15,7 +15,7 @@ Before merging the version/changelog PR, merge the documentation update and conf
 **Release Me** runs on every push to `main`, including PR merges. Release Please collects conventional commits into a version and changelog PR. Ordinary merges create or update that PR; merging the release PR automatically:
 
 1. Stages the GitHub release as a **draft** with its generated notes and exact source SHA.
-2. Waits for the successful `main` CI run at that exact commit and checks all required source jobs.
+2. Waits for the successful `main` CI run at that exact commit and checks all required source jobs, including production recovery and CLI worker qualification in **Portable regression tests**. Version-only release commits run this qualification too.
 3. Builds the app, signs it with Developer ID, creates the DMG, notarizes and staples it.
 4. Creates the version tag at the verified source if it does not already exist, uploads the DMG, `SHA256SUMS.txt`, and signed `appcast.xml`, then downloads and verifies all three.
 5. Publishes the release only after those checks pass.
@@ -29,6 +29,8 @@ unchanged. Release Me dispatches CI again on the updated release branch.
 Draft staging and release PR generation run in separate Release Please steps. A published release for the current `main` manifest permits the next proposal; an existing draft pauses generation until packaging succeeds. If the release is missing but its tag survives, the workflow stops so that potentially distributed version is not bypassed. API, authentication, and transport failures also stop the workflow.
 
 When both the manifest release and its tag return HTTP 404, Release Me can generate the next proposal without restoring or publishing the removed candidate. The configured `bootstrap-sha` is the merged 1.5.0 release PR commit: it bounds this recovery to changes after that already-recorded version and avoids repeating its feature entries. Normal runs with an available baseline ignore the bootstrap boundary. Installer preflight has the contents permission needed to read drafts, while signing and publication remain in the protected release job. A run with no releasable changes skips PR CI without parsing an absent PR output.
+
+The source verifier also requires the successful production qualification step in that run. A historical green run that predates this qualification does not approve an installer.
 
 No separate packaging action is required. A missing signing secret, failed CI/build/notarization, source mismatch, failed upload, or failed download verification leaves the release unpublished. The installer is built from the release PR's source, never a previously generated local DMG. Hosted build numbers are fixed to that source's Git commit count, which increases as commits land on `main`.
 

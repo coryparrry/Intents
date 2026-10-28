@@ -3,6 +3,91 @@ import Testing
 @testable import FoundationEvals
 
 struct MCPTransportRegressionTests {
+    /// Keeps manual setup usable after unsupported TOML blocks automatic installation, including a
+    /// copied-but-failed startup outcome, without touching the real clipboard or configuration.
+    @MainActor
+    @Test(arguments: [false, true])
+    func manualConfigurationStartsConnectorWithoutEditingUnsupportedCodexFile(startupFails: Bool) async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "MCPManualSetupTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configURL = directory.appending(path: "config.toml")
+        let original = Data("mcp_servers = { other = { url = \"http://example.invalid/mcp\" } }\n".utf8)
+        try original.write(to: configURL)
+        let suiteName = "MCPManualSetupTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let credential = String(repeating: "A", count: 43)
+        let configuration = try CodexMCPConfiguration(credential: credential)
+        var startedConfigurations: [CodexMCPConfiguration] = []
+        var copiedValues: [String] = []
+        let controller = MCPSettingsController(serverControl: .init(start: { configuration in
+            startedConfigurations.append(configuration)
+            if startupFails { throw MCPServerError.startFailed("fixture failure") }
+        }, stop: {}), userDefaults: defaults, credentialStore: .init(load: { credential },
+            save: { _ in Issue.record("Unexpected credential save") },
+            remove: { Issue.record("Unexpected credential removal") }), configurationDirectory: directory,
+            pasteboardWriter: { copiedValues.append($0) })
+
+        await controller.installOrUpdateCodex()
+        #expect(controller.installationState == .needsAttention)
+        #expect(controller.serverState == .stopped)
+        #expect(startedConfigurations.isEmpty)
+
+        await controller.copyManualConfiguration()
+
+        #expect(copiedValues == [configuration.manualSnippet])
+        #expect(startedConfigurations == [configuration])
+        #expect(controller.serverState == (startupFails ? .failed : .running))
+        #expect(!controller.isBusy)
+        #expect(controller.installationState == .needsAttention)
+        #expect(controller.notice?.contains("Codex configuration copied") == true)
+        #expect(controller.notice?.contains(startupFails ? "could not start" : "connector is running") == true)
+        #expect(try Data(contentsOf: configURL) == original)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["config.toml"])
+    }
+
+    /// Prevents duplicate copies, installation, or credential removal from interleaving with a manual
+    /// connector startup that is suspended; all clipboard output stays in an injected synthetic sink.
+    @MainActor
+    @Test(.timeLimit(.minutes(1)))
+    func manualConfigurationSerializesSettingsActionsDuringStartup() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "MCPManualSetupTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let suiteName = "MCPManualSetupTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var startContinuation: CheckedContinuation<Void, Never>?
+        var starts = 0, copies = 0, stops = 0, removals = 0
+        let controller = MCPSettingsController(serverControl: .init(start: { _ in
+            starts += 1
+            await withCheckedContinuation { startContinuation = $0 }
+        }, stop: { stops += 1 }), userDefaults: defaults, credentialStore: .init(
+            load: { String(repeating: "A", count: 43) },
+            save: { _ in Issue.record("Unexpected credential save") }, remove: { removals += 1 }),
+            configurationDirectory: directory, pasteboardWriter: { _ in copies += 1 })
+        let copying = Task { await controller.copyManualConfiguration() }
+        while startContinuation == nil { await Task.yield() }
+        #expect(controller.isBusy)
+
+        await controller.copyManualConfiguration()
+        await controller.installOrUpdateCodex()
+        await controller.removeFromCodex()
+
+        #expect(starts == 1)
+        #expect(copies == 1)
+        #expect(stops == 0)
+        #expect(removals == 0)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+        startContinuation?.resume()
+        await copying.value
+        #expect(controller.serverState == .running)
+        #expect(!controller.isBusy)
+    }
+
     @MainActor
     @Test func changedCredentialRestartsRunningListener() async throws {
         let directory = FileManager.default.temporaryDirectory

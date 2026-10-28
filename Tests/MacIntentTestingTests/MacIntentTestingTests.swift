@@ -46,6 +46,78 @@ struct MacIntentTestingTests {
         #expect(throws: (any Error).self) { try MacIntentCatalog.load(appURL: directory) }
     }
 
+    /// Reloading an installed path must read the replacement build even when Foundation retains the first bundle's Info.plist.
+    @Test func reloadReadsReplacementBundleIdentifierAndExecutable() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MacIntentCatalog-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = root.appendingPathComponent("Fixture.app")
+        try writeFixtureApp(at: app, bundleIdentifier: "example.original", executableName: "Original")
+        let cached = try #require(Bundle(url: app))
+        #expect(cached.bundleIdentifier == "example.original")
+        #expect(cached.executableURL?.lastPathComponent == "Original")
+        let original = try MacIntentCatalog.load(appURL: app)
+
+        try FileManager.default.removeItem(at: app.appendingPathComponent("Contents/MacOS/Original"))
+        try writeFixtureApp(at: app, bundleIdentifier: "example.replacement", executableName: "Replacement")
+        let replacement = try MacIntentCatalog.load(appURL: app)
+
+        #expect(replacement.bundleIdentifier == "example.replacement")
+        #expect(replacement.actions.map(\.id) == ["Echo"])
+        #expect(replacement.productIdentity != original.productIdentity)
+    }
+
+    /// App executable metadata is a single filename and cannot select parent directories or absolute paths.
+    @Test(arguments: ["../Outside", "../../Outside", "../../../Outside", "/Outside", ".", "..", ""])
+    func executableMetadataCannotEscapeItsDirectory(executableName: String) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MacIntentPath-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = root.appendingPathComponent("Fixture.app")
+        try writeFixtureApp(at: app, bundleIdentifier: "example.fixture", executableName: "Fixture")
+        if !["", ".", ".."].contains(executableName) {
+            let target = app.appendingPathComponent("Contents/MacOS").appendingPathComponent(executableName).standardizedFileURL
+            try #require(target.path.hasPrefix(root.standardizedFileURL.path + "/"))
+            try Data("synthetic escaped executable".utf8).write(to: target)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: target.path)
+        }
+        let info: [String: Any] = ["CFBundleIdentifier": "example.fixture", "CFBundlePackageType": "APPL",
+                                   "CFBundleExecutable": executableName]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: app.appendingPathComponent("Contents/Info.plist"))
+
+        #expect(throws: MacIntentTestingError.self) { try MacIntentCatalog.load(appURL: app) }
+    }
+
+    /// A filename that resolves through a symlink still must point at executable bytes inside the selected app.
+    @Test func executableSymlinkCannotEscapeTheApp() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MacIntentLink-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = root.appendingPathComponent("Fixture.app")
+        try writeFixtureApp(at: app, bundleIdentifier: "example.fixture", executableName: "Fixture")
+        let executable = app.appendingPathComponent("Contents/MacOS/Fixture")
+        let outside = root.appendingPathComponent("Outside")
+        try FileManager.default.moveItem(at: executable, to: outside)
+        try FileManager.default.createSymbolicLink(at: executable, withDestinationURL: outside)
+
+        #expect(throws: MacIntentTestingError.self) { try MacIntentCatalog.load(appURL: app) }
+    }
+
+    /// A rebuilt bundle's current platform requirement takes precedence over a previously cached native Info.plist.
+    @Test func reloadRejectsReplacementIPhoneOnlyPlatform() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MacIntentPlatform-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = root.appendingPathComponent("Fixture.app")
+        try writeFixtureApp(at: app, bundleIdentifier: "example.fixture", executableName: "Fixture")
+        let cached = try #require(Bundle(url: app))
+        #expect(cached.object(forInfoDictionaryKey: "LSRequiresIPhoneOS") == nil)
+        _ = try MacIntentCatalog.load(appURL: app)
+        let info: [String: Any] = ["CFBundleIdentifier": "example.fixture", "CFBundlePackageType": "APPL",
+                                   "CFBundleExecutable": "Fixture", "LSRequiresIPhoneOS": true]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: app.appendingPathComponent("Contents/Info.plist"))
+
+        #expect(throws: MacIntentTestingError.self) { try MacIntentCatalog.load(appURL: app) }
+    }
+
     @Test func inputsMustMatchDeclaredTypes() {
         let p = MacIntentParameter(id: "value", name: "Value", type: "Int", required: true)
         for invalid in ["{}", #"{"value":true}"#, #"{"value":"1"}"#, #"{"value":1.2}"#,
@@ -170,6 +242,22 @@ struct MacIntentTestingTests {
         #expect(hidden.title == "Hidden action")
         #expect(hidden.parameters.first?.type == "unsupported")
         #expect(hidden.outputType == "unsupported")
+    }
+
+    /// Writes a small synthetic native app with a fresh Info.plist, executable fixture, and one compiled action.
+    private func writeFixtureApp(at app: URL, bundleIdentifier: String, executableName: String) throws {
+        let contents = app.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: contents.appendingPathComponent("MacOS"), withIntermediateDirectories: true)
+        let metadata = contents.appendingPathComponent("Resources/Metadata.appintents")
+        try FileManager.default.createDirectory(at: metadata, withIntermediateDirectories: true)
+        let info = ["CFBundleIdentifier": bundleIdentifier, "CFBundlePackageType": "APPL", "CFBundleExecutable": executableName]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: contents.appendingPathComponent("Info.plist"))
+        let executable = contents.appendingPathComponent("MacOS").appendingPathComponent(executableName)
+        try Data("synthetic executable".utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        try Data(#"{"version":1,"actions":{"Echo":{"identifier":"Echo","parameters":[]}}}"#.utf8)
+            .write(to: metadata.appendingPathComponent("extract.actionsdata"))
     }
 
 }

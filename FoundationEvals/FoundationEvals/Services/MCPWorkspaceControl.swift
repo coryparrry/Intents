@@ -299,7 +299,8 @@ import Foundation
           "External judge disclosure changed. Inspect its current connection and digest before approval."
         )
       }
-      store.approveExternalJudgeDisclosure()
+      try store.approveExternalJudgeDisclosure(
+        expectedRevision: call.text("expectedRevision"), disclosureDigest: call.text("disclosureDigest"))
       guard store.suite.judgeConfiguration.hasCurrentExternalEvidenceApproval(for: connection)
       else { throw EvaluationStoreError.persistence("Disclosure approval was not saved.") }
     case "eval_reassess_run":

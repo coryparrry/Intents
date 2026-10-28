@@ -34,6 +34,7 @@ jobs:
       ui: ${{ steps.route.outputs.ui }}
       input_conversion: ${{ steps.route.outputs.input_conversion }}
       sdk_consumer: ${{ steps.route.outputs.sdk_consumer }}
+      production_evals: ${{ steps.route.outputs.production_evals }}
       native_tests: ${{ steps.route.outputs.native_tests }}
       regression: ${{ steps.route.outputs.regression }}
       swift_suites: ${{ steps.route.outputs.swift_suites }}
@@ -122,6 +123,9 @@ jobs:
           path: |
             ${{ runner.temp }}/core-tests.xcresult
             ${{ runner.temp }}/core-tests.log
+      - name: Qualify production recovery and worker protocol
+        if: ${{ !cancelled() && steps.source.outcome == 'success' && needs.changes.outputs.production_evals == 'true' }}
+        run: bash script/ci_production_evals.sh
       - name: Run selected macOS script tests
         if: ${{ !cancelled() && steps.source.outcome == 'success' && needs.changes.outputs.macos_tests != '[]' }}
         env:

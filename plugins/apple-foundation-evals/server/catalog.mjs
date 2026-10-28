@@ -4,6 +4,7 @@ export const UI_META = { ui: { csp: { connectDomains: [], resourceDomains: [] } 
 import { SUITE_SCHEMA, DRAFT_SUITE_SCHEMA, FIELD_SCHEMA, text, obj, uuid, draftSchema } from './app-schema.mjs';
 import { RECOVERY_KINDS } from './catalog-recovery.mjs';
 import { WORKFLOW_TOOLS } from './workflow-tools.mjs';
+import { MAX_SUITE_BUNDLE_BYTES } from './validation.mjs';
 export { SUITE_SCHEMA };
 const referenceFiles = { type: 'array', maxItems: 20, items: obj({ attachmentId: uuid, name: text(1024, 1), mimeType: text(128, 1), base64: text(13333336, 1) }, ['name', 'mimeType', 'base64']) };
 const icon = { src: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.33"><path d="M4 3h12v14H4zM7 7h6M7 10h6M7 13h3"/></svg>'), mimeType: 'image/svg+xml' };
@@ -29,7 +30,7 @@ export const TOOLS = [
   define('eval_create_project', 'Create project', 'Create a local evaluation project.', obj({ name: text(160, 1), description: text(4096) }, ['name']), false),
   define('eval_update_project', 'Update project', 'Rename or describe a local project.', obj({ projectId: uuid, name: text(160, 1), description: text(4096) }, ['projectId']), false),
   define('eval_project_overview', 'Project overview', 'Summarize current and stale suite evidence for a project.', obj({ projectId: uuid }, ['projectId'])),
-  define('eval_import_suite', 'Import suite', 'Import an app-format or flat suite, preserving identities, settings and portable embedded text references. Spotlight search authorization is reset; enable it locally after import.', obj({ suite: DRAFT_SUITE_SCHEMA, json: text(16777216), referenceFiles, projectId: uuid, expectedRevision: text(64) }), false),
+  define('eval_import_suite', 'Import suite', 'Import an app-format or flat suite, preserving identities, settings and portable embedded text references within a complete 32 MiB bundle. Spotlight search authorization is reset; enable it locally after import.', obj({ suite: DRAFT_SUITE_SCHEMA, json: text(MAX_SUITE_BUNDLE_BYTES), referenceFiles, projectId: uuid, expectedRevision: text(64) }), false),
   define('eval_export_suite', 'Export suite', 'Export the portable suite definition using application field names.', obj({ suiteId: uuid }, ['suiteId'])),
   define('eval_import_cases', 'Import cases', 'Append named cases from JSON, JSONL or CSV using the app case importer fields.', obj({ suiteId: uuid, format: { type: 'string', enum: ['json', 'jsonl', 'csv'] }, text: text(5000000), mapping: obj({ nameColumn: text(256), promptColumn: text(256, 1), expectedColumn: text(256) }, ['promptColumn']), expectedRevision: text(64) }, ['suiteId', 'format', 'text']), false),
   define('eval_add_reference_text', 'Add reference text', 'Attach a portable UTF-8 text reference with verified size and SHA-256 integrity.', obj({ suiteId: uuid, name: text(1024, 1), text: text(524288), expectedRevision: text(64) }, ['suiteId', 'name', 'text']), false),

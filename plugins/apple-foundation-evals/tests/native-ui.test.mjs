@@ -40,6 +40,40 @@ test('a failed autosave preserves pending edits and a retry saves them',async()=
  const draft={name:'edited'},states=[];let attempts=0;
  const queue=createDraftAutosave({read:()=>draft,save:async value=>{if(++attempts===1)throw Error('Revision conflict');return value;},applied:()=>{},status:status=>states.push(status),error:()=>{},delay:10000});queue.changed();await assert.rejects(queue.flush(),/Revision conflict/);assert.equal(draft.name,'edited');assert.equal(states.at(-1),'error');await queue.flush();assert.equal(states.at(-1),'saved');queue.dispose();
 });
+test('a clean paused autosave flush waits for its mutation owner to release the pause', async t => {
+ const queue = createDraftAutosave({
+  /** Supplies an already-saved fixture draft for the clean pause check. */
+  read: () => ({ name: 'saved' }),
+  /** Fails if a clean flush attempts to persist unchanged content. */
+  save: async () => { throw Error('Unexpected save'); },
+  /** Leaves the fixture unchanged because no save response is expected. */
+  applied() {},
+  /** Ignores presentation updates while the assertions inspect flush completion. */
+  status() {},
+  /** Leaves unexpected timer failures to the explicit flush assertions. */
+  error() {} });
+ t.after(() => queue.dispose()); const release = queue.pause();
+ let finished = false; const pending = queue.flush().then(() => { finished = true; });
+ await new Promise(resolve => setImmediate(resolve)); assert.equal(finished, false); release(); await pending;
+});
+test('dirty paused autosave still waits and saves the latest draft after release', async t => {
+ const draft = { name: 'pending' }, saved = [];
+ const queue = createDraftAutosave({
+  /** Keeps the draft identity stable while its pending name changes. */
+  read: () => draft,
+  /** Records each persisted snapshot so pause release can be checked against the latest edit. */
+  save: async value => { saved.push(value); return value; },
+  /** Preserves the fixture's identity without adding unrelated response metadata. */
+  applied() {},
+  /** Ignores labels because this check observes saved snapshots directly. */
+  status() {},
+  /** Leaves timer-error presentation outside the pause-ordering fixture. */
+  error() {}, delay: 10000 });
+ t.after(() => queue.dispose()); const release = queue.pause(); queue.changed();
+ let finished = false; const pending = queue.flush().then(() => { finished = true; });
+ await new Promise(resolve => setImmediate(resolve)); assert.equal(finished, false); assert.equal(saved.length, 0);
+ draft.name = 'latest'; release(); await pending; assert.equal(saved[0].name, 'latest');
+});
 test('display retains named cases despite native uppercase UUIDs and app scoring scale',()=>{
  const id='6AA53269-2571-4005-B40D-25BC14D518FD',run={suite:{cases:[{id:id.toLowerCase(),name:'Keep preference'}]}};
  assert.equal(caseTitle({id,name:'Latest preference wins'}),'Latest preference wins');assert.equal(resultTitle(run,{caseId:id}),'Keep preference');assert.equal(resultTitle(run,{caseId:id,appSample:{caseName:'Original case name'}}),'Original case name');assert.equal(nativeScore({score:3,scoreScale:'appRubric'}),'3/4');assert.equal(nativeScore({score:1}),'1');

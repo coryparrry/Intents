@@ -32,6 +32,20 @@ SDK_CONSUMER_PREFIXES = (
     "Tests/MacIntentTestingTests/", "Tests/FoundationEvalsDeveloperTests/",
 )
 PRODUCTION_PACKAGE = "Packages/ProductionEvals/"
+PRODUCTION_QUALIFICATION_PATHS = {
+    ".github/workflows/production-evals.yml", "script/ci_production_evals.sh",
+    "script/test_production_evals.py",
+    "Sources/FoundationEvalsDeveloper/DeveloperProductionCapture.swift",
+}
+DOCUMENT_REPORT_TESTS = {
+    "script.tests.test_document_quality_report", "script.tests.test_document_semantic_report",
+}
+DOCUMENT_REPORT_INPUTS = {
+    APP + "Services/EvaluationDocumentDraftPipeline.swift",
+    APP + "Services/EvaluationDocumentSemanticReviewer.swift",
+    APP + "Models/EvaluationDocumentModels.swift",
+    TESTS + "EvaluationDocumentQualityTests.swift",
+}
 PRODUCTION_DEVELOPER_SUITES = {
     "DeveloperProtocolTests", "DeveloperFeatureRegistryTests", "DeveloperRunnerHostEngineTests",
 }
@@ -192,6 +206,12 @@ PYTHON_DEPENDENCIES = {
     "script/docstring_coverage.py": {"script.tests.test_docstring_coverage", "script.tests.test_changed_function_docs"},
     "Tools/DocstringCoverage/parse.mjs": {"script.tests.test_docstring_coverage", "script.tests.test_changed_function_docs"},
     ".github/workflows/docstrings.yml": {"script.tests.test_changed_function_docs", "script.tests.test_docstring_coverage"},
+    "script/document_quality_report.py": DOCUMENT_REPORT_TESTS,
+    "script/document_semantic_report.py": DOCUMENT_REPORT_TESTS,
+    "script/ci_production_evals.sh": {"script.tests.test_ci_production_evals"},
+    ".github/workflows/production-evals.yml": {
+        "script.tests.test_ci_production_evals", "script.tests.test_ci_workflow",
+    },
     "script/verify_mcp_app_control.py": {"script.tests.test_verify_mcp_app_control"},
     "script/foundation-evals": {"script.tests.test_foundation_evals_cli"},
     "script/upload_posthog_symbols.sh": {"script.tests.test_upload_posthog_symbols"},
@@ -411,6 +431,7 @@ def full_coverage(reason, root=ROOT, extra_classes=(), extra_groups=()):
         "ui": True,
         "input_conversion": False,
         "sdk_consumer": True,
+        "production_evals": True,
         "swift_suites": ["*"],
         "python_tests": sorted(python_test_inventory(root)),
         "macos_tests": sorted(MACOS_TESTS),
@@ -434,10 +455,15 @@ def coverage_plan(paths, root=ROOT):
             "Full coverage: unsupported event, malformed payload, or unavailable Git history.",
             root,
         )
-    native = ui = input_conversion = sdk_consumer = False
+    native = ui = input_conversion = sdk_consumer = production_evals = False
     ui_groups, ui_fallback = set(), False
     swift, python, macos, reasons = set(), set(), set(), set()
     for path in paths:
+        if path in DOCUMENT_REPORT_INPUTS:
+            python.update(DOCUMENT_REPORT_TESTS)
+        production_evals |= path in PRODUCTION_QUALIFICATION_PATHS or path.startswith(
+            (PRODUCTION_PACKAGE, "Sources/ProductionEvalsCLI/")
+        )
         sdk_consumer |= path in SDK_CONSUMER_PATHS or path.startswith(SDK_CONSUMER_PREFIXES) or production_package_runtime(path)
 
         if path in FULL_COVERAGE_PATHS:
@@ -490,14 +516,14 @@ def coverage_plan(paths, root=ROOT):
                 )
             else:
                 reasons.add(
-                    "Production package tests and documentation use the dedicated production-evals workflow without unrelated root runtime checks."
+                    "Production package tests and documentation run production qualification without unrelated root runtime checks."
                 )
         elif path.startswith("Tests/"):
             swift.update(package_test_suites(path, root))
             reasons.add("Package test changes select declared suites; helper and fixture changes select the full package.")
         elif path.startswith("Sources/MacIntentTestingCLI/"):
-            swift.add("NativeTestsCLITests")
-            reasons.add("Native intent CLI changes build the command and run its parser/manifest contracts.")
+            swift.update({"NativeTestsCLITests", "NativeTestsSignalTests"})
+            reasons.add("Native intent CLI changes run parser, manifest, and signal cleanup contracts.")
         elif package_ui_groups(path) is not None:
             groups = package_ui_groups(path)
             swift.add("*")
@@ -566,11 +592,14 @@ def coverage_plan(paths, root=ROOT):
             )
         else:
             return full_coverage(f"Full coverage: unclassified path {path}.", root, extra_classes, affected_groups)
+    if production_evals:
+        reasons.add("Production changes run storage/recovery and real CLI worker qualification in the required regression worker.")
     return with_matrices({
         "native": native,
         "ui": ui,
         "input_conversion": input_conversion,
         "sdk_consumer": sdk_consumer,
+        "production_evals": production_evals,
         "swift_suites": ["*"] if "*" in swift else sorted(swift),
         "python_tests": sorted(python),
         "macos_tests": sorted(macos),
@@ -654,10 +683,10 @@ def main():
         plan["reasons"] = ["Full coverage: main push verifies the complete ordinary suite after affected PR checks."]
     else:
         plan = coverage(paths)
-    outputs = {key: str(plan[key]).lower() for key in ("native", "ui", "input_conversion", "sdk_consumer")}
+    outputs = {key: str(plan[key]).lower() for key in ("native", "ui", "input_conversion", "sdk_consumer", "production_evals")}
     outputs["regression"] = str(
         bool(plan["swift_suites"] or plan["macos_tests"] or plan["native_tests"]
-             or plan["sdk_consumer"] or plan["input_conversion"])
+             or plan["sdk_consumer"] or plan["input_conversion"] or plan["production_evals"])
     ).lower()
     outputs.update(
         {
@@ -675,7 +704,8 @@ def main():
             + "\n\n"
         )
         summary.write(
-            f"Native build: **{plan['native']}**. UI test bundle: **{plan['ui']}**.\n\n"
+            f"Native build: **{plan['native']}**. UI test bundle: **{plan['ui']}**. "
+            f"Production qualification: **{plan['production_evals']}**.\n\n"
         )
         summary.write("### UI suites excluded from CI\n\n")
         summary.writelines(f"- `{test}`: {reason}\n" for test, reason in CI_EXCLUDED_UI_TESTS.items())

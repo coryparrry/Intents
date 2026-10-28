@@ -218,7 +218,7 @@ struct CodexMCPInstaller {
             throw CodexMCPInstallerError.invalidUTF8
         }
         guard let range = try Self.managedRange(in: text) else { return false }
-        return text[range].contains(configuration.tomlBlock)
+        return text[range].replacingOccurrences(of: "\r\n", with: "\n").contains(configuration.tomlBlock)
             && snapshot.permissions & 0o077 == 0
     }
 
@@ -292,8 +292,8 @@ struct CodexMCPInstaller {
     }
 
     /// Returns configuration text with the managed block replaced or appended. Validates the unmanaged
-    /// TOML subset and rejects an existing unmanaged foundation-evals entry; performs no filesystem
-    /// writes.
+    /// TOML subset and complete proposed structure, refusing unmanaged fields that continue the
+    /// managed section. Preserves surrounding bytes and existing line endings; performs no writes.
     static func installing(
         configuration: CodexMCPConfiguration,
         into original: String
@@ -305,14 +305,21 @@ struct CodexMCPInstaller {
         }
 
         if let managed {
-            return original.replacingCharacters(in: managed, with: configuration.tomlBlock + "\n")
+            try requireManagedSectionBoundary(in: original, after: managed)
+            let newline = original[managed].contains("\r\n") ? "\r\n" : "\n"
+            let block = configuration.tomlBlock.replacingOccurrences(of: "\n", with: newline)
+            let updated = original.replacingCharacters(in: managed, with: block + newline)
+            _ = try inspectTOML(updated)
+            return updated
         }
 
-        guard !original.isEmpty else {
-            return configuration.tomlBlock + "\n"
-        }
-        let separator = original.hasSuffix("\n\n") ? "" : (original.hasSuffix("\n") ? "\n" : "\n\n")
-        return original + separator + configuration.tomlBlock + "\n"
+        let newline = original.contains("\r\n") ? "\r\n" : "\n"
+        let separator = original.isEmpty || original.hasSuffix(newline + newline)
+            ? "" : (original.hasSuffix(newline) ? newline : newline + newline)
+        let block = configuration.tomlBlock.replacingOccurrences(of: "\n", with: newline)
+        let updated = original + separator + block + newline
+        _ = try inspectTOML(updated)
+        return updated
     }
 
     /// Returns text with the managed block and an adjacent separator removed, then validates the
@@ -320,18 +327,14 @@ struct CodexMCPInstaller {
     /// throw.
     static func removingManagedBlock(from original: String) throws -> String {
         guard let managed = try managedRange(in: original) else { return original }
+        try requireManagedSectionBoundary(in: original, after: managed)
         var removal = managed
         if removal.lowerBound > original.startIndex {
             let prior = original.index(before: removal.lowerBound)
-            if original[prior] == "\n", prior > original.startIndex {
+            if isLineEnding(original[prior]), prior > original.startIndex {
                 let beforePrior = original.index(before: prior)
-                if original[beforePrior] == "\n" {
+                if isLineEnding(original[beforePrior]) {
                     removal = prior..<removal.upperBound
-                } else if original[beforePrior] == "\r", beforePrior > original.startIndex {
-                    let beforeReturn = original.index(before: beforePrior)
-                    if original[beforeReturn] == "\n" {
-                        removal = beforePrior..<removal.upperBound
-                    }
                 }
             }
         }
@@ -565,6 +568,20 @@ struct CodexMCPInstaller {
         enum Kind { case begin, end }
     }
 
+    /// Recognizes TOML line endings as Swift Characters, where CRLF is one grapheme cluster.
+    private static func isLineEnding(_ character: Character) -> Bool {
+        character == "\n" || character == "\r\n"
+    }
+
+    /// Refuses unmanaged assignments after the closing marker until another table begins, since
+    /// removing or replacing the block would change their scope or duplicate generated settings.
+    private static func requireManagedSectionBoundary(in text: String, after managed: Range<String.Index>) throws {
+        if let first = try statements(in: String(text[managed.upperBound...])).first,
+           !first.text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("[") {
+            throw CodexMCPInstallerError.conflictingConfiguration
+        }
+    }
+
     /// Finds one ordered pair of top-level managed markers, ignoring markers within multiline values.
     /// Returns nil when absent and throws for incomplete or duplicate marker pairs.
     private static func managedRange(in text: String) throws -> Range<String.Index>? {
@@ -574,7 +591,7 @@ struct CodexMCPInstaller {
         var multilineQuote: Character?
         var start = text.startIndex
         while start < text.endIndex {
-            let newline = text[start...].firstIndex(of: "\n")
+            let newline = text[start...].firstIndex(where: isLineEnding)
             let contentEnd = newline ?? text.endIndex
             var content = text[start..<contentEnd]
             if content.last == "\r" { content = content.dropLast() }
@@ -684,7 +701,7 @@ struct CodexMCPInstaller {
         var braceDepth = 0
         var multilineQuote: Character?
 
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        for rawLine in text.split(omittingEmptySubsequences: false, whereSeparator: isLineEnding) {
             let line = try uncommented(
                 String(rawLine),
                 squareDepth: &squareDepth,

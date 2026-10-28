@@ -23,6 +23,26 @@ private struct RateAccumulator {
     }
 }
 
+/// Keeps dimension names and values distinct even when either contains the report's display delimiter.
+private struct CohortIdentity: Hashable {
+    let key: String
+    let value: String
+    var displayName: String { "\(key)=\(value)" }
+}
+
+/// Compares bounded integer response counts against the decimal policy value without subtracting binary rates.
+/// Decimal cross products preserve exact boundaries such as 8/10 minus 7/10 with a 0.1 allowance.
+private func exceedsRegressionLimit(baseline: ProductionRate, candidate: ProductionRate, limit: Double) -> Bool {
+    let before = baseline.passed + baseline.failed, after = candidate.passed + candidate.failed
+    guard before > 0, after > 0 else { return false }
+    let numerator = baseline.passed * after - candidate.passed * before
+    guard numerator > 0 else { return false }
+    // A positive Double below Decimal's exponent range is smaller than any
+    // positive rate difference permitted by the bounded dataset/job counts.
+    let allowance = Decimal(string: String(limit), locale: Locale(identifier: "en_US_POSIX")) ?? 0
+    return Decimal(numerator) > allowance * Decimal(before * after)
+}
+
 extension ProductionStorage {
     /// Returns a slot-ordered page of committed records across validated chunks.
     /// - Parameters:
@@ -52,11 +72,11 @@ extension ProductionStorage {
         let job = try loadJob(jobID)
         let reader = try ProductionDatasetReader(storage: self, revision: job.datasetRevision)
         let dataset = reader.dataset, control = try auditedCostControl(job)
-        var total = RateAccumulator(), groups: [String: RateAccumulator] = [:], histogram: [Int: Int] = [:]
+        var total = RateAccumulator(), groups: [CohortIdentity: RateAccumulator] = [:], histogram: [Int: Int] = [:]
         var unavailableLatency = 0
-        var latencySum = 0.0
+        var latencyMean = 0.0, costOverflow = false
         var cost = 0.0, missingCost = 0, completed = 0, reviewed = 0, latencyCount = 0
-        var critical: [String: Bool] = [:], required: [String: Bool] = [:]
+        var critical: [String: Bool] = [:], required = Set<CohortIdentity>()
         var evidenceHash = SHA256()
         evidenceHash.update(data: Data(job.revision.utf8))
         evidenceHash.update(data: try ProductionCodec.encode(control))
@@ -87,28 +107,43 @@ extension ProductionStorage {
                 dimensions["model"] = record.worker.model; dimensions["deviceLocale"] = record.worker.locale; dimensions["hardware"] = record.worker.hardware; dimensions["target"] = String(record.targetIndex)
                 dimensions["partition"] = record.partition.rawValue
                 for (key, value) in dimensions {
-                    let name = "\(key)=\(value)"; var group = groups[name] ?? RateAccumulator(); group.add(record, outcome: outcome); groups[name] = group
+                    let identity = CohortIdentity(key: key, value: value)
+                    var group = groups[identity] ?? RateAccumulator(); group.add(record, outcome: outcome); groups[identity] = group
                 }
                 guard groups.count <= 2_000 else { throw ProductionFailure.invalid("Cohort cardinality exceeds 2,000. Use bounded metadata dimensions.") }
-                if let amount = response.cost { cost += amount } else { missingCost += 1 }
+                if let amount = response.cost {
+                    let subtotal = cost + amount
+                    if subtotal.isFinite { cost = subtotal }
+                    else { cost = .greatestFiniteMagnitude; costOverflow = true }
+                } else { missingCost += 1 }
                 if response.latencyAvailable == false { unavailableLatency += 1 }
                 if response.latencyAvailable != false, ![.error, .needsEvidence].contains(outcome) {
                     let bucket = Int(ceil(log2(max(1, response.latencyMilliseconds))*32))
-                    histogram[bucket, default: 0] += 1; latencyCount += 1; latencySum += response.latencyMilliseconds
+                    histogram[bucket, default: 0] += 1; latencyCount += 1
+                    latencyMean += (response.latencyMilliseconds - latencyMean) / Double(latencyCount)
                 }
                 if job.configuration.gate.criticalSourceIDs.contains(record.sourceID) {
                     critical[record.sourceID] = (critical[record.sourceID] ?? true) && outcome == .passed
                 }
-                for (key,value) in job.configuration.gate.requiredCohorts where dimensions[key] == value { required["\(key)=\(value)"] = true }
+                for (key,value) in job.configuration.gate.requiredCohorts where dimensions[key] == value { required.insert(.init(key: key, value: value)) }
             }
         }
-        let counts = total.summary, cohorts = groups.mapValues(\.summary)
+        let counts = total.summary, cohortRates = groups.mapValues(\.summary)
+        var cohorts: [String: ProductionRate] = [:]
+        for (identity, rate) in cohortRates {
+            // Keep legacy names, including '=' within a dimension name, only
+            // when the observed key/value identity is unambiguous.
+            guard cohorts[identity.displayName] == nil else {
+                throw ProductionFailure.invalid("Cohort names are ambiguous. Use metadata dimension names without '=' before qualifying this job.")
+            }
+            cohorts[identity.displayName] = rate
+        }
         var p95: Double?, traversed = 0
         for bucket in histogram.keys.sorted() {
             traversed += histogram[bucket] ?? 0
-            if traversed >= Int(ceil(Double(latencyCount)*0.95)) { p95 = pow(2, Double(bucket)/32); break }
+            if traversed >= Int(ceil(Double(latencyCount)*0.95)) { p95 = min(.greatestFiniteMagnitude, pow(2, Double(bucket)/32)); break }
         }
-        let average = latencyCount > 0 ? latencySum/Double(latencyCount) : nil
+        let average = latencyCount > 0 ? latencyMean : nil
         var baselineCohorts: [String: Double] = [:]
         var issues: [String] = []
         var exit = 0
@@ -121,12 +156,13 @@ extension ProductionStorage {
         if let maximum = job.configuration.gate.maximumAverageMilliseconds, let average, average > maximum { issues.append("Average latency exceeds the required limit."); if exit == 0 { exit = 10 } }
         if let maximum = job.configuration.gate.maximumP95Milliseconds, let p95, p95 > maximum { issues.append("P95 latency exceeds the required limit."); if exit == 0 { exit = 10 } }
         for source in job.configuration.gate.criticalSourceIDs where critical[source] != true { issues.append("Critical source \(source) did not pass every trial."); if exit == 0 { exit = 10 } }
-        for (key,value) in job.configuration.gate.requiredCohorts where required["\(key)=\(value)"] != true { issues.append("Required cohort \(key)=\(value) is missing."); exit = 20 }
+        for (key,value) in job.configuration.gate.requiredCohorts where !required.contains(.init(key: key, value: value)) { issues.append("Required cohort \(key)=\(value) is missing."); exit = 20 }
         for (key,threshold) in job.configuration.gate.cohortMinimumPassRates {
             guard let rate = cohorts[key]?.passRate else { issues.append("Required cohort \(key) has no scored evidence."); exit = 20; continue }
             if rate < threshold { issues.append("Cohort \(key) falls below its threshold."); if exit == 0 { exit = 10 } }
         }
         if job.configuration.maximumCost != nil { cost = control.reportedCost }
+        if costOverflow { issues.append("Cost evidence exceeds the supported numeric range."); exit = 20 }
         if let maximum = job.configuration.maximumCost, missingCost > 0 || cost > maximum || !control.costReservations.isEmpty { issues.append("Cost evidence is missing or exceeds the budget."); exit = 20 }
         let eligible = exit == 0 && counts.errors == 0 && !hasActiveLease && !control.paused && !control.cancelled
         let evidenceRevision = evidenceHash.finalize().map { String(format: "%02x", $0) }.joined()
@@ -148,7 +184,7 @@ extension ProductionStorage {
             } else {
                 baselineRate = baseline.counts.passRate
                 baselineCohorts = baseline.cohorts.compactMapValues(\.passRate)
-                if let before = baselineRate, let after = counts.passRate, before-after > job.configuration.gate.maximumPassRateRegression {
+                if exceedsRegressionLimit(baseline: baseline.counts, candidate: counts, limit: job.configuration.gate.maximumPassRateRegression) {
                     issues.append("Pass rate regressed beyond the approved limit."); if exit == 0 { exit = 10 }
                 }
             }

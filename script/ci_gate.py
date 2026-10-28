@@ -5,7 +5,7 @@ import os
 import sys
 
 
-FLAGS = ("native", "ui", "sdk_consumer", "input_conversion", "regression")
+FLAGS = ("native", "ui", "sdk_consumer", "input_conversion", "production_evals", "regression")
 ARRAYS = ("native_tests", "swift_suites", "macos_tests")
 WORKERS = ("changes", "swift-tests", "native-build", "ui-tests", "picker-stability")
 RESULTS = {"success", "failure", "cancelled", "skipped"}
@@ -45,7 +45,7 @@ def evaluate(needs, selection, stability_requested):
 
     if len(flags) == len(FLAGS) and len(arrays) == len(ARRAYS):
         mac_selected = bool(arrays["swift_suites"] or arrays["macos_tests"] or arrays["native_tests"]
-                            or flags["sdk_consumer"] or flags["input_conversion"])
+                            or flags["sdk_consumer"] or flags["input_conversion"] or flags["production_evals"])
         if flags["regression"] != mac_selected:
             errors.append("Selection regression disagrees with the selected Mac regression work")
         if (arrays["native_tests"] or flags["ui"]) and not flags["native"]:

@@ -96,3 +96,65 @@ test('a superseded run-suite navigation never starts the subsequently selected s
   const pending = app.runSuite(state.allSuites[0]); app.workspaceScope.navigate(); state.draft = { id: 'B' }; flush.resolve(); await pending;
   assert.equal(starts, 0); assert.equal(state.draft.id, 'B');
 });
+
+test('clean navigation waits for an in-flight mutation and selects the newly saved revision', async t => {
+  const response = deferred(), started = deferred(), original = { id: 'A', revision: 'r1', cases: [{ id: 'one' }] };
+  const state = { draft: structuredClone(original), allSuites: [original] };
+  const autosave = createDraftAutosave({
+    /** Retains the current selected object throughout the pending server mutation. */
+    read: () => state.draft,
+    /** Rejects unexpected persistence because this fixture begins with a clean draft. */
+    save: async () => { throw Error('No dirty autosave expected'); },
+    /** Leaves response merging to the mutation helper under test. */
+    applied() {},
+    /** Ignores visual labels while the test observes navigation ordering. */
+    status() {},
+    /** Leaves unexpected failures observable through the explicit awaited operations. */
+    error() {} });
+  t.after(() => autosave.dispose());
+  const mutation = mutateSuiteDraft({ autosave,
+    /** Keeps the server response attached to the originally selected draft. */
+    read: () => state.draft,
+    /** Signals mutation admission and holds its saved response until navigation is waiting. */
+    mutate: async () => { started.resolve(); return response.promise; },
+    /** Publishes the returned revision into the catalog that suite selection reads. */
+    applied: saved => { state.allSuites[0] = saved; },
+    /** Preserves any merged local edits through the real autosave queue. */
+    changed: () => autosave.changed() });
+  await started.promise;
+  const app = load(['selectSuite'], state, {
+    /** Makes real suite navigation wait for the mutation-owned autosave pause. */
+    flush: () => autosave.flush() }); let selected = false;
+  const navigation = app.selectSuite(original).then(() => { selected = true; });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(selected, false);
+  response.resolve({ suite: { ...original, revision: 'r2', cases: [...original.cases, { id: 'imported' }] } });
+  await mutation; await navigation; assert.equal(state.draft.revision, 'r2'); assert.equal(state.draft.cases.length, 2);
+});
+
+test('clean recovery teardown releases its pause without attempting an unnecessary draft save', async t => {
+  const state = { draft: { id: 'saved' }, catalogRecovery: {}, disposed: false }; let disposed = 0;
+  const autosave = createDraftAutosave({
+    /** Exposes the already-saved selected draft to teardown's clean flush. */
+    read: () => state.draft,
+    /** Rejects an unnecessary write of the clean recovery draft. */
+    save: async () => { throw Error('No save expected'); },
+    /** Leaves the saved fixture unchanged because no response should be applied. */
+    applied() {},
+    /** Ignores status labels while teardown disposal is counted separately. */
+    status() {},
+    /** Leaves unexpected flush errors visible to the awaited teardown. */
+    error() {} });
+  t.after(() => autosave.dispose());
+  const app = load(['teardownWorkspace'], state, { teardownTask: null, resumeRecoveryAutosave: autosave.pause(), autosave,
+    /** Uses the production queue so teardown must release its recovery pause. */
+    flush: () => autosave.flush(),
+    statusPoller: {
+      /** Records disposal of the workspace's status polling owner. */
+      dispose() { disposed++; } },
+    transport: {
+      /** Records disposal of the workspace's message transport owner. */
+      dispose() { disposed++; } },
+    /** Runs deferred transport disposal immediately so its terminal effect can be asserted. */
+    setTimeout: callback => callback() });
+  await app.teardownWorkspace(); assert.equal(state.disposed, true); assert.equal(disposed, 2);
+});

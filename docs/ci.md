@@ -6,13 +6,18 @@ runs, and the scheduled stability workflow select full ordinary coverage.
 
 Linux workflow validation and selected script tests finish before Mac workers
 are allocated. Native app and test products are built once. Core tests and
-independent UI shards reuse the same retained products. Portable Swift and
-selected macOS script tests share the **Portable regression tests** worker.
+independent UI shards reuse the same retained products. Portable Swift,
+selected macOS script tests, and production batch qualification share the
+**Portable regression tests** worker.
 When no Apple checks are selected, that required worker completes on Ubuntu.
 
 `MacIntentTestingTests` verifies the native Mac App Intent support library.
-Foundation Models, developer runner, production batch, and standalone plugin
-checks retain their separate scope. None of these source checks qualifies a
+Foundation Models, developer runner, and standalone plugin checks retain their
+separate scope. Production package tests and the real CLI worker protocol run
+through `bash script/ci_production_evals.sh` for affected changes and every full
+main, manual, or release-version run. The standalone production workflow uses
+the same script. A failure fails the required regression worker and blocks
+installer publication at that source commit. None of these source checks qualifies a
 live AppIntentsTesting invocation. See [manual qualification](ci-manual-tests.md).
 
 Native and portable Swift Testing cases use a maximum concurrency of four.

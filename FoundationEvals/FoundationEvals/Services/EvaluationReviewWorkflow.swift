@@ -6,6 +6,14 @@ enum EvaluationReviewError: LocalizedError {
     var errorDescription: String? { if case .invalid(let message) = self { message } else { nil } }
 }
 
+/// One view evaluation's review sources and latest labels, indexed by their run/sample identity.
+struct EvaluationReviewProjection {
+    var samples: [EvaluationReviewSample]
+    var samplesByID: [String: EvaluationReviewSample]
+    var annotationsByID: [String: EvaluationReviewAnnotation]
+    var currentAnnotationsByID: [String: EvaluationReviewAnnotation]
+}
+
 /// Pure workflow shared by native review and agent proposals. Never changes run scores.
 enum EvaluationReviewWorkflow {
     /// Collects reviewable samples for one suite in newest-run order, omitting sources whose digest cannot be encoded.
@@ -13,10 +21,85 @@ enum EvaluationReviewWorkflow {
         runs.filter { $0.suiteID == suiteID }.sorted {
             ($0.historySequence ?? 0, $0.startedAt) > ($1.historySequence ?? 0, $1.startedAt)
         }.flatMap { run in
-            run.results.compactMap { sample in
-                guard let digest = try? sourceDigest(run: run, sample: sample) else { return nil }
+            guard let context = try? SampleDigestContext(run: run) else { return [EvaluationReviewSample]() }
+            return run.results.compactMap { sample in
+                guard let digest = try? context.digest(for: sample) else { return nil }
                 return EvaluationReviewSample(run: run, sample: sample, sourceDigest: digest)
             }
+        }
+    }
+
+    /// Builds sources and label indexes once, checking each run's immutable evidence integrity once for presentation.
+    /// Mutation boundaries still validate their supplied source independently through `isCurrent`.
+    static func projection(runs: [EvaluationRun], suiteID: UUID, state: EvaluationReviewState) -> EvaluationReviewProjection {
+        indexedProjection(samples: samples(runs: runs, suiteID: suiteID), state: state)
+    }
+
+    /// Indexes already-collected sources and labels without rescanning annotations or rechecking one run's evidence for each sample.
+    private static func indexedProjection(samples: [EvaluationReviewSample], state: EvaluationReviewState) -> EvaluationReviewProjection {
+        let annotations = state.annotations.reduce(into: [String: EvaluationReviewAnnotation]()) {
+            $0["\($1.runID)/\($1.sampleID)"] = $1
+        }
+        var integrityByRun: [UUID: Bool] = [:]
+        var current: [String: EvaluationReviewAnnotation] = [:]
+        var sources: [String: EvaluationReviewSample] = [:]
+        for sample in samples {
+            if sources[sample.id] == nil { sources[sample.id] = sample }
+            guard let annotation = annotations[sample.id], annotation.sourceDigest == sample.sourceDigest else { continue }
+            let valid = integrityByRun[sample.run.id] ?? (sample.run.subjectEvidence?.hasValidDigest != false)
+            integrityByRun[sample.run.id] = valid
+            if valid { current[sample.id] = annotation }
+        }
+        return .init(samples: samples, samplesByID: sources, annotationsByID: annotations, currentAnnotationsByID: current)
+    }
+
+    /// Encodes run-wide source fields once while preserving the exact sorted-key v2 JSON used by saved annotations.
+    /// Each sample supplies only its own encoded bytes between the shared prefix and suffix.
+    private struct SampleDigestContext {
+        var prefix: SHA256
+        var suffix: Data
+
+        /// Prepares canonical JSON fields around the sorted `sample` key, omitting optional values exactly as synthesized encoding does.
+        init(run: EvaluationRun) throws {
+            var fields: [(String, Data)] = []
+            /// Encodes one named source field using the same canonical encoder as the original whole-source representation.
+            func append<Value: Encodable>(_ name: String, _ value: Value) throws {
+                var field = try CanonicalJSON.data(for: name, prettyPrinted: false)
+                field.append(contentsOf: ":".utf8)
+                field.append(try CanonicalJSON.data(for: value, prettyPrinted: false))
+                fields.append((name, field))
+            }
+            try append("runID", run.id)
+            try append("environment", run.environment)
+            if let value = run.subjectEvidence { try append("subjectEvidence", value) }
+            else { try append("legacySubjectEvidence", LegacySubjectEvidence(run: run)) }
+            if let value = run.suiteDefinition { try append("subjectContext", Context(value)) }
+            if let value = run.execution { try append("execution", value) }
+            if let value = run.developerExecution { try append("developerExecution", value) }
+            var before = Data("{".utf8)
+            var after = Data()
+            for (name, field) in fields.sorted(by: { $0.0 < $1.0 }) {
+                if name < "sample" {
+                    if before.count > 1 { before.append(contentsOf: ",".utf8) }
+                    before.append(field)
+                } else {
+                    after.append(contentsOf: ",".utf8)
+                    after.append(field)
+                }
+            }
+            before.append(contentsOf: ",\"sample\":".utf8)
+            after.append(contentsOf: "}".utf8)
+            prefix = SHA256()
+            prefix.update(data: before)
+            suffix = after
+        }
+
+        /// Finishes one sample's source hash without re-encoding its run's shared evidence and execution context.
+        func digest(for sample: EvaluationSampleResult) throws -> String {
+            var hash = prefix
+            hash.update(data: try CanonicalJSON.data(for: sample, prettyPrinted: false))
+            hash.update(data: suffix)
+            return hash.finalize().map { String(format: "%02x", $0) }.joined()
         }
     }
 
@@ -178,9 +261,9 @@ enum EvaluationReviewWorkflow {
     /// Groups current human-confirmed failures by tag, ordered by frequency and then tag text.
     static func patterns(samples: [EvaluationReviewSample], state: EvaluationReviewState) -> [EvaluationFailurePattern] {
         var groups: [String: [EvaluationReviewSample]] = [:]
+        let projection = indexedProjection(samples: samples, state: state)
         for sample in samples {
-            guard let annotation = state.annotation(runID: sample.run.id, sampleID: sample.sample.id),
-                  annotation.verdict == .failed, isCurrent(annotation, sample: sample) else { continue }
+            guard let annotation = projection.currentAnnotationsByID[sample.id], annotation.verdict == .failed else { continue }
             for tag in annotation.tags { groups[tag, default: []].append(sample) }
         }
         return groups.map { .init(tag: $0.key, samples: $0.value) }.sorted {
@@ -188,16 +271,18 @@ enum EvaluationReviewWorkflow {
         }
     }
 
-    /// Coverage representatives then stable shuffled picks. A discovery queue, never a prevalence estimate.
+    /// Coverage representatives then stable shuffled picks, computing each sample's ordering hash once per projection.
+    /// A discovery queue, never a prevalence estimate.
     static func diverseQueue(_ samples: [EvaluationReviewSample]) -> [EvaluationReviewSample] {
         let groups = Dictionary(grouping: samples) {
             "\($0.sample.caseID)/\($0.run.environment.model)/\($0.run.environment.locale)/\($0.sample.status.rawValue)"
         }
         let representatives = groups.keys.sorted().compactMap { groups[$0]?.first }
         let represented = Set(representatives.map(\.id))
-        let remainder = samples.filter { !represented.contains($0.id) }.sorted {
-            stableOrder($0.id) < stableOrder($1.id)
-        }
+        let remainder = samples.filter { !represented.contains($0.id) }
+            .map { (sample: $0, order: stableOrder($0.id)) }
+            .sorted { $0.order < $1.order }
+            .map(\.sample)
         var queue: [EvaluationReviewSample] = []
         var index = 0
         for (offset, representative) in representatives.enumerated() {

@@ -14,17 +14,24 @@ REQUIRED_CHECKS = {
     "Portable regression tests",
     "Workflow and script checks",
 }
+PRODUCTION_QUALIFICATION_STEP = "Qualify production recovery and worker protocol"
 APP_DISPLAY_NAME = "Intents"
 
 
 def validate_checks(jobs):
-    """Require each named release gate to have a success conclusion, raising ValueError for missing or unsuccessful checks."""
+    """Require successful source gates and executed production qualification, including when inspecting an older source run."""
     conclusions = {job["name"]: job["conclusion"] for job in jobs}
     missing = sorted(
         name for name in REQUIRED_CHECKS if conclusions.get(name) != "success"
     )
     if missing:
         raise ValueError("Release requires successful checks: " + ", ".join(missing))
+    regression = next(job for job in jobs if job["name"] == "Portable regression tests")
+    steps = regression.get("steps", [])
+    qualification = [step for step in steps if isinstance(step, dict)
+                     and step.get("name") == PRODUCTION_QUALIFICATION_STEP] if isinstance(steps, list) else []
+    if len(qualification) != 1 or qualification[0].get("conclusion") != "success":
+        raise ValueError("Release requires successful production recovery and worker protocol qualification in source CI.")
 
 
 def verify_checksum(directory, filename):

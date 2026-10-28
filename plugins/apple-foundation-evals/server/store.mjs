@@ -53,12 +53,12 @@ export class Store {
   async readOptional(kind, key) {
     try { return await this.read(kind, key); } catch (error) { if (/not found$/.test(error.message)) return null; throw error; }
   }
-  /** Returns sorted JSON record names after validating the catalog and enforcing its 5,000-entry directory limit. */
+  /** Returns sorted JSON record names and enforces the 5,000-record limit without counting in-flight atomic-write temporary files. */
   async recordNames(kind) {
     this.path(kind, '00000000-0000-4000-8000-000000000001');
-    const names = await readdir(join(this.root, kind));
+    const names = (await readdir(join(this.root, kind))).filter((name) => /^[0-9a-f-]+\.json$/i.test(name));
     if (names.length > 5000) throw new Error('Local history exceeds 5000 entries; archive old records');
-    return names.filter((name) => /^[0-9a-f-]+\.json$/i.test(name)).sort();
+    return names.sort();
   }
   // Startup and recovery consume one validated record at a time. This does not
   // relax the existing per-record, directory-count or returned-payload limits.
@@ -85,7 +85,7 @@ export class Store {
     await saveSuiteTransaction(this, value, expectedRevision, { operation: createOnly ? 'createRecord' : 'writeRecord', kind });
   }
   // Only the kernel-locked transaction worker calls this mutation primitive.
-  /** Atomically replaces a bounded record through a private temporary file; only a transaction worker holding its record lock may call this primitive. */
+  /** Atomically replaces a bounded record through a private temporary file; only a transaction worker holding the catalog and record locks may call this primitive. */
   async writeUnlocked(kind, value) {
     const path = this.path(kind, value.id);
     try { await lstat(path); } catch (error) {

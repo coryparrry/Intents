@@ -156,7 +156,7 @@ extension ProductionStorage {
     }
     return preview
   }
-  /// Imports the exact previewed source as an immutable dataset and records its revision for repeat completion calls.
+  /// Imports the exact previewed source as an immutable dataset and verifies its retained bytes on repeat completion calls.
   /// - Parameters:
   ///   - previewDigest: Must equal the declared digest of the previewed complete upload.
   ///   - redactionConfirmed: Required for uploads declared as production data.
@@ -168,7 +168,7 @@ extension ProductionStorage {
     guard value.previewed, previewDigest == value.expectedDigest else {
       throw ProductionFailure.invalid("Preview this exact complete source before importing it.")
     }
-    if let revision = value.datasetRevision { return try loadDataset(revision) }
+    if let revision = value.datasetRevision { return try loadDataset(revision, verifyFiles: true) }
     let source = try sealUpload(id, expected: value)
     let dataset = try importDataset(
       from: source, name: value.name, version: value.version, sampling: value.sampling,

@@ -21,6 +21,7 @@ struct EvaluationFeatureResponse {
     ///
     /// Structured output is validated before returning. Streaming publishes partial snapshots and
     /// returns collected usage, transcript entries, and the earliest measured visible-content time.
+    /// Dynamic profiles own generation settings so their after-tool overrides can replace suite defaults.
     /// Model, schema, stream, and cancellation failures propagate to the caller.
     static func generate(
         session: LanguageModelSession,
@@ -29,15 +30,17 @@ struct EvaluationFeatureResponse {
         metadata: [String: any ConvertibleToGeneratedContent],
         onPartial: @Sendable (String) async -> Void = { _ in }
     ) async throws -> Self {
-        var options = suite.modelConfiguration.generationOptions
-        // A dynamic profile supplies its own changing tool policy.
+        // Per-request values override every profile phase. Leave them unset so
+        // the profile can apply global defaults first and after-tool overrides later.
+        var options = suite.features.profile.enabled ? GenerationOptions() : suite.modelConfiguration.generationOptions
         options.toolCallingMode = suite.features.profile.enabled ? nil
             : suite.modelConfiguration.toolCallingMode(
                 hasTools: !suite.features.tools.isEmpty || suite.modelConfiguration.referenceMode == .lookupTool
                     || !suite.modelConfiguration.customizationSettings.visionSettings.isEmpty
                     || suite.features.spotlightSearch.enabled
             )
-        let context = suite.modelConfiguration.contextOptions
+        var context = suite.modelConfiguration.contextOptions
+        if suite.features.profile.enabled { context.reasoningLevel = nil }
         let schema = suite.features.outputFields.isEmpty ? nil
             : try EvaluationSchemaBuilder.schema(
                 fields: suite.features.outputFields,

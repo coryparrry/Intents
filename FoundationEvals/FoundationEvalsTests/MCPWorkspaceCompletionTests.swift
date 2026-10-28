@@ -99,6 +99,62 @@ struct MCPWorkspaceCompletionTests {
         #expect(failures.allSatisfy { $0 != nil })
     }
 
+    /// Invalidates judge statistics when their suite definition, selection, or judge connection changes.
+    @Test(arguments: ["selection", "connection", "definition"])
+    func judgeReportsAreInvalidatedWhenTheirProvenanceChanges(change: String) async throws {
+        let (store, root) = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var connection = localConnection("Original")
+        try store.saveJudgeConnection(connection, apiKey: nil)
+        let completed = AsyncStream<Void>.makeStream()
+        store.runJudgeChecks(connectionID: connection.id) { error in
+            #expect(error == nil)
+            completed.continuation.yield(())
+            completed.continuation.finish()
+        }
+        for await _ in completed.stream { break }
+        #expect(store.latestJudgeCheck?.connectionID == connection.id)
+        switch change {
+        case "selection": _ = try store.createSuite(name: "Another suite")
+        case "connection":
+            connection.name = "Replacement"
+            connection.modelID = "another-model"
+            try store.saveJudgeConnection(connection, apiKey: nil)
+        default:
+            store.draftSuite.instructions += "\nChanged"
+            #expect(store.saveSuite())
+        }
+        #expect(store.latestJudgeCheck == nil)
+    }
+
+    /// Restores the prior calibration report if switching suites fails while publishing the new catalog selection.
+    @Test func failedWorkspaceTransitionRetainsPreviousJudgeReport() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "judge-selection-rollback-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        var rejectWrite = false
+        let store = EvaluationStore(supportDirectory: root, workspaceCatalogWriter: { catalog, directory in
+            if rejectWrite { throw CocoaError(.fileWriteNoPermission) }
+            try EvaluationWorkspacePersistence.save(catalog, in: directory)
+        })
+        let first = store.selectedSuiteID
+        let second = try store.createSuite(name: "Second")
+        try store.switchSuite(id: first)
+        let connection = localConnection("Fixture")
+        try store.saveJudgeConnection(connection, apiKey: nil)
+        let complete = AsyncStream<Void>.makeStream()
+        store.runJudgeChecks(connectionID: connection.id) { error in
+            #expect(error == nil)
+            complete.continuation.yield(())
+            complete.continuation.finish()
+        }
+        for await _ in complete.stream { break }
+        #expect(store.latestJudgeCheck?.connectionID == connection.id)
+        rejectWrite = true
+        #expect(throws: (any Error).self) { try store.switchSuite(id: second) }
+        #expect(store.selectedSuiteID == first)
+        #expect(store.latestJudgeCheck?.connectionID == connection.id)
+    }
+
     private func fixture() throws -> (EvaluationStore, URL) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("mcp-completion-\(UUID())")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -8,21 +8,30 @@ import { MAX_OUTPUT_BYTES } from './validation.mjs';
 
 // These lock files are permanent: unlinking one could create two independent locks.
 // The kernel releases the lock on process death; no PID/mtime stale-lock guessing.
-/** Executes a record mutation in a bounded worker holding a permanent kernel lock. expectedRevision guards logical content; expectedRecordRevision guards exact saved bytes. Returns the saved or removed record and rejects lock, revision, I/O, or timeout failures. */
+/** Executes a record mutation under permanent catalog-then-record kernel locks. expectedRevision guards logical content; expectedRecordRevision guards exact saved bytes. Returns the saved or removed record and rejects lock, revision, I/O, or timeout failures. */
 export async function saveSuiteTransaction(store, saved, expectedRevision, { operation = 'save', projectId, expectedRecordRevision, kind = 'suites' } = {}) {
   store.path(kind, saved.id);
   // Preserve existing suite lock inodes; all writes/deletes of another record
   // share its kind-qualified lock, including recovery revision checks.
   const lockName = `${kind === 'suites' ? '' : kind + '-'}${id(saved.id)}.lock`;
   const lockPath = join(store.root, '.suite-locks', lockName);
-  const handle = await open(lockPath, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
-  try { if (!(await handle.stat()).isFile()) throw new Error('Invalid suite transaction lock'); }
-  finally { await handle.close(); }
+  const catalogLockPath = join(store.root, '.suite-locks', `catalog-${kind}.lock`);
+  for (const path of [catalogLockPath, lockPath]) {
+    const handle = await open(path, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
+    try { if (!(await handle.stat()).isFile()) throw new Error('Invalid suite transaction lock'); }
+    finally { await handle.close(); }
+  }
   const worker = fileURLToPath(new URL('./suite-transaction-worker.mjs', import.meta.url));
   const executable = process.platform === 'darwin' ? '/usr/bin/lockf' : '/usr/bin/flock';
-  const arguments_ = process.platform === 'darwin'
+  // Match inference admission order when a caller also holds its lease:
+  // inference -> catalog -> record. The catalog lock makes distinct-ID capacity
+  // checks atomic, while the existing record lock preserves revision fencing.
+  const recordArguments = process.platform === 'darwin'
     ? ['-k', '-s', '-t', '5', lockPath, process.execPath, worker]
     : ['-w', '5', lockPath, process.execPath, worker];
+  const arguments_ = process.platform === 'darwin'
+    ? ['-k', '-s', '-t', '5', catalogLockPath, executable, ...recordArguments]
+    : ['-w', '5', catalogLockPath, executable, ...recordArguments];
   const child = spawn(executable, arguments_, { detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
   child.stdout.setEncoding('utf8');
   return new Promise((accept, reject) => {
@@ -35,7 +44,7 @@ export async function saveSuiteTransaction(store, saved, expectedRevision, { ope
     };
     // Acquisition and execution have independent bounds. The entire process group
     // is stopped before rejecting, so an expired writer cannot commit afterwards.
-    const timeout = setTimeout(() => stop('Suite save transaction timed out'), 15000);
+    const timeout = setTimeout(() => stop('Suite save transaction timed out'), 20000);
     child.stdout.on('data', (chunk) => {
       if (failed) return;
       outputBytes += Buffer.byteLength(chunk);

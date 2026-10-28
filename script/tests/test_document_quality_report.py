@@ -1,5 +1,5 @@
 import contextlib
-import importlib.util
+import copy
 import io
 import hashlib
 import shutil
@@ -8,9 +8,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-spec = importlib.util.spec_from_file_location("quality", Path(__file__).with_name("document_quality_report.py"))
-quality = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(quality)
+from script import document_quality_report as quality
 
 
 class QualityReportTests(unittest.TestCase):
@@ -31,7 +29,7 @@ class QualityReportTests(unittest.TestCase):
         (self.directory / "input.json").write_text(json.dumps({"documents": documents, "controls": []}))
         (self.directory / "sources.jsonl").write_text("\n".join(map(json.dumps, sources)))
         for index in range(100):
-            cases.append({"documentID": f"document-{index // 10}", "slot": index % 10, "passage": passage,
+            cases.append({"documentID": f"document-{index // 10}", "slot": index % 10, "passage": passage, "outcome": "surfaced",
                 "candidate": {"id": str(index), "prompt": "Question", "expected": "Answer", "criteriaOverride": ["Requirement"],
                     "documentEvidence": {"generatorVersion": "document-draft-v6", "sourceName": f"document-{index // 10}.txt", "sourceDigest": digest, "passages": [{"id": "p", "location": "Page 1", "text": "Source"}],
                         "citations": [{"passageID": "p", "quote": "Source"}]}}})
@@ -251,6 +249,98 @@ class QualityReportTests(unittest.TestCase):
             (controls / name).write_text(json.dumps(value))
             self.assertFalse(quality.compatible_controls(self.directory, controls, manifest))
             (controls / name).write_text(original)
+
+
+class AttemptLedgerTests(unittest.TestCase):
+    def setUp(self):
+        """Create two complete document ledgers with the same request bounds as the Swift harness."""
+        self.manifest = {"documents": [{"id": "first", "requested": 2}, {"id": "second", "requested": 2}]}
+        self.rows = [{"documentID": document["id"], "slot": slot, "outcome": "surfaced", "candidate": {"fixture": True}}
+                     for document in self.manifest["documents"] for slot in range(2)]
+
+    def validate(self, rows=None, version="document-draft-v19", summary=None):
+        """Validate fixture attempts with independently derived manifest and ledger counters."""
+        rows = self.rows if rows is None else rows
+        if summary is None:
+            summary = {"documents": len(self.manifest["documents"]),
+                       "requested": sum(document["requested"] for document in self.manifest["documents"]),
+                       "attempts": len(rows), "surfaced": sum(row.get("candidate") is not None for row in rows)}
+        return quality.validate_attempt_ledger(self.manifest, rows, summary, version)
+
+    def test_missing_manifest_document_and_changed_requested_total_are_rejected(self):
+        """Reject omitted corpus documents and summary totals that understate the frozen request."""
+        self.manifest["documents"].append({"id": "missing", "requested": 2})
+        with self.assertRaisesRegex(AssertionError, "Every corpus document"):
+            self.validate()
+        self.manifest["documents"].pop()
+        with self.assertRaisesRegex(AssertionError, "Summary.*requested"):
+            self.validate(summary={"documents": 2, "requested": 3, "attempts": 4, "surfaced": 4})
+
+    def test_slot_gaps_impossible_values_and_reordered_documents_are_rejected(self):
+        """Require the original document order and a zero-based contiguous integer slot sequence."""
+        for slot in [-1, 999, True, 0.0, "0"]:
+            with self.subTest(slot=slot):
+                rows = copy.deepcopy(self.rows)
+                rows[0]["slot"] = slot
+                with self.assertRaisesRegex(AssertionError, "slots"):
+                    self.validate(rows)
+        rows = copy.deepcopy(self.rows)
+        rows[1]["slot"] = 2
+        with self.assertRaisesRegex(AssertionError, "contiguous"):
+            self.validate(rows)
+        with self.assertRaisesRegex(AssertionError, "manifest document order"):
+            self.validate(self.rows[2:] + self.rows[:2])
+
+    def test_unsurfaced_rows_cannot_be_dropped_before_attempt_exhaustion(self):
+        """Keep failed passage attempts in the ledger until the request or its full attempt bound is reached."""
+        rows = [dict(row, candidate=None, outcome="runtime_failure") for row in self.rows[:2]] + self.rows[2:]
+        with self.assertRaisesRegex(AssertionError, "Incomplete document"):
+            self.validate(rows)
+        exhausted = [dict(rows[0], slot=slot) for slot in range(4)] + self.rows[2:]
+        self.assertEqual(self.validate(exhausted).count("runtime_failure"), 4)
+        with self.assertRaisesRegex(AssertionError, "bounded attempt count"):
+            self.validate([dict(rows[0], slot=slot) for slot in range(5)] + self.rows[2:])
+
+    def test_outcomes_must_match_candidates_and_current_records_cannot_omit_them(self):
+        """Prevent missing or relabeled outcomes from changing which attempts count as surfaced drafts."""
+        for outcome in [None, "unknown", "duplicate"]:
+            with self.subTest(outcome=outcome):
+                rows = copy.deepcopy(self.rows)
+                rows[0]["outcome"] = outcome
+                with self.assertRaisesRegex(AssertionError, "outcome"):
+                    self.validate(rows)
+        rows = copy.deepcopy(self.rows)
+        rows[0].pop("outcome")
+        with self.assertRaisesRegex(AssertionError, "outcome"):
+            self.validate(rows)
+        rows = copy.deepcopy(self.rows)
+        rows[0]["candidate"] = None
+        with self.assertRaisesRegex(AssertionError, "outcome"):
+            self.validate(rows)
+
+    def test_early_stopping_requires_terminal_reason_and_forbids_later_attempts(self):
+        """Allow the harness's budget/error stops while rejecting unexplained truncation or later continuation."""
+        for outcome in ["suite_budget_rejection", "semantic_review_error"]:
+            with self.subTest(outcome=outcome):
+                terminal = dict(self.rows[0], candidate=None, outcome=outcome, issue="Retained terminal reason")
+                self.validate([terminal] + self.rows[2:])
+                with self.assertRaisesRegex(AssertionError, "after a terminal"):
+                    self.validate([terminal] + self.rows[1:])
+                terminal.pop("issue")
+                with self.assertRaisesRegex(AssertionError, "retained reason"):
+                    self.validate([terminal] + self.rows[2:])
+        with self.assertRaisesRegex(AssertionError, "requested draft count"):
+            self.validate(self.rows[:2] + [dict(self.rows[0], slot=2)] + self.rows[2:])
+
+    def test_legacy_missing_outcomes_keep_the_same_completion_requirements(self):
+        """Preserve candidate-derived historical outcomes without allowing legacy metadata to hide partial attempts."""
+        rows = [{key: value for key, value in row.items() if key != "outcome"} for row in self.rows]
+        self.assertEqual(self.validate(rows, version="document-draft-v6"), ["surfaced"] * 4)
+        rows[0]["candidate"] = None
+        with self.assertRaisesRegex(AssertionError, "Incomplete document"):
+            self.validate(rows, version="document-draft-v6")
+        omitted = [dict(rows[0], slot=slot) for slot in range(4)] + rows[2:]
+        self.assertEqual(self.validate(omitted, version="document-draft-v6").count("legacy_omitted"), 4)
 
 
 if __name__ == "__main__":

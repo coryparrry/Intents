@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import FoundationModels
 import Testing
@@ -180,6 +181,105 @@ struct EvaluationSchemaBoundaryTests {
         }
     }
 
+    /// Verifies non-image union alternatives retain their values through schema validation, image resolution, and HTTP dispatch.
+    @Test func nonImageUnionAlternativesRetainTheirValuesThroughDispatch() async throws {
+        let cases: [(EvaluationSchemaField, String)] = [
+            (.init(name: "payload", type: .union, children: [
+                .init(name: "images", type: .array, children: [.init(name: "item", type: .imageReference)]),
+                .init(name: "messages", type: .array, children: [.init(name: "item", type: .string)])
+            ]), #"{"payload":["hello"]}"#),
+            (.init(name: "payload", type: .union, children: [
+                .init(name: "image", type: .object, children: [
+                    .init(name: "kind", type: .enumeration, enumValues: [.init(value: "image")]),
+                    .init(name: "value", type: .imageReference)
+                ]),
+                .init(name: "message", type: .object, children: [
+                    .init(name: "kind", type: .enumeration, enumValues: [.init(value: "text")]),
+                    .init(name: "value", type: .string)
+                ])
+            ]), #"{"payload":{"kind":"text","value":"hello"}}"#),
+            (.init(name: "payload", type: .union, children: [
+                .init(name: "image", type: .imageReference),
+                .init(name: "message", type: .object, children: [
+                    .init(name: "attachmentLabel", type: .string), .init(name: "note", type: .string)
+                ])
+            ]), #"{"payload":{"attachmentLabel":"receipt","note":"keep"}}"#)
+        ]
+        for (field, json) in cases {
+            let recorder = EvaluationCustomToolRecorder(maximumCalls: 1)
+            let transport = SchemaBoundaryHTTPClient()
+            let definition = EvaluationCustomToolDefinition(name: "requires_count", description: "Checks union values.",
+                parameters: [field], mode: .localHTTP, endpoint: "http://127.0.0.1:19090/tool")
+            let tool = try EvaluationCustomTool(definition: definition, recorder: recorder,
+                httpClient: transport, tokenCounter: SchemaBoundaryTokenCounter())
+            let session = LanguageModelSession(model: SchemaBoundaryModel(executorConfiguration: .tool(json)), tools: [tool])
+            _ = try await session.respond(to: Prompt("Call requires_count."),
+                options: .init(maximumResponseTokens: 128, toolCallingMode: .allowed))
+
+            let body = try #require(await transport.bodies.first)
+            let envelope = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            let sent = try JSONSerialization.data(withJSONObject: #require(envelope["arguments"]), options: [.sortedKeys])
+            let expected = try JSONSerialization.data(withJSONObject: JSONSerialization.jsonObject(with: Data(json.utf8)), options: [.sortedKeys])
+            #expect(sent == expected)
+            #expect(await transport.calls == 1)
+            #expect(await recorder.snapshot().first?.outcome == .succeeded)
+        }
+    }
+
+    /// Verifies image-object and image-array union alternatives resolve transcript metadata before the real custom-tool HTTP dispatch path.
+    @Test(arguments: [false, true])
+    func imageUnionAlternativesResolveBeforeHTTPDispatch(arrayPayload: Bool) async throws {
+        let image = try #require(CGContext(data: nil, width: 2, height: 3, bitsPerComponent: 8,
+            bytesPerRow: 8, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
+        let history: [Transcript.Entry] = [.prompt(Transcript.Prompt(segments: [
+            .attachment(Transcript.AttachmentSegment(content: .image(Transcript.ImageAttachment(image)), label: "receipt"))
+        ]))]
+        let imageAlternative = EvaluationSchemaField(name: "image", type: arrayPayload ? .array : .object,
+            children: [.init(name: arrayPayload ? "item" : "photo", type: .imageReference)])
+        let textAlternative = EvaluationSchemaField(name: "message", type: arrayPayload ? .array : .object,
+            children: [.init(name: arrayPayload ? "item" : "photo", type: .string)])
+        let fields = [EvaluationSchemaField(name: "payload", type: .union,
+            children: [textAlternative, imageAlternative])]
+        let json = arrayPayload
+            ? #"{"payload":[{"attachmentLabel":"receipt"}]}"#
+            : #"{"payload":{"photo":{"attachmentLabel":"receipt"}}}"#
+        let recorder = EvaluationCustomToolRecorder(maximumCalls: 1)
+        let transport = SchemaBoundaryHTTPClient()
+        let definition = EvaluationCustomToolDefinition(name: "requires_count", description: "Checks image union dispatch.",
+            parameters: fields, mode: .localHTTP, endpoint: "http://127.0.0.1:19090/tool")
+        let tool = try EvaluationCustomTool(definition: definition, recorder: recorder,
+            httpClient: transport, tokenCounter: SchemaBoundaryTokenCounter())
+        let session = EvaluationConversationRuntime.makeSession(
+            model: SchemaBoundaryModel(executorConfiguration: .tool(json)), tools: [tool], instructions: "", history: history,
+            modelHistoryProjection: nil)
+
+        let response = try await session.respond(to: Prompt("Call requires_count."),
+            options: .init(maximumResponseTokens: 128, toolCallingMode: .allowed))
+        let body = try #require(await transport.bodies.first)
+        let envelope = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let arguments = try #require(envelope["arguments"] as? [String: Any])
+        let metadata: [String: Any]
+        if arrayPayload {
+            let payload = try #require(arguments["payload"] as? [[String: Any]])
+            #expect(payload.count == 1)
+            metadata = try #require(payload.first)
+        } else {
+            let payload = try #require(arguments["payload"] as? [String: Any])
+            metadata = try #require(payload["photo"] as? [String: Any])
+        }
+        #expect(response.content == "Done")
+        #expect(envelope["toolName"] as? String == "requires_count")
+        #expect(metadata["kind"] as? String == "imageReference")
+        #expect(metadata["attachmentLabel"] as? String == "receipt")
+        #expect(metadata["width"] as? Int == 2)
+        #expect(metadata["height"] as? Int == 3)
+        #expect(metadata["orientation"] as? Int != nil)
+        #expect(metadata["url"] == nil && metadata["path"] == nil)
+        #expect(await transport.calls == 1)
+        #expect(await recorder.snapshot().first?.outcome == .succeeded)
+    }
+
     @Test func nestedDefinitionsAndOptionalValuesKeepTheirConfiguredSemantics() throws {
         let rank = EvaluationSchemaField(name: "Rank", type: .integer,
             constraints: .init(integerMinimum: 0, integerMaximum: 2))
@@ -221,7 +321,7 @@ private struct SchemaBoundaryModel: LanguageModel {
     typealias Executor = SchemaBoundaryExecutor
     enum Configuration: Hashable, Sendable { case response(String), splitResponse, tool(String) }
     var executorConfiguration: Configuration
-    var capabilities: LanguageModelCapabilities { .init([.guidedGeneration, .toolCalling]) }
+    var capabilities: LanguageModelCapabilities { .init([.guidedGeneration, .toolCalling, .vision]) }
 }
 
 private struct SchemaBoundaryExecutor: LanguageModelExecutor {

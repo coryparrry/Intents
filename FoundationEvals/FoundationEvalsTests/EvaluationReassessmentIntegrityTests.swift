@@ -102,6 +102,96 @@ struct EvaluationReassessmentIntegrityTests {
         #expect(assessment.cost.usd == nil)
     }
 
+    /// Rejects missing and incompatible deterministic assessments before they can become approved baseline evidence.
+    @MainActor @Test(arguments: [false, true])
+    func baselineApprovalRejectsIncompatibleDeterministicAssessments(missingAssessment: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "baseline-contract-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [.init(name: "Critical", prompt: "Answer", expected: "READY")]
+        #expect(store.saveSuite())
+        var original = run(suite: store.suite, responses: ["READY extra"])
+        original.results[0].status = .failed
+        var different = store.suite
+        different.scoringMode = .containsExpected
+        let assessment = try await EvaluationReassessmentService().reassess(
+            run: original, suite: different, images: [], resolved: nil)
+        #expect(assessment.samples[0].status == .passed)
+        original.assessments = [assessment]
+        original.selectedAssessmentID = assessment.id
+        store.runs = [original]
+        #expect(throws: EvaluationStoreError.self) {
+            try store.approveBaseline(runID: original.id, assessmentID: missingAssessment ? UUID() : assessment.id)
+        }
+        #expect(store.suiteLocalState.baselineApprovals.isEmpty)
+    }
+
+    /// Allows compatible deterministic reassessment and explicit original-score approval without changing their frozen contracts.
+    @MainActor @Test func baselineApprovalAcceptsCompatibleDeterministicEvidence() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "baseline-compatible-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [.init(name: "Case", prompt: "Answer", expected: "READY")]
+        #expect(store.saveSuite())
+        var original = run(suite: store.suite, responses: ["READY"])
+        original.results[0].status = .passed
+        let assessment = try await EvaluationReassessmentService().reassess(
+            run: original, suite: store.suite, images: [], resolved: nil)
+        original.assessments = [assessment]
+        store.runs = [original]
+        try store.approveBaseline(runID: original.id, assessmentID: assessment.id)
+        #expect(store.activeBaselineApproval?.assessmentID == assessment.id)
+        try store.approveBaseline(runID: original.id, assessmentID: nil)
+        #expect(store.activeBaselineApproval?.assessmentID == nil)
+        #expect(store.activeBaselineApproval?.scoringContract == (try EvaluationScoringContract(run: original)))
+    }
+
+    /// Preserves existing calibration on failed collection, then invalidates it after a corrected example is durably added.
+    @MainActor @Test func correctedJudgeCollectionInvalidatesOnlyAfterSuccessfulPersistence() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "calibration-collection-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        var rejectWrite = false
+        let store = EvaluationStore(supportDirectory: root, suiteLocalStateWriter: { data, url in
+            if rejectWrite { throw CocoaError(.fileWriteNoPermission) }
+            try data.write(to: url, options: .atomic)
+        })
+        store.draftSuite.scoringMode = .exactMatch
+        store.draftSuite.cases = [.init(name: "Case", prompt: "Answer", expected: "READY")]
+        #expect(store.saveSuite())
+        var original = run(suite: store.suite, responses: ["READY"])
+        let assessment = try await EvaluationReassessmentService().reassess(
+            run: original, suite: store.suite, images: [], resolved: nil)
+        original.assessments = [assessment]
+        store.runs = [original]
+        let connection = EvaluationJudgeConnection(id: UUID(), name: "Fixture", kind: .localCompatible,
+            baseURL: "http://127.0.0.1:1234", modelID: "unused")
+        try store.saveJudgeConnection(connection, apiKey: nil)
+        let complete = AsyncStream<Void>.makeStream()
+        store.runJudgeChecks(connectionID: connection.id) { error in
+            #expect(error == nil)
+            complete.continuation.yield(())
+            complete.continuation.finish()
+        }
+        for await _ in complete.stream { break }
+        #expect(store.latestJudgeCheck?.connectionID == connection.id)
+        rejectWrite = true
+        #expect(throws: EvaluationStoreError.self) {
+            try store.markJudgmentIncorrect(runID: original.id, assessmentID: assessment.id,
+                sampleID: original.results[0].id, correctedStatus: .failed, correctedScore: nil,
+                reason: "Fixture correction", collectAsJudgeCheck: true)
+        }
+        #expect(store.latestJudgeCheck?.connectionID == connection.id)
+        #expect(store.suiteLocalState.reviewedJudgeExamples.isEmpty)
+        rejectWrite = false
+        try store.markJudgmentIncorrect(runID: original.id, assessmentID: assessment.id,
+            sampleID: original.results[0].id, correctedStatus: .failed, correctedScore: nil,
+            reason: "Fixture correction", collectAsJudgeCheck: true)
+        #expect(store.latestJudgeCheck == nil)
+        #expect(store.suiteLocalState.reviewedJudgeExamples.count == 1)
+    }
+
     private func run(suite: EvaluationSuite, responses: [String]) -> EvaluationRun {
         let results = zip(suite.cases, responses).map { item, response in
             EvaluationSampleResult(caseID: item.id, caseName: item.name, repetition: 1,

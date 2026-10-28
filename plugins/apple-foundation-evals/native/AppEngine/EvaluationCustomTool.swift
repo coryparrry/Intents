@@ -388,7 +388,7 @@ struct EvaluationCustomTool: Tool {
         return String(decoding: resolvedData, as: UTF8.self)
     }
 
-    /// Recursively resolves image-reference fields through objects, arrays, named definitions, and a matching union alternative, preserving other values.
+    /// Recursively resolves image-reference fields through objects, arrays, named definitions, and a fully validated union alternative, preserving other values.
     private static func resolveImageReferences<History: Sequence>(
         in value: Any,
         field: EvaluationSchemaField,
@@ -435,12 +435,14 @@ struct EvaluationCustomTool: Tool {
                 history: history
             )
         case .union:
+            let valueData = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed])
+            let content = try GeneratedContent(json: String(decoding: valueData, as: UTF8.self))
             guard let choice = field.children.first(where: {
                 containsImageReference(
                     field: $0,
                     definitions: definitions,
                     visitedDefinitions: []
-                ) && valueCouldMatch(value, field: $0, definitions: definitions)
+                ) && EvaluationSchemaValidator.matches(content, field: $0, definitions: definitions)
             }) else { return value }
             return try resolveImageReferences(
                 in: value,
@@ -522,34 +524,6 @@ struct EvaluationCustomTool: Tool {
                 definitions: definitions,
                 visitedDefinitions: visitedDefinitions
             )
-        }
-    }
-
-    /// Checks the broad JSON shape and required object keys to select an image-bearing union alternative before metadata resolution.
-    private static func valueCouldMatch(
-        _ value: Any,
-        field: EvaluationSchemaField,
-        definitions: [String: EvaluationSchemaField]
-    ) -> Bool {
-        switch field.type {
-        case .object:
-            guard let object = value as? [String: Any] else { return false }
-            return field.children.filter { !$0.isOptional }.allSatisfy {
-                object[$0.name] != nil
-            }
-        case .array: return value is [Any]
-        case .imageReference:
-            guard let object = value as? [String: Any] else { return false }
-            return object["attachmentLabel"] is String
-        case .reference:
-            guard let definition = definitions[field.referenceName] else { return false }
-            return valueCouldMatch(value, field: definition, definitions: definitions)
-        case .string, .enumeration: return value is String
-        case .integer: return value is Int
-        case .number: return value is NSNumber
-        case .boolean: return value is Bool
-        case .null: return value is NSNull
-        case .union: return true
         }
     }
 }

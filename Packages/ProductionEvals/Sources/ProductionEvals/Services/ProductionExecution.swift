@@ -9,7 +9,7 @@ public struct ProductionBatchRunner: Sendable {
     /// Returns the number of newly committed responses. Another worker may still own remaining chunks.
     /// onCommit runs after each durable result, including progress before a later error.
     /// Attempts are journaled before execution; interrupted side effects require evidence instead of automatic replay.
-    /// A timeout or cancellation during executor waiting pauses the job and records uncertain/error evidence before further work; cancellation is then rethrown.
+    /// A timeout, cancellation, or unrepresentable accumulated charge pauses the job and records uncertain/error evidence before further work; cancellation is then rethrown.
     /// - Throws: Job, budget, lease, or persistence errors, or cancellation. Ordinary executor failures become recorded responses.
     public func run(jobID: UUID, worker: ProductionWorker, maximumResponses: Int = .max,
                     onCommit: (@Sendable () -> Void)? = nil,
@@ -82,7 +82,17 @@ public struct ProductionBatchRunner: Sendable {
                                                  explanation: explanation,
                                                  latencyMilliseconds: Date().timeIntervalSince(started) * 1000, retryable: !interrupted && error is ProductionTransientFailure)
                             }
-                            if let cost = response.cost { accumulatedCost += cost } else { unknownCost = true }
+                            if let cost = response.cost {
+                                let subtotal = accumulatedCost + cost
+                                if !subtotal.isFinite {
+                                    // Preserve the bounded response and prior subtotal, but
+                                    // retain this charge as outstanding uncertain evidence.
+                                    response.cost = nil; response.outcome = .needsEvidence; response.retryable = false
+                                    response.explanation = "Accumulated attempt cost exceeds the supported numeric range. The job is paused; verify its outstanding charges before resuming."
+                                    unknownCost = true; interrupted = true
+                                    try storage.setControl(jobID: job.id, paused: true)
+                                } else { accumulatedCost = subtotal }
+                            } else { unknownCost = true }
                             try storage.checkpointCost(job, index: claimed.index, token: token, slot: slot, attempt: attempt,
                                 cost: response.cost, accumulatedCost: accumulatedCost, unknown: unknownCost)
                             if job.configuration.replaySafety == .sideEffects && response.outcome == .error {

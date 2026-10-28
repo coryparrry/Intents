@@ -275,7 +275,8 @@ extension EvaluationRunner {
         let allocation = suite.modelConfiguration.contextAllocation(
             contextSize: contextSize,
             includesModelJudge: suite.usesSubjectModelForJudging,
-            sharedToolOutputReserve: suite.sharedToolOutputReserve
+            sharedToolOutputReserve: suite.sharedToolOutputReserve,
+            maximumSubjectResponseTokens: suite.responseTokenReserve(afterToolProfileIsReachable: afterToolProfileIsReachable)
         )
         let inputCeiling = allocation.effectiveInputLimit
         let promptBudget = inputCeiling - instructionTokens - toolTokens - schemaTokens - profileTokens
@@ -377,7 +378,7 @@ extension EvaluationRunner {
                 let worstCaseJudgeInput = judgeInstructionTokens
                     + judgePromptTokens
                     + judgeSchemaTokens
-                    + suite.modelConfiguration.maximumResponseTokens
+                    + suite.responseTokenReserve(afterToolProfileIsReachable: afterToolProfileIsReachable)
                     + allocation.toolOutputReserve
                 let judgeInputBudget = contextSize - EvaluationModelConfiguration.judgeResponseTokenReserve
                 guard worstCaseJudgeInput <= judgeInputBudget else {

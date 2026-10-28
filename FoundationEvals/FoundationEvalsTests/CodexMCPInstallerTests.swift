@@ -3,6 +3,84 @@ import Testing
 @testable import FoundationEvals
 
 struct CodexMCPInstallerTests {
+    /// Keeps LF and CRLF configuration byte-stable across install, inspection, repeated update, and removal.
+    @Test(arguments: ["\n", "\r\n"])
+    func managedLifecyclePreservesLineEndings(newline: String) throws {
+        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let original = "# retained configuration" + newline + "model = 'custom'" + newline
+        let installed = try CodexMCPInstaller.installing(configuration: configuration, into: original)
+        let block = configuration.tomlBlock.replacingOccurrences(of: "\n", with: newline)
+        #expect(installed == original + newline + block + newline)
+        #expect(try CodexMCPInstaller.installing(configuration: configuration, into: installed) == installed)
+
+        let changed = try CodexMCPConfiguration(port: 19_001, credential: testMCPCredential)
+        let updated = try CodexMCPInstaller.installing(configuration: changed, into: installed)
+        #expect(updated.components(separatedBy: "[mcp_servers.foundation-evals]").count == 2)
+        #expect(updated.contains("http://127.0.0.1:19001/mcp"))
+        #expect(try CodexMCPInstaller.removingManagedBlock(from: updated) == original)
+
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appending(path: "config.toml")
+        try Data(installed.utf8).write(to: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        #expect(try CodexMCPInstaller().isInstalled(in: directory))
+        #expect(try CodexMCPInstaller().isInstalled(in: directory, matching: configuration))
+        #expect(try !CodexMCPInstaller().isInstalled(in: directory, matching: changed))
+    }
+
+    /// Finds unmanaged server conflicts after CRLF comments without treating multiline marker examples as ownership.
+    @Test func crlfConflictsAndMultilineMarkerExamplesUsePhysicalLines() throws {
+        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let conflict = "# retained comment\r\n[mcp_servers.foundation-evals]\r\nurl = 'manual'\r\n"
+        #expect(throws: CodexMCPInstallerError.conflictingConfiguration) {
+            try CodexMCPInstaller.installing(configuration: configuration, into: conflict)
+        }
+        let example = "notes = '''\r\n" + CodexMCPInstaller.beginMarker + "\r\n"
+            + CodexMCPInstaller.endMarker + "\r\n'''\r\n"
+        let installed = try CodexMCPInstaller.installing(configuration: configuration, into: example)
+        #expect(installed.hasPrefix(example))
+        #expect(try CodexMCPInstaller.removingManagedBlock(from: installed) == example)
+    }
+
+    /// Refuses unmanaged settings extending the managed section without changing their scope, bytes, or backups.
+    @Test(arguments: ["http_headers = { Authorization = 'Bearer synthetic' }", "startup_timeout_sec = 30"])
+    func unmanagedManagedSectionTailIsPreservedByRefusal(setting: String) throws {
+        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let legacy = CodexMCPInstaller.beginMarker + "\n[mcp_servers.foundation-evals]\n"
+            + "url = 'http://127.0.0.1:19001/mcp'\n" + CodexMCPInstaller.endMarker + "\n"
+            + "# independently maintained setting\n" + setting + "\n"
+        #expect(throws: CodexMCPInstallerError.conflictingConfiguration) {
+            try CodexMCPInstaller.installing(configuration: configuration, into: legacy)
+        }
+        #expect(throws: CodexMCPInstallerError.conflictingConfiguration) {
+            try CodexMCPInstaller.removingManagedBlock(from: legacy)
+        }
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appending(path: "config.toml")
+        let originalBytes = Data(legacy.utf8)
+        try originalBytes.write(to: file)
+        #expect(throws: CodexMCPInstallerError.conflictingConfiguration) {
+            try CodexMCPInstaller().installOrUpdate(in: directory, configuration: configuration)
+        }
+        #expect(try Data(contentsOf: file) == originalBytes)
+        #expect(!FileManager.default.fileExists(
+            atPath: directory.appending(path: "config.toml.foundation-evals.backup").path
+        ))
+    }
+
+    /// Preserves unmanaged sibling tables following the managed block when updating or removing its entry.
+    @Test func unmanagedTableAfterManagedBlockRetainsItsScope() throws {
+        let configuration = try CodexMCPConfiguration(credential: testMCPCredential)
+        let sibling = "# retained sibling\n[mcp_servers.other]\nhttp_headers = { Example = 'retained' }\n"
+        let original = configuration.tomlBlock + "\n" + sibling
+        let changed = try CodexMCPConfiguration(port: 19_001, credential: testMCPCredential)
+        let updated = try CodexMCPInstaller.installing(configuration: changed, into: original)
+        #expect(updated.hasSuffix(sibling))
+        #expect(try CodexMCPInstaller.removingManagedBlock(from: updated) == sibling)
+    }
+
     @Test func managedInstallUpdateAndRemovalPreserveUnrelatedConfiguration() throws {
         let original = """
         # user setting
