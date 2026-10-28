@@ -3,6 +3,31 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct TelemetryPersistenceTests {
+    /// Legacy rubric migration reports validation errors separately from failed writes and successful saves.
+    @Test(arguments: ["success", "validation", "storage"])
+    func legacyMigrationPreservesSaveFailureCategory(outcome: String) async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let seed = EvaluationStore(supportDirectory: directory)
+        let target = suiteDirectory(seed, root: directory)
+        var legacy = seed.suite
+        await seed.closeAndWait()
+        legacy.criteria = EvaluationSuite.legacyDefaultCriteria
+        if outcome == "validation" { legacy.cases = [] }
+        try CanonicalJSON.data(for: legacy).write(to: target.appending(path: "suite.json"))
+        let telemetry = recorder()
+        let store = EvaluationStore(supportDirectory: directory, telemetry: telemetry,
+            workspaceCatalogWriter: { catalog, url in
+                if outcome == "storage" { throw CocoaError(.fileWriteNoPermission) }
+                try EvaluationWorkspacePersistence.save(catalog, in: url)
+            })
+        let finished = try #require(outcomes(telemetry, operation: "workspace_load").last)
+        #expect(finished["outcome"] == (outcome == "success" ? "succeeded" : "failed"))
+        #expect(finished["error_code"] == (outcome == "success" ? nil : outcome))
+        #expect(outcomes(telemetry, operation: "suite_save").last?["error_code"] == finished["error_code"])
+        await store.closeAndWait()
+    }
+
     /// Every damaged subsidiary file must fail the enclosing workspace load, without exposing its contents.
     @Test(arguments: ["suite.json", "suite-draft.json", "state.json", "active-run.json",
                       "pending-completed-runs.json", "Runs/corrupt.json", "SnapshotRuns/corrupt.json",

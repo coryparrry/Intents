@@ -318,7 +318,10 @@ final class EvaluationStore {
         }
         if migratedRubric || (loadedSuite.suite == nil && loadedSuite.notice == nil) {
             if !catalogRecoveryAttempted || catalogRecoveryCanPublish {
-                if !saveSuite() { startupDiagnosticFailure = .storage }
+                if !saveSuite() {
+                    startupDiagnosticFailure = validationIssue(for: draftSuite, includeModelReadiness: false) == nil
+                        ? .storage : .validation
+                }
             }
         }
     }

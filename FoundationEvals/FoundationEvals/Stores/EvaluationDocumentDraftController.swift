@@ -133,7 +133,7 @@ final class EvaluationDocumentDraftController {
             defer {
                 let completedRequestedCount = (draft?.cases.filter { !$0.discarded }.count ?? 0) >= initial.requestedCount
                 let batchFailure: TelemetryFailure? = completedRequestedCount ? nil : (recoverableFailure ?? .generation)
-                if let recoverableFailure {
+                if completedRequestedCount, completionFailure == nil, let recoverableFailure {
                     telemetry?.issue(.documentGenerate, recoverableFailure, relatedTo: span)
                 }
                 telemetry?.end(span, failure: completionFailure ?? batchFailure,

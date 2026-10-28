@@ -15,6 +15,11 @@ import Testing
         await controller.waitUntilIdle()
         #expect(fixture.features("document_generated").count == (fails ? 0 : 1))
         #expect(fixture.finishes("document_generate").last?.properties["outcome"] as? String == (fails ? "failed" : "succeeded"))
+        // An exhausted batch reports its terminal network failure once, without a recovered-attempt issue.
+        #expect(!fixture.client.events.contains { $0.name == "foundation_evals_diagnostic_issue" })
+        if fails {
+            #expect(fixture.finishes("document_generate").last?.properties["error_code"] as? String == "network")
+        }
         if !fails {
             #expect(controller.draft?.cases.count == 5)
             let restored = EvaluationDocumentDraftController(directory: fixture.directory, projectID: fixture.projectID)
@@ -374,7 +379,8 @@ import Testing
         defaults.set(true, forKey: TelemetryController.diagnosticsConsentKey)
         let client = self.client
         recorder = TelemetryController(defaults: defaults,
-            configuration: .init(projectToken: "phc_test", host: "https://telemetry.invalid"), makeClient: { _ in client })
+            configuration: .init(projectToken: "phc_test", host: "https://telemetry.invalid"), makeClient: { _ in client },
+            discardPendingCrashes: {})
     }
 
     /// Removes only this test's temporary storage and preferences.
