@@ -3,8 +3,8 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct TelemetryPersistenceTests {
-    /// Legacy rubric migration reports validation errors separately from failed writes and successful saves.
-    @Test(arguments: ["success", "validation", "storage"])
+    /// Legacy migration distinguishes validation from writes while preserving earlier workspace storage failures.
+    @Test(arguments: ["success", "validation", "storage", "mixed"])
     func legacyMigrationPreservesSaveFailureCategory(outcome: String) async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -13,8 +13,9 @@ import Testing
         var legacy = seed.suite
         await seed.closeAndWait()
         legacy.criteria = EvaluationSuite.legacyDefaultCriteria
-        if outcome == "validation" { legacy.cases = [] }
+        if outcome == "validation" || outcome == "mixed" { legacy.cases = [] }
         try CanonicalJSON.data(for: legacy).write(to: target.appending(path: "suite.json"))
+        if outcome == "mixed" { try Data("corrupt state".utf8).write(to: target.appending(path: "state.json")) }
         let telemetry = recorder()
         let store = EvaluationStore(supportDirectory: directory, telemetry: telemetry,
             workspaceCatalogWriter: { catalog, url in
@@ -23,8 +24,10 @@ import Testing
             })
         let finished = try #require(outcomes(telemetry, operation: "workspace_load").last)
         #expect(finished["outcome"] == (outcome == "success" ? "succeeded" : "failed"))
-        #expect(finished["error_code"] == (outcome == "success" ? nil : outcome))
-        #expect(outcomes(telemetry, operation: "suite_save").last?["error_code"] == finished["error_code"])
+        let workspaceFailure = outcome == "mixed" ? "storage" : (outcome == "success" ? nil : outcome)
+        let saveFailure = outcome == "mixed" ? "validation" : workspaceFailure
+        #expect(finished["error_code"] == workspaceFailure)
+        #expect(outcomes(telemetry, operation: "suite_save").last?["error_code"] == saveFailure)
         await store.closeAndWait()
     }
 

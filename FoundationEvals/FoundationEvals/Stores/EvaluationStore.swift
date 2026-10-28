@@ -319,8 +319,8 @@ final class EvaluationStore {
         if migratedRubric || (loadedSuite.suite == nil && loadedSuite.notice == nil) {
             if !catalogRecoveryAttempted || catalogRecoveryCanPublish {
                 if !saveSuite() {
-                    startupDiagnosticFailure = validationIssue(for: draftSuite, includeModelReadiness: false) == nil
-                        ? .storage : .validation
+                    startupDiagnosticFailure = startupDiagnosticFailure
+                        ?? (validationIssue(for: draftSuite, includeModelReadiness: false) == nil ? .storage : .validation)
                 }
             }
         }
