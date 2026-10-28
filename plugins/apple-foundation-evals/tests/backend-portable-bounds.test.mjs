@@ -21,6 +21,52 @@ async function fixture(t, texts = new Map()) {
   return app;
 }
 
+/** Creates distinct text-file payloads with controlled decoded sizes and canonical per-file base64 padding. */
+function referenceFiles(byteCounts) {
+  return byteCounts.map((count, index) => ({ name: `file${index}.txt`, mimeType: 'text/plain', base64: Buffer.alloc(count, 65 + index).toString('base64') }));
+}
+
+/** Builds a bounded leaf tree so accepted nested draft fields expose serialization growth from indentation. */
+function outputFieldTree(depth, root = false) {
+  if (!depth) return { name: 'leaf', type: 'string', description: 'Retain draft leaf content' };
+  return { name: 'node', type: 'object', children: Array.from({ length: root ? 4 : 8 }, () => outputFieldTree(depth - 1)) };
+}
+
+for (const [label, byteCounts, encodedBytes] of [
+  ['three individually valid files', [4999998, 4999998, 4999998], 19999992],
+  ['four encoded bytes above the boundary with per-file padding', [4000000, 4000000, 3999997], 16000004],
+]) {
+  test(`portable reference imports reject ${label} before extraction or persistence`, { timeout: 30000 }, async (t) => {
+    const app = await fixture(t), before = await readdir(app.store.root), saved = await app.store.list('suites');
+    let invocations = 0;
+    /** Records and rejects extraction so aggregate rejection must precede native work and reference writes. */
+    app.invoke = async () => { invocations++; throw new Error('Oversized reference bundles must not invoke extraction'); };
+    const files = referenceFiles(byteCounts), definition = { name: 'Oversized reference aggregate', version: 'v1', cases: [{ prompt: 'Read references' }] };
+    assert.ok(byteCounts.every((count) => count < 5000000));
+    assert.equal(files.reduce((total, file) => total + file.base64.length, 0), encodedBytes);
+    assert.ok(Buffer.byteLength(JSON.stringify({ suite: definition, referenceFiles: files })) < MAX_SUITE_BUNDLE_BYTES);
+    await assert.rejects(app.call('eval_import_suite', { suite: definition, referenceFiles: files }), /Portable reference bundle exceeds the 16,000,000-byte base64 limit/);
+    assert.equal(invocations, 0);
+    assert.deepEqual(await readdir(app.store.root), before);
+    assert.deepEqual(await app.store.list('suites'), saved);
+  });
+}
+
+test('the exact 16,000,000-byte reference budget roundtrips and exports reject four additional encoded bytes', { timeout: 30000 }, async (t) => {
+  const source = await fixture(t), destination = await fixture(t);
+  const files = referenceFiles([4000000, 4000000, 3999996]);
+  assert.ok(files[0].base64.endsWith('==') && files[1].base64.endsWith('=='));
+  assert.equal(files.reduce((total, file) => total + file.base64.length, 0), 16000000);
+  const { suite } = await source.call('eval_import_suite', { suite: { name: 'Exact reference aggregate', version: 'v1', cases: [{ prompt: 'Read references' }] }, referenceFiles: files });
+  const exported = await source.call('eval_export_suite', { suiteId: suite.id });
+  assert.deepEqual(exported.referenceFiles.map(({ attachmentId, ...file }) => file), files);
+  const imported = (await destination.call('eval_import_suite', { json: exported.json })).suite;
+  assert.deepEqual(imported.attachments, suite.attachments);
+  assert.deepEqual((await destination.call('eval_export_suite', { suiteId: imported.id })).referenceFiles, exported.referenceFiles);
+  await source.call('eval_add_reference_file', { suiteId: suite.id, name: 'extra.txt', mimeType: 'text/plain', base64: Buffer.from('x').toString('base64') });
+  await assert.rejects(source.call('eval_export_suite', { suiteId: suite.id }), /Portable reference bundle exceeds the 16,000,000-byte base64 limit/);
+});
+
 test('portable suites above the former 16 MiB JSON ceiling roundtrip with all reference bytes', { timeout: 30000 }, async (t) => {
   const texts = new Map(), source = await fixture(t, texts), destination = await fixture(t, texts);
   const attachments = [];
@@ -44,8 +90,27 @@ test('portable suites above the former 16 MiB JSON ceiling roundtrip with all re
   assert.deepEqual(roundtrip.referenceFiles, exported.referenceFiles);
 });
 
+test('accepted deep drafts export compact JSON and reimport with all retained content', { timeout: 30000 }, async (t) => {
+  const source = await fixture(t), destination = await fixture(t);
+  let field = outputFieldTree(4, true);
+  for (let depth = 0; depth < 400; depth++) field = { name: 'branch', type: 'object', children: [field] };
+  const { suite } = await source.call('eval_import_suite', { suite: { name: 'Deep draft', version: 'v1', cases: [{ prompt: 'Retain draft fields' }], features: { outputFields: [field] } } });
+  assert.ok(Buffer.byteLength(JSON.stringify(suite)) < 1024 * 1024);
+  assert.ok(Buffer.byteLength(JSON.stringify(suite, null, 2)) > MAX_SUITE_BUNDLE_BYTES);
+  const exported = await source.call('eval_export_suite', { suiteId: suite.id });
+  assert.equal(exported.json, JSON.stringify(exported.suite));
+  assert.ok(Buffer.byteLength(exported.json) < MAX_SUITE_BUNDLE_BYTES);
+  assert.equal(exported.filename, 'Deep-draft.json');
+  assert.equal(exported.revision, suite.revision);
+  const imported = (await destination.call('eval_import_suite', { json: exported.json })).suite;
+  assert.equal(imported.id, suite.id);
+  assert.equal(imported.revision, suite.revision);
+  assert.equal(JSON.stringify(imported.features.outputFields), JSON.stringify(suite.features.outputFields));
+  assert.equal((await destination.call('eval_export_suite', { suiteId: imported.id })).json, exported.json);
+});
+
 test('the complete structured portable bundle is bounded before extraction or reference writes', { timeout: 30000 }, async (t) => {
-  const app = await fixture(t), before = await readdir(app.store.root);
+  const app = await fixture(t), before = await readdir(app.store.root), saved = await app.store.list('suites');
   let invocations = 0;
   /** Records and rejects extraction so the test proves bundle admission fails before any native work. */
   app.invoke = async () => { invocations++; throw new Error('Oversized bundles must not invoke extraction'); };
@@ -54,4 +119,5 @@ test('the complete structured portable bundle is bounded before extraction or re
   await assert.rejects(app.call('eval_import_suite', { suite: { name: 'Oversized references', version: 'v1', cases: [{ prompt: 'Read references' }] }, referenceFiles: files }), /Portable suite bundle exceeds 32 MiB/);
   assert.equal(invocations, 0);
   assert.deepEqual(await readdir(app.store.root), before);
+  assert.deepEqual(await app.store.list('suites'), saved);
 });

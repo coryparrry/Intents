@@ -15,10 +15,10 @@ export async function initProjects(app) {
 }
 /** Resolves an explicit or default project UUID and requires the owning project record to exist. */
 async function project(app, value) { const projectId = id(value || app.defaultProjectId, 'projectId'); await app.store.read('projects', projectId); return projectId; }
-/** Serializes the complete portable suite and optional files, rejecting an oversized bundle before extraction or a successful export. */
-function suiteBundleJSON(definition, files, pretty = false) {
+/** Serializes and measures compact portable JSON identically for imports and exports, rejecting oversized bundles before extraction or export. */
+function suiteBundleJSON(definition, files) {
   const value = files?.length ? { suite: definition, referenceFiles: files } : definition;
-  const json = JSON.stringify(value, null, pretty ? 2 : undefined);
+  const json = JSON.stringify(value);
   if (Buffer.byteLength(json) > MAX_SUITE_BUNDLE_BYTES) throw new Error('Portable suite bundle exceeds 32 MiB; export or import fewer reference files');
   return json;
 }
@@ -60,7 +60,7 @@ export async function workspaceDispatch(app, name, args) {
     }
     case 'eval_project_overview': return overview(app, args.projectId);
     case 'eval_import_suite': { const imported = parseImport(args, 'suite'); let definition = imported.suite || imported; const files = args.referenceFiles || imported.referenceFiles; suiteBundleJSON(definition, files); if (files) definition = await importReferences(app, definition, files); return saveSuite(app, { ...args, suite: definition }, { imported: true }); }
-    case 'eval_export_suite': { const saved = await app.store.read('suites', id(args.suiteId, 'suiteId')); const value = portableSuite(saved); const referenceFiles = await exportReferences(app, saved); return { suite: value, ...(referenceFiles.length ? { referenceFiles } : {}), revision: saved.revision, json: suiteBundleJSON(value, referenceFiles, true), filename: `${saved.name.replace(/[^a-z0-9_-]/gi, '-')}.json` }; }
+    case 'eval_export_suite': { const saved = await app.store.read('suites', id(args.suiteId, 'suiteId')); const value = portableSuite(saved); const referenceFiles = await exportReferences(app, saved); return { suite: value, ...(referenceFiles.length ? { referenceFiles } : {}), revision: saved.revision, json: suiteBundleJSON(value, referenceFiles), filename: `${saved.name.replace(/[^a-z0-9_-]/gi, '-')}.json` }; }
     case 'eval_import_cases': {
       const saved = await app.store.read('suites', id(args.suiteId, 'suiteId'));
       const cases = importCases(args, isAppSuite(saved));

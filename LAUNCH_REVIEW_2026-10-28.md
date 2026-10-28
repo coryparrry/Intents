@@ -1,3 +1,5 @@
+> PR feedback follow-through: two additional portable-import/export boundary findings were corrected after the original qualification. See [PR #180 triage and remediation](PR_180_REVIEW_TRIAGE_2026-10-28.md) for both reproductions, fixes, and the merge-validation record.
+
 > Remediation complete for all 34 original findings, plus one compatible development-dependency correction (A01). The original triage was 26 Fix now and 8 Fix if cheap; including A01, the complete inventory is 35 items: 26 Fix now, 9 Fix if cheap, 0 Defer, 0 Ignore. GitHub CI and Plugin validation succeeded on source commit `8e3b6f48d058d08e96de89b468c301fe0150f1bc`; all 38 hosted UI tests passed. The original audit below preserves pre-fix evidence, followed by the implementation and validation ledger.
 
 # Intents prelaunch code review — 28 October 2026

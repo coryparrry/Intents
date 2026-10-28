@@ -6,7 +6,14 @@ import { id } from './validation.mjs';
 export const REFERENCE_LIMITS = { maxImageBytes: 10000000, maxTextFileBytes: 5000000, maxAttachments: 20, maxImages: 4, maximumExtractedTextCharacters: 16000 };
 const storedName = /^[a-f0-9]{64}\.(pdf|txt|md|csv|json|png|jpg|heic|heif|tiff|gif|webp)$/;
 const MAX_FILE_BYTES = REFERENCE_LIMITS.maxImageBytes;
+const MAX_ENCODED_REFERENCE_BYTES = 16000000;
 const MIME = { 'application/pdf': 'pdf', 'text/plain': 'txt', 'text/markdown': 'md', 'text/csv': 'csv', 'application/json': 'json', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/heic': 'heic', 'image/heif': 'heif', 'image/tiff': 'tiff', 'image/gif': 'gif', 'image/webp': 'webp' };
+/** Adds one file's canonical base64 length, including its padding, and enforces the shared import/export reference budget. */
+function referenceBundleBytes(encodedBytes, fileBytes) {
+  const total = encodedBytes + Math.ceil(fileBytes / 3) * 4;
+  if (total > MAX_ENCODED_REFERENCE_BYTES) throw new Error('Portable reference bundle exceeds the 16,000,000-byte base64 limit; include fewer reference files');
+  return total;
+}
 /** Creates the private reference directory and rejects a symlink or non-directory at that path. */
 async function directory(app) {
   const path = join(app.store.root, 'references'); await mkdir(path, { recursive: true, mode: 0o700 });
@@ -52,23 +59,23 @@ export async function addReferenceFile(app, args) {
   if (!attachment || !['text', 'image'].includes(attachment.kind) || (attachment.kind === 'text' && typeof attachment.text !== 'string')) throw new Error(value?.error?.message || value?.error || 'Native reference extraction failed');
   return { attachment: { ...attachment, id: randomUUID(), name: args.name, storedFilename: filename, byteCount: bytes.length, sha256 }, truncated: !!value.truncated };
 }
-/** Exports integrity-checked stored attachments as portable base64 files, rejecting bundles above the 16 MiB encoded limit. */
+/** Exports integrity-checked stored attachments as portable base64 files within the shared encoded-byte budget. */
 export async function exportReferences(app, suite) {
   const files = []; let encodedBytes = 0;
   for (const attachment of suite.attachments || []) if (attachment.storedFilename && (attachment.kind === 'image' || storedName.test(attachment.storedFilename))) {
     const { bytes } = await readReference(app, attachment); const extension = attachment.storedFilename.split('.').at(-1); const mimeType = Object.entries(MIME).find(([, ext]) => ext === extension)?.[0];
-    encodedBytes += Math.ceil(bytes.length / 3) * 4; if (encodedBytes > 16000000) throw new Error('Portable reference bundle exceeds the 16 MiB request limit; export fewer reference files');
+    encodedBytes = referenceBundleBytes(encodedBytes, bytes.length);
     files.push({ attachmentId: attachment.id, name: attachment.name, mimeType, base64: bytes.toString('base64') });
   }
   return files;
 }
-/** Resolves distinct attachment identities and verifies supplied integrity metadata before extracting files; preserves existing attachment IDs. */
+/** Checks the encoded-byte budget, distinct attachment identities, and supplied integrity metadata before any extraction or storage writes; preserves attachment IDs. */
 export async function importReferences(app, suite, files) {
   if (!Array.isArray(files) || files.length > 20) throw new Error('referenceFiles must be an array of at most 20 files');
   const attachments = [...(suite.attachments || [])];
   const identities = attachments.filter((item) => item.id).map((item) => id(item.id, 'attachment ID'));
   if (new Set(identities).size !== identities.length) throw new Error('Suite attachment IDs must be unique');
-  const matched = new Set();
+  const matched = new Set(); let encodedBytes = 0;
   // Resolve every identity before extraction writes reference bytes. A filename
   // can bridge legacy bundles only when it identifies exactly one attachment.
   const targets = files.map((file) => {
@@ -82,8 +89,10 @@ export async function importReferences(app, suite, files) {
       if (candidates.length > 1) throw new Error('Legacy reference filename is ambiguous; include attachmentId');
       index = candidates[0]?.index ?? -1;
     }
+    const incoming = binaryFile(file);
+    encodedBytes = referenceBundleBytes(encodedBytes, incoming.bytes.length);
     if (index !== -1) {
-      const original = attachments[index], incoming = binaryFile(file);
+      const original = attachments[index];
       if (original.sha256 && original.sha256 !== incoming.sha256 || original.byteCount !== undefined && original.byteCount !== incoming.bytes.length) throw new Error('Imported reference bytes do not match the suite attachment');
     }
     const identity = index === -1 ? `new:${file.name}` : `existing:${index}`;
