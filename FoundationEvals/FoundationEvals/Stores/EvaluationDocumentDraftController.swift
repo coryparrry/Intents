@@ -97,7 +97,7 @@ final class EvaluationDocumentDraftController {
         }
     }
 
-    /// Generate source-backed drafts, treating recovered attempts separately from the durable batch outcome.
+    /// Generate source-backed drafts, keeping recovered attempts separate and reporting incomplete saved batches as failures.
     func generate(retryFailures: Bool = false, judge: EvaluationJudgeConnection? = nil) {
         guard !isBusy, !storageBlocked, let initial = draft,
               [5, 10, 20].contains(initial.requestedCount), !initial.selectedPassageIDs.isEmpty else { return }
@@ -132,10 +132,11 @@ final class EvaluationDocumentDraftController {
             var generatedAny = false
             defer {
                 let completedRequestedCount = (draft?.cases.filter { !$0.discarded }.count ?? 0) >= initial.requestedCount
+                let batchFailure: TelemetryFailure? = completedRequestedCount ? nil : (recoverableFailure ?? .generation)
                 if let recoverableFailure {
                     telemetry?.issue(.documentGenerate, recoverableFailure, relatedTo: span)
                 }
-                telemetry?.end(span, failure: completionFailure ?? (completedRequestedCount ? nil : recoverableFailure),
+                telemetry?.end(span, failure: completionFailure ?? batchFailure,
                     recordsFeature: generatedAny && completedRequestedCount)
                 if operationID == id { generationTelemetry = nil }
             }

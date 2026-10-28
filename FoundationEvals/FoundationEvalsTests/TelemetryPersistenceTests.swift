@@ -165,6 +165,77 @@ import Testing
         #expect(outcomes(telemetry, operation: "run_save").last?["outcome"] == "succeeded")
     }
 
+    /// Active evaluations finish telemetry after history storage and retain execution failure or cancellation priority.
+    @Test(.timeLimit(.minutes(1)), arguments: ["saved", "storage", "execution", "cancelled"])
+    func activeEvaluationOutcomesRequireSavedHistory(scenario: String) async throws {
+        let fixture = try LifecycleCustomModelFixture()
+        defer { fixture.stop() }
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let defaultsName = "TelemetryHistoryOutcome.\(UUID())"
+        let defaults = UserDefaults(suiteName: defaultsName)!
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        defaults.set(true, forKey: TelemetryController.consentKey)
+        let client = DiagnosticRecordingClient()
+        let telemetry = TelemetryController(defaults: defaults,
+            configuration: .init(projectToken: "phc_test", host: "https://telemetry.invalid"),
+            makeClient: { _ in client }, discardPendingCrashes: {})
+        var writes = 0
+        let store = EvaluationStore(supportDirectory: directory, telemetry: telemetry, runWriter: { data, url in
+            writes += 1
+            #expect(outcomes(telemetry, operation: "evaluation").isEmpty)
+            #expect(!client.events.contains {
+                $0.name == "intents_feature_used" && $0.properties["feature"] as? String == "evaluation"
+            })
+            if scenario != "saved" { throw CocoaError(.fileWriteNoPermission) }
+            try data.write(to: url, options: .atomic)
+        })
+        try prepareFeatureSuite(store)
+        store.draftSuite.cases[0].expected = "Deterministic fixture stream."
+        store.draftSuite.modelConfiguration.provider = .customHTTP
+        store.draftSuite.modelConfiguration.customProviderSettings.endpoint = fixture.endpoint(
+            path: scenario == "execution" ? "/error" : "/text"
+        )
+        try #require(store.saveSuite())
+        let id = UUID()
+        _ = try store.startRun(id: id, expectedRevision: store.currentSuiteRevision())
+        if scenario == "cancelled" { _ = try store.cancelRun(id: id) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while store.isRunning, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let finished = !store.isRunning
+        await store.closeAndWait()
+        try #require(finished)
+        #expect(writes == 1)
+        let run = try #require(store.run(with: id))
+        if scenario == "saved" || scenario == "storage" {
+            #expect(run.results.first?.response == "Deterministic fixture stream.")
+            #expect(run.results.first?.status == .passed)
+        }
+        let evaluations = outcomes(telemetry, operation: "evaluation")
+        #expect(evaluations.count == 1)
+        let evaluation = try #require(evaluations.first)
+        let expectedFailure: String? = switch scenario {
+        case "storage": "storage"
+        case "execution": "provider"
+        case "cancelled": "cancelled"
+        default: nil
+        }
+        #expect(evaluation["error_code"] == expectedFailure)
+        #expect(evaluation["outcome"] == (scenario == "saved" ? "succeeded" : scenario == "cancelled" ? "cancelled" : "failed"))
+        let features = client.events.filter {
+            $0.name == "intents_feature_used" && $0.properties["feature"] as? String == "evaluation"
+        }
+        #expect(features.count == (scenario == "saved" ? 1 : 0))
+        #expect(store.hasUnsavedCompletedRun == (scenario != "saved"))
+        #expect(store.runs.contains { $0.id == id } == (scenario == "saved"))
+        let saves = outcomes(telemetry, operation: "run_save")
+        #expect(saves.count == 1)
+        #expect(saves.first?["outcome"] == (scenario == "saved" ? "succeeded" : "failed"))
+        #expect(saves.first?["error_code"] == (scenario == "saved" ? nil : "permission"))
+    }
+
     /// A snapshot history writer's failure or cancellation is reported, and retry saves its existing output.
     @Test(arguments: ["permission", "cancelled"])
     func snapshotHistoryFailuresAndRetriesAreRecorded(failure: String) async throws {

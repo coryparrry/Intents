@@ -3781,18 +3781,22 @@ final class EvaluationStore {
 
     /// Finalizes only the current run, assigns history order, and publishes saved history and selection.
     /// On write failure retains terminal evidence and attempts a recovery checkpoint for retry before clearing task ownership.
+    /// Records completion after the history write, preserving cancellation or execution failure over storage failure.
     private func finish(_ run: EvaluationRun) {
         guard activeRun?.id == run.id else { return }
         let run = runPreparedForHistory(run)
-        telemetry?.end(evaluationTelemetry, failure: TelemetryFailure.evaluationFailure(results: run.results, cancelled: run.cancelled))
-        evaluationTelemetry = nil
+        let executionFailure = TelemetryFailure.evaluationFailure(results: run.results, cancelled: run.cancelled)
         do {
             try persistRun(run)
+            telemetry?.end(evaluationTelemetry, failure: executionFailure)
+            evaluationTelemetry = nil
             runs.removeAll { $0.id == run.id }
             runs.insert(run, at: 0)
             selection = .run(run.id)
             try? FileManager.default.removeItem(at: activeRunURL)
         } catch {
+            telemetry?.end(evaluationTelemetry, failure: executionFailure ?? .classify(error))
+            evaluationTelemetry = nil
             unsavedRun = run
             if let activeRun, let activeRunSuite {
                 try? persistActiveRun(ActiveRunRecord(

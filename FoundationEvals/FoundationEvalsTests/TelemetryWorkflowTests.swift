@@ -23,7 +23,45 @@ import Testing
             controller.generate()
             await controller.waitUntilIdle()
             #expect(fixture.features("document_generated").count == 1)
+            #expect(fixture.finishes("document_generate").last?.properties["outcome"] as? String == "succeeded")
         }
+        fixture.assertPrivateContentAbsent()
+    }
+
+    /// Resumes an exhausted persisted draft as incomplete until explicitly retried failures produce the requested saved cases.
+    @Test(arguments: [false, true])
+    func exhaustedSavedGenerationRequiresSuccessfulRetry(retryFailures: Bool) async throws {
+        let fixture = try WorkflowTelemetryFixture()
+        defer { fixture.remove() }
+        let saved = fixture.documentController(generate: { _, _, _, _, _ in
+            Issue.record("Preparing the saved draft must not generate a case")
+            return nil
+        })
+        let initial = try #require(saved.draft)
+        let passage = try #require(initial.source.passages.first)
+        saved.draft?.cases = [.init(evaluationCase: Self.documentCase(source: initial.source, passage: passage, index: 0))]
+        for slot in 0..<(initial.requestedCount * 2) {
+            let batchID = "\(passage.id):\(slot)"
+            saved.draft?.completedBatchIDs.insert(batchID)
+            if slot > 0 { saved.draft?.issues[batchID] = "Private workflow saved generation failure" }
+        }
+        try #require(saved.persist())
+        let controller = EvaluationDocumentDraftController(directory: fixture.directory, projectID: fixture.projectID,
+            telemetry: fixture.recorder, generate: { source, passage, _, existing, _ in
+                #expect(retryFailures)
+                return Self.documentCase(source: source, passage: passage, index: existing.count)
+            }, reviewerFactory: { _ in DocumentTestFixture.semanticReviewer }, availability: { nil })
+        #expect(controller.draft?.cases.count == 1)
+        controller.generate(retryFailures: retryFailures)
+        await controller.waitUntilIdle()
+        let expectedCount = retryFailures ? 5 : 1
+        #expect(controller.draft?.cases.count == expectedCount)
+        let restored = EvaluationDocumentDraftController(directory: fixture.directory, projectID: fixture.projectID)
+        #expect(restored.draft?.cases.count == expectedCount)
+        #expect(fixture.features("document_generated").count == (retryFailures ? 1 : 0))
+        #expect(fixture.finishes("document_generate").count == 1)
+        #expect(fixture.finishes("document_generate").last?.properties["outcome"] as? String == (retryFailures ? "succeeded" : "failed"))
+        #expect(fixture.finishes("document_generate").last?.properties["error_code"] as? String == (retryFailures ? nil : "generation"))
         fixture.assertPrivateContentAbsent()
     }
 
