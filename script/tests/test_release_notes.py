@@ -163,12 +163,20 @@ class ReleaseNotesTests(unittest.TestCase):
                 validate_pull_request("feat(ui): add navigation", body)
 
     def test_configured_changelog_sections_match_allowed_entry_types(self):
+        """Keep all valid PR entry types configured, publishing only product changes."""
         config = json.loads((ROOT / "release-please-config.json").read_text())
         sections = config["packages"]["."]["changelog-sections"]
         self.assertEqual({section["type"] for section in sections}, ALLOWED_ENTRY_TYPES)
         self.assertTrue(all(section["section"] for section in sections))
         self.assertEqual(len(sections), len(ALLOWED_ENTRY_TYPES))
-        self.assertTrue(all(not section.get("hidden", False) for section in sections))
+        self.assertEqual(
+            {section["type"] for section in sections if not section.get("hidden", False)},
+            {"feat", "fix", "perf"},
+        )
+        for section in sections:
+            if section["type"] not in {"feat", "fix", "perf"}:
+                with self.subTest(entry_type=section["type"]):
+                    self.assertIs(section.get("hidden"), True)
 
     def test_retargeted_ci_can_read_its_failure_logs(self):
         metadata = (ROOT / ".github/workflows/pr-metadata.yml").read_text()
