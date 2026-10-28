@@ -5,6 +5,7 @@ import Darwin
 struct EvaluationWorkspaceBootstrap {
     var catalog: EvaluationWorkspaceCatalog
     var notice: String?
+    var failure: EvaluationWorkspaceLoadFailure? = nil
 }
 
 enum EvaluationWorkspacePersistence {
@@ -15,7 +16,7 @@ enum EvaluationWorkspacePersistence {
 
     /// Loads and validates the catalog, repairing selections or creating a workspace from optional legacy storage.
     /// Preserves unreadable bytes before rejecting a catalog; one-time state recovery revokes historical authority and returns a notice.
-    /// Required storage failures throw, while recoverable repair failures are reported in the bootstrap notice.
+    /// Required storage failures throw; recoverable repair failures return a typed failure alongside the bootstrap notice.
     static func bootstrap(
         in supportDirectory: URL,
         legacySuite: EvaluationSuite?
@@ -51,7 +52,8 @@ enum EvaluationWorkspacePersistence {
                 } catch {
                     return EvaluationWorkspaceBootstrap(
                         catalog: catalog,
-                        notice: "Workspace selection was repaired in memory but could not be saved: \(error.localizedDescription)"
+                        notice: "Workspace selection was repaired in memory but could not be saved: \(error.localizedDescription)",
+                        failure: .storage
                     )
                 }
             }
@@ -94,7 +96,8 @@ enum EvaluationWorkspacePersistence {
                 // merely because a legacy source exists or a catalog save failed.
                 return EvaluationWorkspaceBootstrap(
                     catalog: catalog,
-                    notice: "Legacy state could not be repaired: \(error.localizedDescription)"
+                    notice: "Legacy state could not be repaired: \(error.localizedDescription)",
+                    failure: .storage
                 )
             }
         }

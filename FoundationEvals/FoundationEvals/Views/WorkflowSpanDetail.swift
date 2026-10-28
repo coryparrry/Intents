@@ -7,6 +7,8 @@ struct WorkflowSpanDetail: View {
     let result: EvaluationSampleResult
     let run: EvaluationRun
     let trace: WorkflowTracePresentation
+    @Environment(\.workflowTelemetry) private var telemetry
+    @State private var exportTelemetry = TelemetryFileExportController()
     @State private var tab = DetailTab.details
     @State private var exportDocument = JSONDocument()
     @State private var isExporting = false
@@ -63,10 +65,12 @@ struct WorkflowSpanDetail: View {
         .background(.background)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("Span details")
-        .fileExporter(isPresented: $isExporting, document: exportDocument, contentType: .json,
-            defaultFilename: "\(result.id.uuidString)-transcript.json") { outcome in
+        .fileExporter(isPresented: $isExporting, document: exportDocument, contentTypes: [.json],
+            defaultFilename: "\(result.id.uuidString)-transcript.json", onCompletion: { outcome in
+            exportTelemetry.complete(outcome)
             if case .failure(let error) = outcome { exportError = error.localizedDescription }
-        }
+        }, onCancellation: { exportTelemetry.cancel() })
+        .onDisappear { exportTelemetry.cancel() }
         .alert("Could not export transcript", isPresented: Binding(
             get: { exportError != nil }, set: { if !$0 { exportError = nil } }
         )) { Button("OK") { exportError = nil } } message: { Text(exportError ?? "") }
@@ -210,6 +214,7 @@ struct WorkflowSpanDetail: View {
             if let count = transcript.encodedByteCount { TraceDetailMetric(label: "Size", value: ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file)) }
             if let data = transcript.exportData {
                 Button("Export Transcript JSON…", systemImage: "square.and.arrow.up") {
+                    exportTelemetry.begin(.resultExport, telemetry: telemetry)
                     exportDocument.data = data
                     isExporting = true
                 }

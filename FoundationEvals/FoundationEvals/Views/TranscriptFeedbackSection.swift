@@ -7,6 +7,8 @@ struct TranscriptFeedbackSection: View {
     let configuration: EvaluationModelConfiguration?
     let caseName: String
     let repetition: Int
+    @Environment(\.workflowTelemetry) private var telemetry
+    @State private var exportTelemetry = TelemetryFileExportController()
 
     @State private var preview = TranscriptPreview.loading
     @State private var hasCopiedTranscript = false
@@ -17,8 +19,10 @@ struct TranscriptFeedbackSection: View {
     @State private var exportDocument = JSONDocument()
     @State private var exportFilename = "transcript.json"
     @State private var isExporting = false
-    @State private var isPreparingFeedback = false
+    @State private var feedbackTask: Task<Void, Never>?
+    @State private var feedbackPreparationID: UUID?
     @State private var exportError: String?
+    private var isPreparingFeedback: Bool { feedbackPreparationID != nil }
 
     var body: some View {
         DisclosureGroup("Foundation Models transcript and feedback") {
@@ -49,6 +53,7 @@ struct TranscriptFeedbackSection: View {
                         Button("Export Transcript JSON…", systemImage: "square.and.arrow.up") {
                             exportTranscript()
                         }
+                        .disabled(isPreparingFeedback || isExporting)
                     }
                     .buttonStyle(.bordered)
 
@@ -75,10 +80,10 @@ struct TranscriptFeedbackSection: View {
                             isPreparingFeedback ? "Preparing Feedback…" : "Export Feedback Attachment…",
                             systemImage: "doc.badge.arrow.up"
                         ) {
-                            Task { await exportFeedbackAttachment() }
+                            startFeedbackExport()
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(!canExportFeedback || isPreparingFeedback)
+                        .disabled(!canExportFeedback || isPreparingFeedback || isExporting)
 
                         if isPreparingFeedback {
                             ProgressView()
@@ -103,13 +108,15 @@ struct TranscriptFeedbackSection: View {
         .fileExporter(
             isPresented: $isExporting,
             document: exportDocument,
-            contentType: .json,
-            defaultFilename: exportFilename
-        ) { result in
-            if case .failure(let error) = result {
-                exportError = error.localizedDescription
-            }
-        }
+            contentTypes: [.json],
+            defaultFilename: exportFilename,
+            onCompletion: { result in
+                exportTelemetry.complete(result)
+                if case .failure(let error) = result {
+                    exportError = error.localizedDescription
+                }
+        }, onCancellation: { exportTelemetry.cancel() })
+        .onDisappear { cancelPendingExport() }
         .alert(
             "Could not export transcript data",
             isPresented: Binding(
@@ -163,9 +170,12 @@ struct TranscriptFeedbackSection: View {
         }
     }
 
-    /// Prepares the captured transcript bytes and filename for the file exporter, or exposes the saved omission reason when unavailable.
+    /// Starts a transcript export span and prepares saved bytes, leaving success to the platform write callback.
     private func exportTranscript() {
+        guard !isPreparingFeedback, !isExporting else { return }
+        exportTelemetry.begin(.resultExport, telemetry: telemetry)
         guard let data = trace.exportData else {
+            exportTelemetry.fail(EvaluationStoreError.invalidSuite("Transcript unavailable"))
             exportError = trace.omissionReason ?? "The transcript was not captured."
             return
         }
@@ -174,16 +184,39 @@ struct TranscriptFeedbackSection: View {
         isExporting = true
     }
 
-    /// Validates model identity and desired output, then asynchronously prepares a feedback attachment before opening the file exporter.
-    /// The caller owns the task; this method clears its preparing flag after generation and displays thrown errors, including cancellation.
-    private func exportFeedbackAttachment() async {
+    /// Serializes feedback preparation with transcript exports and retains its cancellable task and ownership.
+    private func startFeedbackExport() {
+        guard !isPreparingFeedback, !isExporting else { return }
+        let generation = exportTelemetry.begin(.resultExport, telemetry: telemetry)
+        feedbackPreparationID = generation
+        feedbackTask = Task { await exportFeedbackAttachment(generation: generation) }
+    }
+
+    /// Cancels owned preparation when the view disappears and invalidates every late publication.
+    private func cancelPendingExport() {
+        feedbackTask?.cancel()
+        feedbackTask = nil
+        feedbackPreparationID = nil
+        exportTelemetry.cancel()
+    }
+
+    /// Prepares feedback for one generation, publishing bytes or errors only while that generation still owns the view.
+    private func exportFeedbackAttachment(generation: UUID) async {
+        defer {
+            if feedbackPreparationID == generation {
+                feedbackPreparationID = nil
+                feedbackTask = nil
+            }
+        }
         guard let configuration else {
-            exportError = "The run does not contain the model configuration required to preserve model identity."
+            exportTelemetry.publish(ifCurrent: generation) {
+                exportTelemetry.fail(EvaluationStoreError.invalidSuite("Model configuration unavailable"), for: generation)
+                exportError = "The run does not contain the model configuration required to preserve model identity."
+            }
             return
         }
-        isPreparingFeedback = true
-        defer { isPreparingFeedback = false }
         do {
+            try Task.checkCancellation()
             if let issue = desiredOutput.validationIssue {
                 throw EvaluationFeedbackDesiredOutputError.invalid(issue)
             }
@@ -193,11 +226,17 @@ struct TranscriptFeedbackSection: View {
                 issues: feedbackIssues,
                 desiredOutput: desiredOutput
             )
-            exportDocument = JSONDocument(data: data)
-            exportFilename = "\(safeBaseFilename)-apple-feedback.json"
-            isExporting = true
+            try Task.checkCancellation()
+            exportTelemetry.publish(ifCurrent: generation) {
+                exportDocument = JSONDocument(data: data)
+                exportFilename = "\(safeBaseFilename)-apple-feedback.json"
+                isExporting = true
+            }
         } catch {
-            exportError = error.localizedDescription
+            exportTelemetry.publish(ifCurrent: generation) {
+                exportTelemetry.fail(error, for: generation)
+                if !(error is CancellationError) { exportError = error.localizedDescription }
+            }
         }
     }
 

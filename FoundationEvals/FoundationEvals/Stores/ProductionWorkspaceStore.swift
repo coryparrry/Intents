@@ -34,10 +34,13 @@ final class ProductionWorkspaceStore {
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var refreshID = UUID()
     @ObservationIgnored private let capturedExecutor: ProductionExecutor
-    /// Opens production storage beneath root and retains the captured-output executor.
+    @ObservationIgnored private let telemetry: TelemetryController?
+    /// Opens production storage beneath root and retains optional content-free telemetry and the captured-output executor.
     /// Storage initialization failure leaves storage unavailable and publishes its error on the main actor.
-    init(root: URL, capturedExecutor: @escaping ProductionExecutor = ProductionStorage.capturedResponse) {
+    init(root: URL, telemetry: TelemetryController? = nil,
+         capturedExecutor: @escaping ProductionExecutor = ProductionStorage.capturedResponse) {
         self.capturedExecutor = capturedExecutor
+        self.telemetry = telemetry
         do { storage = try ProductionStorage(root: root.appendingPathComponent("ProductionEvals")) }
         catch { storage = nil; self.error = error.localizedDescription }
     }
@@ -134,18 +137,27 @@ final class ProductionWorkspaceStore {
     }
 
     /// Runs a storage operation off the main actor, then delivers completed and refresh on the main actor.
-    /// Returns nil when closing or storage is absent; admitted work is tracked for shutdown and errors are published.
+    /// Optional telemetry ends after durable work and before refresh; the typed result decides whether successful work counts feature use.
+    /// Shutdown drains admitted work even when UI publication closes.
+    /// Returns nil when closing or storage is absent; untagged operations do not emit telemetry.
     @discardableResult
     func perform<T: Sendable>(_ operation: @escaping @Sendable (ProductionStorage) throws -> T,
+                              telemetryOperation: TelemetryOperation? = nil,
+                              recordsFeature: @escaping @MainActor (T) -> Bool = { _ in true },
                               completed: @escaping @MainActor (T) -> Void = { _ in }) -> Task<Void, Never>? {
         guard !isClosing, let storage else { return nil }
+        let span = telemetryOperation.flatMap { telemetry?.begin($0) }
         return trackOperation {
             do {
                 let result = try await Task.detached(priority: .utility) { try operation(storage) }.value
+                self.telemetry?.end(span, recordsFeature: recordsFeature(result))
                 guard !self.isClosing else { return }
                 completed(result)
                 await self.refresh()
-            } catch { self.error = error.localizedDescription }
+            } catch {
+                self.telemetry?.end(span, failure: Self.executionFailure(error))
+                self.error = error.localizedDescription
+            }
         }
     }
     /// Tracks an admitted main-actor operation until completion so shutdown can drain its storage work.
@@ -176,19 +188,22 @@ final class ProductionWorkspaceStore {
     }
 
     /// Schedules dataset import with version, sampling, production-data flag, and redaction confirmation passed to storage.
-    /// Completion refreshes workspace lists; failures publish through error.
-    func importDataset(file: URL, name: String, version: String, sampling: ProductionSampling, productionData: Bool, confirmed: Bool) {
-        perform { try $0.importDataset(from: file, name: name, version: version, sampling: sampling, productionData: productionData, redactionConfirmed: confirmed) }
+    /// Records adoption only for a newly published revision and returns the tracked disk operation; duplicate imports remain successful diagnostics.
+    @discardableResult
+    func importDataset(file: URL, name: String, version: String, sampling: ProductionSampling, productionData: Bool, confirmed: Bool) -> Task<Void, Never>? {
+        perform({ try $0.importDatasetWithOutcome(from: file, name: name, version: version, sampling: sampling, productionData: productionData, redactionConfirmed: confirmed) },
+                telemetryOperation: .datasetImport, recordsFeature: { $0.didPublish })
     }
     /// Snapshots draft cases into a temporary JSONL dataset and imports it through tracked storage work.
-    /// Captures the draft before dispatch and attempts temporary-file cleanup when import finishes.
-    func snapshotDataset(store: EvaluationStore) {
+    /// Captures the draft before dispatch, counts only newly published revisions, and returns tracked work that cleans up its temporary input.
+    @discardableResult
+    func snapshotDataset(store: EvaluationStore) -> Task<Void, Never>? {
         let suite = store.draftSuite
         guard !suite.hasDocumentCases else {
             error = "Document suites cannot be flattened into production datasets. Run or export the document suite in Cases."
-            return
+            return nil
         }
-        perform { storage in
+        return perform({ storage in
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("suite-dataset-\(UUID().uuidString).jsonl")
             defer { try? FileManager.default.removeItem(at: file) }
             var data = Data()
@@ -198,8 +213,8 @@ final class ProductionWorkspaceStore {
                 data.append(try ProductionCodec.encode(value)); data.append(10)
             }
             try data.write(to: file)
-            return try storage.importDataset(from: file, name: suite.name, version: suite.version)
-        }
+            return try storage.importDatasetWithOutcome(from: file, name: suite.name, version: suite.version)
+        }, telemetryOperation: .datasetImport, recordsFeature: { $0.didPublish })
     }
     /// Freezes an explicit suite or the native UI draft into verified execution setup and scoring digests.
     /// Copies release gates and marks HTTP model/tool execution as potentially side-effecting; snapshot or encoding errors propagate.
@@ -292,9 +307,13 @@ final class ProductionWorkspaceStore {
     }
     /// Requests cancellation only when jobID matches the current local execution.
     func interrupt(jobID: UUID) { if jobID == runningJobID { runTask?.cancel() } }
+    /// Joins the currently admitted local batch without cancelling it or admitting additional work.
+    func waitForRun() async { await runTask?.value }
     /// Admits and starts a matching native or captured worker; completion releases ownership before loading its final audit.
+    /// Records terminal diagnostics after durable results are audited; only newly completed batches count as successful feature use.
     func start(job: ProductionJob, store: EvaluationStore, externalDisclosureApproved: Bool, resuming: Bool = false) throws {
         guard !isClosing, let storage, runTask == nil else { throw EvaluationStoreError.runBusy }
+        let span = store.telemetry?.begin(.batchRun)
         var owner: UUID?
         do {
             let kind = (try JSONSerialization.jsonObject(with: job.configuration.executionContext) as? [String: Any])?["kind"] as? String
@@ -326,6 +345,8 @@ final class ProductionWorkspaceStore {
             runningJobID = job.id
             let executionOwner = owner
             runTask = Task {
+                var failure: TelemetryFailure?
+                var recordsFeature = false
                 do {
                     let task = Task.detached(priority: .utility) {
                         // Admission must succeed before another worker can claim this job.
@@ -333,10 +354,24 @@ final class ProductionWorkspaceStore {
                             try Task.checkCancellation()
                             try storage.setControl(jobID: job.id, paused: false)
                         }
-                        return try await ProductionBatchRunner(storage: storage).run(jobID: job.id, worker: worker, execute: executor)
+                        let committed = try await ProductionBatchRunner(storage: storage).run(jobID: job.id, worker: worker, execute: executor)
+                        // Re-read durable evidence rather than treating the worker's return as a completed batch.
+                        return (committed, try storage.report(jobID: job.id))
                     }
-                    _ = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
-                } catch is CancellationError { } catch { self.error = error.localizedDescription; executionErrors[job.id] = error.localizedDescription }
+                    let (committed, report) = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+                    if Task.isCancelled || report.phase == "cancelled" { failure = .cancelled }
+                    else if report.counts.errors > 0 { failure = .generation }
+                    else if report.counts.uncertain > 0 { failure = .evidence }
+                    else if report.phase == "paused" { failure = .cancelled }
+                    // Failed model assertions are valid results. Re-reading completed or partial jobs is not another completed feature.
+                    recordsFeature = committed > 0 && report.completed == report.planned && failure == nil
+                } catch is CancellationError {
+                    failure = .cancelled
+                } catch {
+                    failure = Self.executionFailure(error)
+                    self.error = error.localizedDescription; executionErrors[job.id] = error.localizedDescription
+                }
+                store.telemetry?.end(span, failure: failure, recordsFeature: recordsFeature)
                 if let executionOwner { store.endProductionExecution(executionOwner) }
                 runningJobID = nil
                 runTask = nil
@@ -344,11 +379,21 @@ final class ProductionWorkspaceStore {
             }
         } catch {
             if let owner { store.endProductionExecution(owner) }
+            store.telemetry?.end(span, failure: Self.executionFailure(error))
             throw error
         }
     }
+    /// Classifies typed batch admission/evidence errors without inspecting their private explanations.
+    private static func executionFailure(_ error: any Error) -> TelemetryFailure {
+        guard let failure = error as? ProductionFailure else { return .classify(error) }
+        switch failure {
+        case .invalid, .budget: return .validation
+        case .integrity, .staleLease: return .evidence
+        case .unavailable: return .deviceUnavailable
+        }
+    }
     /// Schedules a review event for the selected record, splitting comma-separated tags and including a verified response for reconciliation.
-    /// Assignment stores an assignee; other actions use the applicable review outcome. Missing selection is a no-op.
+    /// Records the durable review-write outcome. Assignment stores an assignee; missing selection is a no-op.
     func appendReview(action: ProductionReviewAction, reviewer: String, assignee: String, outcome: ProductionOutcome,
                       note: String, tags: String, verifiedOutput: String, verifiedCost: Double?) {
         guard let jobID = selectedJobID, let record = selectedRecord else { return }
@@ -358,14 +403,20 @@ final class ProductionWorkspaceStore {
         let event = ProductionReviewEvent(requestID: record.response.requestID, reviewer: reviewer, action: action, assignee: action == .assign ? assignee : nil,
             outcome: action == .assign || action == .reconcile ? nil : outcome, note: note,
             tags: tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }, reconciledResponse: response)
-        perform { try $0.appendReview(jobID: jobID, slot: record.slot, event: event) }
+        perform({ try $0.appendReview(jobID: jobID, slot: record.slot, event: event) }, telemetryOperation: .reviewSave)
     }
-    /// Exports the explicit job or current selection only after the operator chooses a destination.
+    /// Starts an instrumented export only after a destination is selected; cancelling the panel is a no-op.
     func export(jobID: UUID? = nil) {
         guard let id = jobID ?? selectedJobID else { return }
         let panel = NSSavePanel(); panel.nameFieldStringValue = "eval-evidence-\(id.uuidString.prefix(8))"
         panel.title = "Export dataset, results and review history"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        perform { try $0.exportJob(id, to: url) }
+        export(jobID: id, to: url)
+    }
+    /// Exports durable batch evidence to a chosen destination and records success only after publication completes.
+    /// The returned tracked task supports network-free integration checks and shutdown drains the same disk operation.
+    @discardableResult
+    func export(jobID: UUID, to destination: URL) -> Task<Void, Never>? {
+        perform({ try $0.exportJob(jobID, to: destination) }, telemetryOperation: .resultExport)
     }
 }

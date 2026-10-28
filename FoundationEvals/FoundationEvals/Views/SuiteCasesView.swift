@@ -124,7 +124,7 @@ struct SuiteCasesView: View {
             Divider()
             HStack(spacing: 8) {
                 if store.draftSuite.hasDocumentCases {
-                    DocumentSuiteExportButton(suite: store.draftSuite).labelStyle(.iconOnly).disabled(isBusy)
+                    DocumentSuiteExportButton(suite: store.draftSuite, telemetry: store.telemetry).labelStyle(.iconOnly).disabled(isBusy)
                 }
                 Button("Add Case", systemImage: "plus", action: addCase)
                     .labelStyle(.titleAndIcon)

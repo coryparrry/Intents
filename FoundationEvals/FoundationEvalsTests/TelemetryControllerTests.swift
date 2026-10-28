@@ -121,6 +121,139 @@ import Testing
 }
 
 @Suite(.serialized) struct TelemetryTransportTests {
+    /// Verifies SDK setup supplies the initial session without a test-only startSession call.
+    @MainActor @Test func realSDKInitialUsageSharesOneSession() async throws {
+        TelemetryRecordingProtocol.clear()
+        let fixture = TelemetrySDKFixture()
+        defer { fixture.cleanUp() }
+        let defaultsName = "TelemetrySDKStartup.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: defaultsName))
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        var client: PostHogTelemetryClient?
+        let controller = TelemetryController(defaults: defaults, configuration: fixture.configuration,
+            makeClient: { configuration in
+                let created = fixture.makeClient(configuration: configuration)
+                client = created
+                return created
+            }, discardPendingCrashes: {})
+        let initializedSession = try #require(client?.analyticsSessionID)
+        #expect(UUID(uuidString: initializedSession) != nil)
+        controller.screen(.overview)
+        controller.screen(.overview)
+        controller.appBecameActive()
+        let activeClient = try #require(client)
+        try await fixture.waitUntil {
+            activeClient.flush()
+            return try TelemetryRecordingProtocol.events().count == 3
+        }
+        let events = try TelemetryRecordingProtocol.events()
+        #expect(events.compactMap { $0["event"] as? String }.sorted() ==
+            ["$screen", "foundation_evals_app_opened", "intents_first_use"].sorted())
+        #expect(events.allSatisfy { ($0["properties"] as? [String: Any])?["$session_id"] as? String == initializedSession })
+        #expect(client?.analyticsSessionID == initializedSession)
+    }
+
+    /// Verifies actual SDK expiry plus missing-session callback recovery without changing global lifecycle state.
+    @MainActor @Test func realSDKRecoversMissingUsageSessionWithoutRotatingDiagnostics() async throws {
+        TelemetryRecordingProtocol.clear()
+        let fixture = TelemetrySDKFixture()
+        defer { fixture.cleanUp() }
+        var configuration = fixture.configuration
+        configuration.diagnosticsEnabled = true
+        let client = fixture.makeClient(configuration: configuration)
+        let sdk = try #require(fixture.sdk)
+        let firstSession = try #require(client.analyticsSessionID)
+        var properties = TelemetryController.diagnosticContext(sessionID: UUID())
+        properties["environment"] = "production"
+        properties["_intents_consent_epoch"] = configuration.consentEpoch.uuidString
+        properties["$screen_name"] = "overview"
+        // Setup starts foregrounded on macOS. This exercises normal SDK expiry
+        // without replacing its process-global clock or waiting thirty minutes.
+        sdk.capture("$screen", properties: properties, timestamp: Date().addingTimeInterval(1_801))
+        let expiredSession = try #require(client.analyticsSessionID)
+        #expect(UUID(uuidString: expiredSession) != nil)
+        #expect(expiredSession != firstSession)
+        // Detach only this SDK instance's context observer: in the foreground
+        // it otherwise immediately recreates a session when endSession clears it.
+        // This preserves a missing session without global lifecycle mutation.
+        sdk.sessionManager.onSessionIdChanged = PostHogMulticastCallback<Void>()
+        sdk.endSession()
+        #expect(client.analyticsSessionID == nil)
+        properties["$screen_name"] = "evaluations"
+        // Exercise the real beforeSend/queue/transport path with the missing
+        // session output that SDK background expiry can produce. This deliberately
+        // does not simulate or claim an actual application background transition.
+        sdk.captureInternal("$screen", properties: properties, skipBuildProperties: true)
+        let recoveredSession = try #require(client.analyticsSessionID)
+        #expect(UUID(uuidString: recoveredSession) != nil)
+        #expect(recoveredSession != expiredSession)
+        client.capture(.appOpened)
+        #expect(client.analyticsSessionID == recoveredSession)
+        client.capture(.operationFinished(.evaluation, UUID(), .failed, 125, .timeout))
+        #expect(client.analyticsSessionID == recoveredSession)
+        // A sessionless diagnostic entering the same callback must stay
+        // sessionless rather than manufacture a product-usage session.
+        sdk.endSession()
+        properties["operation"] = "evaluation"
+        properties["error_code"] = "timeout"
+        sdk.captureInternal("foundation_evals_diagnostic_issue", properties: properties, skipBuildProperties: true)
+        #expect(client.analyticsSessionID == nil)
+        try await fixture.waitUntil {
+            client.flush()
+            return try TelemetryRecordingProtocol.events().count == 5
+        }
+        let events = try TelemetryRecordingProtocol.events()
+        let screens = events.filter { $0["event"] as? String == "$screen" }
+        #expect(screens.count == 2)
+        let initialScreen = try #require(screens.first { ($0["properties"] as? [String: Any])?["$screen_name"] as? String == "overview" })
+        let repairedScreen = try #require(screens.first { ($0["properties"] as? [String: Any])?["$screen_name"] as? String == "evaluations" })
+        #expect((initialScreen["properties"] as? [String: Any])?["$session_id"] as? String == expiredSession)
+        #expect((repairedScreen["properties"] as? [String: Any])?["$session_id"] as? String == recoveredSession)
+        let diagnostic = try #require(events.first { $0["event"] as? String == "foundation_evals_diagnostic_issue" })
+        #expect((diagnostic["properties"] as? [String: Any])?["$session_id"] == nil)
+    }
+
+    /// Retries an actual disk-backed SDK event after closing and recreating the SDK without a consent purge.
+    @MainActor @Test func realSDKReopensPersistedOfflineQueueWithoutPurging() async throws {
+        TelemetryRecordingProtocol.clear(networkError: .notConnectedToInternet)
+        defer { TelemetryRecordingProtocol.clear() }
+        let fixture = TelemetrySDKFixture()
+        defer { fixture.cleanUp() }
+        let first = fixture.makeClient()
+        let originalIdentity = try #require(fixture.sdk?.getDistinctId())
+        let originalSession = try #require(first.analyticsSessionID)
+        let delivery = DeliveryRecorder()
+        first.setDeliveryHandler { delivery.record($0) }
+        first.capture(.appOpened)
+        try await fixture.waitUntil { delivery.latest == .failed }
+        fixture.closeRetainingQueue()
+        let queueURL = fixture.storage.appendingPathComponent("posthog.queueFolder.uuid")
+        let files = try FileManager.default.contentsOfDirectory(at: queueURL, includingPropertiesForKeys: nil)
+        let persistedFile = try #require(files.first)
+        #expect(files.count == 1)
+        let persisted = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: persistedFile)) as? [String: Any])
+        #expect(persisted["event"] as? String == "foundation_evals_app_opened")
+        #expect((persisted["properties"] as? [String: Any])?["_intents_consent_epoch"] as? String == fixture.configuration.consentEpoch.uuidString)
+
+        TelemetryRecordingProtocol.clear()
+        let reopened = fixture.makeClient()
+        #expect(fixture.sdk?.getDistinctId() == originalIdentity)
+        #expect(reopened.analyticsSessionID != originalSession)
+        reopened.flush()
+        try await fixture.waitUntil { try TelemetryRecordingProtocol.events().count == 1 }
+        let event = try #require(try TelemetryRecordingProtocol.events().first)
+        #expect(event["event"] as? String == "foundation_evals_app_opened")
+        #expect(event["distinct_id"] as? String == originalIdentity)
+        #expect(event["uuid"] as? String == persisted["uuid"] as? String)
+        #expect(event["timestamp"] as? String == persisted["timestamp"] as? String)
+        let forwardedProperties = try #require(event["properties"] as? [String: Any])
+        #expect(forwardedProperties["$session_id"] as? String == originalSession)
+        #expect(forwardedProperties["_intents_consent_epoch"] == nil)
+        try await fixture.waitUntil {
+            try FileManager.default.contentsOfDirectory(atPath: queueURL.path).isEmpty
+        }
+    }
+
     @MainActor @Test func SDKIdentitySurvivesRelaunchAndConsentQueuePurge() {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [TelemetryRecordingProtocol.self]
@@ -171,6 +304,7 @@ import Testing
         #expect(TelemetryRecordingProtocol.bodies().count == 1)
     }
 
+    /// Verifies the real SDK's consent restoration, property filtering and intercepted diagnostic delivery.
     @MainActor @Test func realSDKSerializesSafeDiagnosticsAndDeliversThemThroughTransport() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [TelemetryRecordingProtocol.self]
@@ -184,7 +318,6 @@ import Testing
             config.disableReachabilityForTesting = true
             let sdk = PostHogSDK.with(config)
             // Simulate an SDK opt-out flag left behind when queue deletion fails.
-            sdk.startSession()
             sdk.optOut()
             return sdk
         })
@@ -339,14 +472,81 @@ import Testing
     }
 }
 
+/// Owns a synthetic project store and a locally intercepted SDK connection.
+@MainActor private final class TelemetrySDKFixture {
+    let configuration = TelemetryConfiguration(
+        projectToken: "phc_restart_test_" + UUID().uuidString.replacingOccurrences(of: "-", with: ""),
+        host: "https://telemetry.invalid")
+    private(set) var sdk: PostHogSDK?
+    private var transport: TelemetryTransport?
+    var storage: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "")
+            .appendingPathComponent(configuration.projectToken)
+    }
+
+    /// Creates a real SDK with the production filter and transport, intercepting network requests locally.
+    func makeClient(configuration: TelemetryConfiguration? = nil) -> PostHogTelemetryClient {
+        let session = URLSessionConfiguration.ephemeral
+        session.protocolClasses = [TelemetryRecordingProtocol.self]
+        return PostHogTelemetryClient(configuration: configuration ?? self.configuration,
+            sessionConfiguration: session, makeSDK: { config in
+                config.disableReachabilityForTesting = true
+                config.disableQueueTimerForTesting = true
+                config.disableFlushOnBackgroundForTesting = true
+                var request = URLRequest(url: URL(string: "https://telemetry.invalid/batch")!)
+                request.allHTTPHeaderFields = config.urlSessionConfiguration?.httpAdditionalHeaders as? [String: String]
+                transport = TelemetryTransport.lookup(request)
+                let created = PostHogSDK.with(config)
+                sdk = created
+                return created
+            })
+    }
+
+    /// Closes real SDK/session resources while preserving persisted consent, identity and queue files.
+    func closeRetainingQueue() {
+        sdk?.close()
+        transport?.stop()
+        sdk = nil
+        transport = nil
+    }
+
+    /// Removes only this fixture's random project directory after its final assertions.
+    func cleanUp() {
+        closeRetainingQueue()
+        try? FileManager.default.removeItem(at: storage)
+    }
+
+    /// Waits a bounded interval for asynchronous SDK delivery or queue acknowledgements.
+    func waitUntil(_ condition: () throws -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while try !condition() && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        try #require(try condition())
+    }
+}
+
 private final class TelemetryRecordingProtocol: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var captured: [Data] = []
     nonisolated(unsafe) private static var statusCode = 200
-    static func clear(statusCode: Int = 200) { lock.withLock { captured = []; Self.statusCode = statusCode } }
+    nonisolated(unsafe) private static var networkError: URLError.Code?
+    /// Resets intercepted requests and selects a local HTTP response or transport failure.
+    static func clear(statusCode: Int = 200, networkError: URLError.Code? = nil) {
+        lock.withLock { captured = []; Self.statusCode = statusCode; Self.networkError = networkError }
+    }
     static func bodies() -> [Data] { lock.withLock { captured } }
+    /// Decodes events that reached the actual final transport gate, preserving batch boundaries on the wire.
+    static func events() throws -> [[String: Any]] {
+        try bodies().flatMap { data in
+            let payload = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+            return try #require(payload["batch"] as? [[String: Any]])
+        }
+    }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    /// Captures the locally forwarded body and completes with the configured response or offline error.
     override func startLoading() {
         var body = request.httpBody ?? Data()
         if let stream = request.httpBodyStream {
@@ -359,8 +559,15 @@ private final class TelemetryRecordingProtocol: URLProtocol, @unchecked Sendable
                 body.append(buffer, count: count)
             }
         }
-        Self.lock.withLock { Self.captured.append(body) }
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: Self.lock.withLock { Self.statusCode }, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        let (statusCode, networkError) = Self.lock.withLock {
+            Self.captured.append(body)
+            return (Self.statusCode, Self.networkError)
+        }
+        if let networkError {
+            client?.urlProtocol(self, didFailWithError: URLError(networkError))
+            return
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: statusCode, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data("{}".utf8))
         client?.urlProtocolDidFinishLoading(self)
     }

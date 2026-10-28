@@ -232,9 +232,9 @@ final class TelemetryController {
         return span
     }
 
-    /// Finishes a tracked span once with bounded elapsed time and records feature use after success.
-    /// Spans from an earlier consent generation produce local diagnostics only.
-    func end(_ span: TelemetrySpan?, failure: TelemetryFailure? = nil) {
+    /// Finishes a tracked span once with bounded elapsed time, recording adoption only for completed useful work.
+    /// Callers suppress feature use for no-op or partial completions; earlier consent generations remain local only.
+    func end(_ span: TelemetrySpan?, failure: TelemetryFailure? = nil, recordsFeature: Bool = true) {
         guard let span, activeSpans.remove(span.id) != nil else { return }
         let elapsed = span.started.duration(to: .now).components
         guard (0..<86_400).contains(elapsed.seconds), elapsed.attoseconds >= 0 else { return }
@@ -243,7 +243,7 @@ final class TelemetryController {
         let event = TelemetryEvent.operationFinished(span.operation, span.id, outcome, milliseconds, failure)
         if span.consentGeneration == consentGeneration {
             capture(event)
-            if outcome == .succeeded, let feature = TelemetryFeature(operation: span.operation) {
+            if recordsFeature, outcome == .succeeded, let feature = TelemetryFeature(operation: span.operation) {
                 capture(.featureUsed(feature))
             }
         } else {
@@ -365,9 +365,15 @@ final class PostHogTelemetryClient: TelemetryClient {
         config.flushIntervalSeconds = 10
         config.maxQueueSize = 50
         config.urlSessionConfiguration = transport.configuration
-        config.setBeforeSend(TelemetryPayloadFilter.beforeSend(usage: configuration.usageEnabled,
-            diagnostics: configuration.diagnosticsEnabled, consentEpoch: configuration.consentEpoch))
+        let sessionRecovery = TelemetryUsageSessionRecovery()
+        let filter = TelemetryPayloadFilter.beforeSend(usage: configuration.usageEnabled,
+            diagnostics: configuration.diagnosticsEnabled, consentEpoch: configuration.consentEpoch)
+        config.setBeforeSend { @Sendable event in
+            guard let event = filter(event) else { return nil }
+            return sessionRecovery.recoverSession(for: event)
+        }
         sdk = makeSDK(config)
+        sessionRecovery.attach(sdk)
         // App consent is authoritative. A failed queue-directory deletion after
         // revocation can leave the SDK's persisted opt-out flag behind.
         // The transport still rejects every record from an earlier consent epoch.
@@ -417,5 +423,33 @@ final class PostHogTelemetryClient: TelemetryClient {
                      "posthog.replayFolder.uuid", "posthog.replayFolder", "posthog.replayBufferFolder", "posthog.logsFolder"] {
             try? FileManager.default.removeItem(at: storageURL.appendingPathComponent(name))
         }
+    }
+}
+
+/// Recovers attribution for explicit usage after the SDK expires a background session.
+/// The SDK owns expiry and valid sessions; diagnostic capture never creates one here.
+private final class TelemetryUsageSessionRecovery: @unchecked Sendable {
+    private let lock = NSLock()
+    private weak var sdk: PostHogSDK?
+
+    /// Binds the configured SDK without creating a retention cycle through its callback.
+    func attach(_ sdk: PostHogSDK) {
+        lock.withLock { self.sdk = sdk }
+    }
+
+    /// Adds a valid SDK session only to an already consent-filtered usage event missing one.
+    /// PostHog 3.71.4 releases its session and before-send locks before this callback;
+    /// starting a session updates crash context but does not capture another event.
+    func recoverSession(for event: PostHogEvent) -> PostHogEvent {
+        guard !TelemetryEvent.isDiagnostic(name: event.event),
+              (event.properties["$session_id"] as? String).flatMap(UUID.init(uuidString:)) == nil else { return event }
+        lock.withLock {
+            guard let sdk else { return }
+            if sdk.getSessionId().flatMap(UUID.init(uuidString:)) == nil { sdk.startSession() }
+            if let session = sdk.getSessionId(), UUID(uuidString: session) != nil {
+                event.properties["$session_id"] = session
+            }
+        }
+        return event
     }
 }

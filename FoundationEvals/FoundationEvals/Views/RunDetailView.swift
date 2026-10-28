@@ -54,6 +54,7 @@ struct RunDetailView: View {
     @Bindable var store: EvaluationStore
     let baselineRuns: [EvaluationRun]
     @State private var exportDocument = JSONDocument()
+    @State private var exportTelemetry = TelemetryFileExportController()
     @State private var isExporting = false
     @State private var exportError: String?
     @State private var selectedPage = RunPage.report
@@ -109,7 +110,7 @@ struct RunDetailView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button("Export Run as JSON", systemImage: "square.and.arrow.up") {
                     do {
-                        exportDocument = try JSONDocument(run: run)
+                        exportDocument = try exportTelemetry.prepare(.resultExport, telemetry: store.telemetry) { try JSONDocument(run: run) }
                         isExporting = true
                     } catch {
                         exportError = error.localizedDescription
@@ -121,11 +122,14 @@ struct RunDetailView: View {
         .fileExporter(
             isPresented: $isExporting,
             document: exportDocument,
-            contentType: .json,
-            defaultFilename: "\(safeFilename(run.suiteName))-\(run.suiteVersion)-\(run.id.uuidString.prefix(8)).json"
-        ) { result in
-            if case .failure(let error) = result { exportError = error.localizedDescription }
-        }
+            contentTypes: [.json],
+            defaultFilename: "\(safeFilename(run.suiteName))-\(run.suiteVersion)-\(run.id.uuidString.prefix(8)).json",
+            onCompletion: { result in
+                exportTelemetry.complete(result)
+                if case .failure(let error) = result { exportError = error.localizedDescription }
+        }, onCancellation: { exportTelemetry.cancel() })
+        .onDisappear { exportTelemetry.cancel() }
+        .environment(\.workflowTelemetry, store.telemetry)
         .alert("Could not export run", isPresented: Binding(
             get: { exportError != nil }, set: { if !$0 { exportError = nil } }
         )) {
