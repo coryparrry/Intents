@@ -96,12 +96,16 @@
 
 ## Clear feature descriptions and release notes
 
+- Published Release Me / Release Please notes and changelog entries must include only new features, bug fixes, and changes that affect people using the product. Include an entry only when it explains something users can now do, a problem they no longer encounter, or a meaningful change to their workflow, compatibility, performance, or security.
+- Exclude internal-only work: CI and release automation, tests, refactoring, code cleanup, developer tooling, routine dependency updates, and repository or agent instructions. Judge relevance by the actual user impact, not the commit type. If internal work also changes user-visible behavior, describe only that behavior and its benefit.
+- Automatic filtering in `release-please-config.json` publishes only `feat:`, `fix:`, and `perf:` entries. Reserve these types for product features, user-facing fixes, and product performance improvements; use internal types for automation fixes and test speedups. When a dependency update or revert fixes a user-facing problem, add a `fix:` entry explaining that problem and the resulting behavior.
+- Keep the required typed `BEGIN_COMMIT_OVERRIDE` block for every ordinary PR, including internal-only PRs, but do not relabel internal work as a feature or bug fix to make it appear in a release. Keep internal entries out of published notes; if generation includes them, correct the release-note filtering and its documentation before publishing.
 - Write feature summaries and Release Me / Release Please notes for someone who has not read the code or the PR. Explain what the feature does, what the user can now do, and why it is useful in plain English.
 - For each feature, name the affected workflow or screen and explain how to find or use it when that is needed to understand the change. Include a short concrete example when the feature would otherwise be unclear. Mention material requirements or limits; do not claim behavior that has not been implemented or verified.
 - Avoid unexplained acronyms, internal component names, vague labels such as "quality improvements," and implementation-only descriptions. Fix notes should explain the problem the user experienced and the resulting behavior.
 - Put these explanations in the actual `BEGIN_COMMIT_OVERRIDE` entries in the PR body, following `docs/releasing.md`. Release Please uses those entries for the changelog and published release notes, so a clear PR summary alone is insufficient. Keep each entry a self-contained Conventional Commit line and use one entry per independently useful change.
 - Example: instead of `feat: add document suite generation`, write `feat: create an evaluation suite from a PDF, Markdown, or text file so you can test a model against questions based on your document` (only when those formats and behavior are supported).
-- Before posting or updating a PR or release, read the feature notes on their own. Revise any entry that does not make clear what changed and what it lets the user do. Inspect generated release notes before release and correct unclear source entries before merging the release PR.
+- Before posting or updating a PR or release, read the feature notes on their own. Revise any entry that does not make clear what changed and what it lets the user do. Inspect generated release notes before release, remove internal-only entries, and correct unclear source entries before merging the release PR.
 
 ## Pull request completion and merge requirements
 

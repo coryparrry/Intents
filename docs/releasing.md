@@ -34,7 +34,7 @@ The source verifier also requires the successful production qualification step i
 
 No separate packaging action is required. A missing signing secret, failed CI/build/notarization, source mismatch, failed upload, or failed download verification leaves the release unpublished. The installer is built from the release PR's source, never a previously generated local DMG. Hosted build numbers are fixed to that source's Git commit count, which increases as commits land on `main`.
 
-Tags use `vMAJOR.MINOR.PATCH`. `fix:` changes produce a patch and `feat:` changes produce a minor release. Documentation, tests, refactoring, build, CI, maintenance, style, and revert entries are included alongside features, fixes, performance, and dependencies. With these categories visible, a docs-, test-, or maintenance-only change can also produce a patch release PR. Non-conventional commit messages still need a valid override to appear in the changelog. Release Please updates `version.txt`, `CHANGELOG.md`, and `.release-please-manifest.json` in its PR; the initial baseline is the existing `v1.0.0` release.
+Tags use `vMAJOR.MINOR.PATCH`. `fix:` and `perf:` changes produce a patch and `feat:` changes produce a minor release. Published notes include only **Features**, **Bug Fixes**, and **Performance**. In `release-please-config.json`, dependency, documentation, refactoring, test, build, CI, maintenance, style, and revert entries have `hidden: true`, so they stay out of the generated changelog and release notes. Ordinary internal-only changes do not create a release PR on their own. Non-conventional commit messages still need a valid override to appear in the changelog. Release Please updates `version.txt`, `CHANGELOG.md`, and `.release-please-manifest.json` in its PR; the initial baseline is the existing `v1.0.0` release.
 
 ### Curate squash-merge release notes
 
@@ -51,9 +51,22 @@ END_COMMIT_OVERRIDE
 ```
 
 Add one Conventional Commit line for each independently useful change, grouped
-by its actual type. Feature and fix notes should describe user-visible behavior.
+by its actual type. Feature, fix, and performance notes must describe user-visible behavior.
 Documentation, tests, refactoring, build, CI, maintenance, style, and reverts can
-have their own typed entries.
+have their own typed entries, which are retained as PR metadata and hidden from
+published notes. Routine dependency updates use `deps:` and are hidden too.
+
+Filtering uses the entry type; it does not infer user impact from prose. Use
+`feat:`, `fix:`, or `perf:` only for changes that affect people using the product,
+and explain that effect in plain English. Use internal types for CI fixes,
+release automation, test speedups, cleanup, and agent instructions. When a
+dependency update or revert also fixes a product problem, add a `fix:` entry
+describing the problem users no longer encounter. For example, use
+`fix(import): open PDFs that previously failed to load`, rather than publishing
+a dependency version change. Inspect generated notes before merging a release
+PR to catch incorrectly classified or unclear entries. This filtering applies
+to newly generated notes; it does not rewrite historical changelog entries or
+previously published releases.
 
 Include typed entries for documentation, CI, tests, refactoring, and maintenance
 PRs too. Release Please's own generated release PR is exempt: CI recognizes its

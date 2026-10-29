@@ -58,6 +58,7 @@ class ReleaseNotesTests(unittest.TestCase):
             )
 
     def test_maintenance_and_documentation_pull_requests_also_require_notes(self):
+        """Require internal PR metadata without classifying CI speedups as product changes."""
         for title in (
             "docs: explain releases",
             "ci: route tests",
@@ -65,8 +66,10 @@ class ReleaseNotesTests(unittest.TestCase):
         ):
             with self.subTest(title=title), self.assertRaises(ValueError):
                 validate_pull_request(title, "")
-        self.assertEqual(validate_pull_request("ci: route tests", override("perf(ci): skip unrelated UI checks")),
-                         ["perf(ci): skip unrelated UI checks"])
+        self.assertEqual(
+            validate_pull_request("ci: route tests", override("ci(release): skip unrelated UI checks")),
+            ["ci(release): skip unrelated UI checks"],
+        )
 
     def test_commented_template_instruction_is_not_active(self):
         template = (ROOT / ".github/pull_request_template.md").read_text()
@@ -163,12 +166,20 @@ class ReleaseNotesTests(unittest.TestCase):
                 validate_pull_request("feat(ui): add navigation", body)
 
     def test_configured_changelog_sections_match_allowed_entry_types(self):
+        """Keep all valid PR entry types configured, publishing only product changes."""
         config = json.loads((ROOT / "release-please-config.json").read_text())
         sections = config["packages"]["."]["changelog-sections"]
         self.assertEqual({section["type"] for section in sections}, ALLOWED_ENTRY_TYPES)
         self.assertTrue(all(section["section"] for section in sections))
         self.assertEqual(len(sections), len(ALLOWED_ENTRY_TYPES))
-        self.assertTrue(all(not section.get("hidden", False) for section in sections))
+        self.assertEqual(
+            {section["type"] for section in sections if not section.get("hidden", False)},
+            {"feat", "fix", "perf"},
+        )
+        for section in sections:
+            if section["type"] not in {"feat", "fix", "perf"}:
+                with self.subTest(entry_type=section["type"]):
+                    self.assertIs(section.get("hidden"), True)
 
     def test_retargeted_ci_can_read_its_failure_logs(self):
         metadata = (ROOT / ".github/workflows/pr-metadata.yml").read_text()
