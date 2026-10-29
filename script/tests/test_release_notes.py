@@ -58,6 +58,7 @@ class ReleaseNotesTests(unittest.TestCase):
             )
 
     def test_maintenance_and_documentation_pull_requests_also_require_notes(self):
+        """Require internal PR metadata without classifying CI speedups as product changes."""
         for title in (
             "docs: explain releases",
             "ci: route tests",
@@ -65,8 +66,10 @@ class ReleaseNotesTests(unittest.TestCase):
         ):
             with self.subTest(title=title), self.assertRaises(ValueError):
                 validate_pull_request(title, "")
-        self.assertEqual(validate_pull_request("ci: route tests", override("perf(ci): skip unrelated UI checks")),
-                         ["perf(ci): skip unrelated UI checks"])
+        self.assertEqual(
+            validate_pull_request("ci: route tests", override("ci(release): skip unrelated UI checks")),
+            ["ci(release): skip unrelated UI checks"],
+        )
 
     def test_commented_template_instruction_is_not_active(self):
         template = (ROOT / ".github/pull_request_template.md").read_text()
