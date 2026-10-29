@@ -140,11 +140,15 @@ final class EvaluationReviewUITests: XCTestCase {
         XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
         let secondRow = app.descendants(matching: .outlineRow).containing(.staticText, identifier: "Second case").firstMatch
         XCTAssertTrue(secondRow.waitForExistence(timeout: 3), app.debugDescription)
-        secondRow.click()
+        let secondCase = secondRow.staticTexts["Second case"]
+        XCTAssertTrue(secondCase.isHittable, app.debugDescription)
+        secondCase.click()
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: secondRow)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed, app.debugDescription)
         let column = app.buttons["Latency"]
         XCTAssertFalse(column.exists)
         let response = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Second distinct response", "Second distinct response")).firstMatch
-        XCTAssertTrue(response.exists)
+        XCTAssertTrue(response.waitForExistence(timeout: 3), app.debugDescription)
         more.click()
         XCTAssertTrue(column.waitForExistence(timeout: 3), app.debugDescription)
         XCTAssertTrue(secondRow.isSelected)

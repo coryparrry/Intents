@@ -134,8 +134,16 @@ final class WorkspacePolishUITests: XCTestCase {
                 let requestPolicy = app.buttons["Judge request policy"]
                 XCTAssertTrue(requestPolicy.exists)
                 XCTAssertFalse(app.popUpButtons["Judge generation policy"].exists)
+                let form = app.scrollViews.containing(.textField, identifier: "Judge connection name").firstMatch
+                XCTAssertTrue(form.waitForExistence(timeout: 3))
+                let scroll = form.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.20))
+                scroll.scroll(byDeltaX: 0, deltaY: -400)
+                XCTAssertTrue(requestPolicy.isHittable && form.frame.contains(requestPolicy.frame), app.debugDescription)
                 requestPolicy.click()
-                XCTAssertTrue(app.popUpButtons["Judge generation policy"].waitForExistence(timeout: 3))
+                scroll.scroll(byDeltaX: 0, deltaY: -250)
+                let generationPolicy = app.popUpButtons["Judge generation policy"]
+                XCTAssertTrue(generationPolicy.waitForExistence(timeout: 3), app.debugDescription)
+                XCTAssertTrue(generationPolicy.isHittable && form.frame.contains(generationPolicy.frame), app.debugDescription)
             default:
                 XCTAssertTrue(app.descendants(matching: .any)["Share usage statistics"].firstMatch.exists)
             }

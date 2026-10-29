@@ -112,6 +112,11 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertTrue(guide.waitForExistence(timeout: 3))
         XCTAssertTrue(guide.isEnabled)
         XCTAssertFalse(criteria.isEnabled)
+        let editor = app.scrollViews["Suite editor scroll"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        editor.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.20))
+            .scroll(byDeltaX: 0, deltaY: -400)
+        XCTAssertTrue(guide.isHittable && editor.frame.contains(guide.frame), app.debugDescription)
         guide.click()
         let score = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Passing score: 3 or 4", "Passing score: 3 or 4")
         XCTAssertTrue(app.staticTexts.matching(score).firstMatch.waitForExistence(timeout: 3))

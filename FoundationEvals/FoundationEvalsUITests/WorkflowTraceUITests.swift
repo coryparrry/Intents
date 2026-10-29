@@ -480,10 +480,20 @@ final class WorkflowTraceUITests: XCTestCase {
 
             app.typeKey("3", modifierFlags: .command)
             app.radioButtons["Setup"].click()
-            app.popUpButtons["Suite setup"].click()
-            app.menuItems["Scoring"].click()
+            let setupMenu = app.popUpButtons["Suite setup"]
+            if setupMenu.exists {
+                setupMenu.click()
+                app.menuItems["Scoring"].click()
+            } else {
+                app.buttons["Scoring"].click()
+            }
             let guide = app.disclosureTriangles["How scoring works"]
             XCTAssertTrue(guide.waitForExistence(timeout: 5))
+            let editor = app.scrollViews["Suite editor scroll"]
+            XCTAssertTrue(editor.waitForExistence(timeout: 3))
+            editor.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.20))
+                .scroll(byDeltaX: 0, deltaY: -400)
+            XCTAssertTrue(guide.isHittable && editor.frame.contains(guide.frame), app.debugDescription)
             let scale = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Passing score: 3 or 4", "Passing score: 3 or 4")).firstMatch
             XCTAssertFalse(scale.exists)
             guide.click()
