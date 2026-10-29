@@ -87,6 +87,38 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         fixture.finishResponse()
     }
 
+    /// A running evaluation locks scoring edits without locking its read-only explanation.
+    @MainActor
+    func testScoringGuideRemainsAvailableDuringRun() throws {
+        try openSuiteEditor()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storage.appending(path: "workspace-v1.json").path),
+                      "The test must use its isolated workspace")
+        configureSuite(name: "Scoring guide fixture", endpointPath: "/success")
+        let guided = app.checkBoxes["Guided generation"]
+        XCTAssertTrue(guided.waitForExistence(timeout: 3))
+        guided.click()
+        selectSetup("Scoring")
+        app.radioButtons["AI rubric"].click()
+        let criteria = app.textViews["AI rubric requirements"]
+        XCTAssertTrue(criteria.waitForExistence(timeout: 3))
+        replaceText(in: criteria, with: "The response answers the question.")
+        let run = app.buttons["Run evaluation"]
+        XCTAssertTrue(run.isEnabled, app.debugDescription)
+        run.click()
+        XCTAssertTrue(fixture.waitForRequest(timeout: 5))
+
+        selectSetup("Scoring")
+        let guide = app.disclosureTriangles["How scoring works"]
+        XCTAssertTrue(guide.waitForExistence(timeout: 3))
+        XCTAssertTrue(guide.isEnabled)
+        XCTAssertFalse(criteria.isEnabled)
+        guide.click()
+        let score = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Passing score: 3 or 4", "Passing score: 3 or 4")
+        XCTAssertTrue(app.staticTexts.matching(score).firstMatch.waitForExistence(timeout: 3))
+        app.buttons["Cancel"].firstMatch.click()
+        fixture.finishResponse()
+    }
+
     @MainActor
     func testPromptImprovementKeepsCancellationEnabled() throws {
         app.terminate()

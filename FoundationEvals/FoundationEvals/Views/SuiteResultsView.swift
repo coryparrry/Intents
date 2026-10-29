@@ -1,9 +1,10 @@
 import Charts
 import SwiftUI
 
-/// The suite's history: how the pass rate has moved, every saved run, and tools to compare them.
+/// The suite's history: how the pass rate has moved and every saved run.
 struct SuiteResultsView: View {
     @Bindable var store: EvaluationStore
+    let showCompare: () -> Void
     @Environment(DeveloperRunnerStore.self) private var runners
 
     var body: some View {
@@ -20,7 +21,9 @@ struct SuiteResultsView: View {
             } else {
                 RunTrendPanel(runs: store.runs)
                 VStack(alignment: .leading, spacing: 14) {
-                    WorkspaceSectionTitle("Run history", count: store.runs.count)
+                    WorkspaceSectionTitle("Run history", count: store.runs.count) {
+                        Button("Compare runs", systemImage: "arrow.left.arrow.right", action: showCompare)
+                    }
                     VStack(spacing: 0) {
                         ForEach(Array(store.runs.enumerated()), id: \.element.id) { index, run in
                             let state = SuiteCheckState.evaluate(run: run, currentRevision: store.suiteRevision,
@@ -38,10 +41,6 @@ struct SuiteResultsView: View {
                     .padding(.vertical, 4)
                     .workspaceSurface()
                 }
-            }
-            VStack(alignment: .leading, spacing: 14) {
-                WorkspaceSectionTitle("Compare")
-                SuiteCompareView(store: store)
             }
         }
     }

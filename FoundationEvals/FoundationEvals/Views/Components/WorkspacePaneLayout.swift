@@ -12,7 +12,7 @@ extension WorkspacePane {
     var group: String? { nil }
 }
 
-/// Section navigation beside the selected pane, collapsing to a menu when narrow.
+/// Presents short pane lists as segments and longer lists as a menu or sidebar.
 struct WorkspacePaneLayout<Page: WorkspacePane, Content: View>: View {
     let heading: String
     @Binding var selection: Page
@@ -33,13 +33,22 @@ struct WorkspacePaneLayout<Page: WorkspacePane, Content: View>: View {
     }
 
     var body: some View {
-        let wide = availableWidth >= 824
+        let usesSegments = Page.allCases.count <= 3
+        let wide = !usesSegments && availableWidth >= 1_050
         let layout = wide
             ? AnyLayout(HStackLayout(alignment: .top, spacing: 28))
             : AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
         layout {
-            if wide {
-                paneList.frame(width: 210)
+            if usesSegments {
+                Picker(heading, selection: $selection) {
+                    ForEach(Array(Page.allCases)) { page in Text(page.title).tag(page) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier(heading)
+            } else if wide {
+                paneList.frame(width: 180)
             } else {
                 Picker(heading, selection: $selection) {
                     ForEach(groups.indices, id: \.self) { index in

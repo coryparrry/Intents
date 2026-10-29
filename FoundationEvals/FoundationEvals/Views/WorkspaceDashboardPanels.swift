@@ -17,6 +17,7 @@ struct HomeHero: View {
     private var collected: Int { summaries.filter { $0.state == .collected }.count }
     private var cases: Int { summaries.reduce(0) { $0 + $1.caseCount } }
     private var latest: Date? { summaries.compactMap(\.lastCheckedAt).max() }
+    private var hasScoredHistory: Bool { !HomeTrendChart.points(for: summaries).isEmpty }
 
     /// Formats a suite count with singular or plural wording.
     private func suites(_ count: Int) -> String { "\(count) \(count == 1 ? "suite" : "suites")" }
@@ -78,10 +79,9 @@ struct HomeHero: View {
                 }
             }
             .frame(maxWidth: compact ? .infinity : 400, alignment: .leading)
-            // Sized to the summary beside it, so the card has no empty band under the figures.
             HomeTrendChart(summaries: summaries)
                 .frame(maxWidth: .infinity)
-                .frame(height: 164)
+                .frame(height: hasScoredHistory ? 164 : nil, alignment: .top)
         }
         .padding(26)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -136,11 +136,11 @@ struct HomeTrendChart: View {
                 }
             }
             if points.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "chart.xyaxis.line").font(.system(size: 26)).foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.xyaxis.line").foregroundStyle(.secondary)
                     Text("Your trend appears after the first scored run.").font(.callout).foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 chart
             }
@@ -421,8 +421,10 @@ struct RecentRunsTimeline: View {
     let summaries: [SuiteOverviewSummary]
     let disabled: Bool
     let open: (SuiteOverviewSummary, UUID) -> Void
+    @State private var showsAllRuns = false
 
     private var items: [Item] { Self.recentItems(in: summaries) }
+    private var visibleItems: [Item] { Array(items.prefix(showsAllRuns ? items.count : 3)) }
 
     /// Returns up to six history items across suites, newest first by saved sequence and then date.
     static func recentItems(in summaries: [SuiteOverviewSummary]) -> [Item] {
@@ -434,7 +436,7 @@ struct RecentRunsTimeline: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
                     Button { open(item.suite, item.id) } label: {
                         HStack(alignment: .center, spacing: 11) {
                             WorkspaceStatusMark(state: item.point.state.mark, size: 18)
@@ -459,9 +461,13 @@ struct RecentRunsTimeline: View {
                     .buttonStyle(WorkspaceRowButtonStyle())
                     .disabled(disabled)
                     .accessibilityElement(children: .combine)
-                    if index < items.count - 1 {
+                    if index < visibleItems.count - 1 {
                         Divider().padding(.leading, 47)
                     }
+                }
+                if items.count > 3 {
+                    Button(showsAllRuns ? "Show fewer recent runs" : "Show more recent runs") { showsAllRuns.toggle() }
+                        .buttonStyle(.borderless).padding(.horizontal, 18).padding(.vertical, 11)
                 }
             }
             .padding(.vertical, 4)

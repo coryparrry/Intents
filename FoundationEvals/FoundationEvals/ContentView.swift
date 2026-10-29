@@ -70,15 +70,22 @@ struct ContentView: View {
                             selection: store.selection, suiteID: store.selectedSuiteID
                         ))
                 }
-                .scrollEdgeEffectStyle(.hard, for: [.top, .bottom])
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectStyle(.hard, for: .bottom)
 
                 // Reserve layout space for the footer. Native split/list panes
                 // must end above it, including their final scrollable row.
                 WorkbenchStatusBar(store: store)
-                    .background(WorkspaceStyle.surface)
+                    .background(.regularMaterial)
                     .overlay(alignment: .top) { Divider() }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("Workspace status")
+            }
+            .background {
+                WorkspaceBackdrop()
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
         }
     }

@@ -140,7 +140,6 @@ struct SuiteEditorView: View {
             )
         }
         .navigationTitle(store.draftSuite.name)
-        .background(WorkspaceStyle.canvas)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Suite page", selection: $selectedPage) {
@@ -201,7 +200,7 @@ struct SuiteEditorView: View {
         case .cases:
             EmptyView() // Laid out separately in `body` as a master–detail page.
         case .history:
-            SuiteResultsView(store: store)
+            SuiteResultsView(store: store, showCompare: { selectedPage = .compare })
         case .review:
             SuiteReviewView(store: store, showCases: { id in
                 selectedCaseID = id; selectedPage = .cases
@@ -211,7 +210,7 @@ struct SuiteEditorView: View {
             SuiteCompareView(store: store, showPromptImprovement: { showsPromptImprovement = true })
         case .configure:
             WorkspacePaneLayout(heading: "Suite setup", selection: $configurationPage) {
-                if configurationPage == .instructions { configurationContent }
+                if configurationPage == .instructions || configurationPage == .scoring { configurationContent }
                 else { configurationContent.disabled(store.isRunning || store.isReassessing || store.isProcessingFiles) }
             }
         }
@@ -228,10 +227,12 @@ struct SuiteEditorView: View {
             ScoringSection(store: store)
             if store.draftSuite.scoringMode == .modelJudge {
                 JudgeConfigurationSection(store: store)
+                    .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
             }
             SuiteOptionalSection(title: "Release requirements", detail: "Pass thresholds, baseline and latency limits") {
                 ReleasePolicySection(store: store)
             }
+            .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
         case .model:
             ModelControlsSection(store: store)
         case .tools:
@@ -509,6 +510,8 @@ private struct ModelInstructionsSection: View {
 
 private struct ScoringSection: View {
     @Bindable var store: EvaluationStore
+    /// Blocks scoring edits while preserving access to the read-only guide.
+    private var editingDisabled: Bool { store.isRunning || store.isReassessing || store.isProcessingFiles }
 
     var body: some View {
         EditorSection(
@@ -522,8 +525,14 @@ private struct ScoringSection: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .disabled(editingDisabled)
 
-                WorkspaceNotice(.info, message: store.draftSuite.scoringMode.explanation)
+                if store.draftSuite.scoringMode == .modelJudge {
+                    Text("Each requirement must score at least 3 to pass.")
+                        .font(.callout).foregroundStyle(.secondary)
+                } else {
+                    WorkspaceNotice(.info, message: store.draftSuite.scoringMode.explanation)
+                }
 
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -538,16 +547,16 @@ private struct ScoringSection: View {
                         in: 1...5
                     )
                     .labelsHidden()
+                    .disabled(editingDisabled)
                 }
 
                 Text("Add the expected answer for each prompt on the Cases tab.")
                     .font(.caption).foregroundStyle(.secondary)
 
                 if store.draftSuite.scoringMode == .modelJudge {
-                    ModelRubricEditor(store: store)
+                    ModelRubricEditor(store: store, editingDisabled: editingDisabled)
                 }
             }
-            .disabled(store.isRunning || store.isProcessingFiles)
         }
     }
 
@@ -555,6 +564,8 @@ private struct ScoringSection: View {
 
 private struct ModelRubricEditor: View {
     @Bindable var store: EvaluationStore
+    let editingDisabled: Bool
+    @State private var showsScoringGuide = false
 
     private var isValid: Bool {
         (1...4).contains(store.draftSuite.rubricCriteria.count)
@@ -575,6 +586,7 @@ private struct ModelRubricEditor: View {
             Menu("Use Template", systemImage: "wand.and.stars") {
                 templateActions
             }
+            .disabled(editingDisabled)
             .accessibilityActions { templateActions }
         }
 
@@ -582,6 +594,7 @@ private struct ModelRubricEditor: View {
             .accessibilityLabel("AI rubric requirements")
             .font(.body)
             .workspaceTextWell(minHeight: 112)
+            .disabled(editingDisabled)
 
         Label(
             "\(store.draftSuite.rubricCriteria.count) of 4 requirements",
@@ -590,21 +603,26 @@ private struct ModelRubricEditor: View {
         .font(.callout)
         .foregroundStyle(isValid ? Color.secondary : WorkspaceStyle.warning)
 
-        RubricScale()
+        Text("A matching reference answer does not bypass the rubric.")
+            .font(.caption).foregroundStyle(.secondary)
 
-        Label(
-            "A matching reference answer does not bypass the rubric. Use a standalone exact: \"text\" requirement for deterministic equality. Review AI scores against a small human-reviewed set before using them as a release gate.",
-            systemImage: "person.2"
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        DisclosureGroup(isExpanded: $showsScoringGuide) {
+            RubricScale()
+            Label(
+                "Use a standalone exact: \"text\" requirement for deterministic equality. Review AI scores against a small human-reviewed set before using them as a release gate.",
+                systemImage: "person.2"
+            )
+            .font(.caption).foregroundStyle(.secondary)
+        } label: {
+            Text("How scoring works").contentShape(Rectangle()).onTapGesture { showsScoringGuide.toggle() }
+        }
     }
 
     @ViewBuilder
     private var templateActions: some View {
         ForEach(RubricTemplate.allCases) { template in
             Button(template.title) {
-                guard !store.isRunning, !store.isProcessingFiles else { return }
+                guard !editingDisabled else { return }
                 store.draftSuite.criteria = template.requirements
             }
         }

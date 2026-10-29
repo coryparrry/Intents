@@ -29,12 +29,16 @@ struct ProductionWorkspaceView: View {
     @State private var importURL: URL?
     @State private var creatingJob = false
     @State private var jobDatasetRevision: String?
+    @State private var detailsDataset: ProductionDataset?
+    @State private var showsImportHelp = false
     @State private var search = ""
     @State private var approvedDisclosure = false
     @State private var cancelling = false
     @State private var cancellingJobID: UUID?
     @State private var scheduleHours = 24.0
     @State private var scheduleRuns = 1
+    @State private var showsWorkerHelp = false
+    @State private var showsScheduleEditor = false
     /// Presents batch panes with scoped trace-export telemetry and restarts refresh/polling when the selected pane changes.
     var body: some View {
         ScrollView {
@@ -79,7 +83,7 @@ struct ProductionWorkspaceView: View {
                     .labelStyle(.iconOnly).disabled(model.isLoading)
             }
         }
-        .background(WorkspaceStyle.canvas).navigationTitle("Batch runs")
+        .navigationTitle("Batch runs")
         .task(id: pane) {
             await model.refresh()
             while !Task.isCancelled {
@@ -98,6 +102,9 @@ struct ProductionWorkspaceView: View {
         }
         .sheet(isPresented: $creatingJob) {
             ProductionJobSheet(model: model, store: store, initialDatasetRevision: jobDatasetRevision)
+        }
+        .sheet(item: $detailsDataset) { dataset in
+            ProductionDatasetDetailsSheet(dataset: dataset)
         }
         .alert("Batch runs", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
@@ -120,25 +127,43 @@ struct ProductionWorkspaceView: View {
                 }.buttonStyle(.borderedProminent)
                 Button("Freeze current suite", systemImage: "snowflake") { model.snapshotDataset(store: store) }.buttonStyle(.bordered)
             }
-            Text("Imports accept JSONL with id, sourceID, prompt, expected, partition and metadata. Original outputs and feedback can be included. A source stays in one partition to prevent held-out leakage.")
-                .font(.callout).foregroundStyle(.secondary)
+            DisclosureGroup(isExpanded: $showsImportHelp) {
+                Text("Imports accept JSONL with id, sourceID, prompt, expected, partition and metadata. Original outputs and feedback can be included. A source stays in one partition to prevent held-out leakage.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } label: {
+                Text("About JSONL imports").contentShape(Rectangle()).onTapGesture { showsImportHelp.toggle() }
+            }
+            .font(.callout)
             VStack(alignment: .leading, spacing: 0) {
                 WorkspacePanelHeader("Versioned datasets", count: model.datasets.count)
                 WorkspaceSearchField(prompt: "Find a dataset", text: $search, identifier: "Search production datasets").padding(.horizontal,18).padding(.bottom,12)
                 Divider()
                 if model.datasets.isEmpty { WorkspaceEmptyState(symbol: "tray", title: "No datasets yet", detail: "Import representative examples or freeze the current suite to begin.") }
                 ForEach(model.datasets.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { dataset in
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack { Text(dataset.name).font(.headline); Text(dataset.version).foregroundStyle(.secondary); Spacer(); Text("\(dataset.count) examples").font(.callout) }
-                        Text("\(dataset.sampling.rawValue.capitalized) · \(dataset.partitionCounts.map { "\($0.value) \($0.key)" }.sorted().joined(separator: " · "))").font(.caption).foregroundStyle(.secondary)
-                        Text("Revision \(dataset.revision.prefix(16))").font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-                        HStack {
-                            Button("New batch") {
-                                jobDatasetRevision = dataset.revision
-                                creatingJob = true
-                            }.buttonStyle(.bordered)
-                            Button("Review captured outputs") { model.createCaptured(dataset); pane = .jobs }.buttonStyle(.bordered)
+                    let optionsLabel = "More options for \(dataset.name), \(dataset.version), revision \(dataset.revision.prefix(12))"
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(dataset.name).font(.headline).lineLimit(2)
+                            Text("\(dataset.version) · \(dataset.count) \(dataset.count == 1 ? "example" : "examples")")
+                                .font(.callout).foregroundStyle(.secondary)
                         }
+                        Spacer(minLength: 12)
+                        Button("New batch") {
+                            jobDatasetRevision = dataset.revision
+                            creatingJob = true
+                        }.buttonStyle(.bordered)
+                        Menu {
+                            Button("Review captured outputs") { model.createCaptured(dataset); pane = .jobs }.buttonStyle(.bordered)
+                            Button("Dataset details…") { detailsDataset = dataset }
+                        } label: {
+                            Label(optionsLabel, systemImage: "ellipsis.circle")
+                                .labelStyle(.iconOnly)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .accessibilityLabel(optionsLabel)
+                        .accessibilityIdentifier("Dataset options \(dataset.revision)")
+                        .help(optionsLabel)
                     }.padding(18)
                     Divider()
                 }
@@ -194,7 +219,15 @@ struct ProductionWorkspaceView: View {
     }
     private var workersPane: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Workers report their OS, hardware, locale and model. Target filters keep mismatched workers from claiming examples. These labels are provenance supplied by trusted workers; they are not hardware attestation.").font(.callout).foregroundStyle(.secondary)
+            Text("Worker details are self-reported, not hardware attestation.").font(.callout).foregroundStyle(.secondary)
+            DisclosureGroup(isExpanded: $showsWorkerHelp) {
+                Text("Workers report their OS, hardware, locale and model. Target filters keep mismatched workers from claiming examples. Use trusted workers.")
+                    .foregroundStyle(.secondary)
+                Text("For CI and additional devices, use intents-evals worker with an explicit target and trusted executable. The production eval guide documents the request/response protocol, polling and exit codes.")
+                    .foregroundStyle(.secondary)
+            } label: {
+                Text("About workers").contentShape(Rectangle()).onTapGesture { showsWorkerHelp.toggle() }
+            }
             VStack(alignment: .leading, spacing: 0) {
                 WorkspacePanelHeader("Registered workers", count: model.workers.count)
                 if model.workers.isEmpty { WorkspaceEmptyState(symbol: "desktopcomputer", title: "No workers yet", detail: "Run a batch on this Mac or start an unattended CLI worker on an eligible Apple device.") }
@@ -209,13 +242,6 @@ struct ProductionWorkspaceView: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Scheduled runs").font(.headline)
                 Text("An unattended worker must be running for due jobs to launch. Schedules create fresh evidence; they do not alter the template batch.").font(.callout).foregroundStyle(.secondary)
-                if let id = model.selectedJobID {
-                    HStack { Text("Every"); TextField("Hours", value: $scheduleHours, format: .number).frame(width: 70); Text("hours for"); Stepper("\(scheduleRuns) runs", value: $scheduleRuns, in: 1...1_000) }
-                    Button("Schedule selected batch") {
-                        let hours = scheduleHours, count = scheduleRuns
-                        model.perform { try $0.saveSchedule(.init(templateJobID: id, intervalSeconds: hours*3600, nextRun: Date().addingTimeInterval(hours*3600), remainingRuns: count)) }
-                    }.buttonStyle(.bordered)
-                } else { Text("Select a batch in Jobs to schedule it.").foregroundStyle(.secondary) }
                 ForEach(model.schedules) { schedule in
                     HStack {
                         Text("Every \(Int(schedule.intervalSeconds/60)) min · \(schedule.remainingRuns) remaining").font(.callout)
@@ -225,8 +251,18 @@ struct ProductionWorkspaceView: View {
                         }.buttonStyle(.bordered)
                     }
                 }
+                DisclosureGroup(isExpanded: $showsScheduleEditor) {
+                    if let id = model.selectedJobID {
+                        HStack { Text("Every"); TextField("Hours", value: $scheduleHours, format: .number).frame(width: 70); Text("hours for"); Stepper("\(scheduleRuns) \(scheduleRuns == 1 ? "run" : "runs")", value: $scheduleRuns, in: 1...1_000) }
+                        Button("Schedule selected batch") {
+                            let hours = scheduleHours, count = scheduleRuns
+                            model.perform { try $0.saveSchedule(.init(templateJobID: id, intervalSeconds: hours*3600, nextRun: Date().addingTimeInterval(hours*3600), remainingRuns: count)) }
+                        }.buttonStyle(.bordered)
+                    } else { Text("Select a batch in Jobs to schedule it.").foregroundStyle(.secondary) }
+                } label: {
+                    Text("Schedule a batch").contentShape(Rectangle()).onTapGesture { showsScheduleEditor.toggle() }
+                }
             }.padding(18).workspaceSurface()
-            Text("For CI and additional devices, use intents-evals worker with an explicit target and trusted executable. The production eval guide documents the request/response protocol, polling and exit codes.").font(.callout).foregroundStyle(.secondary)
         }
     }
 }

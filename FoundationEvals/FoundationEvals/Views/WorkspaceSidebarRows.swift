@@ -37,6 +37,7 @@ struct RunSidebarRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(run.suiteName)
         .accessibilityValue("\(statusSummary), \(run.startedAt.formatted(date: .abbreviated, time: .standard))")
+        .accessibilityIdentifier("Sidebar run \(run.id.uuidString)")
     }
 }
 

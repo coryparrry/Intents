@@ -42,13 +42,13 @@ struct RunReportSummary: View {
         let presentation = RunReportPresentation(run: run)
         let mark: WorkspaceStatusMark.State = run.failedCount > 0 ? .failed
             : isIncomplete || presentation.attentionCount > 0 ? .attention : .passed
-        HStack(alignment: .center, spacing: 32) {
+        HStack(alignment: .center, spacing: 24) {
             HStack(alignment: .firstTextBaseline, spacing: 14) {
                 WorkspaceStatusMark(state: shown ? mark : .running, size: 30)
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 8 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text(presentation.headline)
-                        .font(.title2.weight(.semibold))
+                        .font(.title3.weight(.semibold))
                         .accessibilityIdentifier("Evaluation result headline")
                     Text(presentation.nextStep).font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -59,7 +59,7 @@ struct RunReportSummary: View {
                         WorkspaceRingSegment(count: max(0, run.plannedResultCount - run.results.count), color: Color.secondary.opacity(0.25))
                     ], height: 6)
                     .frame(maxWidth: 320)
-                    .padding(.top, 8)
+                    .padding(.top, 4)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -73,7 +73,7 @@ struct RunReportSummary: View {
             }
             .fixedSize()
         }
-        .padding(24)
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .workspaceSurface()
         .task(id: run.id) {

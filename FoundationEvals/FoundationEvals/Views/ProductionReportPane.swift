@@ -1,8 +1,21 @@
 import SwiftUI
 
+/// Selects a short cohort list while keeping search and the expanded view bounded.
+enum ProductionCohortDisplay {
+    static let initialLimit = 6
+    static let maximumLimit = 100
+
+    /// Sorts all cohort names before filtering, so searches can find names beyond the initial rows.
+    static func visibleKeys(_ keys: [String], search: String, expanded: Bool) -> [String] {
+        let matches = keys.sorted().filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }
+        return Array(matches.prefix(search.isEmpty && !expanded ? initialLimit : maximumLimit))
+    }
+}
+
 struct ProductionReportPane: View {
     @Bindable var model: ProductionWorkspaceStore
     @State private var search = ""
+    @State private var showsMoreCohorts = false
     @State private var approvalReport: ProductionReport?
     @State private var approvalNote = ""
     var body: some View {
@@ -33,7 +46,7 @@ struct ProductionReportPane: View {
                     WorkspacePanelHeader("Cohorts", count: report.cohorts.count)
                     WorkspaceSearchField(prompt: "Find a cohort", text: $search, identifier: "Search batch cohorts").padding(.horizontal,18).padding(.bottom,12)
                     Divider()
-                    ForEach(report.cohorts.keys.sorted().filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }.prefix(100), id: \.self) { key in
+                    ForEach(ProductionCohortDisplay.visibleKeys(Array(report.cohorts.keys), search: search, expanded: showsMoreCohorts), id: \.self) { key in
                         if let cohort = report.cohorts[key] {
                             HStack {
                                 VStack(alignment: .leading, spacing: 3) { Text(key).font(.callout.weight(.medium)); Text("\(cohort.samples) trials · \(cohort.distinctSources) sources · \(cohort.errors) errors · \(cohort.unscored + cohort.uncertain) need review").font(.caption).foregroundStyle(.secondary) }
@@ -47,10 +60,22 @@ struct ProductionReportPane: View {
                             }.padding(18); Divider()
                         }
                     }
-                    if report.cohorts.count > 100 { Text("Showing up to 100 matching cohorts. Search to narrow the list; exports contain every cohort.").font(.caption).foregroundStyle(.secondary).padding(18) }
+                    if search.isEmpty && report.cohorts.count > ProductionCohortDisplay.initialLimit {
+                        Button(showsMoreCohorts ? "Show fewer cohorts" : "Show more cohorts") { showsMoreCohorts.toggle() }
+                            .buttonStyle(.borderless).padding(18)
+                    }
+                    if report.cohorts.count > ProductionCohortDisplay.maximumLimit && (showsMoreCohorts || !search.isEmpty) {
+                        Text("Showing up to 100 matching cohorts. Search to narrow the list; exports contain every cohort.").font(.caption).foregroundStyle(.secondary).padding(18)
+                    }
                 }.workspaceSurface()
-            } else { WorkspaceEmptyState(symbol: "chart.bar", title: "Select a batch", detail: "Choose a saved batch in Jobs to inspect its release gates and cohort results.").workspaceSurface() }
+            } else {
+                WorkspaceEmptyState(symbol: "chart.bar", title: "Select a batch",
+                    detail: "Choose a saved batch in Jobs to inspect its release gates and cohort results.",
+                    actionTitle: "Show Jobs", action: { model.pane = .jobs })
+                    .workspaceSurface()
+            }
         }
+        .onChange(of: model.report?.job.id) { _, _ in showsMoreCohorts = false }
         .alert("Approve this evidence as a baseline?", isPresented: Binding(get: { approvalReport != nil }, set: { if !$0 { approvalReport = nil } })) {
             TextField("Review note", text: $approvalNote)
             Button("Cancel", role: .cancel) { approvalReport = nil }

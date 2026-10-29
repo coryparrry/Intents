@@ -89,8 +89,11 @@ struct DocumentSuiteView: View {
 
     private var importPanel: some View {
         VStack(alignment: .leading, spacing: 18) {
-            ContentUnavailableView("Start with a specification or product guide", systemImage: "doc.text.magnifyingglass",
-                description: Text("One text-based PDF, Markdown, or UTF-8 text file. Drafting uses this Mac; semantic review sends extracted text to your selected judge after authorization. Scanned pages, diagrams, and complex tables are not interpreted."))
+            Label("Start with a specification or product guide", systemImage: "doc.text.magnifyingglass")
+                .font(.title3.weight(.semibold))
+            Text("One text-based PDF, Markdown, or UTF-8 text file. Drafting uses this Mac; semantic review sends extracted text to your selected judge after authorization. Scanned pages, diagrams, and complex tables are not interpreted.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Text("Optional range")
                 TextField("First", text: $rangeStart).frame(width: 70)
@@ -100,12 +103,18 @@ struct DocumentSuiteView: View {
             }
             Text("Up to 5 MB, 200 PDF pages, and 128,000 selected characters. Leave the range empty to inspect the complete document within these limits.")
                 .font(.caption).foregroundStyle(.secondary)
-            Button("Choose document…") { importing = true }.buttonStyle(.borderedProminent)
-                .disabled(controller.isBusy || controller.storageBlocked)
-                .accessibilityIdentifier("Choose source document")
-            Button("Import saved document suite…") { importingArchive = true }
-                .disabled(controller.isBusy || controller.storageBlocked)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            HStack {
+                Button("Choose document…") { importing = true }.buttonStyle(.borderedProminent)
+                    .disabled(controller.isBusy || controller.storageBlocked)
+                    .accessibilityIdentifier("Choose source document")
+                Button("Import saved document suite…") { importingArchive = true }
+                    .disabled(controller.isBusy || controller.storageBlocked)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: 720, alignment: .leading)
+        .workspaceSurface()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .dropDestination(for: URL.self) { files, _ in
             guard files.count == 1, let file = files.first, !controller.isBusy, !controller.storageBlocked else { return false }
             controller.importFile(file, selection: nil)
@@ -118,6 +127,7 @@ struct DocumentSuiteView: View {
             sourcePanel.frame(width: 300)
             Divider()
             VStack(alignment: .leading, spacing: 12) {
+                Text("Suite name").font(.headline)
                 TextField("Suite name", text: Binding(get: { controller.draft?.name ?? "" }, set: {
                     controller.draft?.name = $0; controller.persist()
                 })).textFieldStyle(.roundedBorder).accessibilityLabel("Document suite name")

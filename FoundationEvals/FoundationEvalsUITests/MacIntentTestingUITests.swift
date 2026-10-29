@@ -1,6 +1,7 @@
 import XCTest
 
 final class MacIntentTestingUITests: XCTestCase {
+    /// Keeps the expected-value editor visibly labeled after choosing a synthetic App Intent.
     @MainActor
     func testMacIntentTestingShowsInstalledAppAndExplicitCaseControls() throws {
         continueAfterFailure = false
@@ -25,6 +26,13 @@ final class MacIntentTestingUITests: XCTestCase {
         let installationCopy = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@",
                                            installationText, installationText)
         XCTAssertTrue(app.staticTexts.matching(installationCopy).firstMatch.exists)
+        let supported = app.disclosureTriangles["Supported inputs and results"]
+        XCTAssertTrue(supported.exists)
+        supported.click()
+        let capabilityCopy = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@",
+                                          "Compiled metadata discovery", "Compiled metadata discovery")
+        XCTAssertTrue(app.staticTexts.matching(capabilityCopy).firstMatch.waitForExistence(timeout: 3))
+        supported.click()
 
         // Read compiled metadata from a synthetic bundle. This does not install,
         // launch, sign, or dispatch the fixture through the native test runner.
@@ -40,6 +48,13 @@ final class MacIntentTestingUITests: XCTestCase {
 
         let inputs = app.textViews["Inputs JSON"]
         XCTAssertTrue(inputs.waitForExistence(timeout: 5), app.debugDescription)
+        let buildDetails = app.disclosureTriangles["Build details"]
+        XCTAssertTrue(buildDetails.exists)
+        buildDetails.click()
+        let bundle = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@",
+                                 "example.MacIntentUITestFixture", "example.MacIntentUITestFixture")
+        XCTAssertTrue(app.staticTexts.matching(bundle).firstMatch.waitForExistence(timeout: 3))
+        buildDetails.click()
         XCTAssertEqual(inputs.value as? String, "{}")
         XCTAssertFalse(app.textViews["Expected value JSON"].exists)
         let compare = app.switches["Compare returned value"]
@@ -52,6 +67,7 @@ final class MacIntentTestingUITests: XCTestCase {
         XCTAssertTrue(compare.exists, app.debugDescription)
         compare.click()
         XCTAssertTrue(app.textViews["Expected value JSON"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Expected value JSON"].exists)
         XCTAssertEqual(app.textViews["Expected value JSON"].value as? String, "null")
         XCTAssertTrue(app.textFields["Developer directory"].exists)
         XCTAssertTrue(app.textFields["Signing identity"].exists)
