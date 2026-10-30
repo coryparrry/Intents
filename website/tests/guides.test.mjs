@@ -118,6 +118,9 @@ test('every public page links the project home and preserves showcase canonicals
       const app = node['@type'] === 'SoftwareApplication' ? node : node.about;
       if (app?.['@type'] === 'SoftwareApplication') assert.ok(app.alternateName.includes('Foundation Evals'), file);
     }
+    const alternate = html.match(/<link rel="alternate" type="text\/markdown" href="([^"]+)"/);
+    assert.ok(alternate, `${file}: Markdown alternate link`);
+    assert.equal(alternate[1], `${host}/${file}.md`, file);
     assert.ok(existsSync(new URL(`${file}.md`, root)), `${file}: Markdown alternate`);
   }
 });
