@@ -12,8 +12,8 @@ test('reading guides and sitemap advertise the canonical home and Apple tool rou
     assert.ok(existsSync(new URL(`../dist/${route}.html.md`, import.meta.url)));
   }
   for (const file of ['llms.txt', 'index.html.md']) {
-    assert.ok(read(file).includes('https://coryparry.dev/projects/intents'));
-    assert.ok(read(file).includes('https://coryparry.dev/llms.txt'));
+    assert.match(read(file), /:\shttps:\/\/coryparry\.dev\/projects\/intents(?:\s|$)/);
+    assert.match(read(file), /\]\(https:\/\/coryparry\.dev\/llms\.txt\)/);
   }
 });
 

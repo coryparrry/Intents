@@ -64,7 +64,7 @@ const results = await Promise.allSettled(checks.map(async ([path, userAgent, typ
   if (path === 'sitemap.xml' || path === 'llms.txt') {
     for (const route of ['compare', 'guides/evaluate-apple-foundation-models-mac', 'compare/foundation-evals', 'compare/apple-fm-python-sdk', 'guides/fm-cli-to-repeatable-evals']) assert.ok(body.includes(canonical + route), `Missing discovery route: ${route}`);
   }
-  if (path === 'llms.txt' || !path || path.endsWith('.html')) assert.ok(body.includes('https://coryparry.dev/projects/intents'), 'Missing project home');
+  if (path === 'llms.txt' || !path || path.endsWith('.html')) assert.match(body, /(?:href="|:\s)https:\/\/coryparry\.dev\/projects\/intents(?:["\s]|$)/, 'Missing exact project-home link');
   return `${path || '/'} · ${userAgent}: ${status}${status === 200 ? ', readable, no indexing block' : ', correctly not found'}`;
 }));
 for (const result of results) {
