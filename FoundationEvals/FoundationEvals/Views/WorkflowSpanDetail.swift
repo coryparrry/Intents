@@ -13,6 +13,7 @@ struct WorkflowSpanDetail: View {
     @State private var exportDocument = JSONDocument()
     @State private var isExporting = false
     @State private var exportError: String?
+    @State private var showsSampleDetails = false
 
     private enum DetailTab: String, CaseIterable {
         case details = "Details"
@@ -62,7 +63,6 @@ struct WorkflowSpanDetail: View {
             }
             .id(node.id)
         }
-        .background(.background)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("Span details")
         .fileExporter(isPresented: $isExporting, document: exportDocument, contentTypes: [.json],
@@ -117,31 +117,42 @@ struct WorkflowSpanDetail: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            detailSection("METADATA") {
-                TraceDetailMetric(label: "Operation", value: operation)
-                if node.kind == .judge || node.metadata["role"] == "judge" {
-                    TraceDetailMetric(label: "Judge model", value: result.judgeIdentity?.displayName ?? "Not recorded")
-                } else if node.kind == .sample || node.kind == .generation {
-                    TraceDetailMetric(label: "Model", value: run.execution?.modelDisplayName ?? run.environment.model)
-                }
-                if let parent = trace.nodes.first(where: { $0.id == node.parentID }) {
-                    TraceDetailMetric(label: "Parent", value: parent.title)
-                }
-                ForEach(node.metadata.keys.filter { !Self.usageKeys.contains($0) }.sorted(), id: \.self) { key in
-                    TraceDetailMetric(label: Self.metadataLabel(key), value: node.metadata[key] ?? "")
-                }
-                TraceDetailMetric(label: "Span ID", value: node.id)
-                TraceDetailMetric(label: "Sample ID", value: result.id.uuidString)
-            }
             if node.kind == .sample {
-                detailSection("RUN CONTEXT") {
-                    TraceDetailMetric(label: "Version", value: run.suiteVersion)
-                    TraceDetailMetric(label: "Scoring", value: run.scoringMode.title)
-                    TraceDetailMetric(label: "Repetition", value: String(result.repetition))
-                    TraceDetailMetric(label: "System", value: run.environment.operatingSystem)
-                    TraceDetailMetric(label: "Locale", value: run.environment.locale)
+                DisclosureGroup(isExpanded: $showsSampleDetails) {
+                    metadata
+                    detailSection("RUN CONTEXT") {
+                        TraceDetailMetric(label: "Version", value: run.suiteVersion)
+                        TraceDetailMetric(label: "Scoring", value: run.scoringMode.title)
+                        TraceDetailMetric(label: "Repetition", value: String(result.repetition))
+                        TraceDetailMetric(label: "System", value: run.environment.operatingSystem)
+                        TraceDetailMetric(label: "Locale", value: run.environment.locale)
+                    }
+                } label: {
+                    Text("Technical details").contentShape(Rectangle()).onTapGesture { showsSampleDetails.toggle() }
                 }
+            } else {
+                metadata
             }
+        }
+    }
+
+    /// Keeps span identifiers and recorded metadata available in the trace inspector.
+    private var metadata: some View {
+        detailSection("METADATA") {
+            TraceDetailMetric(label: "Operation", value: operation)
+            if node.kind == .judge || node.metadata["role"] == "judge" {
+                TraceDetailMetric(label: "Judge model", value: result.judgeIdentity?.displayName ?? "Not recorded")
+            } else if node.kind == .sample || node.kind == .generation {
+                TraceDetailMetric(label: "Model", value: run.execution?.modelDisplayName ?? run.environment.model)
+            }
+            if let parent = trace.nodes.first(where: { $0.id == node.parentID }) {
+                TraceDetailMetric(label: "Parent", value: parent.title)
+            }
+            ForEach(node.metadata.keys.filter { !Self.usageKeys.contains($0) }.sorted(), id: \.self) { key in
+                TraceDetailMetric(label: Self.metadataLabel(key), value: node.metadata[key] ?? "")
+            }
+            TraceDetailMetric(label: "Span ID", value: node.id)
+            TraceDetailMetric(label: "Sample ID", value: result.id.uuidString)
         }
     }
 

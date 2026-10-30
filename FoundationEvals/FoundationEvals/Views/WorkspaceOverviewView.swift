@@ -77,7 +77,6 @@ struct WorkspaceOverviewView: View {
             .animation(reduceMotion ? nil : WorkspaceStyle.pageMotion, value: hasAnyRun)
             .workspacePage()
         }
-        .background(WorkspaceStyle.canvas)
         .onGeometryChange(for: CGFloat.self) { min($0.size.width, WorkspaceStyle.readableWidth) - 2 * WorkspaceStyle.pagePadding } action: { availableWidth = $0 }
         .navigationTitle("Model evaluations")
         .searchable(text: $search, placement: .toolbar, prompt: "Find a suite")

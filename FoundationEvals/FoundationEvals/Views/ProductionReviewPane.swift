@@ -61,7 +61,10 @@ struct ProductionReviewPane: View {
                     }.padding(18)
                 }.workspaceSurface()
             } else {
-                WorkspaceEmptyState(symbol: "text.bubble", title: "Select a batch", detail: "Choose a saved batch in Jobs to read its results and outcomes.").workspaceSurface()
+                WorkspaceEmptyState(symbol: "text.bubble", title: "Select a batch",
+                    detail: "Choose a saved batch in Jobs to read its results and outcomes.",
+                    actionTitle: "Show Jobs", action: { model.pane = .jobs })
+                    .workspaceSurface()
             }
         }
     }

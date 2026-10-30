@@ -56,7 +56,6 @@ struct WorkspaceTracesView: View {
                 }
             }.workspacePage()
         }
-        .background(WorkspaceStyle.canvas)
         .navigationTitle("Traces")
     }
 }

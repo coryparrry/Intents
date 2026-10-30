@@ -61,7 +61,6 @@ struct WorkflowTraceView: View {
                 }
             }
             .padding(.horizontal, 24).padding(.vertical, 18)
-            .background(WorkspaceStyle.surface)
             Divider()
             if let sample {
                 WorkflowSampleInspector(result: sample, run: run)
@@ -88,7 +87,7 @@ private struct TraceSummaryMetric: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceInset()
+        .background(.fill.tertiary, in: .rect(cornerRadius: WorkspaceStyle.controlRadius, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
@@ -197,7 +196,6 @@ private struct WorkflowWaterfall: View {
                     }
                     .font(.caption2).foregroundStyle(.secondary)
                     .padding(.horizontal, 16).padding(.vertical, 6)
-                    .background(.quaternary.opacity(0.25))
                     Divider()
                     ScrollViewReader { proxy in
                         List(selection: $selection) {
@@ -216,6 +214,7 @@ private struct WorkflowWaterfall: View {
                                         .foregroundStyle(.secondary)
                                         .frame(width: durationWidth, alignment: .trailing)
                                 }
+                                .background(selection == row.id ? Color.accentColor.opacity(0.22) : .clear)
                                 .tag(row.id)
                                 .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                                 .listRowSeparator(.visible)
@@ -226,6 +225,7 @@ private struct WorkflowWaterfall: View {
                             }
                         }
                         .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
                         .environment(\.defaultMinListRowHeight, 34)
                         .accessibilityIdentifier("Workflow spans")
                         .focusable()

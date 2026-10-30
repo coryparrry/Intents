@@ -37,11 +37,11 @@ enum WorkspaceStyle {
 }
 
 extension View {
-    /// Clips content to a rounded workspace surface and adds its noninteractive border.
+    /// Uses a system material to separate content from the workspace backdrop.
     func workspaceSurface(radius: CGFloat = WorkspaceStyle.panelRadius) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return clipShape(shape)
-            .background(WorkspaceStyle.surface, in: shape)
+            .background(.regularMaterial, in: shape)
             .overlay { shape.strokeBorder(WorkspaceStyle.border, lineWidth: 1).allowsHitTesting(false) }
     }
 
@@ -71,6 +71,21 @@ extension View {
             .frame(maxWidth: WorkspaceStyle.readableWidth, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .top)
     }
+}
+
+/// Blends the workspace background with the desktop using macOS's adaptive window material.
+struct WorkspaceBackdrop: NSViewRepresentable {
+    /// Creates the behind-window effect without changing the window or its content ownership.
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .underWindowBackground
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    /// Keeps the system-managed material in place when SwiftUI updates the surrounding view.
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 extension AttributedString {

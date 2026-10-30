@@ -6,6 +6,29 @@ import SwiftUI
 @MainActor
 struct WorkspacePresentationTests {
 
+    /// The compact cohort list must not make later results impossible to find or exceed the existing display limit.
+    @Test func cohortListSearchesBeyondTheInitiallyVisibleRows() {
+        let keys = (0..<120).map { String(format: "cohort%03d", $0) }.reversed()
+        let names = Array(keys)
+        let compact = ProductionCohortDisplay.visibleKeys(names, search: "", expanded: false)
+        #expect(compact == (0..<6).map { String(format: "cohort%03d", $0) })
+        #expect(ProductionCohortDisplay.visibleKeys(names, search: "COHORT119", expanded: false) == ["cohort119"])
+        #expect(ProductionCohortDisplay.visibleKeys(names, search: "", expanded: true).count == 100)
+        #expect(ProductionCohortDisplay.visibleKeys(names, search: "missing", expanded: false).isEmpty)
+    }
+
+    /// Keeps sub-millisecond and millisecond latency ticks distinct.
+    @Test func latencyAxisKeepsMillisecondValuesDistinct() {
+        let zero = RunSummaryDashboard.latencyAxisLabel(seconds: 0)
+        let quarter = RunSummaryDashboard.latencyAxisLabel(seconds: 0.00025)
+        let half = RunSummaryDashboard.latencyAxisLabel(seconds: 0.0005)
+        let one = RunSummaryDashboard.latencyAxisLabel(seconds: 0.001)
+        let two = RunSummaryDashboard.latencyAxisLabel(seconds: 0.002)
+        #expect(zero != quarter)
+        #expect(quarter != half)
+        #expect(half != one)
+        #expect(one != two)
+    }
 
 
     @Test func appFeatureFooterUsesPersistedRunnerIdentity() {

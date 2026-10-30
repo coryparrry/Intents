@@ -17,6 +17,7 @@ struct WorkspaceSidebar: View {
     @State private var isCreatingProject = false
     @State private var runToDelete: EvaluationRun?
     @State private var runSearch = ""
+    @State private var showsAllRuns = false
 
     private var isBusy: Bool { store.isRunning || store.isReassessing || store.isProcessingFiles }
     private var filteredRuns: [EvaluationRun] {
@@ -25,6 +26,15 @@ struct WorkspaceSidebar: View {
             $0.suiteName.localizedCaseInsensitiveContains(query)
                 || $0.suiteVersion.localizedCaseInsensitiveContains(query)
         }
+    }
+    /// Keeps the current run visible while showing only a few recent runs unless the user expands or searches.
+    private var displayedRuns: [EvaluationRun] {
+        let runs = filteredRuns
+        guard !showsAllRuns, runSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, runs.count > 3 else { return runs }
+        let recent = Array(runs.prefix(3))
+        guard case .run(let id) = store.selection, !recent.contains(where: { $0.id == id }),
+              let selected = runs.first(where: { $0.id == id }) else { return recent }
+        return recent + [selected]
     }
 
     private var destination: Binding<WorkspaceDestination?> {
@@ -64,6 +74,7 @@ struct WorkspaceSidebar: View {
         SidebarNavigationList(selection: destination) {
             Section {
                 Label("Overview", systemImage: "square.grid.2x2")
+                    .accessibilityIdentifier("Sidebar overview")
                     .tag(WorkspaceDestination.overview)
                 Label { Text("Evaluations") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
                     .accessibilityIdentifier("Sidebar evaluations")
@@ -104,7 +115,7 @@ struct WorkspaceSidebar: View {
                 if filteredRuns.isEmpty {
                     EmptyRunHistoryRow(isSearching: !runSearch.isEmpty)
                 } else {
-                    ForEach(filteredRuns) { run in
+                    ForEach(displayedRuns) { run in
                         RunSidebarRow(run: run)
                             .tag(WorkspaceDestination.run(run.id))
                             .contextMenu {
@@ -115,9 +126,19 @@ struct WorkspaceSidebar: View {
                             }
                     }
                 }
+                if runSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && filteredRuns.count > 3 {
+                    Button {
+                        showsAllRuns.toggle()
+                    } label: {
+                        Label(showsAllRuns ? "Show fewer runs" : "Show all runs", systemImage: showsAllRuns ? "chevron.up" : "chevron.down")
+                    }
+                        .buttonStyle(.borderless).font(.callout).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("Sidebar run expansion")
+                        .selectionDisabled()
+                }
             }
         }
-        .onChange(of: store.selectedSuiteID) { _, _ in runSearch = "" }
+        .onChange(of: store.selectedSuiteID) { _, _ in runSearch = ""; showsAllRuns = false }
         .safeAreaInset(edge: .top, spacing: 0) {
             projectSwitcher
                 .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 8)

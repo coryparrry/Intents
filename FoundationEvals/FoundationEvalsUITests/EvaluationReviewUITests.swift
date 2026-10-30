@@ -3,6 +3,162 @@ import CryptoKit
 import XCTest
 
 final class EvaluationReviewUITests: XCTestCase {
+    /// The overview starts with a short recent list and reveals the remaining saved runs on request.
+    @MainActor
+    func testOverviewRevealsMoreRecentRuns() throws {
+        continueAfterFailure = false
+        let storage = try reviewStorage()
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let directory = storage.appending(path: "Runs")
+        let original = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first)
+        var run = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: original)) as? [String: Any])
+        let oldestID = try XCTUnwrap(run["id"] as? String)
+        run["suiteVersion"] = "search-target"
+        try JSONSerialization.data(withJSONObject: run).write(to: original)
+        for index in 2...6 {
+            let id = UUID().uuidString
+            run["id"] = id
+            run["suiteVersion"] = "v\(index)"
+            run["startedAt"] = "1970-01-01T00:00:0\(index)Z"
+            try JSONSerialization.data(withJSONObject: run).write(to: directory.appending(path: "\(id).json"))
+        }
+        let app = application(storage: storage)
+        launchWorkspace(app)
+        defer { app.terminate() }
+        assertReviewFixture(in: app)
+        let oldest = app.descendants(matching: .any)["Sidebar run \(oldestID)"]
+        XCTAssertFalse(oldest.exists)
+        let filter = app.textFields["Filter runs"]
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.click()
+        filter.typeText("search-target")
+        XCTAssertTrue(oldest.waitForExistence(timeout: 3), "Search must include runs beyond the initial three")
+        filter.typeKey("a", modifierFlags: .command)
+        filter.typeKey(.delete, modifierFlags: [])
+        XCTAssertFalse(oldest.exists)
+        let showAll = app.buttons["Sidebar run expansion"]
+        XCTAssertTrue(showAll.waitForExistence(timeout: 5))
+        showAll.click()
+        XCTAssertTrue(oldest.waitForExistence(timeout: 3))
+        oldest.click()
+        showAll.click()
+        XCTAssertTrue(oldest.exists, "The selected run must remain in the sidebar when the list is shortened")
+        app.staticTexts["Sidebar overview"].click()
+        let showMore = app.buttons["Show more recent runs"]
+        XCTAssertTrue(showMore.waitForExistence(timeout: 5))
+        let runs = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Review example"))
+        let before = runs.count
+        showMore.click()
+        XCTAssertEqual(runs.count, before + 3)
+        app.buttons["Show fewer recent runs"].click()
+        XCTAssertEqual(runs.count, before)
+    }
+
+    /// Keeps batch dataset actions and advanced settings available after simplifying the default sheet.
+    @MainActor
+    func testBatchSetupRevealsAdvancedOptionsWithoutLosingValues() throws {
+        continueAfterFailure = false
+        let storage = try reviewStorage()
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let app = application(storage: storage)
+        launchWorkspace(app)
+        defer { app.terminate() }
+        assertReviewFixture(in: app)
+        sidebarDestination("Sidebar batch runs", in: app).click()
+        let importHelp = app.disclosureTriangles["About JSONL imports"]
+        XCTAssertTrue(importHelp.waitForExistence(timeout: 5))
+        importHelp.click()
+        let importDetails = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Imports accept JSONL", "Imports accept JSONL")
+        XCTAssertTrue(app.staticTexts.matching(importDetails).firstMatch.waitForExistence(timeout: 3))
+        importHelp.click()
+        app.buttons["Freeze current suite"].click()
+        let options = app.menuButtons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "Dataset options ")).firstMatch
+        XCTAssertTrue(options.waitForExistence(timeout: 10), app.debugDescription)
+        options.click()
+        XCTAssertTrue(app.menuItems["Review captured outputs"].exists)
+        app.menuItems["Dataset details…"].click()
+        XCTAssertTrue(app.sheets.buttons["Done"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.sheets.firstMatch.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Revision")).firstMatch.exists)
+        app.sheets.buttons["Done"].click()
+        app.buttons["New batch"].firstMatch.click()
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.textFields["Batch name"].waitForExistence(timeout: 3))
+        XCTAssertTrue(sheet.popUpButtons["Batch dataset"].exists)
+        XCTAssertTrue(sheet.textFields["Batch minimum pass rate"].exists)
+        let advanced = sheet.buttons["Batch advanced options"]
+        XCTAssertTrue(advanced.exists)
+        XCTAssertFalse(sheet.textFields["Batch request timeout"].exists)
+        advanced.click()
+        let timeout = sheet.textFields["Batch request timeout"]
+        XCTAssertTrue(timeout.waitForExistence(timeout: 3))
+        XCTAssertTrue(sheet.textFields["Batch OS filter"].exists)
+        XCTAssertTrue(sheet.textFields["Batch cohort minimum pass rate"].exists)
+        timeout.click()
+        timeout.typeKey("a", modifierFlags: .command)
+        timeout.typeText("0")
+        advanced.click()
+        XCTAssertFalse(sheet.buttons["Create batch"].isEnabled)
+        let timeoutError = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Request timeout must be", "Request timeout must be")
+        XCTAssertTrue(sheet.staticTexts.matching(timeoutError).firstMatch.exists)
+        advanced.click()
+        timeout.click()
+        timeout.typeKey("a", modifierFlags: .command)
+        timeout.typeText("90")
+        let budget = sheet.textFields["Batch time budget"]
+        budget.click()
+        budget.typeKey("a", modifierFlags: .command)
+        budget.typeText("0")
+        advanced.click()
+        XCTAssertFalse(sheet.buttons["Create batch"].isEnabled)
+        let budgetError = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Job time budget must be", "Job time budget must be")
+        XCTAssertTrue(sheet.staticTexts.matching(budgetError).firstMatch.exists)
+        advanced.click()
+        budget.click()
+        budget.typeKey("a", modifierFlags: .command)
+        budget.typeText("24")
+        advanced.click()
+        XCTAssertTrue(sheet.buttons["Create batch"].isEnabled)
+        advanced.click()
+        XCTAssertEqual(timeout.value as? String, "90")
+        sheet.buttons["Cancel"].click()
+    }
+
+    /// Keeps the report focused on outcomes while retaining its extra columns and selected response.
+    @MainActor
+    func testRunReportRevealsAdditionalColumns() throws {
+        continueAfterFailure = false
+        let storage = try reviewStorage(multipleResults: true)
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let app = application(storage: storage)
+        launchWorkspace(app)
+        defer { app.terminate() }
+        assertReviewFixture(in: app)
+        let latest = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Latest run:")).firstMatch
+        XCTAssertTrue(latest.waitForExistence(timeout: 5), app.debugDescription)
+        latest.click()
+        let more = app.buttons["More columns"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
+        let secondRow = app.descendants(matching: .outlineRow).containing(.staticText, identifier: "Second case").firstMatch
+        XCTAssertTrue(secondRow.waitForExistence(timeout: 3), app.debugDescription)
+        let secondCase = secondRow.staticTexts["Second case"]
+        XCTAssertTrue(secondCase.isHittable, app.debugDescription)
+        secondCase.click()
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: secondRow)
+        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed, app.debugDescription)
+        let column = app.buttons["Latency"]
+        XCTAssertFalse(column.exists)
+        let response = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Second distinct response", "Second distinct response")).firstMatch
+        XCTAssertTrue(response.waitForExistence(timeout: 3), app.debugDescription)
+        more.click()
+        XCTAssertTrue(column.waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(secondRow.isSelected)
+        XCTAssertTrue(response.exists)
+        app.buttons["Fewer columns"].click()
+        XCTAssertFalse(column.exists)
+        XCTAssertTrue(secondRow.isSelected)
+        XCTAssertTrue(response.exists)
+    }
+
     /// Removes a deleted-source judge example, collects a replacement through human review, and verifies both changes survive relaunch.
     @MainActor
     func testUnavailableJudgeExampleCanBeRemovedAndReplacedAfterRelaunch() throws {
@@ -106,6 +262,7 @@ final class EvaluationReviewUITests: XCTestCase {
     }
 
     @MainActor
+    /// Keeps saved reviews and pattern navigation available after narrowing the workspace.
     func testDraftNavigationPatternsAndNarrowReviewLayout() throws {
         let storage = try reviewStorage()
         defer { try? FileManager.default.removeItem(at: storage) }
@@ -137,7 +294,7 @@ final class EvaluationReviewUITests: XCTestCase {
         edge.hover()
         edge.click(forDuration: 0.25, thenDragTo: target)
         XCTAssertLessThanOrEqual(window.frame.width, 1050, "Resize must actually exercise the narrow layout")
-        XCTAssertTrue(app.popUpButtons["Review"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.radioGroups["Review"].radioButtons["Patterns"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Save review"].exists)
         choosePane("Patterns", app: app)
         XCTAssertTrue(app.staticTexts["wrong date"].waitForExistence(timeout: 3))
@@ -193,9 +350,21 @@ final class EvaluationReviewUITests: XCTestCase {
                       "The editor command must present the main window")
     }
 
+    /// Stops a fixture test before mutation if macOS launched it with the wrong workspace.
+    @MainActor private func assertReviewFixture(in app: XCUIApplication) {
+        let name = app.textFields["Suite name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        XCTAssertEqual(name.value as? String, "Review example", "UI tests must use the isolated review fixture")
+    }
+
+    /// Opens a review pane through the visible segmented, menu, or sidebar navigation.
     @MainActor private func choosePane(_ title: String, app: XCUIApplication) {
         let picker = app.popUpButtons["Review"]
-        if picker.exists {
+        let segment = app.radioGroups["Review"].radioButtons[title]
+        if segment.exists {
+            reveal(segment, in: app)
+            segment.click()
+        } else if picker.exists {
             reveal(picker, in: app)
             picker.click(); app.menuItems[title].click()
         } else {
@@ -318,7 +487,8 @@ final class EvaluationReviewUITests: XCTestCase {
     }
 
     /// Copies the bundled generic source run into isolated legacy storage for automatic workspace migration.
-    private func reviewStorage() throws -> URL {
+    /// Creates isolated review evidence and optionally adds a second result for selection tests.
+    private func reviewStorage(multipleResults: Bool = false) throws -> URL {
         let storage = try UITestStorage.makeDirectory(prefix: "eval-review")
         let fixtureURL = try XCTUnwrap(
             Bundle(for: Self.self).url(forResource: "review-fixture", withExtension: "json"),
@@ -326,7 +496,24 @@ final class EvaluationReviewUITests: XCTestCase {
         )
         let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: fixtureURL)) as! [String: Any]
         let suite = fixture["suite"] as! [String: Any]
-        let run = fixture["run"] as! [String: Any]
+        var run = fixture["run"] as! [String: Any]
+        if multipleResults {
+            var results = run["results"] as! [[String: Any]]
+            var cases = run["plannedCases"] as! [[String: Any]]
+            let caseID = UUID().uuidString
+            var second = results[0]
+            second["id"] = UUID().uuidString
+            second["caseID"] = caseID
+            second["caseName"] = "Second case"
+            second["response"] = "Second distinct response"
+            results.append(second)
+            var planned = cases[0]
+            planned["id"] = caseID
+            planned["name"] = "Second case"
+            cases.append(planned)
+            run["results"] = results
+            run["plannedCases"] = cases
+        }
         try JSONSerialization.data(withJSONObject: suite).write(to: storage.appending(path: "suite.json"))
         let runs = storage.appending(path: "Runs")
         try FileManager.default.createDirectory(at: runs, withIntermediateDirectories: true)

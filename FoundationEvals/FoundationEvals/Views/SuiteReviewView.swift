@@ -88,7 +88,7 @@ private struct ReviewSamplesPane: View {
                 Toggle("Diverse order", isOn: $diverse).toggleStyle(.checkbox)
                 Spacer()
             }
-            Text("This discovery queue mixes coverage across cases, models and locales with shuffled examples. It does not estimate a production failure rate.")
+            Text("Diverse order mixes cases, models and locales. It does not estimate a production failure rate.")
                 .font(.caption).foregroundStyle(.secondary)
             if let selectedTag {
                 HStack {

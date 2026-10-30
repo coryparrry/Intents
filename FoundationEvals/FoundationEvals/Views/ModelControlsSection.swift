@@ -161,6 +161,7 @@ struct ModelControlsSection: View {
             Text("Response limits can stop generation mid-sentence without an error. Greedy or seeded sampling improves repeatability but cannot guarantee identical output across model or OS versions.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

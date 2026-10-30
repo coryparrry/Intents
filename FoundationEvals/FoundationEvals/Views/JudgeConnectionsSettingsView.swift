@@ -8,6 +8,7 @@ struct JudgeConnectionsSettingsView: View {
     @State private var message: String?
     @State private var isChecking = false
     @State private var isDeleting = false
+    @State private var showsRequestPolicy = false
 
     private var saved: EvaluationJudgeConnection? { store.judgeConnections.first { $0.id == draft.id } }
     private var hasChanges: Bool { saved != draft || !apiKey.isEmpty }
@@ -86,16 +87,33 @@ struct JudgeConnectionsSettingsView: View {
                         }
                     }
                     Section {
-                        Picker("Generation policy", selection: $draft.generationPolicy) {
-                            ForEach(EvaluationJudgeGenerationPolicy.allCases) { Text($0.title).tag($0) }
+                        Button { showsRequestPolicy.toggle() } label: {
+                            HStack {
+                                Label("Request policy", systemImage: showsRequestPolicy ? "chevron.down" : "chevron.right")
+                                Spacer()
+                                Text(draft.generationPolicy.title).foregroundStyle(.secondary)
+                            }
+                            .contentShape(Rectangle())
                         }
-                        .help("Portable JSON returns one complete result. Streaming JSON reads the result as it arrives. DeepSeek thinking uses streaming with larger limits.")
-                        Stepper("Configured timeout: \(draft.requestTimeoutSeconds.formatted(.number.precision(.fractionLength(0)))) seconds",
-                            value: $draft.requestTimeoutSeconds, in: 1...900, step: 1)
-                        LabeledContent("Effective output limit", value: "\(effectiveRequest.maximumResponseTokens.formatted()) tokens")
-                        LabeledContent("Effective timeout", value: "\(effectiveRequest.timeoutSeconds.formatted(.number.precision(.fractionLength(0)))) seconds")
-                    } header: { Text("Request policy") } footer: {
-                        Text("Choose the policy your service supports. Changing the model or URL keeps this policy. The limits above apply to each attempt and are saved in its trace.")
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("Judge request policy")
+                        .accessibilityValue("\(draft.generationPolicy.title), \(showsRequestPolicy ? "expanded" : "collapsed")")
+                    }
+                    if showsRequestPolicy {
+                        Section {
+                            Picker("Generation policy", selection: $draft.generationPolicy) {
+                                ForEach(EvaluationJudgeGenerationPolicy.allCases) { Text($0.title).tag($0) }
+                            }
+                            .accessibilityLabel("Generation policy")
+                            .accessibilityIdentifier("Judge generation policy")
+                            .help("Portable JSON returns one complete result. Streaming JSON reads the result as it arrives. DeepSeek thinking uses streaming with larger limits.")
+                            Stepper("Configured timeout: \(draft.requestTimeoutSeconds.formatted(.number.precision(.fractionLength(0)))) seconds",
+                                value: $draft.requestTimeoutSeconds, in: 1...900, step: 1)
+                            LabeledContent("Effective output limit", value: "\(effectiveRequest.maximumResponseTokens.formatted()) tokens")
+                            LabeledContent("Effective timeout", value: "\(effectiveRequest.timeoutSeconds.formatted(.number.precision(.fractionLength(0)))) seconds")
+                        } footer: {
+                            Text("Choose the policy your service supports. Changing the model or URL keeps this policy. The limits above apply to each attempt and are saved in its trace.")
+                        }
                     }
                     if let issue = draft.validationIssue { Text(issue).font(.callout).foregroundStyle(.orange) }
                     if let message {
@@ -106,7 +124,7 @@ struct JudgeConnectionsSettingsView: View {
                     } else if hasChanges, saved != nil {
                         Text("Save your changes before checking this connection.").font(.caption).foregroundStyle(.secondary)
                     }
-                }.formStyle(.grouped)
+                }.formStyle(.grouped).textFieldStyle(.roundedBorder)
                 Divider()
                 HStack {
                     if isChecking { ProgressView().controlSize(.small); Text("Checking…").font(.callout) }

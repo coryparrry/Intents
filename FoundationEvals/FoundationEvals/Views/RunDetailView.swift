@@ -87,7 +87,6 @@ struct RunDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Keep AppKit-backed report/trace controls out of an outgoing layout pass.
         .workspacePageTransition(value: selectedPage)
-        .background(WorkspaceStyle.canvas)
         .navigationTitle(run.suiteName)
         .onChange(of: run.id) { _, _ in
             selectedBaselineID = RunBaselineSelection.defaultID(for: run, candidates: baselineRuns)
@@ -139,7 +138,7 @@ struct RunDetailView: View {
 
     private var report: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 RunOverviewHeader(run: run)
                 if let execution = run.developerExecution {
                     DeveloperExecutionSummary(execution: execution)
@@ -371,6 +370,7 @@ private struct ResultsSection: View {
     @State private var filter = ResultFilter.all
     @State private var searchText = ""
     @State private var selectedResultID: UUID?
+    @State private var showsExtraColumns = false
 
     private var results: [EvaluationSampleResult] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -437,45 +437,52 @@ private struct ResultsSection: View {
                         Text(result.caseName)
                             .font(.system(size: 12, weight: .medium))
                     }
-                    .width(min: 160, ideal: 300)
+                    .width(min: 160, ideal: 210)
                     TableColumn("Outcome") { result in
                         ResultStatusLabel(result: result)
                     }
                     .width(min: 90, ideal: 110)
-                    TableColumn("Scorer") { result in
-                        Text(result.scorerSummary(scoringMode: run.scoringMode))
-                            .lineLimit(1)
-                            .help(result.scorerSummary(scoringMode: run.scoringMode))
+                    if showsExtraColumns {
+                        TableColumn("Scorer") { result in
+                            Text(result.scorerSummary(scoringMode: run.scoringMode))
+                                .lineLimit(1)
+                                .help(result.scorerSummary(scoringMode: run.scoringMode))
+                        }
+                        .width(min: 140, ideal: 160)
                     }
-                    .width(min: 140, ideal: 220)
                     TableColumn("Score") { result in
                         Text(result.score.map { "\($0) / 4" } ?? "—")
                             .monospacedDigit()
                             .foregroundStyle(result.score == nil ? Color.secondary : Color.primary)
                     }
                     .width(70)
-                    TableColumn("Latency") { result in
-                        Text(Duration.milliseconds(result.durationMilliseconds)
-                            .formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))
-                            .monospacedDigit()
+                    if showsExtraColumns {
+                        TableColumn("Latency") { result in
+                            Text(Duration.milliseconds(result.durationMilliseconds)
+                                .formatted(.units(allowed: [.seconds, .milliseconds], width: .abbreviated)))
+                                .monospacedDigit()
+                        }
+                        .width(min: 90, ideal: 110)
+                        TableColumn("Tokens") { result in
+                            Text(result.usage.totalTokens.formatted())
+                                .monospacedDigit()
+                        }
+                        .width(75)
+                        TableColumn("Repetition") { result in
+                            Text("\(result.repetition) / \(run.repetitions)")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        .width(80)
                     }
-                    .width(min: 90, ideal: 110)
-                    TableColumn("Tokens") { result in
-                        Text(result.usage.totalTokens.formatted())
-                            .monospacedDigit()
-                    }
-                    .width(75)
-                    TableColumn("Repetition") { result in
-                        Text("\(result.repetition) / \(run.repetitions)")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                    .width(80)
                 }
+                .id(showsExtraColumns)
                 .tableStyle(.inset(alternatesRowBackgrounds: false))
                 .scrollContentBackground(.hidden)
+                .scrollIndicators(.visible, axes: .horizontal)
                 .frame(height: min(320, CGFloat(results.count) * 25 + 34))
                 .accessibilityIdentifier("Result list")
+                .accessibilityHint(showsExtraColumns ? "Scroll horizontally to see all result columns." : "Use More columns to show scorer, latency, tokens, and repetition.")
 
                 if let selectedResult {
                     Divider()
@@ -507,6 +514,11 @@ private struct ResultsSection: View {
             Text(isFiltering ? "\(results.count) of \(run.results.count)" : "\(run.results.count)")
                 .font(.subheadline.weight(.medium).monospacedDigit())
                 .foregroundStyle(.secondary)
+            if !run.results.isEmpty {
+                Button(showsExtraColumns ? "Fewer columns" : "More columns") { showsExtraColumns.toggle() }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+            }
         }
         .fixedSize()
     }

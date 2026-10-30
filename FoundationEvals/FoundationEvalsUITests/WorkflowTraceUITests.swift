@@ -444,6 +444,63 @@ final class WorkflowTraceUITests: XCTestCase {
         }
     }
 
+    /// History links to one comparison view, whose token details remain available on demand.
+    @MainActor
+    func testHistoryOpensComparisonAndOptionalTokenUsage() throws {
+        try withFixtureApplication(openTrace: false, includeBaseline: true) { app in
+            app.typeKey("3", modifierFlags: .command)
+            app.radioButtons["History"].click()
+            let compare = app.buttons["Compare runs"]
+            XCTAssertTrue(compare.waitForExistence(timeout: 5))
+            XCTAssertFalse(app.popUpButtons["Baseline picker"].exists)
+            compare.click()
+            XCTAssertTrue(app.popUpButtons["Baseline picker"].waitForExistence(timeout: 5))
+            let tokenDetails = app.disclosureTriangles["Token usage"]
+            XCTAssertTrue(tokenDetails.exists)
+            let tokens = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Response model tokens", "Response model tokens")).firstMatch
+            XCTAssertFalse(tokens.exists)
+            tokenDetails.click()
+            XCTAssertTrue(tokens.waitForExistence(timeout: 3))
+            tokenDetails.click()
+            XCTAssertFalse(tokens.exists)
+        }
+    }
+
+    /// Scoring and trace explanations stay available without covering the main controls.
+    @MainActor
+    func testScoringAndTraceTechnicalDetailsCanBeExpanded() throws {
+        try withFixtureApplication { app in
+            let details = app.descendants(matching: .any)["Span details"]
+            let technical = details.disclosureTriangles["Technical details"]
+            XCTAssertTrue(technical.waitForExistence(timeout: 5))
+            let spanID = details.descendants(matching: .any)["Trace detail Span ID"]
+            XCTAssertFalse(spanID.exists)
+            technical.click()
+            XCTAssertTrue(spanID.waitForExistence(timeout: 3))
+
+            app.typeKey("3", modifierFlags: .command)
+            app.radioButtons["Setup"].click()
+            let setupMenu = app.popUpButtons["Suite setup"]
+            if setupMenu.exists {
+                setupMenu.click()
+                app.menuItems["Scoring"].click()
+            } else {
+                app.buttons["Scoring"].click()
+            }
+            let guide = app.disclosureTriangles["How scoring works"]
+            XCTAssertTrue(guide.waitForExistence(timeout: 5))
+            let editor = app.scrollViews["Suite editor scroll"]
+            XCTAssertTrue(editor.waitForExistence(timeout: 3))
+            editor.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.20))
+                .scroll(byDeltaX: 0, deltaY: -400)
+            XCTAssertTrue(guide.isHittable && editor.frame.contains(guide.frame), app.debugDescription)
+            let scale = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Passing score: 3 or 4", "Passing score: 3 or 4")).firstMatch
+            XCTAssertFalse(scale.exists)
+            guide.click()
+            XCTAssertTrue(scale.waitForExistence(timeout: 3))
+        }
+    }
+
     @MainActor
     func testPerformanceChartsShowUnitsScoreGuideAndPercentagePoints() throws {
         try withFixtureApplication(openTrace: false, includeBaseline: true, judgePassingScore: 4) { app in

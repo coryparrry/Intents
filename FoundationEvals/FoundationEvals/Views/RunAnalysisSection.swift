@@ -119,38 +119,48 @@ private struct RunAnalysisHeader: View {
 
 private struct RunAnalysisMetrics: View {
     let analysis: EvaluationRunAnalysis
+    @State private var showsTokenUsage = false
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
-            AnalysisMetric(
-                title: "Scored",
-                value: "\(analysis.scoredSampleCount) / \(analysis.completedSampleCount)",
-                detail: "\(analysis.passedSampleCount) passed · \(analysis.failedSampleCount) failed"
-            )
-            AnalysisMetric(
-                title: "Not scored",
-                value: (analysis.unscoredSampleCount + analysis.errorSampleCount + analysis.missingSampleCount).formatted(),
-                detail: "\(analysis.unscoredSampleCount) unscored · \(analysis.errorSampleCount) \(analysis.errorSampleCount == 1 ? "error" : "errors") · \(analysis.missingSampleCount) missing"
-            )
-            AnalysisMetric(
-                title: "Response model latency",
-                value: latency(analysis.subjectLatency.p50Milliseconds),
-                detail: "Median (p50) · Estimated p95 \(latency(analysis.subjectLatency.p95Milliseconds)) · \(analysis.subjectLatency.sampleCount) samples"
-            )
-            .help("p50 is the middle response time. p95 estimates the time that 95% of responses fall within. Small runs give rough estimates.")
-            AnalysisMetric(
-                title: "Response model tokens",
-                value: tokenTotal(analysis.subjectUsage),
-                detail: tokenDetail(analysis.subjectUsage)
-            )
-            AnalysisMetric(
-                title: "Scoring model tokens",
-                value: tokenTotal(analysis.judgeUsage),
-                detail: analysis.judgeUsage.requestCount == 0
-                    && analysis.judgeUsage.usageUnavailableSampleCount == 0
-                    ? "No scoring requests recorded"
-                    : tokenDetail(analysis.judgeUsage)
-            )
+        VStack(alignment: .leading, spacing: 12) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                AnalysisMetric(
+                    title: "Scored",
+                    value: "\(analysis.scoredSampleCount) / \(analysis.completedSampleCount)",
+                    detail: "\(analysis.passedSampleCount) passed · \(analysis.failedSampleCount) failed"
+                )
+                AnalysisMetric(
+                    title: "Not scored",
+                    value: (analysis.unscoredSampleCount + analysis.errorSampleCount + analysis.missingSampleCount).formatted(),
+                    detail: "\(analysis.unscoredSampleCount) unscored · \(analysis.errorSampleCount) \(analysis.errorSampleCount == 1 ? "error" : "errors") · \(analysis.missingSampleCount) missing"
+                )
+                AnalysisMetric(
+                    title: "Response model latency",
+                    value: latency(analysis.subjectLatency.p50Milliseconds),
+                    detail: "Median (p50) · Estimated p95 \(latency(analysis.subjectLatency.p95Milliseconds)) · \(analysis.subjectLatency.sampleCount) samples"
+                )
+                .help("p50 is the middle response time. p95 estimates the time that 95% of responses fall within. Small runs give rough estimates.")
+            }
+            DisclosureGroup(isExpanded: $showsTokenUsage) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
+                    AnalysisMetric(
+                        title: "Response model tokens",
+                        value: tokenTotal(analysis.subjectUsage),
+                        detail: tokenDetail(analysis.subjectUsage)
+                    )
+                    AnalysisMetric(
+                        title: "Scoring model tokens",
+                        value: tokenTotal(analysis.judgeUsage),
+                        detail: analysis.judgeUsage.requestCount == 0
+                            && analysis.judgeUsage.usageUnavailableSampleCount == 0
+                            ? "No scoring requests recorded"
+                            : tokenDetail(analysis.judgeUsage)
+                    )
+                }
+                .padding(.top, 6)
+            } label: {
+                Text("Token usage").contentShape(Rectangle()).onTapGesture { showsTokenUsage.toggle() }
+            }
         }
     }
 

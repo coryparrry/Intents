@@ -332,9 +332,12 @@ private struct CaseField<Content: View, Accessory: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                if let detail, !detail.isEmpty, detail != title {
-                    Text(detail).font(.subheadline).foregroundStyle(.tertiary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    if let detail, !detail.isEmpty, detail != title {
+                        Text(detail).font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 Spacer(minLength: 8)
                 accessory
@@ -381,7 +384,7 @@ private struct LatestResponsePanel: View {
                     }
                     WorkspaceExpandableText(
                         sample.errorMessage.map(AttributedString.init) ?? .workspaceMarkdown(sample.response),
-                        lineLimit: 8, label: "response"
+                        lineLimit: 4, label: "response"
                     )
                     .font(.body).lineSpacing(2)
                     if let rationale = sample.rationale, !rationale.isEmpty {

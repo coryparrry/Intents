@@ -9,7 +9,7 @@ struct RunSummaryDashboard: View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .top, spacing: 14) {
                 latencyCard.frame(minWidth: 320)
-                outcomeCard.frame(minWidth: 216)
+                outcomeCard.frame(minWidth: 260)
                 metricsCard.frame(minWidth: 216)
             }
             .frame(height: 218)
@@ -91,7 +91,7 @@ struct RunSummaryDashboard: View {
                         AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
                         AxisValueLabel {
                             if let seconds = value.as(Double.self) {
-                                Text("\(seconds.formatted(.number.precision(.fractionLength(0...2)))) s")
+                                Text(Self.latencyAxisLabel(seconds: seconds))
                                     .font(.system(size: 9))
                             }
                         }
@@ -106,6 +106,13 @@ struct RunSummaryDashboard: View {
             }
         }
         .summaryCard()
+    }
+
+    /// Formats latency ticks with enough precision to distinguish sub-millisecond samples.
+    static func latencyAxisLabel(seconds: Double) -> String {
+        let value = seconds < 1 ? seconds * 1_000 : seconds
+        let unit = seconds < 1 ? "ms" : "s"
+        return "\(value.formatted(.number.precision(.significantDigits(1...3)))) \(unit)"
     }
 
     private var sampleAxisValues: [Double] {
@@ -185,6 +192,7 @@ struct RunSummaryDashboard: View {
         HStack(spacing: 8) {
             WorkspaceStatusDot(color: color, size: 7)
             Text(title).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             Text(count.formatted()).monospacedDigit().fontWeight(.semibold)
         }

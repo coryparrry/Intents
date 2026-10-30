@@ -87,6 +87,7 @@ final class DocumentSuiteUITests: XCTestCase {
         let fromDocument = app.buttons["New suite from document"]
         XCTAssertTrue(fromDocument.waitForExistence(timeout: 3), app.debugDescription)
         fromDocument.click()
+        XCTAssertTrue(app.staticTexts["Suite name"].waitForExistence(timeout: 3))
         let create = app.buttons["Create document suite"]
         XCTAssertTrue(create.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.textViews["Draft question"].waitForExistence(timeout: 3), app.debugDescription)
