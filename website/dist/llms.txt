@@ -2,7 +2,14 @@
 
 > Test Apple Foundation Models before you ship: a free, open-source native Mac workbench for repeatable cases, responses, traces, and saved comparisons.
 
-Made by Cory Parry; MIT licensed. Intents was previously Foundation Evals. As checked 26 October 2026, the released download is Intents 1.5.2, including Review and Batch runs. Development source may include unshipped changes.
+Project home (canonical human page): https://coryparry.dev/projects/intents
+
+## Project
+
+- [Project page](https://coryparry.dev/projects/intents)
+- [Cory Parry project guides](https://coryparry.dev/llms.txt)
+
+Made by Cory Parry; MIT licensed. Intents was previously Foundation Evals. Search tip: older posts, downloads and screenshots use the name Foundation Evals. As checked 30 October 2026, the released download is Intents 1.5.2, including Review and Batch runs. Development source may include unshipped changes.
 
 macOS 27+. The default on-device model needs an Apple Intelligence-capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Xcode 27 is needed for source builds and Mac App Intent tests, not ordinary suites. Remote providers and judges use their configured services. The released app uses authenticated local MCP. Website examples are historical browser recreations, not model benchmarks.
 
@@ -51,3 +58,12 @@ macOS 27+. The default on-device model needs an Apple Intelligence-capable Apple
 - [Install Intents with Homebrew on Apple silicon](https://intents-workbench.coryparry.chatgpt.site/guides/install-intents-homebrew)
 - [Connect Codex or Claude Code to Intents over MCP](https://intents-workbench.coryparry.chatgpt.site/guides/intents-mcp-coding-agents)
 - [On-device LLM evaluation on macOS 27 (without sending prompts to a vendor SaaS)](https://intents-workbench.coryparry.chatgpt.site/guides/on-device-llm-evaluation-macos)
+
+## Apple tools
+
+- [Python SDK comparison](https://intents-workbench.coryparry.chatgpt.site/compare/apple-fm-python-sdk)
+- [From fm respond to repeatable evals](https://intents-workbench.coryparry.chatgpt.site/guides/fm-cli-to-repeatable-evals)
+
+### Is Intents related to Apple's App Intents?
+
+No. Intents is an independent evaluation app for Apple Foundation Models. Its development source includes optional Mac App Intent tests, which are unshipped.

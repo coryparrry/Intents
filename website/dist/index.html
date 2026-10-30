@@ -54,7 +54,19 @@
       },
       "mainEntity": {
         "@id": "https://intents-workbench.coryparry.chatgpt.site/#app"
-      }
+      },
+      "relatedLink": [
+        "https://coryparry.dev/projects/intents"
+      ],
+      "about": {
+        "@type": "SoftwareApplication",
+        "name": "Intents",
+        "alternateName": [
+          "Foundation Evals",
+          "Intents for Apple Foundation Models"
+        ]
+      },
+      "dateModified": "2026-10-30"
     },
     {
       "@type": "SoftwareApplication",
@@ -72,7 +84,8 @@
       "image": "https://intents-workbench.coryparry.chatgpt.site/assets/intents-icon.png",
       "sameAs": [
         "https://github.com/coryparrry/Intents",
-        "https://github.com/coryparrry/homebrew-tap"
+        "https://github.com/coryparrry/homebrew-tap",
+        "https://coryparry.dev/projects/intents"
       ],
       "author": {
         "@id": "https://intents-workbench.coryparry.chatgpt.site/#creator"
@@ -88,9 +101,18 @@
         "Compatible Core AI models and custom HTTP providers",
         "Development source: Mac App Intent tests (unshipped)"
       ],
-      "alternateName": "Foundation Evals",
+      "alternateName": [
+        "Foundation Evals",
+        "Intents for Apple Foundation Models"
+      ],
       "releaseNotes": "https://github.com/coryparrry/Intents/releases/tag/v1.5.2",
-      "softwareVersion": "1.5.2"
+      "softwareVersion": "1.5.2",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "installUrl": "https://github.com/coryparrry/homebrew-tap"
     },
     {
       "@type": "SoftwareSourceCode",
@@ -105,13 +127,21 @@
       "author": {
         "@id": "https://intents-workbench.coryparry.chatgpt.site/#creator"
       },
-      "description": "Intents development source. Source builds may include changes that have not shipped."
+      "description": "Intents development source. Source builds may include changes that have not shipped.",
+      "alternateName": [
+        "Foundation Evals",
+        "Intents for Apple Foundation Models"
+      ]
     },
     {
       "@type": "Person",
       "@id": "https://intents-workbench.coryparry.chatgpt.site/#creator",
       "name": "Cory Parry",
-      "url": "https://github.com/coryparrry"
+      "url": "https://coryparry.dev",
+      "sameAs": [
+        "https://github.com/coryparrry",
+        "https://coryparry.dev/about"
+      ]
     }
   ]
 }</script>
@@ -189,7 +219,7 @@
   <link rel="modulepreload" href="/demo-interactions.mjs">
   <script type="module" src="/app.js"></script>
   <script type="module" src="/analytics.mjs"></script>
-<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What is Intents?", "acceptedAnswer": {"@type": "Answer", "text": "Intents is a free, MIT-licensed native Mac workbench for Apple Foundation Models, with suites, scoring, traces, comparisons, Review, Batch runs, and authenticated local MCP."}}, {"@type": "Question", "name": "How do I install Intents?", "acceptedAnswer": {"@type": "Answer", "text": "Download Intents 1.5.2 for Apple silicon, or run brew install --cask coryparrry/tap/intents. Requires macOS 27 or later."}}, {"@type": "Question", "name": "Do I need Xcode?", "acceptedAnswer": {"@type": "Answer", "text": "Ordinary on-device suites do not need Xcode. Source builds and development-source Mac App Intent tests require Xcode 27."}}, {"@type": "Question", "name": "Can I connect a coding agent?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Open Intents Settings → MCP Connector and choose Connect to Codex, then restart Codex. Other HTTP MCP clients require manual bearer authentication; keep Intents open."}}]}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What is Intents?", "acceptedAnswer": {"@type": "Answer", "text": "Intents is a free, MIT-licensed native Mac workbench for Apple Foundation Models, with suites, scoring, traces, comparisons, Review, Batch runs, and authenticated local MCP."}}, {"@type": "Question", "name": "How do I install Intents?", "acceptedAnswer": {"@type": "Answer", "text": "Download Intents 1.5.2 for Apple silicon, or run brew install --cask coryparrry/tap/intents. Requires macOS 27 or later."}}, {"@type": "Question", "name": "Do I need Xcode?", "acceptedAnswer": {"@type": "Answer", "text": "Ordinary on-device suites do not need Xcode. Source builds and development-source Mac App Intent tests require Xcode 27."}}, {"@type": "Question", "name": "Can I connect a coding agent?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Open Intents Settings → MCP Connector and choose Connect to Codex, then restart Codex. Other HTTP MCP clients require manual bearer authentication; keep Intents open."}}, {"@type": "Question", "name": "Is Intents related to Apple's App Intents?", "acceptedAnswer": {"@type": "Answer", "text": "No. Intents is an independent evaluation app for Apple Foundation Models. Its development source includes optional Mac App Intent tests, which are unshipped."}}]}</script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -205,7 +235,8 @@
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
         <a class="open-label" href="#open-source"><svg class="icon"><use href="/assets/icons.svg#code-xml"/></svg>Open source. Native to Mac.</a>
-        <h1 id="hero-title"><span>Test Apple’s models</span><span>before you <em>ship.</em></span></h1>
+        <p class="release-note">Formerly <a href="/compare/foundation-evals">Foundation Evals</a>.</p>
+<h1 id="hero-title"><span>Test Apple’s models</span><span>before you <em>ship.</em></span></h1>
         <p class="hero-description">Repeatable prompt cases for Foundation Models.<br>Inspect responses and failures. Compare saved runs.</p>
         <div class="hero-actions"><a class="button button-primary" href="https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg" data-download-location="hero">Download for macOS · v1.5.2</a><a class="button button-light" href="https://github.com/coryparrry/Intents">Build development source<svg class="icon"><use href="/assets/icons.svg#code-xml"/></svg></a></div>
         <p class="brew-install"><code>brew install --cask coryparrry/tap/intents</code><br><a href="/guides/install-intents-homebrew">Install with Homebrew</a></p>
@@ -303,10 +334,10 @@
       </div>
     </section>
 
-<section class="start-section section-shell resources-section" id="guides" aria-labelledby="guides-title"><p class="eyebrow">FIND YOUR NEXT STEP</p><h2 id="guides-title">Guides &amp; comparisons</h2><div class="resource-grid"><a class="resource-card" href="/compare"><h3>Find your evaluation workflow</h3><p>Compare Intents with Apple Evaluations, Promptfoo, DeepEval, and Braintrust.</p><span>Read the guide →</span></a><a class="resource-card" href="/compare/foundation-evals"><h3>Foundation Evals became Intents</h3><p>One project, a new name. Find the current installer.</p><span>Read the guide →</span></a><a class="resource-card" href="/compare/apple-evaluations"><h3>Intents and Apple Evaluations</h3><p>A Mac workbench and tests in your app target.</p><span>Read the guide →</span></a><a class="resource-card" href="/compare/promptfoo"><h3>Intents and Promptfoo</h3><p>Choose between Mac suites and declarative evaluation workflows.</p><span>Read the guide →</span></a><a class="resource-card" href="/guides/evaluate-apple-foundation-models-mac"><h3>Evaluate on your Mac</h3><p>Create a small case, inspect its response, and keep the evidence.</p><span>Read the guide →</span></a><a class="resource-card" href="/guides/intents-mcp-coding-agents"><h3>Connect your coding agent</h3><p>Set up authenticated local MCP for Codex or Claude Code.</p><span>Read the guide →</span></a></div></section><section class="start-section section-shell faq-section" aria-labelledby="faq-title"><h2 id="faq-title">A few practical answers.</h2><details><summary>What is Intents?</summary><p>Intents is a free, MIT-licensed native Mac workbench for Apple Foundation Models, with suites, scoring, traces, comparisons, Review, Batch runs, and authenticated local MCP.</p></details><details><summary>How do I install Intents?</summary><p>Download Intents 1.5.2 for Apple silicon, or run brew install --cask coryparrry/tap/intents. Requires macOS 27 or later.</p></details><details><summary>Do I need Xcode?</summary><p>Ordinary on-device suites do not need Xcode. Source builds and development-source Mac App Intent tests require Xcode 27.</p></details><details><summary>Can I connect a coding agent?</summary><p>Yes. Open Intents Settings → MCP Connector and choose Connect to Codex, then restart Codex. Other HTTP MCP clients require manual bearer authentication; keep Intents open.</p></details><p class="guide-note">Facts checked 26 October 2026.</p></section>
+<section class="start-section section-shell resources-section" id="guides" aria-labelledby="guides-title"><p class="eyebrow">FIND YOUR NEXT STEP</p><h2 id="guides-title">Guides &amp; comparisons</h2><div class="resource-grid"><a class="resource-card" href="/compare"><h3>Find your evaluation workflow</h3><p>Compare Intents with Apple Evaluations, Promptfoo, DeepEval, and Braintrust.</p><span>Read the guide →</span></a><a class="resource-card" href="/compare/foundation-evals"><h3>Foundation Evals became Intents</h3><p>One project, a new name. Find the current installer.</p><span>Read the guide →</span></a><a class="resource-card" href="/compare/apple-fm-python-sdk"><h3>Intents and the Python SDK</h3><p>A Mac workspace alongside notebooks and Python tooling.</p><span>Read the guide →</span></a><a class="resource-card" href="/guides/fm-cli-to-repeatable-evals"><h3>From fm to repeatable evals</h3><p>Turn a terminal prompt check into cases and a saved baseline.</p><span>Read the guide →</span></a><a class="resource-card" href="/compare/apple-evaluations"><h3>Intents and Apple Evaluations</h3><p>A Mac workbench and tests in your app target.</p><span>Read the guide →</span></a><a class="resource-card" href="/compare/promptfoo"><h3>Intents and Promptfoo</h3><p>Choose between Mac suites and declarative evaluation workflows.</p><span>Read the guide →</span></a><a class="resource-card" href="/guides/evaluate-apple-foundation-models-mac"><h3>Evaluate on your Mac</h3><p>Create a small case, inspect its response, and keep the evidence.</p><span>Read the guide →</span></a><a class="resource-card" href="/guides/intents-mcp-coding-agents"><h3>Connect your coding agent</h3><p>Set up authenticated local MCP for Codex or Claude Code.</p><span>Read the guide →</span></a></div></section><section class="start-section section-shell faq-section" aria-labelledby="faq-title"><h2 id="faq-title">A few practical answers.</h2><details><summary>What is Intents?</summary><p>Intents is a free, MIT-licensed native Mac workbench for Apple Foundation Models, with suites, scoring, traces, comparisons, Review, Batch runs, and authenticated local MCP.</p></details><details><summary>How do I install Intents?</summary><p>Download Intents 1.5.2 for Apple silicon, or run brew install --cask coryparrry/tap/intents. Requires macOS 27 or later.</p></details><details><summary>Do I need Xcode?</summary><p>Ordinary on-device suites do not need Xcode. Source builds and development-source Mac App Intent tests require Xcode 27.</p></details><details><summary>Can I connect a coding agent?</summary><p>Yes. Open Intents Settings → MCP Connector and choose Connect to Codex, then restart Codex. Other HTTP MCP clients require manual bearer authentication; keep Intents open.</p></details><details><summary>Is Intents related to Apple's App Intents?</summary><p>No. Intents is an independent evaluation app for Apple Foundation Models. Its development source includes optional Mac App Intent tests, which are unshipped.</p></details><p class="guide-note">Facts checked 30 October 2026.</p></section>
     <section class="closing section-shell reveal"><img src="/assets/intents-icon-74.png" srcset="/assets/intents-icon-74.png 74w, /assets/intents-icon-148.png 148w, /assets/intents-icon.png 256w" sizes="(max-width: 760px) 59px, 74px" width="88" height="88" loading="lazy" decoding="async" alt="Intents app icon"><div><h2>A clearer picture starts here.</h2><p>Give your next idea a proper test.</p></div><a class="button button-primary" href="https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg" data-download-location="closing">Download for macOS · v1.5.2</a></section>
   </main>
-  <footer class="site-footer section-shell"><div><a class="footer-brand" href="#">Intents</a><span>Made for curious minds.</span></div><div><a href="https://github.com/coryparrry/Intents">GitHub</a><a href="https://github.com/coryparrry/Intents/blob/main/LICENSE">MIT licence</a><a href="https://github.com/coryparrry/Intents/issues">Feedback</a><a href="/privacy">Privacy</a><button id="motion-toggle" aria-pressed="false">Pause motion</button></div><p>Requires macOS 27 or later. The default on-device model needs an Apple Intelligence–capable Mac with Apple Intelligence enabled and its model downloaded. Xcode 27 is needed for source builds and Mac App Intent tests, not ordinary on-device suites.<br>Browser examples show a recorded evaluation and an illustrative unshipped Mac App Intent contract. Example scores are not model benchmarks. <a href="/getting-started">Getting started</a>.</p></footer>
+  <footer class="site-footer section-shell"><div><a class="footer-brand" href="#">Intents</a><span>Made for curious minds.</span></div><div><a href="https://github.com/coryparrry/Intents">GitHub</a><a href="https://github.com/coryparrry/Intents/blob/main/LICENSE">MIT licence</a><a href="https://github.com/coryparrry/Intents/issues">Feedback</a><a href="/privacy">Privacy</a><button id="motion-toggle" aria-pressed="false">Pause motion</button></div><p>Requires macOS 27 or later. The default on-device model needs an Apple Intelligence–capable Mac with Apple Intelligence enabled and its model downloaded. Xcode 27 is needed for source builds and Mac App Intent tests, not ordinary on-device suites.<br>Browser examples show a recorded evaluation and an illustrative unshipped Mac App Intent contract. Example scores are not model benchmarks. <a href="/getting-started">Getting started</a>.</p><a href="https://coryparry.dev/projects/intents">Project page</a><p>Full project page, FAQ and updates: <a href="https://coryparry.dev/projects/intents">coryparry.dev/projects/intents</a>.</p></footer>
   <div class="sr-only" id="demo-announcement" aria-live="polite"></div>
   <noscript><p class="no-script">The interactive app preview needs JavaScript. You can still explore the features and download Intents using the links above.</p></noscript>
 </body>

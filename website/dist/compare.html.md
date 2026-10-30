@@ -6,9 +6,15 @@ Canonical page: https://intents-workbench.coryparry.chatgpt.site/compare
 
 Intents is a free native Mac workbench for Apple Foundation Models, with suites, traces, Review, Batch runs, and local MCP. Choose it for on-device Apple evaluations in a Mac UI. Consider Promptfoo, DeepEval, or Braintrust for configuration, Python, or hosted workflows; choose Apple Evaluations for Swift Testing inside your app target.
 
+## Apple's own tools
+
+- [Apple Evaluations framework](/compare/apple-evaluations)
+- [Apple Foundation Models SDK for Python](/compare/apple-fm-python-sdk)
+- [From fm respond to repeatable evals](/guides/fm-cli-to-repeatable-evals)
+
 ## Compare the working styles
 
-Checked 26 October 2026. “check” means a detail was not verified here, not that the tool lacks it. Local execution does not by itself establish that every provider or judge is offline.
+Checked 30 October 2026. “check” means a detail was not verified here, not that the tool lacks it. Local execution does not by itself establish that every provider or judge is offline.
 
 | Detail | Intents | Apple Evaluations | Promptfoo | DeepEval | Braintrust |
 | --- | --- | --- | --- | --- | --- |
@@ -58,6 +64,8 @@ Free, MIT licensed, macOS 27+, Apple silicon. Enable Apple Intelligence and down
 
 ## Sources and corrections
 
-Facts checked 26 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
+Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
 
 [All comparisons](/compare) · [Evaluate on a Mac](/guides/evaluate-apple-foundation-models-mac) · [Connect an agent](/guides/intents-mcp-coding-agents)
+
+Project page: https://coryparry.dev/projects/intents

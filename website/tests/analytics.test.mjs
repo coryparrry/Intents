@@ -59,7 +59,7 @@ test('browser privacy signals, opt-out and previews never load the SDK', () => {
 
 test('all tagged download links are tracked with placement and direct-vs-release intent', () => {
   const editorial = ['compare.html', ...['compare', 'guides'].flatMap(dir => readdirSync(new URL(`../dist/${dir}/`, import.meta.url)).filter(name => name.endsWith('.html')).map(name => `${dir}/${name}`))];
-  for (const [page, expectedCount] of [['index.html', 3], ['getting-started.html', 1], ...editorial.map(page => [page, 1])]) {
+  for (const [page, expectedCount] of [['index.html', 3], ['getting-started.html', 1], ...editorial.map(page => [page, page === 'compare/foundation-evals.html' ? 2 : 1])]) {
     const html = readFileSync(new URL(`../dist/${page}`, import.meta.url), 'utf8');
     const tags = [...html.matchAll(/<a\b[^>]*data-download-location="([^"]+)"[^>]*>/g)];
     assert.equal(tags.length, expectedCount);

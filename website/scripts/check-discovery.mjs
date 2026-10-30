@@ -21,6 +21,9 @@ const checks = [
   ['getting-started.html.md', 'Claude-SearchBot', /text\/(?:markdown|plain)/, '# Get started with Intents'],
   ['compare.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.5.2'],
   ['compare/apple-evaluations.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.5.2'],
+  ['compare/foundation-evals.html', 'OAI-SearchBot', /text\/html/, 'Foundation Evals is now Intents'],
+  ['compare/apple-fm-python-sdk.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.5.2'],
+  ['guides/fm-cli-to-repeatable-evals.html', 'Claude-SearchBot', /text\/html/, 'Intents 1.5.2'],
   ['guides/evaluate-apple-foundation-models-mac.html', 'Claude-SearchBot', /text\/html/, 'Intents 1.5.2'],
   ['privacy.html', 'Googlebot', /text\/html/, 'Website privacy'],
   ['seo-check-missing-page', 'Googlebot', null, null, 404],
@@ -59,8 +62,9 @@ const results = await Promise.allSettled(checks.map(async ([path, userAgent, typ
     assert.doesNotMatch(body, /Foundation-Evals-1\.3|current download is Foundation Evals|Intents (?:v)?1\.[34]\.0/);
   }
   if (path === 'sitemap.xml' || path === 'llms.txt') {
-    for (const route of ['compare', 'guides/evaluate-apple-foundation-models-mac']) assert.ok(body.includes(canonical + route), `Missing discovery route: ${route}`);
+    for (const route of ['compare', 'guides/evaluate-apple-foundation-models-mac', 'compare/foundation-evals', 'compare/apple-fm-python-sdk', 'guides/fm-cli-to-repeatable-evals']) assert.ok(body.includes(canonical + route), `Missing discovery route: ${route}`);
   }
+  if (path === 'llms.txt' || !path || path.endsWith('.html')) assert.match(body, /(?:href="|:\s)https:\/\/coryparry\.dev\/projects\/intents(?:["\s]|$)/, 'Missing exact project-home link');
   return `${path || '/'} · ${userAgent}: ${status}${status === 200 ? ', readable, no indexing block' : ', correctly not found'}`;
 }));
 for (const result of results) {
