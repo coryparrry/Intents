@@ -5,6 +5,18 @@ import { readFileSync, existsSync } from 'node:fs';
 const read = path => readFileSync(new URL(`../dist/${path}`, import.meta.url), 'utf8');
 const html = read('index.html');
 
+test('reading guides and sitemap advertise the canonical home and Apple tool routes', () => {
+  for (const route of ['compare/foundation-evals', 'compare/apple-fm-python-sdk', 'guides/fm-cli-to-repeatable-evals']) {
+    for (const file of ['llms.txt', 'sitemap.xml']) assert.ok(read(file).includes(`https://intents-workbench.coryparry.chatgpt.site/${route}`), `${file}: ${route}`);
+    assert.ok(existsSync(new URL(`../dist/${route}.html`, import.meta.url)));
+    assert.ok(existsSync(new URL(`../dist/${route}.html.md`, import.meta.url)));
+  }
+  for (const file of ['llms.txt', 'index.html.md']) {
+    assert.ok(read(file).includes('https://coryparry.dev/projects/intents'));
+    assert.ok(read(file).includes('https://coryparry.dev/llms.txt'));
+  }
+});
+
 test('published HTML and AI reading guides resolve their local links', () => {
   const guide = read('llms.txt');
   const markdown = read('index.html.md');

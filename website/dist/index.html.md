@@ -2,11 +2,18 @@
 
 Canonical website: https://intents-workbench.coryparry.chatgpt.site/
 
+Project home (canonical human page): https://coryparry.dev/projects/intents
+
+## Project
+
+- [Project page](https://coryparry.dev/projects/intents)
+- [Cory Parry project guides](https://coryparry.dev/llms.txt)
+
 Intents is a free, open-source native Mac workbench for Apple Foundation Models, made by Cory Parry and released under the MIT licence. Turn prompts into repeatable cases, inspect responses and failures, and compare saved runs after changing instructions, models, or tools.
 
 ## Current download and development source
 
-Intents was previously **Foundation Evals**. As checked 26 October 2026, the current published release is **v1.5.2**. Its installer and app use the Intents name.
+Intents was previously **Foundation Evals**. As checked 30 October 2026, the current published release is **v1.5.2**. Its installer and app use the Intents name.
 
 - [Download Intents 1.5.2 for Apple silicon](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg).
 - [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.5.2).
@@ -79,3 +86,12 @@ Ordinary on-device suites do not need Xcode. Source builds and development-sourc
 ### Can I connect a coding agent?
 
 Yes. Open Intents Settings → MCP Connector and choose Connect to Codex, then restart Codex. Other HTTP MCP clients require manual bearer authentication; keep Intents open.
+
+## Apple tools
+
+- [Python SDK comparison](https://intents-workbench.coryparry.chatgpt.site/compare/apple-fm-python-sdk)
+- [From fm respond to repeatable evals](https://intents-workbench.coryparry.chatgpt.site/guides/fm-cli-to-repeatable-evals)
+
+### Is Intents related to Apple's App Intents?
+
+No. Intents is an independent evaluation app for Apple Foundation Models. Its development source includes optional Mac App Intent tests, which are unshipped.

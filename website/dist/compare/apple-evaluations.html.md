@@ -1,6 +1,8 @@
+COMPARE YOUR OPTIONS
+
 # Intents vs Apple’s Evaluations framework
 
-Canonical page: https://intents-workbench.coryparry.chatgpt.site/compare/apple-evaluations
+Checked 30 October 2026 · Intents 1.5.2
 
 ## Short answer
 
@@ -27,6 +29,14 @@ Try Intents when you want to iterate on Apple model cases and inspect evidence w
 ## Use them together
 
 Explore a failure in Intents, then add a representative case to your app’s own tests. Match inputs, model configuration, and metrics before comparing outcomes. Intents does not replace `.evaluates` inside Swift Testing when that is the integration you need.
+
+## Where fm and the Python SDK fit
+
+Use [fm for a quick terminal prompt check](/guides/fm-cli-to-repeatable-evals), and the [Python SDK for notebooks and Python metric libraries](/compare/apple-fm-python-sdk). Evaluations keeps typed datasets, evaluators and metrics inside app test targets.
+
+## Workflow: from failure to test
+
+Find a failing case in Intents, inspect its trace, and export the JSON report. Then manually add a representative input and expectation to a Swift Testing `.evaluates` evaluation in your app target, following Apple's dataset and evaluator APIs. The report is evidence to translate; no automatic report importer or test generator is claimed.
 
 ## Official sources
 
@@ -58,6 +68,8 @@ Free, MIT licensed, macOS 27+, Apple silicon. Enable Apple Intelligence and down
 
 ## Sources and corrections
 
-Facts checked 26 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
+Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
 
 [All comparisons](/compare) · [Evaluate on a Mac](/guides/evaluate-apple-foundation-models-mac) · [Connect an agent](/guides/intents-mcp-coding-agents)
+
+Project page: https://coryparry.dev/projects/intents

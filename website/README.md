@@ -84,7 +84,7 @@ the app script. ResizeObserver supplies preview geometry without an immediate
 layout read.
 
 - `dist/robots.txt` permits crawlers and advertises the sitemap.
-- `dist/sitemap.xml` lists the homepage, getting-started guide, privacy page, comparison hub, five comparisons, and four practical guides. Update `lastmod` when
+- `dist/sitemap.xml` lists the homepage, getting-started guide, privacy page, comparison hub, six comparisons, and five practical guides. Update `lastmod` when
   its substantive content changes, not on every deployment.
 - `dist/llms.txt` is a concise reading guide following the optional llms.txt
   proposal. It is not an indexing requirement or a ranking guarantee.
@@ -96,7 +96,7 @@ layout read.
 - Sites serves that HTML at `/getting-started` and redirects its `.html` URL.
   Canonical, sitemap and internal links use the extensionless public route.
   A plain local static server may still require `/getting-started.html`.
-- Download facts were verified on 26 October 2026. Recheck published release
+- Download and Apple-tool facts were verified on 30 October 2026. Recheck published release
   assets before publishing or updating version copy.
   Review and Batch runs are also available in the v1.5.2 release.
 - `.openai/hosting.json` disables the homepage fallback for nonexistent URLs,

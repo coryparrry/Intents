@@ -1,43 +1,46 @@
-# Intents vs Foundation Evals
-
-Canonical page: https://intents-workbench.coryparry.chatgpt.site/compare/foundation-evals
+# Foundation Evals is now Intents
 
 ## Short answer
 
-Intents and Foundation Evals are the same open-source project. Intents is the current name; Foundation Evals is the earlier name you may see in old downloads, source paths, or screenshots. Install Intents 1.5.2 for the current Mac workbench, including suites, traces, Review, Batch runs, and authenticated local MCP.
+Foundation Evals is now called Intents. Same open-source project, same developer (Cory Parry), new name from version 1.4.0. The current installer is Intents 1.5.2 for Apple silicon. Use the current name for new evaluations, and use the release history when following an older post, screenshot, saved result, or source path.
 
-## What changed with the name?
+## Intents vs Foundation Evals
 
-Intents was previously Foundation Evals. From the 1.4 release, the installer and application use Intents. The name covers a workbench that has grown beyond prompt experiments into saved evidence, review, and agent workflows. Earlier Foundation Evals installers are historical; they are not the recommended download.
+These names describe one project, rather than competing tools.
 
-| Detail | Intents | Foundation Evals |
-| --- | --- | --- |
-| Project | Current name | Earlier name of the same project |
-| Recommended installer | Intents 1.5.2 | Historical downloads |
-| Source licence | MIT | Same project history |
-| Website examples | Historical browser recreations | May show earlier labels |
+## Looking for Foundation Evals?
 
-## Who should keep an older build?
+[Download Intents 1.5.2 (DMG)](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg) · [GitHub](https://github.com/coryparrry/Intents) · [Project page](https://coryparry.dev/projects/intents)
 
-Keep a known older environment when reproducing an old result. Record its exact version and review its instructions. Do not interpret an older screenshot as the current interface.
+```sh
+brew install --cask coryparrry/tap/intents
+```
 
-## Who should install Intents?
+## Release timeline
 
-Choose Intents for new evaluations. The current release includes Review and Batch runs; the getting-started guide describes the released interface. Use the same project’s release history to trace changes rather than treating the names as competing tools.
+- [v1.2.0 — 8 September 2026](https://github.com/coryparrry/Intents/releases/tag/v1.2.0): Foundation Evals.
+- [v1.3.0 — 20 September 2026](https://github.com/coryparrry/Intents/releases/tag/v1.3.0): Foundation Evals.
+- [v1.4.0 — 4 October 2026](https://github.com/coryparrry/Intents/releases/tag/v1.4.0): renamed to Intents, including the app and installer.
+- [v1.5.1 — 23 October 2026](https://github.com/coryparrry/Intents/releases/tag/v1.5.1): Intents.
+- [v1.5.2 — 24 October 2026](https://github.com/coryparrry/Intents/releases/tag/v1.5.2): current stable Intents release.
+
+## Older posts and source paths
+
+The source tree still contains a `FoundationEvals` directory, so the earlier name appears in source paths. Keep a known older environment to reproduce an old result and record its exact version. Website demos are historical recreations, not current model runs or benchmarks.
 
 ## Frequently asked questions
 
-### Are Intents and Foundation Evals separate apps?
+### Is Foundation Evals discontinued?
 
-They are names from the same project history. Intents is the current product name.
+Foundation Evals continues as Intents, the same free, MIT-licensed project, renamed from version 1.4.0.
 
-### Which download should I use?
+### Where do I download Foundation Evals?
 
-Use Intents 1.5.2 for Apple silicon, or install coryparrry/tap/intents with Homebrew.
+Install Intents 1.5.2 from the DMG or Homebrew command above. It is the current name of the project.
 
-### Are the website demos current model runs?
+### Will my old suites work?
 
-No. They are historical HTML recreations and an illustrative development-source contract, not live model runs or benchmarks.
+Check the release notes for your saved suite format and version before upgrading: https://github.com/coryparrry/Intents/releases.
 
 ## Try Intents 1.5.2
 
@@ -51,6 +54,8 @@ Free, MIT licensed, macOS 27+, Apple silicon. Enable Apple Intelligence and down
 
 ## Sources and corrections
 
-Facts checked 26 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
+Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
 
 [All comparisons](/compare) · [Evaluate on a Mac](/guides/evaluate-apple-foundation-models-mac) · [Connect an agent](/guides/intents-mcp-coding-agents)
+
+Project page: https://coryparry.dev/projects/intents

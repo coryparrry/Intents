@@ -30,7 +30,7 @@ test('dry runs never perform network requests; submission requires explicit chan
   const logs = [];
   const dependencies = { fetchImpl: async () => { throw new Error('Unexpected network call'); }, log: message => logs.push(message) };
   await main([], dependencies);
-  assert.match(logs[0], /DRY RUN: 13 URLs; no request sent/);
+  assert.match(logs[0], /DRY RUN: 15 URLs; no request sent/);
   await main(['/compare'], dependencies);
   assert.equal(logs.at(-1), `${origin}/compare`);
   await assert.rejects(main(['--submit'], dependencies), /requires explicit/);

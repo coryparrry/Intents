@@ -1,5 +1,7 @@
 <div align="center">
 
+Formerly Foundation Evals · Project page: https://coryparry.dev/projects/intents · Showcase: https://intents-workbench.coryparry.chatgpt.site
+
 <img src=".github/assets/readme-banner.png" alt="Intents logo on a coral and turquoise background." width="960">
 
 **Put Apple's Foundation Models to the test.**
