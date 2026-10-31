@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-private enum AppSettingsPage: String, Hashable {
+private enum AppSettingsPage: String, Hashable, Sendable {
     case mcp
     case judges
     case privacy

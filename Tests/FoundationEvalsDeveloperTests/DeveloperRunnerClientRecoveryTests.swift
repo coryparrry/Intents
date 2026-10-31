@@ -1,5 +1,4 @@
 import Foundation
-@preconcurrency import MultipeerConnectivity
 import Testing
 @testable import FoundationEvalsDeveloper
 
@@ -30,7 +29,7 @@ struct DeveloperRunnerClientRecoveryTests {
         try JSONEncoder().encode(state).write(to: trustStoreURL)
         let client = DeveloperRunnerClient(desktopID: desktopID, trustStoreURL: trustStoreURL)
         defer { client.shutdown() }
-        let peer = DeveloperPeerBox(MCPeerID(displayName: "Runner endpoint"))
+        let peer = DeveloperPeerBox(DeveloperPeerID(displayName: "Runner endpoint"))
         try authenticate(client, peer: peer, runner: runner, features: features, token: token)
         let authenticated = try #require(client.runners.first(where: { $0.id == runner.id }))
         #expect(authenticated.state == .connected)
@@ -41,7 +40,7 @@ struct DeveloperRunnerClientRecoveryTests {
         client.found(peer, runnerID: changedAdvertisement ? UUID() : runner.id)
         #expect(client.runners == [authenticated])
 
-        let competitor = DeveloperPeerBox(MCPeerID(displayName: "Competing endpoint"))
+        let competitor = DeveloperPeerBox(DeveloperPeerID(displayName: "Competing endpoint"))
         client.found(competitor, runnerID: runner.id)
         client.peerChanged(competitor, state: .notConnected)
         #expect(client.runners == [authenticated])
@@ -94,10 +93,11 @@ struct DeveloperRunnerClientRecoveryTests {
         client.received(try JSONEncoder().encode(DeveloperRunnerEnvelope(message: .secure(secure))), from: peer)
     }
 
+    /// Keeps a discoverable endpoint eligible for retry after its transport invitation fails.
     @Test func failedInvitationCanRetryTheSameDiscoverableRunner() throws {
         let client = DeveloperRunnerClient(desktopID: UUID())
         defer { client.shutdown() }
-        let runnerID = UUID(), peer = DeveloperPeerBox(MCPeerID(displayName: "Runner"))
+        let runnerID = UUID(), peer = DeveloperPeerBox(DeveloperPeerID(displayName: "Runner"))
         client.found(peer, runnerID: runnerID)
         _ = try client.prepareConnection(to: runnerID)
         client.peerChanged(peer, state: .notConnected)
@@ -105,12 +105,13 @@ struct DeveloperRunnerClientRecoveryTests {
         #expect(try client.prepareConnection(to: runnerID) == [peer.peer])
     }
 
+    /// Releases the single-runner lock after the last candidate fails to connect.
     @Test func failedInvitationReleasesAdmissionForAnotherRunner() throws {
         let client = DeveloperRunnerClient(desktopID: UUID())
         defer { client.shutdown() }
         let first = UUID(), second = UUID()
-        let peer = DeveloperPeerBox(MCPeerID(displayName: "First"))
-        let other = DeveloperPeerBox(MCPeerID(displayName: "Second"))
+        let peer = DeveloperPeerBox(DeveloperPeerID(displayName: "First"))
+        let other = DeveloperPeerBox(DeveloperPeerID(displayName: "Second"))
         client.found(peer, runnerID: first)
         client.found(other, runnerID: second)
         _ = try client.prepareConnection(to: first)
@@ -118,13 +119,14 @@ struct DeveloperRunnerClientRecoveryTests {
         #expect(try client.prepareConnection(to: second) == [other.peer])
     }
 
+    /// Preserves ownership while another endpoint for the same runner is still connecting.
     @Test func oneFailedCandidateDoesNotReleaseOtherPendingInvitations() throws {
         let client = DeveloperRunnerClient(desktopID: UUID())
         defer { client.shutdown() }
         let runnerID = UUID(), otherID = UUID()
-        let first = DeveloperPeerBox(MCPeerID(displayName: "First endpoint"))
-        let second = DeveloperPeerBox(MCPeerID(displayName: "Second endpoint"))
-        let other = DeveloperPeerBox(MCPeerID(displayName: "Other runner"))
+        let first = DeveloperPeerBox(DeveloperPeerID(displayName: "First endpoint"))
+        let second = DeveloperPeerBox(DeveloperPeerID(displayName: "Second endpoint"))
+        let other = DeveloperPeerBox(DeveloperPeerID(displayName: "Other runner"))
         client.found(first, runnerID: runnerID)
         client.found(second, runnerID: runnerID)
         client.found(other, runnerID: otherID)
@@ -135,10 +137,11 @@ struct DeveloperRunnerClientRecoveryTests {
         #expect(try client.prepareConnection(to: otherID) == [other.peer])
     }
 
+    /// Cancels pending connection ownership without removing the discovered endpoint.
     @Test func pendingInvitationCanBeCancelledAndRetried() throws {
         let client = DeveloperRunnerClient(desktopID: UUID())
         defer { client.shutdown() }
-        let runnerID = UUID(), peer = DeveloperPeerBox(MCPeerID(displayName: "Runner"))
+        let runnerID = UUID(), peer = DeveloperPeerBox(DeveloperPeerID(displayName: "Runner"))
         client.found(peer, runnerID: runnerID)
         _ = try client.prepareConnection(to: runnerID)
         client.disconnect(runnerID)
@@ -146,12 +149,13 @@ struct DeveloperRunnerClientRecoveryTests {
         #expect(try client.prepareConnection(to: runnerID) == [peer.peer])
     }
 
+    /// Releases connection ownership when an undiscoverable candidate later reports transport failure.
     @Test func lostDiscoveryDuringInvitationStillAllowsTransportFailureToReleaseAdmission() throws {
         let client = DeveloperRunnerClient(desktopID: UUID())
         defer { client.shutdown() }
         let first = UUID(), second = UUID()
-        let peer = DeveloperPeerBox(MCPeerID(displayName: "Lost endpoint"))
-        let other = DeveloperPeerBox(MCPeerID(displayName: "Other runner"))
+        let peer = DeveloperPeerBox(DeveloperPeerID(displayName: "Lost endpoint"))
+        let other = DeveloperPeerBox(DeveloperPeerID(displayName: "Other runner"))
         client.found(peer, runnerID: first)
         client.found(other, runnerID: second)
         _ = try client.prepareConnection(to: first)

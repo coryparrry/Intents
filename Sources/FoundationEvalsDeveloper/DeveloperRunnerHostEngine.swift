@@ -3,73 +3,95 @@ import Foundation
 public actor DeveloperTrustStore {
     private struct State: Codable {
         var tokensByDesktopID: [UUID: String]
+        var pendingTokensByDesktopID: [UUID: String]?
     }
-
     private let fileURL: URL?
     private var tokensByDesktopID: [UUID: String]
+    private var pendingTokensByDesktopID: [UUID: String]
 
-    /// Loads desktop trust tokens from an optional JSON file, falling back to empty trust
-    /// if the file cannot be read or decoded.
-    /// - Parameter fileURL: Persistence location, or `nil` for an in-memory trust store.
+    /// Loads confirmed and pending receipts; older files contain only confirmed tokens.
     public init(fileURL: URL? = nil) {
         self.fileURL = fileURL
-        if let fileURL,
-           let data = try? Data(contentsOf: fileURL),
-           let state = try? JSONDecoder().decode(State.self, from: data) {
-            tokensByDesktopID = state.tokensByDesktopID
-        } else {
-            tokensByDesktopID = [:]
+        let state = fileURL.flatMap { try? Data(contentsOf: $0) }.flatMap { try? JSONDecoder().decode(State.self, from: $0) }
+        tokensByDesktopID = state?.tokensByDesktopID ?? [:]
+        pendingTokensByDesktopID = state?.pendingTokensByDesktopID ?? [:]
+    }
+
+    /// Returns the newest saved receipt, including an unconfirmed replacement when present.
+    public func token(for desktopID: UUID) -> String? {
+        pendingTokensByDesktopID[desktopID] ?? tokensByDesktopID[desktopID]
+    }
+
+    /// Allows a delivered pending receipt or the last confirmed receipt to authenticate reconnects.
+    func tokens(for desktopID: UUID) -> [String] {
+        [pendingTokensByDesktopID[desktopID], tokensByDesktopID[desktopID]].compactMap { $0 }
+    }
+
+    /// Builds separate TLS identities for the confirmed and pending receipt of each desktop.
+    func transportCredentials(runnerID: UUID) -> [DeveloperTransportCredential] {
+        Set(tokensByDesktopID.keys).union(pendingTokensByDesktopID.keys).flatMap { desktop in
+            tokens(for: desktop).map { .trusted(token: $0, desktopID: desktop, runnerID: runnerID) }
         }
     }
 
-    /// Returns the saved trust token for a desktop, or `nil` when it has no stored trust.
-    /// - Parameter desktopID: Identity presented by the desktop during authentication.
-    public func token(for desktopID: UUID) -> String? {
-        tokensByDesktopID[desktopID]
-    }
-
-    /// Stores or replaces a desktop's token, then persists the updated trust set.
-    /// - Parameters:
-    ///   - desktopID: Desktop authorized by this token.
-    ///   - token: Shared secret used for reconnect proofs and session-key derivation.
-    /// - Throws: A persistence error; the in-memory token has already been updated.
+    /// Explicitly replaces confirmed trust and removes any pending replacement, then persists it.
+    /// A persistence error propagates after the in-memory state changes.
     public func trust(desktopID: UUID, token: String) throws {
         tokensByDesktopID[desktopID] = token
+        pendingTokensByDesktopID[desktopID] = nil
         try persist()
     }
 
-    /// Removes a desktop's saved token, then persists the updated trust set.
-    /// Existing authenticated engine connections are not closed by this store operation.
-    /// - Parameter desktopID: Desktop whose future token lookup should fail.
-    /// - Throws: A persistence error after the in-memory entry has been removed.
+    /// Persists one pending receipt while retaining confirmed trust until possession is proved.
+    /// Repeated attempts reissue the same pending secret, preventing lost receipts from invalidating each other.
+    func stagePairing(desktopID: UUID) throws -> String {
+        if let pending = pendingTokensByDesktopID[desktopID] { return pending }
+        let token = DeveloperAuthentication.makeToken()
+        pendingTokensByDesktopID[desktopID] = token
+        do { try persist() }
+        catch { pendingTokensByDesktopID[desktopID] = nil; throw error }
+        return token
+    }
+
+    /// Atomically authorizes this receipt and promotes it only when it is the exact pending token.
+    /// Returns false for revoked/superseded tokens; failed persistence preserves both saved states.
+    func confirmPairing(desktopID: UUID, token: String) throws -> Bool {
+        guard tokens(for: desktopID).contains(token) else { return false }
+        guard pendingTokensByDesktopID[desktopID] == token else { return true }
+        let previous = tokensByDesktopID[desktopID]
+        tokensByDesktopID[desktopID] = token
+        pendingTokensByDesktopID[desktopID] = nil
+        do { try persist() }
+        catch {
+            tokensByDesktopID[desktopID] = previous
+            pendingTokensByDesktopID[desktopID] = token
+            throw error
+        }
+        return true
+    }
+
+    /// Revokes both confirmed and pending receipts without closing existing engine sessions.
+    /// A persistence error propagates after the in-memory state changes.
     public func revoke(desktopID: UUID) throws {
         tokensByDesktopID[desktopID] = nil
+        pendingTokensByDesktopID[desktopID] = nil
         try persist()
     }
 
-    /// Atomically writes the trust set if configured and attempts owner-only file permissions.
-    /// Parent-directory creation, encoding and write errors propagate to the caller.
+    /// Atomically persists private trust with owner-only file permissions when storage is configured.
     private func persist() throws {
         guard let fileURL else { return }
-        try FileManager.default.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        let data = try JSONEncoder().encode(State(tokensByDesktopID: tokensByDesktopID))
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let data = try JSONEncoder().encode(State(tokensByDesktopID: tokensByDesktopID,
+            pendingTokensByDesktopID: pendingTokensByDesktopID))
         try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUnlessOpen])
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: fileURL.path
-        )
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
     }
 }
 
 enum DeveloperHostTransportAction: Sendable {
     case respond([DeveloperRunnerEnvelope])
-    case execute(
-        request: DeveloperFeatureExecutionRequest,
-        task: Task<DeveloperFeatureExecutionResult, Never>
-    )
+    case execute(request: DeveloperFeatureExecutionRequest, task: Task<DeveloperFeatureExecutionResult, Never>)
 }
 
 public actor DeveloperRunnerHostEngine {
@@ -88,11 +110,14 @@ public actor DeveloperRunnerHostEngine {
     public let trustStore: DeveloperTrustStore
 
     private var pairingSession: PairingSession?
+    private var pairingTransaction: UUID?
     private var pairedDesktopID: UUID?
+    private var connectionGenerations: [String: UUID] = [:]
     private var authenticatedConnections: [String: UUID] = [:]
     private var reconnectChallenges: [String: DeveloperReconnectChallenge] = [:]
     private var requestIDsByConnection: [String: Set<UUID>] = [:]
     private var secureSessions: [String: DeveloperSessionCipher] = [:]
+    private var confirmationTokensByConnection: [String: String] = [:]
 
     /// Creates a transport-independent runner host with app identity, feature dispatch and trust.
     /// - Parameters:
@@ -179,6 +204,7 @@ public actor DeveloperRunnerHostEngine {
     ///   - now: Clock value used to date the challenge and check pairing availability.
     /// - Returns: A reconnect challenge, plus a pairing challenge when pairing is active.
     public func connectionOpened(id connectionID: String, now: Date = Date()) -> [DeveloperRunnerEnvelope] {
+        connectionGenerations[connectionID] = UUID()
         let reconnect = DeveloperReconnectChallenge(
             runner: identity,
             nonce: DeveloperAuthentication.makeNonce(),
@@ -211,6 +237,8 @@ public actor DeveloperRunnerHostEngine {
     /// Clears a connection's authentication, challenge and cipher and cancels its owned requests.
     /// - Parameter connectionID: Transport identity previously passed to ``connectionOpened(id:now:)``.
     public func connectionClosed(id connectionID: String) async {
+        connectionGenerations[connectionID] = nil
+        confirmationTokensByConnection[connectionID] = nil
         authenticatedConnections[connectionID] = nil
         reconnectChallenges[connectionID] = nil
         secureSessions[connectionID] = nil
@@ -281,21 +309,35 @@ public actor DeveloperRunnerHostEngine {
         case .respond(let envelopes):
             return envelopes
         case .execute(let request, let task):
-            let result = await task.value
+            let result = boundedResult(await task.value)
             guard requestIDsByConnection[connectionID]?.remove(request.id) != nil else { return [] }
             return secureEnvelope(.result(result), connectionID: connectionID).map { [$0] } ?? []
         }
     }
 
+    /// Replaces oversized output with a correlated failure before sealing advances the session sequence.
+    /// The budget reserves Base64 expansion, AES-GCM overhead and the outer wire envelope.
+    private func boundedResult(_ result: DeveloperFeatureExecutionResult) -> DeveloperFeatureExecutionResult {
+        let maximumPlaintextBytes = DeveloperNetworkSession.maximumMessageBytes / 4 * 3 - 4_096
+        if let bytes = try? JSONEncoder().encode(DeveloperAuthenticatedMessage.result(result)),
+           bytes.count <= maximumPlaintextBytes { return result }
+        var failure = result
+        failure.output = nil
+        failure.failure = .init(code: .executionFailed, message: "The feature result exceeds the runner transport message limit.")
+        return failure
+    }
+
     /// Checks the code proof, session expiry and retry throttle before establishing trust.
     /// Invalid proofs wait two seconds between attempts and cancel pairing after five failures.
-    /// Success persists a new token, creates the secure session and returns a sealed receipt and hello.
+    /// Success stages or reissues a pending token and returns a sealed receipt and hello; possession proof confirms replacement.
     private func pair(
         _ request: DeveloperPairingRequest,
         connectionID: String,
         now: Date
     ) async -> [DeveloperRunnerEnvelope] {
-        guard var session = pairingSession,
+        guard pairingTransaction == nil,
+              let generation = connectionGenerations[connectionID],
+              var session = pairingSession,
               session.id == request.pairingSessionID,
               session.expiresAt > now else {
             return [failureEnvelope(
@@ -343,7 +385,17 @@ public actor DeveloperRunnerHostEngine {
             )]
         }
 
-        let token = DeveloperAuthentication.makeToken()
+        pairingTransaction = UUID()
+        defer { pairingTransaction = nil }
+        let features = await registry.descriptors
+        guard connectionGenerations[connectionID] == generation, pairingSession?.id == session.id else { return [] }
+        let token: String
+        do { token = try await trustStore.stagePairing(desktopID: request.desktopID) }
+        catch {
+            return [failureEnvelope(requestID: request.pairingSessionID, code: .executionFailed,
+                message: "The pending trust receipt could not be saved.")]
+        }
+        guard connectionGenerations[connectionID] == generation, pairingSession?.id == session.id else { return [] }
         let sealedToken: Data
         do {
             sealedToken = try DeveloperAuthentication.sealTrustToken(
@@ -359,24 +411,15 @@ public actor DeveloperRunnerHostEngine {
                 message: "The trust receipt could not be protected."
             )]
         }
-        do {
-            try await trustStore.trust(desktopID: request.desktopID, token: token)
-        } catch {
-            return [failureEnvelope(
-                requestID: request.pairingSessionID,
-                code: .executionFailed,
-                message: "The trust receipt could not be saved."
-            )]
-        }
         pairingSession = nil
         pairedDesktopID = request.desktopID
+        confirmationTokensByConnection[connectionID] = token
         authenticatedConnections[connectionID] = request.desktopID
         secureSessions[connectionID] = DeveloperSessionCipher(
             token: token,
             challenge: challenge,
             desktopID: request.desktopID
         )
-        let features = await registry.descriptors
         guard let secureHello = secureEnvelope(
             .hello(.init(
                 runner: identity,
@@ -416,23 +459,26 @@ public actor DeveloperRunnerHostEngine {
         connectionID: String,
         now: Date = Date()
     ) async -> [DeveloperRunnerEnvelope] {
-        guard let challenge = reconnectChallenges[connectionID],
+        guard let generation = connectionGenerations[connectionID],
+              let challenge = reconnectChallenges[connectionID],
               challenge.id == hello.challengeID,
               challenge.expiresAt > now,
-              let token = await trustStore.token(for: hello.desktopID),
-              DeveloperAuthentication.validatesDesktopProof(
-                hello.proof,
-                token: token,
-                  challenge: challenge,
-                  desktopID: hello.desktopID
-              ) else {
-            return [DeveloperRunnerEnvelope(message: .authenticationFailure(.init(
-                runnerID: identity.id,
-                desktopID: hello.desktopID,
-                reconnectChallengeID: hello.challengeID,
-                message: "The saved trust receipt is no longer valid. Pair this runner again."
-            )))]
+              let token = await trustStore.tokens(for: hello.desktopID).first(where: {
+                  DeveloperAuthentication.validatesDesktopProof(hello.proof, token: $0,
+                      challenge: challenge, desktopID: hello.desktopID)
+              }) else {
+            return authenticationFailure(hello)
         }
+        let features = await registry.descriptors
+        guard connectionGenerations[connectionID] == generation else { return [] }
+        do {
+            guard try await trustStore.confirmPairing(desktopID: hello.desktopID, token: token) else { return authenticationFailure(hello) }
+        }
+        catch {
+            return [failureEnvelope(requestID: hello.challengeID, code: .executionFailed,
+                message: "The pairing receipt could not be confirmed.")]
+        }
+        guard connectionGenerations[connectionID] == generation else { return [] }
         reconnectChallenges[connectionID] = nil
         authenticatedConnections[connectionID] = hello.desktopID
         secureSessions[connectionID] = DeveloperSessionCipher(
@@ -443,7 +489,7 @@ public actor DeveloperRunnerHostEngine {
         guard let helloEnvelope = secureEnvelope(
             .hello(.init(
                 runner: identity,
-                features: await registry.descriptors,
+                features: features,
                 desktopID: hello.desktopID,
                 reconnectChallengeID: challenge.id,
                 runnerProof: DeveloperAuthentication.runnerProof(
@@ -457,6 +503,16 @@ public actor DeveloperRunnerHostEngine {
         return [helloEnvelope]
     }
 
+    /// Rejects saved trust with the runner, desktop and challenge identities the client requires.
+    private func authenticationFailure(_ hello: DeveloperDesktopHello) -> [DeveloperRunnerEnvelope] {
+        return [DeveloperRunnerEnvelope(message: .authenticationFailure(.init(
+                runnerID: identity.id,
+                desktopID: hello.desktopID,
+                reconnectChallengeID: hello.challengeID,
+                message: "The saved trust receipt is no longer valid. Pair this runner again."
+            )))]
+    }
+
     /// Authenticates ordered desktop traffic and enforces request ownership per connection.
     /// Ignores same-connection duplicate IDs, rejects cross-connection collisions, and accepts
     /// cancellation only for requests owned by this connection. Invalid secure input is ignored.
@@ -464,7 +520,7 @@ public actor DeveloperRunnerHostEngine {
         _ envelope: DeveloperSecureEnvelope,
         connectionID: String
     ) async -> DeveloperHostTransportAction {
-        guard authenticatedConnections[connectionID] != nil,
+        guard let desktopID = authenticatedConnections[connectionID],
               var cipher = secureSessions[connectionID] else { return .respond([]) }
         let message: DeveloperAuthenticatedMessage
         do {
@@ -474,6 +530,21 @@ public actor DeveloperRunnerHostEngine {
             return .respond([])
         }
 
+        if let token = confirmationTokensByConnection[connectionID] {
+            do {
+                guard try await trustStore.confirmPairing(desktopID: desktopID, token: token) else {
+                    let response = secureEnvelope(.disconnect(reason: "The pairing receipt was revoked."), connectionID: connectionID)
+                    await connectionClosed(id: connectionID)
+                    return .respond(response.map { [$0] } ?? [])
+                }
+            } catch {
+                let response = secureEnvelope(.disconnect(reason: "The pairing receipt could not be confirmed."), connectionID: connectionID)
+                await connectionClosed(id: connectionID)
+                return .respond(response.map { [$0] } ?? [])
+            }
+            guard authenticatedConnections[connectionID] == desktopID else { return .respond([]) }
+            confirmationTokensByConnection[connectionID] = nil
+        }
         switch message {
         case .execute(let request):
             // The client correlates terminal results by request ID. A second

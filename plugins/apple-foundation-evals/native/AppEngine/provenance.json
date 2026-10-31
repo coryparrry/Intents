@@ -50,10 +50,10 @@
     },
     {
       "bundled": "EvaluationBuiltinToolTrace.swift",
-      "bundledSHA256": "37f21df280dea45192dc72cb1295af715964025cffd74ba40d6fe98fd29f127d",
+      "bundledSHA256": "65763b97006696880239013003e891269322193e7a9ba44cee74d2262286845d",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present",
       "canonicalSource": "plugins/apple-foundation-evals/native/AppEngine/EvaluationBuiltinToolTrace.swift",
-      "canonicalSHA256": "37f21df280dea45192dc72cb1295af715964025cffd74ba40d6fe98fd29f127d",
+      "canonicalSHA256": "65763b97006696880239013003e891269322193e7a9ba44cee74d2262286845d",
       "formerSource": "FoundationEvals/FoundationEvals/Models/EvaluationBuiltinToolTrace.swift",
       "formerSourceSHA256": "74f07e6414af3ac2edfccd4566fdc497a4cf0be27fbee8d729e5811ff5132068"
     },
@@ -232,7 +232,7 @@
       "source": "Services/EvaluationRunner+Prompt.swift",
       "sha256": "20cf11bdbd9ec2cc527b829d0bb642c233be043c80b070e82cdc240382b3c5e7",
       "bundled": "EvaluationRunner+Prompt.swift",
-      "bundledSHA256": "fdc593437aca98eb633be026984f672be3090a35560de2e76644a1f85f3d8c82",
+      "bundledSHA256": "9cce481b014d8c908ce64b5d73f372118a3b049e46684f3e43da13f8c50bcd1b",
       "adaptation": "macOS 27 availability annotations; provider/judge execution and scenario integration excluded where present"
     },
     {
@@ -360,10 +360,10 @@
     },
     {
       "bundled": "EvaluationJudgeSubjectContext.swift",
-      "bundledSHA256": "0fb37402cc01f0b1facd1f4d8ca851432107fa42c69df8760b4450a69c9ba7de",
+      "bundledSHA256": "38bec0733d926d27bf7b68690bc77fc681722a22da635a3ef0a2af41bf081729",
       "adaptation": "macOS 27 availability annotation; frozen observed semantic context is shared with the native app.",
       "canonicalSource": "plugins/apple-foundation-evals/native/AppEngine/EvaluationJudgeSubjectContext.swift",
-      "canonicalSHA256": "0fb37402cc01f0b1facd1f4d8ca851432107fa42c69df8760b4450a69c9ba7de",
+      "canonicalSHA256": "38bec0733d926d27bf7b68690bc77fc681722a22da635a3ef0a2af41bf081729",
       "formerSource": "FoundationEvals/FoundationEvals/Models/EvaluationJudgeSubjectContext.swift",
       "formerSourceSHA256": "5783d503db278e99f966f116806e78747ad6a8948ecdafca7aab6842b0dd4429"
     },

@@ -130,7 +130,7 @@ struct ContentView: View {
     }
 }
 
-private struct WorkspacePageLocation: Equatable {
+private struct WorkspacePageLocation: Equatable, Sendable {
     let selection: SidebarSelection
     let suiteID: UUID
 }

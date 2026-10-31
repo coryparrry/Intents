@@ -33,6 +33,7 @@ struct EvaluationJudgeSubjectContext: Codable, Equatable, Sendable {
                     return Entry(role: "tool calls", content: calls.map {
                         "\($0.toolName) [\($0.id)]: \($0.arguments.jsonString)"
                     }.joined(separator: "\n"))
+                case .data: throw ContextError.unavailable("The model-facing history contains a data entry that cannot be represented as judge text.")
                 @unknown default: throw ContextError.unavailable("The model-facing history contains an unsupported entry.")
                 }
             }

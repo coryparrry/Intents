@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The app's one status vocabulary: an SF Symbol per state, coloured only by what it means.
-/// State changes morph the symbol in place, and running work spins until it settles.
+/// State changes morph the symbol in place; running work keeps a stable progress glyph
+/// so accessibility automation can reach controls while a request is active.
 struct WorkspaceStatusMark: View {
     enum State: Hashable { case idle, running, passed, failed, attention }
 
@@ -14,7 +15,6 @@ struct WorkspaceStatusMark: View {
             .symbolRenderingMode(state.isResult ? .palette : .monochrome)
             .foregroundStyle(glyph, fill)
             .font(.system(size: size * 0.86))
-            .symbolEffect(.rotate, options: .repeat(.continuous), isActive: state == .running && !reduceMotion)
             .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             .frame(width: size, height: size)
             .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: state)

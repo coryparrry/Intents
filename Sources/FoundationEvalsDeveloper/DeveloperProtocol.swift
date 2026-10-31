@@ -1029,19 +1029,18 @@ struct DeveloperSecureEnvelopeBuffer: Sendable {
     }
 }
 
-/// Builds a MultipeerConnectivity display name within 63 UTF-8 bytes, reserving an
-/// eight-character UUID suffix and truncating only at character boundaries.
-func developerPeerDisplayName(_ displayName: String, id: UUID) -> String {
-    let suffix = "-\(id.uuidString.prefix(8))"
-    let byteLimit = 63 - suffix.utf8.count
-    var prefix = ""
+/// Builds a Bonjour service label within 63 UTF-8 bytes, retaining the full runner UUID
+/// and truncating the human-readable suffix only at character boundaries.
+func developerBonjourServiceName(_ displayName: String, id: UUID) -> String {
+    let prefix = "\(id.uuidString)-"
+    var label = ""
     for character in displayName {
-        let candidate = prefix + String(character)
-        guard candidate.utf8.count <= byteLimit else { break }
-        prefix = candidate
+        let candidate = label + String(character)
+        guard prefix.utf8.count + candidate.utf8.count <= 63 else { break }
+        label = candidate
     }
-    if prefix.isEmpty { prefix = "Runner" }
-    return prefix + suffix
+    if label.isEmpty { label = "Runner" }
+    return prefix + label
 }
 
 

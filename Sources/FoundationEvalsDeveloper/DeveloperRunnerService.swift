@@ -1,39 +1,6 @@
 import Foundation
-@preconcurrency import MultipeerConnectivity
+import Network
 import Observation
-
-let developerRunnerServiceType = "fnd-evals"
-
-private final class DeveloperRunnerAdvertiserDelegate: NSObject, MCNearbyServiceAdvertiserDelegate, @unchecked Sendable {
-    weak var owner: DeveloperRunnerService?
-    var session: MCSession?
-
-    /// Accepts the transport invitation when a session is available; host-level code proofs
-    /// and saved trust still gate authentication and execution after transport connection.
-    func advertiser(
-        _ advertiser: MCNearbyServiceAdvertiser,
-        didReceiveInvitationFromPeer peerID: MCPeerID,
-        withContext context: Data?,
-        invitationHandler: @escaping (Bool, MCSession?) -> Void
-    ) {
-        guard let session else {
-            invitationHandler(false, nil)
-            return
-        }
-        invitationHandler(true, session)
-    }
-
-    /// Copies the advertising failure description into main-actor service state.
-    func advertiser(
-        _ advertiser: MCNearbyServiceAdvertiser,
-        didNotStartAdvertisingPeer error: any Error
-    ) {
-        let detail = error.localizedDescription
-        Task { @MainActor [weak owner] in
-            owner?.advertisingFailed(detail)
-        }
-    }
-}
 
 @MainActor
 @Observable
@@ -47,14 +14,19 @@ public final class DeveloperRunnerService {
     public private(set) var lastError: String?
 
     @ObservationIgnored private let engine: DeveloperRunnerHostEngine
-    @ObservationIgnored private let peerID: MCPeerID
-    @ObservationIgnored private let session: MCSession
-    @ObservationIgnored private let sessionDelegate: DeveloperSessionDelegate
-    @ObservationIgnored private let advertiserDelegate: DeveloperRunnerAdvertiserDelegate
-    @ObservationIgnored private let advertiser: MCNearbyServiceAdvertiser
-    @ObservationIgnored private var connectionIDs: [MCPeerID: String] = [:]
-    @ObservationIgnored private var secureEnvelopeBuffersByPeer: [MCPeerID: DeveloperSecureEnvelopeBuffer] = [:]
-    @ObservationIgnored private var inboundAcceptanceTasksByPeer: [MCPeerID: Task<Void, Never>] = [:]
+    @ObservationIgnored private let session = DeveloperNetworkSession()
+    @ObservationIgnored private var listener: NWListener?
+    @ObservationIgnored private var listenerCredentials: [DeveloperTransportCredential]?
+    @ObservationIgnored private var listenerGeneration = UUID()
+    @ObservationIgnored private var advertisingRequested = false
+    @ObservationIgnored private var expiryTask: Task<Void, Never>?
+    @ObservationIgnored private var authenticatedDesktopsByPeer: [DeveloperPeerID: UUID] = [:]
+    @ObservationIgnored private var connectionIDs: [DeveloperPeerID: String] = [:]
+    @ObservationIgnored private var secureEnvelopeBuffersByPeer: [DeveloperPeerID: DeveloperSecureEnvelopeBuffer] = [:]
+    @ObservationIgnored private var inboundAcceptanceTasksByPeer: [DeveloperPeerID: Task<Void, Never>] = [:]
+
+    /// The current listener port, for explicit loopback transport integration.
+    var listeningPort: NWEndpoint.Port? { listener?.port }
 
     /// Creates an encrypted nearby transport and host engine without starting advertising.
     /// - Parameters:
@@ -73,32 +45,73 @@ public final class DeveloperRunnerService {
             registry: registry,
             trustStore: DeveloperTrustStore(fileURL: trustStoreURL)
         )
-        peerID = MCPeerID(displayName: developerPeerDisplayName(identity.displayName, id: identity.id))
-        sessionDelegate = DeveloperSessionDelegate()
-        advertiserDelegate = DeveloperRunnerAdvertiserDelegate()
-        session = MCSession(
-            peer: peerID,
-            securityIdentity: nil,
-            encryptionPreference: .required
-        )
-        advertiser = MCNearbyServiceAdvertiser(
-            peer: peerID,
-            discoveryInfo: ["runnerID": identity.id.uuidString],
-            serviceType: developerRunnerServiceType
-        )
-        sessionDelegate.owner = self
-        advertiserDelegate.owner = self
-        advertiserDelegate.session = session
-        session.delegate = sessionDelegate
-        advertiser.delegate = advertiserDelegate
+        session.owner = self
     }
 
     /// Starts nearby advertising once and clears the previous advertising error.
     public func start() {
-        guard !isAdvertising else { return }
-        advertiser.startAdvertisingPeer()
-        isAdvertising = true
+        guard !advertisingRequested || listener == nil else { return }
+        advertisingRequested = true
         lastError = nil
+        Task { [weak self] in await self?.refreshListener() }
+    }
+
+    /// Replaces the listener only when active pairing or saved reconnect keys change.
+    /// Existing accepted sockets retain their own generation and engine admission checks.
+    private func refreshListener() async {
+        guard advertisingRequested else { return }
+        let generation = UUID()
+        listenerGeneration = generation
+        var credentials = await engine.trustStore.transportCredentials(runnerID: identity.id)
+        if case .advertising(let code, _, let expiresAt) = pairingState, expiresAt > Date(),
+           let credential = try? DeveloperTransportCredential.pairing(code: code, runnerID: identity.id) {
+            credentials.append(credential)
+        }
+        credentials.sort { $0.identity < $1.identity }
+        guard advertisingRequested, listenerGeneration == generation else { return }
+        guard credentials != listenerCredentials else { return }
+        listener?.cancel()
+        listener = nil
+        isAdvertising = false
+        listenerCredentials = credentials
+        expiryTask?.cancel()
+        if case .advertising(_, _, let expiry) = pairingState {
+            expiryTask = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))) } catch { return }
+                await self?.refreshPairingState()
+            }
+        }
+        do {
+            let listener = try NWListener(using: DeveloperTransportCredential.parameters(credentials))
+            listener.service = NWListener.Service(name: developerBonjourServiceName(identity.displayName, id: identity.id),
+                type: developerRunnerServiceType)
+            self.listener = listener
+            listener.newConnectionHandler = { [weak self, weak listener] connection in
+                Task { @MainActor in
+                    guard let self, self.listener === listener else { connection.cancel(); return }
+                    self.session.accept(connection)
+                }
+            }
+            listener.stateUpdateHandler = { [weak self, weak listener] state in
+                Task { @MainActor in
+                    guard let self, self.listener === listener else { return }
+                    switch state {
+                    case .ready: self.isAdvertising = true
+                    case .failed(let error), .waiting(let error):
+                        self.isAdvertising = false
+                        self.lastError = error.localizedDescription
+                        self.listenerCredentials = nil
+                        self.listener?.cancel()
+                        self.listener = nil
+                    default: break
+                    }
+                }
+            }
+            listener.start(queue: .main)
+        } catch {
+            listenerCredentials = nil
+            lastError = error.localizedDescription
+        }
     }
 
     /// Refreshes the published feature list from the registry for companion UI presentation.
@@ -110,13 +123,20 @@ public final class DeveloperRunnerService {
     /// operations, ends pairing and clears published connection and inbound-queue state.
     /// Cooperative cancellation is requested without waiting for feature operations to finish.
     public func stop() async {
-        advertiser.stopAdvertisingPeer()
+        advertisingRequested = false
+        listenerGeneration = UUID()
+        listener?.cancel()
+        listener = nil
+        listenerCredentials = nil
+        expiryTask?.cancel()
+        expiryTask = nil
         session.disconnect()
         await registry.cancelAll()
         await engine.stopPairing()
         isAdvertising = false
         pairingState = .idle
         connectedDesktopNames = []
+        authenticatedDesktopsByPeer = [:]
         connectionIDs = [:]
         secureEnvelopeBuffersByPeer = [:]
         inboundAcceptanceTasksByPeer.values.forEach { $0.cancel() }
@@ -131,10 +151,11 @@ public final class DeveloperRunnerService {
     public func beginPairing(duration: Duration = .seconds(300)) async -> DeveloperPairingPresentationState {
         start()
         let state = await engine.beginPairing(
-            endpoint: peerID.displayName,
+            endpoint: identity.displayName,
             duration: duration
         )
         pairingState = state
+        await refreshListener()
         for (peer, connectionID) in connectionIDs {
             let challenges = await engine.pairingChallenges(for: connectionID)
             guard connectionIDs[peer] == connectionID else { continue }
@@ -150,42 +171,43 @@ public final class DeveloperRunnerService {
     public func cancelPairing() async {
         await engine.stopPairing()
         pairingState = .idle
+        await refreshListener()
     }
 
     /// Refreshes published pairing state, allowing the host engine to expire an elapsed code.
     public func refreshPairingState() async {
         pairingState = await engine.pairingState()
+        await refreshListener()
     }
 
     /// Tracks transport connections, starts handshake challenges on connection and informs
     /// the host engine on closure so owned requests can be cancelled.
-    func peerChanged(_ peer: DeveloperPeerBox, state: MCSessionState) {
-        let name = peer.peer.displayName
+    func peerChanged(_ peer: DeveloperPeerBox, state: DeveloperSessionState) {
         switch state {
         case .connected:
             let connectionID = connectionIDs[peer.peer] ?? UUID().uuidString
             connectionIDs[peer.peer] = connectionID
             secureEnvelopeBuffersByPeer[peer.peer] = .init()
-            Task { @concurrent [weak self] in
+            Task { [weak self] in
                 guard let self else { return }
                 let challenges = await self.engine.connectionOpened(id: connectionID)
-                for challenge in challenges {
-                    await self.send(challenge, peer: peer)
+                guard self.connectionIDs[peer.peer] == connectionID else {
+                    await self.engine.connectionClosed(id: connectionID)
+                    return
                 }
+                for challenge in challenges { self.send(challenge, peer: peer) }
             }
         case .notConnected:
-            connectedDesktopNames.removeAll { $0 == name }
+            updateAuthenticatedPeer(peer.peer, desktopID: nil)
             let connectionID = connectionIDs.removeValue(forKey: peer.peer)
             secureEnvelopeBuffersByPeer[peer.peer] = nil
             inboundAcceptanceTasksByPeer[peer.peer] = nil
-            Task { @concurrent [weak self] in
-                if let connectionID {
-                    await self?.engine.connectionClosed(id: connectionID)
-                }
+            Task { [weak self] in
+                guard let self else { return }
+                if let connectionID { await self.engine.connectionClosed(id: connectionID) }
+                await self.refreshPairingState()
             }
         case .connecting:
-            break
-        @unknown default:
             break
         }
     }
@@ -211,9 +233,16 @@ public final class DeveloperRunnerService {
             guard let self,
                   let connectionID = self.connectionIDs[peer.peer] else { return }
             let action = await self.engine.accept(envelope, connectionID: connectionID)
+            guard self.connectionIDs[peer.peer] == connectionID else {
+                await self.engine.connectionClosed(id: connectionID)
+                await self.refreshPairingState()
+                return
+            }
             self.perform(action, connectionID: connectionID, peer: peer)
-            let authenticated = await self.engine.authenticatedDesktopID(for: connectionID) != nil
-            self.updateAuthenticatedPeer(name: peer.peer.displayName, authenticated: authenticated)
+            let desktopID = await self.engine.authenticatedDesktopID(for: connectionID)
+            guard self.connectionIDs[peer.peer] == connectionID else { return }
+            if desktopID != nil { self.session.authenticated(peer.peer) }
+            self.updateAuthenticatedPeer(peer.peer, desktopID: desktopID)
             await self.refreshPairingState()
         }
     }
@@ -241,21 +270,10 @@ public final class DeveloperRunnerService {
         }
     }
 
-    /// Publishes an advertising failure and clears the active-advertising flag.
-    fileprivate func advertisingFailed(_ detail: String) {
-        isAdvertising = false
-        lastError = detail
-    }
-
-    /// Adds or removes a peer's display name according to host-level authentication state.
-    private func updateAuthenticatedPeer(name: String, authenticated: Bool) {
-        if authenticated {
-            if !connectedDesktopNames.contains(name) {
-                connectedDesktopNames.append(name)
-            }
-        } else {
-            connectedDesktopNames.removeAll { $0 == name }
-        }
+    /// Derives trusted desktop labels from authenticated connections; unrelated failures cannot remove them.
+    private func updateAuthenticatedPeer(_ peer: DeveloperPeerID, desktopID: UUID?) {
+        authenticatedDesktopsByPeer[peer] = desktopID
+        connectedDesktopNames = Set(authenticatedDesktopsByPeer.values).map { "Desktop \($0.uuidString.prefix(8))" }.sorted()
     }
 
     /// Orders outbound secure envelopes by sequence before sending their contiguous prefix.
@@ -278,9 +296,10 @@ public final class DeveloperRunnerService {
     private func sendImmediately(_ envelope: DeveloperRunnerEnvelope, peer: DeveloperPeerBox) {
         guard session.connectedPeers.contains(peer.peer) else { return }
         do {
-            try session.send(JSONEncoder().encode(envelope), toPeers: [peer.peer], with: .reliable)
+            try session.send(JSONEncoder().encode(envelope), to: peer.peer)
         } catch {
             lastError = error.localizedDescription
+            session.disconnect(peer.peer)
         }
     }
 }

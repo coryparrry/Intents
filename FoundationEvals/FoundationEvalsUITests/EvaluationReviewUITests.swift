@@ -140,9 +140,10 @@ final class EvaluationReviewUITests: XCTestCase {
         XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
         let secondRow = app.descendants(matching: .outlineRow).containing(.staticText, identifier: "Second case").firstMatch
         XCTAssertTrue(secondRow.waitForExistence(timeout: 3), app.debugDescription)
-        let secondCase = secondRow.staticTexts["Second case"]
-        XCTAssertTrue(secondCase.isHittable, app.debugDescription)
-        secondCase.click()
+        // Wait for the table row to accept pointer interaction before selecting it.
+        let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: secondRow)
+        XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: 3), .completed, app.debugDescription)
+        secondRow.click()
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: secondRow)
         XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed, app.debugDescription)
         let column = app.buttons["Latency"]

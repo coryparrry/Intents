@@ -1,12 +1,6 @@
 import Foundation
-@preconcurrency import MultipeerConnectivity
+import Network
 import Observation
-
-final class DeveloperPeerBox: @unchecked Sendable {
-    let peer: MCPeerID
-    /// Retains a Multipeer peer identity for transfer into main-actor delegate work.
-    init(_ peer: MCPeerID) { self.peer = peer }
-}
 
 private struct DeveloperClientCandidate {
     var runnerID: UUID
@@ -18,98 +12,7 @@ private struct DeveloperClientCandidate {
     var requestedPairingCode: String?
     var secureSession: DeveloperSessionCipher?
     var reconnectWasRejected = false
-}
-
-/// Receives nearby transport callbacks after the shared delegate reaches the main actor.
-@MainActor
-protocol DeveloperSessionOwner: AnyObject, Sendable {
-    /// Applies the peer's latest transport connection state.
-    func peerChanged(_ peer: DeveloperPeerBox, state: MCSessionState)
-
-    /// Handles message bytes delivered by the peer's transport connection.
-    func received(_ data: Data, from peer: DeveloperPeerBox)
-}
-
-// MultipeerConnectivity invokes callbacks on its own queues. The weak owner is
-// assigned on MainActor before transport starts and is never changed afterward.
-// Callbacks transfer immutable data and the retained peer identity to MainActor;
-// each task captures the owner weakly so queued work cannot extend its lifetime.
-final class DeveloperSessionDelegate: NSObject, MCSessionDelegate, @unchecked Sendable {
-    weak var owner: (any DeveloperSessionOwner)?
-
-    /// Forwards transport state changes to the owner on the main actor.
-    func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
-        let peer = DeveloperPeerBox(peerID)
-        Task { @MainActor [weak owner] in
-            owner?.peerChanged(peer, state: state)
-        }
-    }
-
-    /// Forwards received message bytes and peer identity to the owner on the main actor.
-    func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
-        let peer = DeveloperPeerBox(peerID)
-        Task { @MainActor [weak owner] in
-            owner?.received(data, from: peer)
-        }
-    }
-
-    /// Ignores incoming streams because this protocol uses encoded data messages.
-    func session(
-        _ session: MCSession,
-        didReceive stream: InputStream,
-        withName streamName: String,
-        fromPeer peerID: MCPeerID
-    ) {}
-
-    /// Ignores resource-transfer progress because this protocol does not use resources.
-    func session(
-        _ session: MCSession,
-        didStartReceivingResourceWithName resourceName: String,
-        fromPeer peerID: MCPeerID,
-        with progress: Progress
-    ) {}
-
-    /// Ignores resource-transfer completion because this protocol does not use resources.
-    func session(
-        _ session: MCSession,
-        didFinishReceivingResourceWithName resourceName: String,
-        fromPeer peerID: MCPeerID,
-        at localURL: URL?,
-        withError error: (any Error)?
-    ) {}
-}
-
-private final class DeveloperClientBrowserDelegate: NSObject, MCNearbyServiceBrowserDelegate, @unchecked Sendable {
-    weak var owner: DeveloperRunnerClient?
-
-    /// Extracts the advertised runner ID and forwards discovery to the main-actor client.
-    func browser(
-        _ browser: MCNearbyServiceBrowser,
-        foundPeer peerID: MCPeerID,
-        withDiscoveryInfo info: [String: String]?
-    ) {
-        let box = DeveloperPeerBox(peerID)
-        let runnerID = info?["runnerID"].flatMap(UUID.init(uuidString:))
-        Task { @MainActor [weak owner] in
-            owner?.found(box, runnerID: runnerID)
-        }
-    }
-
-    /// Forwards the loss of a discoverable endpoint to the main-actor client.
-    func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
-        let box = DeveloperPeerBox(peerID)
-        Task { @MainActor [weak owner] in
-            owner?.lostPeer(box)
-        }
-    }
-
-    /// Copies the browsing error description into main-actor client state.
-    func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: any Error) {
-        let detail = error.localizedDescription
-        Task { @MainActor [weak owner] in
-            owner?.browserFailed(detail)
-        }
-    }
+    var attemptedTransportAuthentication = false
 }
 
 private struct DeveloperStoredTrustReceipt: Codable {
@@ -128,30 +31,6 @@ private struct DeveloperDesktopTrustState: Codable {
     var entries: [Entry]
 }
 
-struct DeveloperIntentionalDisconnects {
-    private var peers: Set<MCPeerID> = []
-
-    /// Marks a peer as intentionally disconnecting until its callback is consumed or forgotten.
-    mutating func begin(for peer: MCPeerID) {
-        peers.insert(peer)
-    }
-
-    /// Removes the peer's intentional-disconnect marker and reports whether one existed.
-    mutating func consume(for peer: MCPeerID) -> Bool {
-        peers.remove(peer) != nil
-    }
-
-    /// Drops any intentional-disconnect marker for an endpoint that left discovery.
-    mutating func forget(_ peer: MCPeerID) {
-        peers.remove(peer)
-    }
-
-    /// Clears intentional-disconnect bookkeeping during session teardown.
-    mutating func removeAll() {
-        peers.removeAll()
-    }
-}
-
 @MainActor
 @Observable
 public final class DeveloperRunnerClient {
@@ -164,18 +43,14 @@ public final class DeveloperRunnerClient {
     public private(set) var lastError: String?
 
     @ObservationIgnored private let trustStoreURL: URL?
-    @ObservationIgnored private let peerID: MCPeerID
-    @ObservationIgnored private let session: MCSession
-    @ObservationIgnored private let sessionDelegate: DeveloperSessionDelegate
-    @ObservationIgnored private let browserDelegate: DeveloperClientBrowserDelegate
-    @ObservationIgnored private let browser: MCNearbyServiceBrowser
-    @ObservationIgnored private var selectedCandidatePeerByRunnerID: [UUID: MCPeerID] = [:]
+    @ObservationIgnored private let session = DeveloperNetworkSession()
+    @ObservationIgnored private let browser = DeveloperNetworkBrowser()
+    @ObservationIgnored private var selectedCandidatePeerByRunnerID: [UUID: DeveloperPeerID] = [:]
     @ObservationIgnored private var authenticatedPeersByRunnerID: [UUID: DeveloperPeerBox] = [:]
-    @ObservationIgnored private var candidatesByPeer: [MCPeerID: DeveloperClientCandidate] = [:]
+    @ObservationIgnored private var candidatesByPeer: [DeveloperPeerID: DeveloperClientCandidate] = [:]
     @ObservationIgnored private var trustByRunnerID: [UUID: DeveloperDesktopTrustState.Entry] = [:]
     @ObservationIgnored private var activeRunnerID: UUID?
-    @ObservationIgnored private var connectingPeers: Set<MCPeerID> = []
-    @ObservationIgnored private var intentionalDisconnects = DeveloperIntentionalDisconnects()
+    @ObservationIgnored private var connectingPeers: Set<DeveloperPeerID> = []
     @ObservationIgnored private var unauthenticatedSessionTimeoutTask: Task<Void, Never>?
     @ObservationIgnored private var continuations: [UUID: CheckedContinuation<DeveloperFeatureExecutionResult, any Error>] = [:]
     @ObservationIgnored private var timeoutTasks: [UUID: Task<Void, Never>] = [:]
@@ -185,7 +60,7 @@ public final class DeveloperRunnerClient {
     /// decoded is ignored.
     /// - Parameters:
     ///   - desktopID: Stable desktop identity used in pairing and reconnect proofs.
-    ///   - displayName: Local peer label, shortened to fit the transport name limit.
+    ///   - displayName: Legacy desktop label retained for source compatibility; TLS identities use `desktopID`.
     ///   - trustStoreURL: Optional JSON receipt file; `nil` keeps trust only in memory.
     public init(
         desktopID: UUID,
@@ -194,11 +69,6 @@ public final class DeveloperRunnerClient {
     ) {
         self.desktopID = desktopID
         self.trustStoreURL = trustStoreURL
-        peerID = MCPeerID(displayName: developerPeerDisplayName(displayName, id: desktopID))
-        sessionDelegate = DeveloperSessionDelegate()
-        browserDelegate = DeveloperClientBrowserDelegate()
-        session = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .required)
-        browser = MCNearbyServiceBrowser(peer: peerID, serviceType: developerRunnerServiceType)
 
         if let trustStoreURL,
            let data = try? Data(contentsOf: trustStoreURL),
@@ -206,17 +76,15 @@ public final class DeveloperRunnerClient {
             trustByRunnerID = Dictionary(uniqueKeysWithValues: state.entries.map { ($0.receipt.runner.id, $0) })
         }
 
-        sessionDelegate.owner = self
-        browserDelegate.owner = self
-        session.delegate = sessionDelegate
-        browser.delegate = browserDelegate
+        session.owner = self
+        browser.owner = self
     }
 
     /// Starts nearby runner discovery once and clears the previous browsing error.
     /// Saved trusted runners may reconnect automatically when discovered.
     public func startBrowsing() {
         guard !isBrowsing else { return }
-        browser.startBrowsingForPeers()
+        browser.startBrowsing()
         isBrowsing = true
         lastError = nil
     }
@@ -224,7 +92,7 @@ public final class DeveloperRunnerClient {
     /// Stops nearby discovery without disconnecting the current transport session.
     public func stopBrowsing() {
         guard isBrowsing else { return }
-        browser.stopBrowsingForPeers()
+        browser.stopBrowsing()
         isBrowsing = false
     }
 
@@ -241,7 +109,6 @@ public final class DeveloperRunnerClient {
         selectedCandidatePeerByRunnerID = [:]
         activeRunnerID = nil
         connectingPeers.removeAll()
-        intentionalDisconnects.removeAll()
         let pending = Array(continuations.keys)
         for requestID in pending {
             finish(
@@ -258,22 +125,22 @@ public final class DeveloperRunnerClient {
         }
     }
 
-    /// Invites all discoverable candidate endpoints for a runner into the encrypted transport.
-    /// Return means invitations were submitted; pairing and authentication finish asynchronously.
+    /// Starts saved-trust connections, or requests a pairing code before opening first-contact TLS.
+    /// Return does not confirm authentication; observe the runner's connection state.
     /// - Parameters:
     ///   - runnerID: Runner to connect, identified by its discovery snapshot.
-    ///   - timeout: Transport invitation timeout in seconds.
+    ///   - timeout: TLS and application authentication admission timeout in seconds.
     /// - Throws: `disconnected` if no endpoint is discoverable or another runner is active.
     public func connect(to runnerID: UUID, timeout: TimeInterval = 20) throws {
         let peers = try prepareConnection(to: runnerID)
         for peer in peers {
-            browser.invitePeer(peer, to: session, withContext: nil, timeout: timeout)
+            try invite(peer, timeout: timeout)
         }
     }
 
     /// Records invitation ownership before asking the transport to connect.
     /// Kept separate so transport failure transitions can be tested without networking.
-    func prepareConnection(to runnerID: UUID) throws -> [MCPeerID] {
+    func prepareConnection(to runnerID: UUID) throws -> [DeveloperPeerID] {
         let peers = candidatesByPeer.compactMap { peer, candidate in
             candidate.runnerID == runnerID && candidate.isDiscoverable ? peer : nil
         }
@@ -290,63 +157,65 @@ public final class DeveloperRunnerClient {
         return peers
     }
 
-    /// Claims the active runner and candidate invitations, starts the authentication timeout,
+    /// Claims the active runner and candidate invitations,
     /// and publishes the runner's connecting state before the transport is invited.
-    private func beginConnecting(to runnerID: UUID, peers: [MCPeerID]) {
+    private func beginConnecting(to runnerID: UUID, peers: [DeveloperPeerID]) {
         activeRunnerID = runnerID
         connectingPeers.formUnion(peers)
-        startUnauthenticatedSessionTimeoutIfNeeded()
         updateRunner(runnerID) {
             $0.state = .connecting
             $0.availabilityDetail = nil
         }
     }
 
-    /// Submits code-derived pairing proofs on this runner's connected, unexpired candidates.
-    /// A matching receipt is opened and saved asynchronously when it arrives; successful return
-    /// does not itself confirm pairing. The code is retained while the receipt is pending.
+    /// Opens first-contact TLS with the complete code, then submits its application pairing proof.
+    /// The receipt authenticates saved trust; execution waits for the authenticated runner greeting.
     /// - Parameters:
-    ///   - runnerID: Runner currently offering a pairing challenge.
-    ///   - pairingCode: Out-of-band code displayed by the runner app.
-    /// - Throws: `untrustedPeer` if no active connected challenge exists, or the send error
-    ///   if every candidate's pairing request failed to send.
+    ///   - runnerID: Discovered runner whose app displays the code.
+    ///   - pairingCode: Complete 128-bit code; grouping and letter case are ignored.
+    /// - Throws: Invalid code, unavailable runner, competing active runner, or transport errors.
     public func trustRunner(_ runnerID: UUID, pairingCode: String) throws {
-        let candidates = candidatesByPeer.compactMap { peer, candidate -> (DeveloperPeerBox, DeveloperPairingChallenge)? in
-            guard candidate.runnerID == runnerID,
-                  let challenge = candidate.pairingChallenge,
-                  challenge.expiresAt > Date(),
-                  session.connectedPeers.contains(peer) else { return nil }
-            return (DeveloperPeerBox(peer), challenge)
-        }
-        guard !candidates.isEmpty else {
-            throw DeveloperExecutionFailure(
-                code: .untrustedPeer,
-                message: "The runner is not offering an active pairing session."
-            )
-        }
-
-        var sendFailures: [any Error] = []
-        for (peer, challenge) in candidates {
-            let request = DeveloperPairingRequest(
-                pairingSessionID: challenge.pairingSessionID,
-                proof: DeveloperAuthentication.pairingProof(
-                    code: pairingCode,
-                    challenge: challenge,
-                    desktopID: desktopID
-                ),
-                desktopID: desktopID
-            )
-            candidatesByPeer[peer.peer]?.requestedPairingSessionID = challenge.pairingSessionID
-            candidatesByPeer[peer.peer]?.requestedPairingCode = pairingCode
-            do {
-                try send(.init(message: .pairingRequest(request)), to: peer)
-            } catch {
-                candidatesByPeer[peer.peer]?.requestedPairingSessionID = nil
-                candidatesByPeer[peer.peer]?.requestedPairingCode = nil
-                sendFailures.append(error)
+        _ = try DeveloperTransportCredential.pairing(code: pairingCode, runnerID: runnerID)
+        let peers = try prepareConnection(to: runnerID)
+        for peer in peers {
+            candidatesByPeer[peer]?.requestedPairingCode = pairingCode
+            if let challenge = candidatesByPeer[peer]?.pairingChallenge,
+               challenge.expiresAt > Date(), session.connectedPeers.contains(peer) {
+                try submitPairingProof(pairingCode, challenge: challenge, peer: peer)
+            } else {
+                try invite(peer, timeout: 20)
             }
         }
-        if sendFailures.count == candidates.count, let failure = sendFailures.first { throw failure }
+    }
+
+    /// Opens only authenticated TLS; first contact waits for the user's out-of-band code.
+    private func invite(_ peer: DeveloperPeerID, timeout: TimeInterval) throws {
+        guard let candidate = candidatesByPeer[peer], let endpoint = browser.endpoint(for: peer) else { return }
+        let credential: DeveloperTransportCredential
+        if let code = candidate.requestedPairingCode {
+            credential = try .pairing(code: code, runnerID: candidate.runnerID)
+        } else if let trust = trustByRunnerID[candidate.runnerID], !candidate.reconnectWasRejected {
+            credential = .trusted(token: trust.receipt.trustToken, desktopID: desktopID, runnerID: candidate.runnerID)
+        } else {
+            updateRunner(candidate.runnerID) {
+                $0.state = .pairingRequired
+                $0.availabilityDetail = "Enter the complete code shown by the runner app to open an encrypted connection."
+            }
+            return
+        }
+        startUnauthenticatedSessionTimeoutIfNeeded()
+        candidatesByPeer[peer]?.attemptedTransportAuthentication = true
+        session.connect(peer, endpoint: endpoint, credential: credential, timeout: timeout)
+    }
+
+    /// Sends the original application proof after TLS first-contact authentication succeeds.
+    private func submitPairingProof(_ code: String, challenge: DeveloperPairingChallenge, peer: DeveloperPeerID) throws {
+        let request = DeveloperPairingRequest(pairingSessionID: challenge.pairingSessionID,
+            proof: DeveloperAuthentication.pairingProof(code: code, challenge: challenge, desktopID: desktopID),
+            desktopID: desktopID)
+        candidatesByPeer[peer]?.requestedPairingSessionID = challenge.pairingSessionID
+        candidatesByPeer[peer]?.requestedPairingCode = code
+        try send(.init(message: .pairingRequest(request)), to: .init(peer))
     }
 
     /// Disconnects this runner, clears its authentication and fails pending executions.
@@ -359,9 +228,6 @@ public final class DeveloperRunnerClient {
             return
         }
         try? sendAuthenticated(.disconnect(reason: "Disconnected by the user."), runnerID: runnerID)
-        if let peer = authenticatedPeersByRunnerID[runnerID]?.peer {
-            intentionalDisconnects.begin(for: peer)
-        }
         session.disconnect()
         connectingPeers = connectingPeers.filter { candidatesByPeer[$0]?.runnerID != runnerID }
         activeRunnerID = nil
@@ -464,7 +330,8 @@ public final class DeveloperRunnerClient {
     /// trusted candidates automatically when no different runner owns the session.
     /// Rediscovery only refreshes availability for an authenticated peer; its advertised
     /// runner ID cannot replace the identity, features or state established by authentication.
-    func found(_ box: DeveloperPeerBox, runnerID advertisedRunnerID: UUID?) {
+    func found(_ box: DeveloperPeerBox, runnerID advertisedRunnerID: UUID?, endpoint resolvedEndpoint: NWEndpoint? = nil) {
+        if let resolvedEndpoint { browser.register(box.peer, endpoint: resolvedEndpoint) }
         let endpoint = box.peer.displayName
         if authenticatedPeersByRunnerID.values.contains(where: { $0.peer == box.peer }) {
             candidatesByPeer[box.peer]?.endpoint = endpoint
@@ -472,7 +339,10 @@ public final class DeveloperRunnerClient {
             return
         }
         let runnerID = advertisedRunnerID ?? candidatesByPeer[box.peer]?.runnerID ?? UUID()
-        if let authenticated = authenticatedPeersByRunnerID[runnerID], authenticated.peer != box.peer { return }
+        if let authenticated = authenticatedPeersByRunnerID[runnerID], authenticated.peer != box.peer {
+            candidatesByPeer[box.peer] = DeveloperClientCandidate(runnerID: runnerID, endpoint: endpoint)
+            return
+        }
         if candidatesByPeer[box.peer]?.runnerID == runnerID {
             candidatesByPeer[box.peer]?.endpoint = endpoint
             candidatesByPeer[box.peer]?.isDiscoverable = true
@@ -492,7 +362,7 @@ public final class DeveloperRunnerClient {
             ))
             if activeRunnerID == nil || activeRunnerID == runnerID {
                 beginConnecting(to: runnerID, peers: [box.peer])
-                browser.invitePeer(box.peer, to: session, withContext: nil, timeout: 20)
+                try? invite(box.peer, timeout: 20)
             }
         } else {
             let placeholder = DeveloperRunnerIdentity(
@@ -512,7 +382,7 @@ public final class DeveloperRunnerClient {
             ))
             if activeRunnerID == runnerID {
                 beginConnecting(to: runnerID, peers: [box.peer])
-                browser.invitePeer(box.peer, to: session, withContext: nil, timeout: 20)
+                try? invite(box.peer, timeout: 20)
             }
         }
     }
@@ -520,7 +390,6 @@ public final class DeveloperRunnerClient {
     /// Marks an endpoint undiscoverable, retaining connected or in-flight candidates.
     /// Evicts an otherwise unused candidate and releases failed connection ownership if needed.
     func lostPeer(_ box: DeveloperPeerBox) {
-        intentionalDisconnects.forget(box.peer)
         guard let runnerID = candidatesByPeer[box.peer]?.runnerID else { return }
         candidatesByPeer[box.peer]?.isDiscoverable = false
         // Discovery describes availability for new invitations, not an existing session.
@@ -531,9 +400,16 @@ public final class DeveloperRunnerClient {
         releaseFailedConnectionIfNeeded(runnerID)
     }
 
+    /// Offers replacement pairing only for a rejected TLS credential, preserving trust on path failures.
+    func transportRejected(_ box: DeveloperPeerBox) {
+        guard let runnerID = candidatesByPeer[box.peer]?.runnerID,
+              authenticatedPeersByRunnerID[runnerID] == nil else { return }
+        candidatesByPeer[box.peer]?.reconnectWasRejected = true
+    }
+
     /// Updates connection state from transport callbacks, retaining discoverable endpoints
     /// after failed invitations so an explicit retry remains possible.
-    func peerChanged(_ box: DeveloperPeerBox, state: MCSessionState) {
+    func peerChanged(_ box: DeveloperPeerBox, state: DeveloperSessionState) {
         guard let runnerID = candidatesByPeer[box.peer]?.runnerID else { return }
         switch state {
         case .connected:
@@ -547,7 +423,6 @@ public final class DeveloperRunnerClient {
         case .connecting:
             updateRunner(runnerID) { $0.state = .connecting }
         case .notConnected:
-            _ = intentionalDisconnects.consume(for: box.peer)
             connectingPeers.remove(box.peer)
             candidatesByPeer[box.peer]?.reconnectChallenge = nil
             candidatesByPeer[box.peer]?.secureSession = nil
@@ -562,13 +437,19 @@ public final class DeveloperRunnerClient {
                     evictCandidate(box, runnerID: runnerID)
                 }
                 releaseFailedConnectionIfNeeded(runnerID)
+                if candidatesByPeer[box.peer]?.attemptedTransportAuthentication == true,
+                   candidatesByPeer[box.peer]?.reconnectWasRejected == true
+                     || candidatesByPeer[box.peer]?.requestedPairingCode != nil {
+                    candidatesByPeer[box.peer]?.attemptedTransportAuthentication = false
+                    clearPairingState(for: runnerID)
+                    lastError = "The encrypted runner connection failed. Check the runner and its pairing code, then try again."
+                    updateRunner(runnerID) {
+                        $0.state = .pairingRequired
+                        $0.availabilityDetail = "Enter the current pairing code to reconnect."
+                    }
+                }
             }
-        @unknown default:
-            if authenticatedPeersByRunnerID[runnerID]?.peer == box.peer {
-                authenticatedPeersByRunnerID[runnerID] = nil
-                activeRunnerID = nil
-                markDisconnected(runnerID: runnerID, detail: "Runner entered an unknown connection state.")
-            }
+
         }
     }
 
@@ -634,6 +515,10 @@ public final class DeveloperRunnerClient {
                 state: .pairingRequired,
                 availabilityDetail: "Enter the pairing code before \(challenge.expiresAt.formatted())."
             ))
+            if let code = candidatesByPeer[box.peer]?.requestedPairingCode {
+                do { try submitPairingProof(code, challenge: challenge, peer: box.peer) }
+                catch { lastError = error.localizedDescription }
+            }
         case .pairingReceipt(let receipt):
             guard bindCandidate(box, to: receipt.runner.id) else { return }
             runnerID = receipt.runner.id
@@ -662,24 +547,31 @@ public final class DeveloperRunnerClient {
                 trustToken: token,
                 issuedAt: receipt.issuedAt
             )
-            trustByRunnerID[runnerID] = .init(endpoint: box.peer.displayName, receipt: storedReceipt)
             guard let reconnectChallenge = candidatesByPeer[box.peer]?.reconnectChallenge else {
                 lastError = "The runner did not establish a secure session."
                 return
             }
+            let previous = trustByRunnerID[runnerID]
+            trustByRunnerID[runnerID] = .init(endpoint: box.peer.displayName, receipt: storedReceipt)
+            do { try persistTrust() }
+            catch {
+                trustByRunnerID[runnerID] = previous
+                candidatesByPeer[box.peer]?.secureSession = nil
+                candidatesByPeer[box.peer]?.attemptedTransportAuthentication = false
+                clearPairingState(for: runnerID)
+                session.disconnect(box.peer)
+                lastError = "The trust receipt could not be saved. Check the trust-store location and pair again."
+                updateRunner(runnerID) {
+                    $0.state = .disconnected
+                    $0.availabilityDetail = "The pairing receipt could not be saved."
+                }
+                return
+            }
             candidatesByPeer[box.peer]?.secureSession = DeveloperSessionCipher(
-                token: token,
-                challenge: reconnectChallenge,
-                desktopID: desktopID
-            )
+                token: token, challenge: reconnectChallenge, desktopID: desktopID)
             clearPairingState(for: runnerID)
             candidatesByPeer[box.peer]?.reconnectWasRejected = false
             pendingPairingChallenges[receipt.runner.id] = nil
-            do {
-                try persistTrust()
-            } catch {
-                lastError = "The runner paired, but its trust receipt could not be saved."
-            }
         case .secure(let secure):
             guard var cipher = candidatesByPeer[box.peer]?.secureSession else { return }
             do {
@@ -712,7 +604,7 @@ public final class DeveloperRunnerClient {
     }
 
     /// Publishes a browser startup failure and clears the browsing flag.
-    fileprivate func browserFailed(_ detail: String) {
+    func browserFailed(_ detail: String) {
         isBrowsing = false
         lastError = detail
     }
@@ -750,6 +642,7 @@ public final class DeveloperRunnerClient {
                 evictCandidate(box, runnerID: runnerID)
                 return
             }
+            session.authenticated(box.peer)
             authenticatedPeersByRunnerID[runnerID] = box
             selectedCandidatePeerByRunnerID[runnerID] = box.peer
             unauthenticatedSessionTimeoutTask?.cancel()
@@ -776,6 +669,8 @@ public final class DeveloperRunnerClient {
         case .disconnect(let reason):
             guard authenticatedPeersByRunnerID[runnerID]?.peer == box.peer else { return }
             markDisconnected(runnerID: runnerID, detail: reason)
+            if activeRunnerID == runnerID { activeRunnerID = nil }
+            session.disconnect(box.peer)
         case .execute, .cancel:
             break
         }
@@ -803,7 +698,7 @@ public final class DeveloperRunnerClient {
               session.connectedPeers.contains(peer) else {
             throw DeveloperExecutionFailure(code: .disconnected, message: "The runner connection closed.")
         }
-        try session.send(JSONEncoder().encode(envelope), toPeers: [peer], with: .reliable)
+        try session.send(JSONEncoder().encode(envelope), to: peer)
     }
 
     /// Expires a still-pending request, attempts remote cancellation and publishes a timed-out phase.
@@ -953,7 +848,6 @@ public final class DeveloperRunnerClient {
         selectedCandidatePeerByRunnerID = selectedCandidatePeerByRunnerID.filter { candidatesByPeer[$0.value] != nil }
         activeRunnerID = nil
         connectingPeers.removeAll()
-        intentionalDisconnects.removeAll()
         for runnerID in runnerIDs {
             clearPairingState(for: runnerID)
             updateRunner(runnerID) {
@@ -979,6 +873,8 @@ public final class DeveloperRunnerClient {
     /// Removes a candidate endpoint and promotes another connected endpoint if it was selected.
     private func evictCandidate(_ box: DeveloperPeerBox, runnerID: UUID) {
         candidatesByPeer[box.peer] = nil
+        connectingPeers.remove(box.peer)
+        session.disconnect(box.peer)
         if selectedCandidatePeerByRunnerID[runnerID] == box.peer {
             selectedCandidatePeerByRunnerID[runnerID] = nil
             promoteCandidate(for: runnerID, excluding: box.peer)
@@ -986,7 +882,7 @@ public final class DeveloperRunnerClient {
     }
 
     /// Evicts other endpoints for an authenticated runner while retaining the chosen peer.
-    private func evictCompetingCandidates(for runnerID: UUID, keeping peer: MCPeerID) {
+    private func evictCompetingCandidates(for runnerID: UUID, keeping peer: DeveloperPeerID) {
         let competingPeers = candidatesByPeer.compactMap { candidatePeer, candidate in
             candidate.runnerID == runnerID && candidatePeer != peer ? candidatePeer : nil
         }
@@ -997,7 +893,7 @@ public final class DeveloperRunnerClient {
     }
 
     /// Selects another connected candidate for a runner that has no authenticated peer.
-    private func promoteCandidate(for runnerID: UUID, excluding peer: MCPeerID) {
+    private func promoteCandidate(for runnerID: UUID, excluding peer: DeveloperPeerID) {
         guard authenticatedPeersByRunnerID[runnerID] == nil else { return }
         guard let candidatePeer = candidatesByPeer.first(where: { candidatePeer, candidate in
             candidate.runnerID == runnerID

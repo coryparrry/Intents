@@ -105,7 +105,7 @@ private struct DeveloperDeviceRow: View {
             if let detail = runner.availabilityDetail, !detail.isEmpty {
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
-            if runner.state == .pairingRequired, let challenge = runners.pairingChallenges[runner.id] {
+            if runner.state == .pairingRequired {
                 VStack(alignment: .leading, spacing: 9) {
                     Text("Enter the code shown in your app").font(.callout.weight(.medium))
                     HStack {
@@ -116,8 +116,10 @@ private struct DeveloperDeviceRow: View {
                             .buttonStyle(.borderedProminent)
                             .disabled(pairingCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                    Text("Code expires at \(challenge.expiresAt.formatted(date: .omitted, time: .shortened)).")
-                        .font(.caption).foregroundStyle(.secondary)
+                    if let challenge = runners.pairingChallenges[runner.id] {
+                        Text("Code expires at \(challenge.expiresAt.formatted(date: .omitted, time: .shortened)).")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             if runner.state == .connected {

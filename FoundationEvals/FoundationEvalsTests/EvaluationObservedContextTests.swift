@@ -102,6 +102,19 @@ struct EvaluationObservedContextTests {
         }
     }
 
+    /// Binary transcript entries cannot silently disappear from the evidence used to judge a response.
+    @available(macOS 27.2, *)
+    @Test func dataEntriesMakeJudgeContextUnavailable() {
+        let entry = Transcript.Entry.data(.init(contentType: .plainText, content: Data("business input".utf8)))
+        let context = EvaluationJudgeSubjectContext.capture([entry], instructions: "Summarize")
+        #expect(context.unavailableReason != nil)
+        #expect(context.entries.isEmpty)
+        #expect(throws: EvaluationJudgeSubjectContext.ContextError.self) {
+            try EvaluationJudgeSubjectContext.resolved(context,
+                evaluationCase: EvaluationCase(name: "Data", prompt: "Summarize", expected: ""))
+        }
+    }
+
     @Test func contextCaptureRejectsOversizeInsteadOfTruncating() {
         let context = EvaluationJudgeSubjectContext.capture(turn(String(repeating: "x", count: EvaluationJudgeSubjectContext.maximumBytes), "answer"), instructions: "")
         #expect(context.unavailableReason != nil)

@@ -175,7 +175,7 @@ struct MCPControlReceipt: Codable, Sendable {
       return try await MCPProductionControl.execute(call, control: control)
     }
     if call.name.hasPrefix("eval_runner_") {
-      return try await MCPDeviceControl.execute(call, control: control)
+      return try MCPDeviceControl.execute(call, control: control)
     }
     return try await MCPWorkspaceControl.execute(call, control: control)
   }

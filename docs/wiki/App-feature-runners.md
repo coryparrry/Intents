@@ -19,7 +19,7 @@ These steps are for the app developer:
 
 The **Devices & apps → Set up the Swift package** guide contains a short example. The [full integration guide](https://github.com/coryparrry/Intents/blob/main/docs/DEVELOPER_SWIFT_INTEGRATION.md) covers typed input, output, cancellation, trust, and platform settings.
 
-For an iPhone or iPad, add local-network use and `_fnd-evals._tcp` Bonjour service declarations to `Info.plist`. The developer package supports iOS, iPadOS, and macOS 26 or later. The Intents desktop app requires macOS 27 or later.
+Rebuild existing runner apps with the updated developer package; earlier transport builds are not discovered by this version. For an iPhone or iPad, add local-network use and `_intents-v2._tcp` Bonjour service declarations to `Info.plist`. The developer package supports iOS, iPadOS, and macOS 26 or later. The Intents desktop app requires macOS 27 or later.
 
 ## Pair the app and select a feature
 

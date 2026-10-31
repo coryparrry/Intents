@@ -186,7 +186,7 @@ enum EvaluationInputTokenCounter {
             case .prompt(var prompt):
                 prompt.segments = segmentsWithoutImages(prompt.segments)
                 return .prompt(prompt)
-            case .toolCalls:
+            case .toolCalls, .data:
                 return entry
             case .toolOutput(var output):
                 output.segments = segmentsWithoutImages(output.segments)
@@ -208,7 +208,7 @@ enum EvaluationInputTokenCounter {
         switch entry {
         case .instructions(let instructions): instructions.segments
         case .prompt(let prompt): prompt.segments
-        case .toolCalls: []
+        case .toolCalls, .data: []
         case .toolOutput(let output): output.segments
         case .response(let response): response.segments
         case .reasoning(let reasoning): reasoning.segments

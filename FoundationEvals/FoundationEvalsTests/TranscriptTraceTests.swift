@@ -63,11 +63,6 @@ struct TranscriptTraceTests {
         #expect(trace.spotlightSearch == nil)
     }
 
-    @Test func feedbackDraftCoversEveryPublicFoundationModelsIssueCategory() {
-        #expect(EvaluationFeedbackSentiment.allCases.count == LanguageModelFeedback.Sentiment.allCases.count)
-        #expect(EvaluationFeedbackIssueCategory.allCases.count == LanguageModelFeedback.Issue.Category.allCases.count)
-    }
-
     @Test func feedbackAttachmentIsGeneratedFromTheRestoredTranscript() async throws {
         let transcript = Transcript(entries: [
             .prompt(Transcript.Prompt(

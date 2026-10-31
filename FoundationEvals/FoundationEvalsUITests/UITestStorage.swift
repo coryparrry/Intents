@@ -49,6 +49,8 @@ enum UITestStorage {
         try waitFor(app.buttons["Run evaluation"], in: app, timeout: 5, file: file, line: line)
     }
 
+    /// Rejects an unexpected application alert or sheet before a UI flow continues.
+    @MainActor
     static func requireNoAlert(in app: XCUIApplication) throws {
         let alert = app.alerts.firstMatch.exists ? app.alerts.firstMatch : app.sheets.firstMatch
         guard !alert.exists else {
@@ -60,6 +62,8 @@ enum UITestStorage {
         }
     }
 
+    /// Waits for a required element, then reports any blocking application alert with its context.
+    @MainActor
     static func waitFor(
         _ element: XCUIElement,
         in app: XCUIApplication,
@@ -67,12 +71,8 @@ enum UITestStorage {
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
-        let readyOrAlert = NSPredicate { _, _ in
-            element.exists || app.alerts.firstMatch.exists || app.sheets.firstMatch.exists
-        }
-        let ready = XCTNSPredicateExpectation(predicate: readyOrAlert, object: nil)
-        _ = XCTWaiter.wait(for: [ready], timeout: timeout)
+        let exists = element.waitForExistence(timeout: timeout)
         try requireNoAlert(in: app)
-        XCTAssertTrue(element.exists, app.debugDescription, file: file, line: line)
+        XCTAssertTrue(exists, app.debugDescription, file: file, line: line)
     }
 }

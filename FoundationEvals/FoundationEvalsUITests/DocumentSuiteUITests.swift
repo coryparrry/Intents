@@ -8,8 +8,8 @@ final class DocumentSuiteUITests: XCTestCase {
     /// Disable continuation after failure so UI assertions stop before mutating another fixture state.
     override func setUpWithError() throws { continueAfterFailure = false }
     /// Terminate the test application and remove its isolated workspace after each UI flow.
-    override func tearDownWithError() throws {
-        app?.terminate()
+    override func tearDown() async throws {
+        await app?.terminate()
         if let storage { try? FileManager.default.removeItem(at: storage) }
     }
 

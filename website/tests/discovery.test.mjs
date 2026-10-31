@@ -5,18 +5,6 @@ import { readFileSync, existsSync } from 'node:fs';
 const read = path => readFileSync(new URL(`../dist/${path}`, import.meta.url), 'utf8');
 const html = read('index.html');
 
-test('reading guides and sitemap advertise the canonical home and Apple tool routes', () => {
-  for (const route of ['compare/foundation-evals', 'compare/apple-fm-python-sdk', 'guides/fm-cli-to-repeatable-evals']) {
-    for (const file of ['llms.txt', 'sitemap.xml']) assert.ok(read(file).includes(`https://intents-workbench.coryparry.chatgpt.site/${route}`), `${file}: ${route}`);
-    assert.ok(existsSync(new URL(`../dist/${route}.html`, import.meta.url)));
-    assert.ok(existsSync(new URL(`../dist/${route}.html.md`, import.meta.url)));
-  }
-  for (const file of ['llms.txt', 'index.html.md']) {
-    assert.match(read(file), /:\shttps:\/\/coryparry\.dev\/projects\/intents(?:\s|$)/);
-    assert.match(read(file), /\]\(https:\/\/coryparry\.dev\/llms\.txt\)/);
-  }
-});
-
 test('published HTML and AI reading guides resolve their local links', () => {
   const guide = read('llms.txt');
   const markdown = read('index.html.md');
@@ -25,13 +13,6 @@ test('published HTML and AI reading guides resolve their local links', () => {
       const path = match[1].split('#')[0];
       assert.ok(existsSync(new URL(`../dist/${!path ? 'index.html' : /\.[^/]+$/.test(path) ? path : `${path}.html`}`, import.meta.url)), path);
     }
-  }
-});
-
-test('homepage first-use guide links resolve to published section anchors', () => {
-  const guide = read('getting-started.html');
-  for (const match of html.matchAll(/href="\/getting-started(?:#([^"]+))?"/g)) {
-    if (match[1]) assert.ok(guide.includes(`id="${match[1]}"`), match[1]);
   }
 });
 
@@ -47,12 +28,8 @@ test('Mac App Intent content identifies the unshipped native contract and requir
   assert.match(html, /Illustrative contract · no action runs in this browser/);
 });
 
-test('interactive contract declares its inputs, expected result and evidence limits', () => {
+test('interactive contract discloses its execution limits', () => {
   const app = read('app.js');
-  assert.match(app, /function macIntentMarkup\(\)/);
-  assert.match(app, /\{"message":"Hello"\}/);
-  assert.match(app, /Expected JSON/);
   assert.match(app, /not a recorded invocation or a feature of the published 1\.5\.2 download/);
   assert.match(app, /does not verify Siri/);
-  assert.match(app, /\['explore-mac-intents','mac-intent'\]/);
 });

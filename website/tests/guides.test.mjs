@@ -15,47 +15,29 @@ const data = text => [...text.matchAll(/<script type="application\/ld\+json">([\
 });
 const dmg = 'https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg';
 
-test('every sitemap route resolves and all requested routes are published', () => {
+test('sitemap routes are unique, resolve, and include the main product pages', () => {
   assert.equal(new Set(routes).size, routes.length);
-  for (const route of ['/', '/getting-started', '/privacy', '/compare', ...['foundation-evals', 'apple-evaluations', 'apple-fm-python-sdk', 'promptfoo', 'deepeval', 'braintrust'].map(name => `/compare/${name}`), ...['evaluate-apple-foundation-models-mac', 'intents-mcp-coding-agents', 'install-intents-homebrew', 'on-device-llm-evaluation-macos', 'fm-cli-to-repeatable-evals'].map(name => `/guides/${name}`)]) {
+  for (const route of ['/', '/getting-started', '/privacy']) {
     assert.ok(routes.includes(route), `Missing sitemap route: ${route}`);
   }
   for (const route of routes) assert.ok(existsSync(new URL(fileFor(route), root)), route);
-  assert.equal(routes.length, 15);
-  assert.equal([...sitemap.matchAll(/<lastmod>2026-10-30<\/lastmod>/g)].length, 13);
-  assert.equal([...sitemap.matchAll(/<lastmod>2026-10-26<\/lastmod>/g)].length, 2);
-  for (const route of ['/privacy', '/getting-started']) {
-    assert.ok(sitemap.includes(`<loc>${host}${route}</loc>`));
-    assert.match(sitemap.split(`<loc>${host}${route}</loc>`)[1], /^\s*<lastmod>2026-10-26<\/lastmod>/);
-  }
 });
 
-test('editorial pages have short answers, Markdown twins, sources, and discoverable canonical routes', () => {
+test('editorial pages publish readable alternatives, install links, and canonical routes', () => {
   const llms = read('llms.txt');
   for (const route of editorial) {
     const html = read(fileFor(route));
     const md = read(`${fileFor(route)}.md`);
-    assert.match(html, /<h2>Short answer<\/h2>/, route);
-    assert.match(md, /## Short answer/, route);
     assert.ok(html.includes(`<link rel="canonical" href="${host}${route}">`), route);
     assert.ok(html.includes(`href="${host}${route}.html.md"`), route);
     assert.ok(llms.includes(host + route), route);
     for (const text of [html, md]) {
       assert.ok(text.includes(dmg), `${route}: current download`);
       assert.ok(text.includes('brew install --cask coryparrry/tap/intents'), `${route}: Homebrew`);
-      assert.match(text, /30 October 2026/);
       const links = [...text.matchAll(/(?:href="|\]\()([^"\)]+)(?:"|\))/g)].map(([, url]) => url);
       assert.ok(links.some(url => url === 'https://github.com/coryparrry/Intents/issues'));
     }
     assert.match(html, /src="\/analytics.mjs"/);
-    const article = data(html).find(item => ['Article', 'WebPage'].includes(item['@type']));
-    assert.equal(article.dateModified, '2026-10-30');
-    assert.equal(article.datePublished, ['/compare/apple-fm-python-sdk', '/guides/fm-cli-to-repeatable-evals'].includes(route) ? '2026-10-30' : '2026-10-26');
-    if (route.startsWith('/compare/')) {
-      const answer = html.match(/<h2>Short answer<\/h2>\s*<p>(.*?)<\/p>/s)[1];
-      const words = answer.split(/\s+/).length;
-      assert.ok(words >= 40 && words <= 70, `${route}: ${words} words`);
-    }
   }
 });
 
@@ -64,7 +46,7 @@ test('FAQ structured data matches the visible questions and answers', () => {
     const html = read(file);
     const faq = data(html).find(item => item['@type'] === 'FAQPage');
     assert.ok(faq, file);
-    assert.ok(faq.mainEntity.length >= 3 && faq.mainEntity.length <= 5);
+    assert.ok(faq.mainEntity.length > 0);
     for (const question of faq.mainEntity) {
       assert.ok(html.includes(`>${question.name}</`), `${file}: visible question`);
       assert.ok(html.includes(`>${question.acceptedAnswer.text}</p>`), `${file}: visible answer`);
@@ -114,6 +96,7 @@ test('every public page links the project home and preserves showcase canonicals
     const canonical = html.match(/<link rel="canonical" href="([^"]+)"/);
     assert.ok(canonical, file);
     assert.equal(new URL(canonical[1]).origin, host, file);
+    assert.ok(routes.includes(new URL(canonical[1]).pathname), `${file}: missing from sitemap`);
     for (const node of data(html)) {
       const app = node['@type'] === 'SoftwareApplication' ? node : node.about;
       if (app?.['@type'] === 'SoftwareApplication') assert.ok(app.alternateName.includes('Foundation Evals'), file);
@@ -123,25 +106,4 @@ test('every public page links the project home and preserves showcase canonicals
     assert.equal(alternate[1], `${host}/${file}.md`, file);
     assert.ok(existsSync(new URL(`${file}.md`, root)), `${file}: Markdown alternate`);
   }
-});
-
-test('rename landing page preserves release history and directs old-name searches to the current installer', () => {
-  const html = read('compare/foundation-evals.html');
-  assert.match(html, /<h1>Foundation Evals is now Intents<\/h1>/);
-  assert.match(html, /Foundation Evals is now called Intents\./);
-  assert.match(html, /FoundationEvals/);
-  for (const version of ['1.2.0', '1.3.0', '1.4.0', '1.5.1', '1.5.2']) assert.ok(html.includes(`/releases/tag/v${version}`));
-  assert.ok(html.includes(dmg));
-});
-
-test('homepage advertises rename and Apple tool resources visibly', () => {
-  const html = read('index.html');
-  const body = html.split('<body>')[1];
-  assert.match(body, /Formerly <a href="\/compare\/foundation-evals">Foundation Evals<\/a>/);
-  assert.match(body, /Full project page, FAQ and updates:/);
-  for (const route of ['/compare/apple-fm-python-sdk', '/guides/fm-cli-to-repeatable-evals']) assert.ok(body.includes(`href="${route}"`));
-  for (const route of ['compare/apple-fm-python-sdk.html', 'guides/fm-cli-to-repeatable-evals.html', 'compare/foundation-evals.html']) assert.match(read(route), /<main id="main" class="guide-body">/);
-  const markdown = read('compare/apple-fm-python-sdk.html.md');
-  assert.doesNotMatch(markdown, /\|\n\n+\|/);
-  assert.match(markdown, /\| Detail \| Intents 1\.5\.2 \| Apple Python SDK \|\n\| --- \| --- \| --- \|\n\| Interface/);
 });

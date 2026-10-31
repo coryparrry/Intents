@@ -39,7 +39,7 @@ struct EvaluationHTTPPolicyTests {
         defer { session.invalidateAndCancel() }
         #expect(session.configuration.timeoutIntervalForRequest == 12)
         #expect(session.configuration.urlCache == nil)
-        let delegate = try #require(session.delegate as? any URLSessionTaskDelegate)
+        let delegate = try #require(session.delegate as? EvaluationNoRedirectDelegate)
         let source = URL(string: "https://configured.invalid/generate")!
         let task = session.dataTask(with: source)
         let response = try #require(HTTPURLResponse(url: source, statusCode: status,
@@ -47,7 +47,7 @@ struct EvaluationHTTPPolicyTests {
         var redirected = URLRequest(url: URL(string: "https://other.invalid/collect")!)
         redirected.setValue("Bearer fixture-secret", forHTTPHeaderField: "Authorization")
         await confirmation("The redirect decision refuses the replacement request") { refused in
-            delegate.urlSession?(session, task: task, willPerformHTTPRedirection: response,
+            delegate.urlSession(session, task: task, willPerformHTTPRedirection: response,
                 newRequest: redirected) { replacement in
                     #expect(replacement == nil)
                     refused()

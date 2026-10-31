@@ -1,5 +1,4 @@
 import Foundation
-@preconcurrency import MultipeerConnectivity
 import Testing
 @testable import FoundationEvalsDeveloper
 
@@ -115,18 +114,7 @@ struct DeveloperProtocolTests {
         #expect(buffer.insert(envelope(2)).count == 1)
     }
 
-    @Test("Intentional disconnect retains only the matching discovered candidate")
-    func intentionalDisconnectCandidateRetention() {
-        let retained = MCPeerID(displayName: "Retained runner")
-        let remote = MCPeerID(displayName: "Remote runner")
-        var disconnects = DeveloperIntentionalDisconnects()
 
-        disconnects.begin(for: retained)
-
-        #expect(disconnects.consume(for: remote) == false)
-        #expect(disconnects.consume(for: retained) == true)
-        #expect(disconnects.consume(for: retained) == false)
-    }
 }
 
 @Suite("Feature registry")
@@ -697,9 +685,12 @@ struct DeveloperRunnerHostEngineTests {
         #expect(await host.pairingState(now: now.addingTimeInterval(10)) == .idle)
     }
 
-    @Test("Peer display names stay within Multipeer's UTF-8 limit")
-    func boundedPeerDisplayName() {
-        let value = developerPeerDisplayName(String(repeating: "é🚀", count: 80), id: UUID())
+    /// Keeps the discovery UUID intact while truncating a multibyte label at character boundaries.
+    @Test("Bonjour labels preserve the full runner ID within their UTF-8 limit")
+    func boundedBonjourServiceName() {
+        let id = UUID()
+        let value = developerBonjourServiceName(String(repeating: "é🚀", count: 80), id: id)
+        #expect(value.hasPrefix(id.uuidString + "-"))
         #expect(value.utf8.count <= 63)
         #expect(String(decoding: value.utf8, as: UTF8.self) == value)
     }
