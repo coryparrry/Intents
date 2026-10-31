@@ -104,9 +104,12 @@ struct EvaluationObservedContextTests {
 
     /// Binary transcript entries cannot silently disappear from the evidence used to judge a response.
     @available(macOS 27.2, *)
-    @Test func dataEntriesMakeJudgeContextUnavailable() {
-        let entry = Transcript.Entry.data(.init(contentType: .plainText, content: Data("business input".utf8)))
-        let context = EvaluationJudgeSubjectContext.capture([entry], instructions: "Summarize")
+    @Test func dataEntriesMakeJudgeContextUnavailable() throws {
+        // Serialized on SDK 27.2; avoids referring to a case absent from the 27.1 SDK interface.
+        let fixture = #"{"transcript":{"entries":[{"data":{"content":"YnVzaW5lc3MgaW5wdXQ=","contentType":"public.plain-text"},"id":"unsupported-data-fixture","role":"data"}]},"version":"1.1","type":"FoundationModels.Transcript"}"#
+        let transcript = try JSONDecoder().decode(Transcript.self, from: Data(fixture.utf8))
+        #expect(transcript.count == 1)
+        let context = EvaluationJudgeSubjectContext.capture(Array(transcript), instructions: "Summarize")
         #expect(context.unavailableReason != nil)
         #expect(context.entries.isEmpty)
         #expect(throws: EvaluationJudgeSubjectContext.ContextError.self) {

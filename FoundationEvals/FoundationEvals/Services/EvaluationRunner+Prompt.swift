@@ -176,7 +176,7 @@ enum EvaluationInputTokenCounter {
         }
     }
 
-    /// Copies history with attachment segments removed, preserving tool-call entries and other segment content.
+    /// Removes attachment segments from supported entry kinds, preserving all nonsegmented entries unchanged.
     static func historyWithoutImages(_ history: [Transcript.Entry]) -> [Transcript.Entry] {
         history.map { entry in
             switch entry {
@@ -186,7 +186,7 @@ enum EvaluationInputTokenCounter {
             case .prompt(var prompt):
                 prompt.segments = segmentsWithoutImages(prompt.segments)
                 return .prompt(prompt)
-            case .toolCalls, .data:
+            case .toolCalls:
                 return entry
             case .toolOutput(var output):
                 output.segments = segmentsWithoutImages(output.segments)
@@ -197,7 +197,8 @@ enum EvaluationInputTokenCounter {
             case .reasoning(var reasoning):
                 reasoning.segments = segmentsWithoutImages(reasoning.segments)
                 return .reasoning(reasoning)
-            @unknown default:
+            default:
+                // Nonsegmented entries, including newer SDK kinds, have no supported segments to rewrite.
                 return entry
             }
         }
@@ -208,11 +209,11 @@ enum EvaluationInputTokenCounter {
         switch entry {
         case .instructions(let instructions): instructions.segments
         case .prompt(let prompt): prompt.segments
-        case .toolCalls, .data: []
+        case .toolCalls: []
         case .toolOutput(let output): output.segments
         case .response(let response): response.segments
         case .reasoning(let reasoning): reasoning.segments
-        @unknown default: []
+        default: []
         }
     }
 

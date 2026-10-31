@@ -57,9 +57,8 @@ struct EvaluationBuiltinToolTrace: Identifiable, Codable, Equatable, Sendable {
                 traces[index].output = output.boundedVisionEvidence(
                     to: EvaluationCustomToolDefinition.maximumOutputBytes
                 )
-            case .instructions, .prompt, .response, .reasoning, .data:
-                continue
-            @unknown default:
+            default:
+                // Only tool-call and tool-output entries contribute to this trace.
                 continue
             }
         }

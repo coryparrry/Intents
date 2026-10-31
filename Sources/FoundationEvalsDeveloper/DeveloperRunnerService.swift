@@ -88,13 +88,15 @@ public final class DeveloperRunnerService {
             self.listener = listener
             listener.newConnectionHandler = { [weak self, weak listener] connection in
                 Task { @MainActor in
-                    guard let self, self.listener === listener else { connection.cancel(); return }
+                    guard let self, let listener, self.advertisingRequested,
+                          self.listener === listener else { connection.cancel(); return }
                     self.session.accept(connection)
                 }
             }
             listener.stateUpdateHandler = { [weak self, weak listener] state in
                 Task { @MainActor in
-                    guard let self, self.listener === listener else { return }
+                    guard let self, let listener, self.advertisingRequested,
+                          self.listener === listener else { return }
                     switch state {
                     case .ready: self.isAdvertising = true
                     case .failed(let error), .waiting(let error):

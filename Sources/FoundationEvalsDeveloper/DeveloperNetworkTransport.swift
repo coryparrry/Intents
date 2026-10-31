@@ -243,7 +243,7 @@ final class DeveloperNetworkBrowser {
         self.browser = browser
         browser.browseResultsChangedHandler = { [weak self, weak browser] results, _ in
             Task { @MainActor in
-                guard let self, self.browser === browser else { return }
+                guard let self, let browser, self.browser === browser else { return }
                 self.update(results)
             }
         }
@@ -254,7 +254,7 @@ final class DeveloperNetworkBrowser {
             default: return
             }
             Task { @MainActor in
-                guard let self, self.browser === browser else { return }
+                guard let self, let browser, self.browser === browser else { return }
                 self.browser?.cancel()
                 self.browser = nil
                 self.owner?.browserFailed(error.localizedDescription)
