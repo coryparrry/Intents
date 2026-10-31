@@ -231,7 +231,7 @@ final class DeveloperNetworkSession {
 @MainActor
 final class DeveloperNetworkBrowser {
     weak var owner: DeveloperRunnerClient?
-    private var browser: NWBrowser?
+    private(set) var browser: NWBrowser?
     private var peers: [NWEndpoint: DeveloperPeerID] = [:]
 
     /// Starts Bonjour discovery on the local network, including peer-to-peer interfaces.
@@ -248,19 +248,26 @@ final class DeveloperNetworkBrowser {
             }
         }
         browser.stateUpdateHandler = { [weak self, weak browser] state in
-            let error: NWError
-            switch state {
-            case .failed(let failure), .waiting(let failure): error = failure
-            default: return
-            }
             Task { @MainActor in
-                guard let self, let browser, self.browser === browser else { return }
-                self.browser?.cancel()
-                self.browser = nil
-                self.owner?.browserFailed(error.localizedDescription)
+                guard let self, let browser else { return }
+                self.stateChanged(state, browser: browser)
             }
         }
         browser.start(queue: .main)
+    }
+
+    /// Retains discovery during recoverable network waits and releases only terminal failures.
+    func stateChanged(_ state: NWBrowser.State, browser: NWBrowser) {
+        guard self.browser === browser else { return }
+        switch state {
+        case .ready: owner?.browserReady()
+        case .waiting(let error): owner?.browserWaiting(error.localizedDescription)
+        case .failed(let error):
+            browser.cancel()
+            self.browser = nil
+            owner?.browserFailed(error.localizedDescription)
+        default: break
+        }
     }
 
     /// Reconciles endpoints while retaining each discovered endpoint's local identity.

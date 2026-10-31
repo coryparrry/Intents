@@ -43,8 +43,8 @@ public final class DeveloperRunnerClient {
     public private(set) var lastError: String?
 
     @ObservationIgnored private let trustStoreURL: URL?
-    @ObservationIgnored private let session = DeveloperNetworkSession()
-    @ObservationIgnored private let browser = DeveloperNetworkBrowser()
+    @ObservationIgnored let session = DeveloperNetworkSession()
+    @ObservationIgnored let browser = DeveloperNetworkBrowser()
     @ObservationIgnored private var selectedCandidatePeerByRunnerID: [UUID: DeveloperPeerID] = [:]
     @ObservationIgnored private var authenticatedPeersByRunnerID: [UUID: DeveloperPeerBox] = [:]
     @ObservationIgnored private var candidatesByPeer: [DeveloperPeerID: DeveloperClientCandidate] = [:]
@@ -423,6 +423,9 @@ public final class DeveloperRunnerClient {
         case .connecting:
             updateRunner(runnerID) { $0.state = .connecting }
         case .notConnected:
+            let needsPairingRetry = candidatesByPeer[box.peer]?.attemptedTransportAuthentication == true
+                && (candidatesByPeer[box.peer]?.reconnectWasRejected == true
+                    || candidatesByPeer[box.peer]?.requestedPairingCode != nil)
             connectingPeers.remove(box.peer)
             candidatesByPeer[box.peer]?.reconnectChallenge = nil
             candidatesByPeer[box.peer]?.secureSession = nil
@@ -436,10 +439,8 @@ public final class DeveloperRunnerClient {
                 if candidatesByPeer[box.peer]?.isDiscoverable != true {
                     evictCandidate(box, runnerID: runnerID)
                 }
-                releaseFailedConnectionIfNeeded(runnerID)
-                if candidatesByPeer[box.peer]?.attemptedTransportAuthentication == true,
-                   candidatesByPeer[box.peer]?.reconnectWasRejected == true
-                     || candidatesByPeer[box.peer]?.requestedPairingCode != nil {
+                let released = releaseFailedConnectionIfNeeded(runnerID)
+                if needsPairingRetry, released {
                     candidatesByPeer[box.peer]?.attemptedTransportAuthentication = false
                     clearPairingState(for: runnerID)
                     lastError = "The encrypted runner connection failed. Check the runner and its pairing code, then try again."
@@ -601,6 +602,16 @@ public final class DeveloperRunnerClient {
         case .pairingRequest, .desktopHello, .execute, .cancel:
             break
         }
+    }
+
+    /// Publishes a recoverable discovery wait while keeping automatic browsing active.
+    func browserWaiting(_ detail: String) {
+        lastError = detail
+    }
+
+    /// Clears the discovery error when the retained browser becomes ready again.
+    func browserReady() {
+        lastError = nil
     }
 
     /// Publishes a browser startup failure and clears the browsing flag.
@@ -858,16 +869,18 @@ public final class DeveloperRunnerClient {
     }
 
     /// Releases the active runner after its last invitation and transport connection fail,
-    /// then marks it disconnected so another runner can use the session.
-    private func releaseFailedConnectionIfNeeded(_ runnerID: UUID) {
+    /// then marks it disconnected so another runner can use the session. Returns whether ownership was released.
+    @discardableResult
+    private func releaseFailedConnectionIfNeeded(_ runnerID: UUID) -> Bool {
         guard activeRunnerID == runnerID,
               authenticatedPeersByRunnerID[runnerID] == nil,
               !connectingPeers.contains(where: { candidatesByPeer[$0]?.runnerID == runnerID }),
-              !session.connectedPeers.contains(where: { candidatesByPeer[$0]?.runnerID == runnerID }) else { return }
+              !session.connectedPeers.contains(where: { candidatesByPeer[$0]?.runnerID == runnerID }) else { return false }
         activeRunnerID = nil
         unauthenticatedSessionTimeoutTask?.cancel()
         unauthenticatedSessionTimeoutTask = nil
         markDisconnected(runnerID: runnerID, detail: "The connection failed. Reconnect to try again.")
+        return true
     }
 
     /// Removes a candidate endpoint and promotes another connected endpoint if it was selected.

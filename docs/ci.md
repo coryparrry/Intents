@@ -47,5 +47,6 @@ verifying, and publishing. CI changes do not authorize a release.
 The app and its test targets invoke intents in other apps but do not export
 `AppIntent` or `AppShortcutsProvider` types. Their project configurations set
 `LM_SKIP_METADATA_EXTRACTION = YES` to omit an unused metadata-generation step.
-Remove that setting from any target that starts exporting its own app intents.
+If a target starts exporting its own app intents, override the inherited setting
+with `NO` on that target or remove the project-level setting.
 Compiler diagnostics remain enabled.

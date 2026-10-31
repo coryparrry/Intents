@@ -130,7 +130,7 @@ struct DeveloperSessionDelegateTests {
         }
     }
 
-    /// Verifies Bonjour discovery, a failed desktop receipt write, and recovery by reissuing the pending receipt.
+    /// Recovers discovery and advertising from network waits, then pairs over Bonjour after a failed receipt write.
     @Test func bonjourDiscoveryPairsAnInitiallyUntrustedRunner() async throws {
         let runnerID = UUID()
         let service = DeveloperRunnerService(identity: .init(id: runnerID, displayName: "Bonjour fixture", platform: .mac,
@@ -145,7 +145,19 @@ struct DeveloperSessionDelegateTests {
         do {
             service.start()
             try await waitUntil("empty-trust listener") { service.isAdvertising }
+            let retainedListener = try #require(service.listener)
+            service.listenerStateChanged(.waiting(.posix(.ENETDOWN)), listener: retainedListener)
+            #expect(service.listener === retainedListener)
+            #expect(!service.isAdvertising && service.lastError != nil)
+            service.listenerStateChanged(.ready, listener: retainedListener)
+            #expect(service.isAdvertising && service.lastError == nil)
             failedWriter.startBrowsing()
+            let retainedBrowser = try #require(failedWriter.browser.browser)
+            failedWriter.browser.stateChanged(.waiting(.posix(.ENETDOWN)), browser: retainedBrowser)
+            #expect(failedWriter.browser.browser === retainedBrowser)
+            #expect(failedWriter.isBrowsing && failedWriter.lastError != nil)
+            failedWriter.browser.stateChanged(.ready, browser: retainedBrowser)
+            #expect(failedWriter.lastError == nil)
             try await waitUntil("failed writer discovery") { failedWriter.runners.contains { $0.id == runnerID } }
             let firstPairing = await service.beginPairing()
             guard case .advertising(let firstCode, _, _) = firstPairing else { throw CocoaError(.featureUnsupported) }
@@ -172,6 +184,79 @@ struct DeveloperSessionDelegateTests {
             await service.stop()
             throw error
         }
+    }
+
+    /// Restores the pairing prompt when a TLS-authenticated runner closes before sending its application challenge.
+    @Test func pairingRetrySurvivesAnUnclassifiedTransportClose() async throws {
+        let runner = UUID()
+        let code = DeveloperAuthentication.makePairingCode()
+        let credential = try DeveloperTransportCredential.pairing(code: code, runnerID: runner)
+        let listener = try NWListener(using: DeveloperTransportCredential.parameters([credential]))
+        let recorder = TransportRecorder()
+        listener.stateUpdateHandler = { state in
+            if case .ready = state { Task { @MainActor in recorder.listenerReady = true } }
+        }
+        listener.newConnectionHandler = { connection in
+            connection.stateUpdateHandler = { [weak connection] state in
+                if case .ready = state { connection?.cancel() }
+            }
+            connection.start(queue: .main)
+        }
+        let client = DeveloperRunnerClient(desktopID: UUID())
+        listener.start(queue: .main)
+        defer { listener.cancel(); client.shutdown() }
+        try await waitUntil("early-close listener") { recorder.listenerReady }
+        let port = try #require(listener.port)
+        client.found(.init(.init(displayName: "Early-close runner")), runnerID: runner,
+            endpoint: .hostPort(host: "127.0.0.1", port: port))
+        try client.trustRunner(runner, pairingCode: code)
+        try await waitUntil("pairing retry after early TLS close") { client.runners.first?.state == .pairingRequired }
+        #expect(client.lastError?.contains("pairing code") == true)
+        #expect(client.runners.first?.features.isEmpty == true)
+    }
+
+    /// Keeps the surviving endpoint's pairing code when another endpoint for the same runner disappears and closes.
+    @Test func pairingContinuesOnTheSurvivingEndpoint() async throws {
+        let runner = DeveloperRunnerIdentity(id: UUID(), displayName: "Two endpoints", platform: .mac,
+            operatingSystem: "Fixture", hardwareModel: "Loopback", appBundleIdentifier: "test.endpoints", appVersion: "2")
+        let code = DeveloperAuthentication.makePairingCode()
+        let credential = try DeveloperTransportCredential.pairing(code: code, runnerID: runner.id)
+        let first = DeveloperNetworkSession(), second = DeveloperNetworkSession()
+        let firstRecorder = TransportRecorder(), secondRecorder = TransportRecorder()
+        first.owner = firstRecorder
+        second.owner = secondRecorder
+        /// Opens a real TLS endpoint while withholding its application challenge until the test sends it.
+        func listen(_ session: DeveloperNetworkSession, recorder: TransportRecorder) throws -> NWListener {
+            let listener = try NWListener(using: DeveloperTransportCredential.parameters([credential]))
+            listener.newConnectionHandler = { connection in Task { @MainActor in session.accept(connection) } }
+            listener.stateUpdateHandler = { state in
+                if case .ready = state { Task { @MainActor in recorder.listenerReady = true } }
+            }
+            listener.start(queue: .main)
+            return listener
+        }
+        let a = try listen(first, recorder: firstRecorder), b = try listen(second, recorder: secondRecorder)
+        let client = DeveloperRunnerClient(desktopID: UUID())
+        defer { a.cancel(); b.cancel(); first.disconnect(); second.disconnect(); client.shutdown() }
+        try await waitUntil("both endpoint listeners") { firstRecorder.listenerReady && secondRecorder.listenerReady }
+        let lost = DeveloperPeerBox(DeveloperPeerID(displayName: "Disappearing endpoint"))
+        client.found(lost, runnerID: runner.id, endpoint: .hostPort(host: "127.0.0.1", port: try #require(a.port)))
+        client.found(.init(.init(displayName: "Surviving endpoint")), runnerID: runner.id,
+            endpoint: .hostPort(host: "127.0.0.1", port: try #require(b.port)))
+        try client.trustRunner(runner.id, pairingCode: code)
+        try await waitUntil("both endpoint TLS connections") { client.session.connectedPeers.count == 2 }
+        client.lostPeer(lost)
+        first.disconnect()
+        try await waitUntil("lost endpoint closed") { !client.session.connectedPeers.contains(lost.peer) }
+        let challenge = DeveloperPairingChallenge(runner: runner, pairingSessionID: UUID(),
+            nonce: DeveloperAuthentication.makeNonce(), expiresAt: Date().addingTimeInterval(30))
+        let peer = try #require(second.connectedPeers.first)
+        try second.send(JSONEncoder().encode(DeveloperRunnerEnvelope(message: .pairingChallenge(challenge))), to: peer)
+        try await waitUntil("surviving endpoint pairing proof") { !secondRecorder.messages.isEmpty }
+        let response = try JSONDecoder().decode(DeveloperRunnerEnvelope.self, from: #require(secondRecorder.messages.first))
+        guard case .pairingRequest(let request) = response.message else { Issue.record("Expected pairing proof"); return }
+        #expect(DeveloperAuthentication.validatesPairingProof(request.proof, code: code,
+            challenge: challenge, desktopID: request.desktopID))
     }
 
     /// Exercises fragmented and coalesced TCP messages, then rejects an oversized wire length before allocation.

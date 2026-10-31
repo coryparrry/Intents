@@ -145,8 +145,7 @@ Call `await service.cancelPairing()` to invalidate an outstanding code and
 The desktop client keeps one active runner connection at a time. Other devices
 remain visible in `runners`, but connecting one requires disconnecting the
 current runner first. This matches the single-suite execution lock in
-`EvaluationStore` and avoids presenting a per-device disconnect control that
-Multipeer Connectivity cannot honor within one shared session.
+`EvaluationStore`.
 
 ### Transport state and ownership
 

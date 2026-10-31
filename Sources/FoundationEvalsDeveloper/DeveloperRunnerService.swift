@@ -15,7 +15,7 @@ public final class DeveloperRunnerService {
 
     @ObservationIgnored private let engine: DeveloperRunnerHostEngine
     @ObservationIgnored private let session = DeveloperNetworkSession()
-    @ObservationIgnored private var listener: NWListener?
+    @ObservationIgnored private(set) var listener: NWListener?
     @ObservationIgnored private var listenerCredentials: [DeveloperTransportCredential]?
     @ObservationIgnored private var listenerGeneration = UUID()
     @ObservationIgnored private var advertisingRequested = false
@@ -97,22 +97,33 @@ public final class DeveloperRunnerService {
                 Task { @MainActor in
                     guard let self, let listener, self.advertisingRequested,
                           self.listener === listener else { return }
-                    switch state {
-                    case .ready: self.isAdvertising = true
-                    case .failed(let error), .waiting(let error):
-                        self.isAdvertising = false
-                        self.lastError = error.localizedDescription
-                        self.listenerCredentials = nil
-                        self.listener?.cancel()
-                        self.listener = nil
-                    default: break
-                    }
+                    self.listenerStateChanged(state, listener: listener)
                 }
             }
             listener.start(queue: .main)
         } catch {
             listenerCredentials = nil
             lastError = error.localizedDescription
+        }
+    }
+
+    /// Keeps the listener and credentials alive through network waits so permission or path recovery can resume advertising.
+    func listenerStateChanged(_ state: NWListener.State, listener: NWListener) {
+        guard advertisingRequested, self.listener === listener else { return }
+        switch state {
+        case .ready:
+            isAdvertising = true
+            lastError = nil
+        case .waiting(let error):
+            isAdvertising = false
+            lastError = error.localizedDescription
+        case .failed(let error):
+            isAdvertising = false
+            lastError = error.localizedDescription
+            listenerCredentials = nil
+            listener.cancel()
+            self.listener = nil
+        default: break
         }
     }
 
