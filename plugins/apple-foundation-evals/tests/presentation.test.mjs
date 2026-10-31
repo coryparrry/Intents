@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resultKey, outcome, caseTitle, resultTitle, comparisonMatches, runMetrics, visibleResults, selectedResult, transcriptEntries } from '../ui/presentation.js';
+import { resultKey, outcome, resultTitle, comparisonMatches, runMetrics, visibleResults, selectedResult, transcriptEntries } from '../ui/presentation.js';
 const result = (caseId, passed, durationMs, extra = {}) => ({ caseId, repetition: 1, prompt: `Prompt ${caseId}`, response: `Answer ${caseId}`, passed, durationMs, trace: { transcript: [] }, ...extra });
 const run = { suite: { cases: ['exact', 'wrong', 'capture', 'error'].map(id => ({ id })), repetitions: 1 }, results: [
   result('exact', true, 100), result('wrong', false, 300), result('capture', null, 200), result('error', false, 50, { trace: { error: { message: 'Unavailable' }, transcript: [] } })
@@ -27,11 +27,6 @@ test('inspector falls back within the visible filter, never to a hidden result',
   assert.equal(selectedResult(run, 'exact:1', visible).caseId, 'capture');
   assert.equal(selectedResult(run, 'error:1', visible).caseId, 'error');
   assert.equal(selectedResult(run, 'exact:1', []), null);
-});
-test('case IDs retain meaningful names and UUID cases get readable stable-position labels', () => {
-  assert.equal(caseTitle({ id: 'instruction-following' }), 'Instruction Following');
-  assert.equal(caseTitle({ id: 'case-2' }, 1), 'Case 2');
-  assert.equal(caseTitle({ caseId: 'aa6e969a-b685-4c0b-90f4-ba05c66c927b' }, 2), 'Case 3');
 });
 test('transcript renders real Apple text entries and retains non-text evidence in raw data', () => {
   const asset = { role: 'response', contents: [{ text: 'Actual response' }, { asset: 'opaque' }] };

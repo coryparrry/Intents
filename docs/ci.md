@@ -4,6 +4,12 @@ Pull requests select affected checks from the complete base-to-head diff.
 Unknown paths and unreadable diffs select full coverage. Main pushes, manual
 runs, and the scheduled stability workflow select full ordinary coverage.
 
+Prioritize integration and end-to-end checks of complete user workflows and
+important failure paths. Keep focused unit tests when they cover meaningful
+edge cases or invariants that those workflows cannot exercise reliably. Avoid
+tests that only freeze implementation details, callback counts, marketing copy,
+or dated content. A passing test count does not establish release readiness.
+
 Linux workflow validation and selected script tests finish before Mac workers
 are allocated. Native app and test products are built once. Core tests and
 independent UI shards reuse the same retained products. Portable Swift,
@@ -37,3 +43,10 @@ Release packaging validates its immutable source on Ubuntu and waits for that
 source's successful main CI before allocating a Mac runner. The Mac job checks
 out the same SHA and validates the candidate before signing, notarizing,
 verifying, and publishing. CI changes do not authorize a release.
+
+The app and its test targets invoke intents in other apps but do not export
+`AppIntent` or `AppShortcutsProvider` types. Their project configurations set
+`LM_SKIP_METADATA_EXTRACTION = YES` to omit an unused metadata-generation step.
+If a target starts exporting its own app intents, override the inherited setting
+with `NO` on that target or remove the project-level setting.
+Compiler diagnostics remain enabled.

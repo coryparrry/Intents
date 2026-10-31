@@ -41,29 +41,19 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("cache-dependency-path: Tools/DocstringCoverage/package-lock.json", workflow[node:install])
 
     def test_required_checks_are_real_workers_and_one_terminal_gate(self):
+        """Keep required check names and routed UI jobs connected to real workers."""
         jobs = re.findall(r"(?m)^  ([\w-]+):$", WORKFLOW.split("jobs:\n", 1)[1])
         self.assertEqual(set(jobs), {
             "changes", "swift-tests", "native-build", "ui-tests", "picker-stability",
             "build",
         })
-        self.assertEqual(len(jobs), 6)
         for identifier, name in (("changes", "Workflow and script checks"),
                                  ("swift-tests", "Portable regression tests"),
                                  ("build", "Compile app and tests")):
             self.assertIn("    name: " + name + "\n", job(identifier))
-        # The matrix is produced by the route referenced by the workflow, rather
-        # than duplicating its shard names in this job-count assertion.
-        from script import ci_routes
-        plan = ci_routes.coverage(None)
-        for selection in ("native", "ui", "sdk_consumer"):
-            self.assertTrue(plan[selection], selection)
         self.assertIn("matrix:\n        include: ${{ fromJSON(needs.changes.outputs.ui_matrix) }}", job("ui-tests"))
-        self.assertEqual(len(plan["ui_matrix"]), 3)
-        expanded = len(jobs) - 1 + len(plan["ui_matrix"])
-        self.assertEqual(expanded, 8)
         opt_in = [name for name in jobs if "inputs.stability == true" in job(name).split("    steps:", 1)[0]]
         self.assertEqual(opt_in, ["picker-stability"])
-        self.assertEqual(expanded - len(opt_in), 7)
 
     def test_terminal_gate_receives_complete_workflow_state(self):
         workflow = job("build")

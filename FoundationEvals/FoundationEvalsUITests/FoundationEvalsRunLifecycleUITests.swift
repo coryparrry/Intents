@@ -11,15 +11,17 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         app.descendants(matching: .any)["Run status"]
     }
 
-    override func setUpWithError() throws {
+    /// Creates isolated storage and a local model fixture before launching the UI application.
+    override func setUp() async throws {
         continueAfterFailure = false
         storage = try UITestStorage.makeDirectory(prefix: "run-lifecycle")
         fixture = try LocalHTTPModelFixture()
-        app = try launchApp()
+        app = try await Self.launchApp(storage: storage)
     }
 
-    override func tearDownWithError() throws {
-        app?.terminate()
+    /// Terminates the UI fixture on its actor and releases the loopback model and isolated files.
+    override func tearDown() async throws {
+        await app?.terminate()
         fixture?.stop()
         if let storage {
             try? FileManager.default.removeItem(at: storage)
@@ -30,6 +32,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
     }
 
     @MainActor
+    /// Runs a streamed response to completion and verifies its report survives an app restart.
     func testRunProgressCompletionAndHistoryRestoration() throws {
         try openSuiteEditor()
         configureSuite(name: "UI lifecycle fixture", endpointPath: "/success")
@@ -55,7 +58,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["100%"].firstMatch.exists, app.debugDescription)
 
         app.terminate()
-        app = try launchApp()
+        app = try Self.launchApp(storage: storage)
         try openSuiteEditor()
 
         let savedRun = app.descendants(matching: .any).matching(
@@ -69,6 +72,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertEqual(runStatus.label, "Completed")
     }
 
+    /// Cancels a held-open request and retains its cancelled report before the provider finishes.
     @MainActor
     func testCancelShowsCancelledRun() throws {
         try openSuiteEditor()
@@ -78,12 +82,14 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertTrue(fixture.waitForRequest(timeout: 5))
         let cancel = app.buttons["Cancel"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 3))
+        capture("active-run-cancellation")
         cancel.click()
 
         XCTAssertTrue(app.buttons["Export Run as JSON"].waitForExistence(timeout: 8))
         openRunReport()
         XCTAssertTrue(runStatus.waitForExistence(timeout: 3))
         XCTAssertEqual(runStatus.label, "Cancelled")
+        capture("cancelled-run-report")
         fixture.finishResponse()
     }
 
@@ -243,9 +249,10 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         element.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", value, value)).firstMatch
     }
 
+    /// Retains only the fixture window, excluding other apps and desktop content from test evidence.
     @MainActor
     private func capture(_ name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
@@ -264,7 +271,9 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertEqual(runStatus.label, "Completed with issues")
     }
 
-    private func launchApp() throws -> XCUIApplication {
+    /// Launches the isolated UI fixture on the main actor without transferring the test instance.
+    @MainActor
+    private static func launchApp(storage: URL) throws -> XCUIApplication {
         let launchedApp = XCUIApplication()
         launchedApp.launchArguments += [
             "--disable-mcp-autostart",

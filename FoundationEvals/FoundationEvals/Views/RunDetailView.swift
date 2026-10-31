@@ -34,7 +34,7 @@ private enum ResultFilter: String, CaseIterable, Identifiable {
     }
 }
 
-private enum RunPage: CaseIterable, Hashable, Identifiable {
+private enum RunPage: CaseIterable, Hashable, Identifiable, Sendable {
     case report, workflow, performance, review
 
     var id: Self { self }

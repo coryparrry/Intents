@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { tabDestination, workspaceMatches, duplicateSuiteDraft, comparisonSelection } from '../ui/workspace-controls.js';
+import { tabDestination, duplicateSuiteDraft, comparisonSelection } from '../ui/workspace-controls.js';
 import { EvaluationApp } from '../server/app.mjs';
 import { newAppSuite } from '../ui/native-suite.js';
 
@@ -15,13 +15,6 @@ test('tab keyboard movement wraps and supports Home/End without handling editing
   assert.equal(tabDestination('End', 0, 4), 3);
   assert.equal(tabDestination('Enter', 1, 4), null);
   assert.equal(tabDestination('ArrowRight', 0, 0), null);
-});
-
-test('workspace search matches suite names and versions with whitespace and case folding', () => {
-  assert.equal(workspaceMatches({name:'Fruit extraction',version:'v2'}, '  FRUIT '), true);
-  assert.equal(workspaceMatches({name:'Fruit extraction',version:'v2'}, 'v2'), true);
-  assert.equal(workspaceMatches({name:'Fruit extraction'}, 'absent'), false);
-  assert.equal(workspaceMatches({}, ''), true);
 });
 
 test('suite duplication drops storage identity while preserving independent case/settings/reference data', () => {

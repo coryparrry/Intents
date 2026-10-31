@@ -15,6 +15,7 @@
 		DA0000000000000000000023 /* DeveloperRunnerIdentity+Current.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000013 /* DeveloperRunnerIdentity+Current.swift */; };
 		DA0000000000000000000024 /* DeveloperRunnerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000014 /* DeveloperRunnerService.swift */; };
 		DA0000000000000000000025 /* DeveloperRunnerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000015 /* DeveloperRunnerClient.swift */; };
+		73A6CE80C34A4E8C3009A054 /* DeveloperNetworkTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A7E66F3E70139200CFB9FA /* DeveloperNetworkTransport.swift */; };
 		DA0000000000000000000026 /* DeveloperRunnerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0000000000000000000016 /* DeveloperRunnerView.swift */; };
 		AFC28B6E304A00010023273E /* Hummingbird in Frameworks */ = {isa = PBXBuildFile; productRef = AFC28B6D304A00010023273E /* Hummingbird */; };
 		AFC28B70304B00010023273E /* CoreAILM in Frameworks */ = {isa = PBXBuildFile; productRef = AFC28B72304B00010023273E /* CoreAILM */; };
@@ -70,6 +71,7 @@
 		DA0000000000000000000013 /* DeveloperRunnerIdentity+Current.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DeveloperRunnerIdentity+Current.swift"; sourceTree = "<group>"; };
 		DA0000000000000000000014 /* DeveloperRunnerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperRunnerService.swift; sourceTree = "<group>"; };
 		DA0000000000000000000015 /* DeveloperRunnerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperRunnerClient.swift; sourceTree = "<group>"; };
+		D1A7E66F3E70139200CFB9FA /* DeveloperNetworkTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperNetworkTransport.swift; sourceTree = "<group>"; };
 		DA0000000000000000000016 /* DeveloperRunnerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperRunnerView.swift; sourceTree = "<group>"; };
 		AFC28B46304733170023273E /* Intents.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Intents.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AFC28B533047331D0023273E /* FoundationEvalsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FoundationEvalsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -168,6 +170,7 @@
 				DA0000000000000000000013 /* DeveloperRunnerIdentity+Current.swift */,
 				DA0000000000000000000014 /* DeveloperRunnerService.swift */,
 				DA0000000000000000000015 /* DeveloperRunnerClient.swift */,
+				D1A7E66F3E70139200CFB9FA /* DeveloperNetworkTransport.swift */,
 				DA0000000000000000000016 /* DeveloperRunnerView.swift */,
 			);
 			name = FoundationEvalsDeveloper;
@@ -390,6 +393,7 @@
 				DA0000000000000000000023 /* DeveloperRunnerIdentity+Current.swift in Sources */,
 				DA0000000000000000000024 /* DeveloperRunnerService.swift in Sources */,
 				DA0000000000000000000025 /* DeveloperRunnerClient.swift in Sources */,
+				73A6CE80C34A4E8C3009A054 /* DeveloperNetworkTransport.swift in Sources */,
 				DA0000000000000000000026 /* DeveloperRunnerView.swift in Sources */,
 			);
 		};
@@ -423,6 +427,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				/* These targets invoke other apps' intents and export no AppIntents metadata. */
+				LM_SKIP_METADATA_EXTRACTION = YES;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -484,6 +490,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				/* These targets invoke other apps' intents and export no AppIntents metadata. */
+				LM_SKIP_METADATA_EXTRACTION = YES;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;

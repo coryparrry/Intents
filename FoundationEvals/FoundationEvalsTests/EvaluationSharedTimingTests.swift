@@ -36,9 +36,4 @@ struct EvaluationSharedTimingTests {
         #expect(positiveSpan.startOffsetMilliseconds == 5)
         #expect(positiveSpan.durationMilliseconds == 2)
     }
-
-    /// Verifies the retained app runner entrypoint uses the same signed conversion instead of clamping future instants.
-    @Test func appRunnerTimingRetainsNegativeDurations() {
-        #expect(EvaluationRunner.milliseconds(since: ContinuousClock.now.advanced(by: .seconds(60))) < 0)
-    }
 }

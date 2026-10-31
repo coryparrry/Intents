@@ -24,7 +24,7 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 !/docs/DEVELOPER_SWIFT_INTEGRATION.md
 !/docs/FEATURE_ADAPTER.md
 !/docs/PRODUCTION_EVALS_GUIDE.md
-!/docs/PROMPT_IMPROVEMENT_PLAN.md
+!/docs/instruction-improvement.md
 !/docs/DOCUMENT_SUITE_QUALITY.md
 !/docs/coreai-provider.md
 !/docs/custom-provider-protocol.md
@@ -35,6 +35,11 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 !/docs/wiki/
 !/docs/wiki/*.md
 
+# Local environment credentials (keep a shareable example if needed).
+/.env
+/.env.*
+!/.env.example
+
 # Local signing material.
 *.p12
 *.p8
@@ -42,6 +47,12 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 *.provisionprofile
 
 # Local audit reports, build logs, screenshots, and working notes.
+/*_REVIEW_*.md
+/*_REVIEW_TRIAGE_*.md
+/*_AUDIT_*.md
+/*.log
+/*.har
+*.xcresult/
 /worklog.md
 /website/QA.md
 /website/WORKLOG.md

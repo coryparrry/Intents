@@ -31,21 +31,6 @@ struct WorkspacePresentationTests {
     }
 
 
-    @Test func appFeatureFooterUsesPersistedRunnerIdentity() {
-        var run = fixture()
-        run.execution = nil
-        run.developerExecution = .init(
-            runnerID: UUID(), runnerName: "Verification Mac", platform: "mac",
-            operatingSystem: "macOS 27", hardwareModel: "Mac",
-            appBundleIdentifier: "test.runner", appVersion: "1",
-            featureID: "verification.echo", featureVersion: "1",
-            protocolMajorVersion: 1, protocolMinorVersion: 0
-        )
-        #expect(DeveloperRunPresentation.providerLabel(for: run) == "App feature · Verification Mac")
-        run.developerExecution = nil
-        #expect(DeveloperRunPresentation.providerLabel(for: run) == "Provider not recorded")
-    }
-
     @Test func savedResultsDistinguishPassingFailingAndUnassessedRuns() {
         for (status, expected) in [(EvaluationResultStatus.passed, SuiteCheckState.passed),
                                    (.failed, .failed), (.unscored, .collected), (.error, .incomplete)] {
@@ -55,6 +40,7 @@ struct WorkspacePresentationTests {
         #expect(SuiteCheckState.evaluate(run: nil, currentRevision: "current", hasDraft: false) == .notRun)
     }
 
+    /// Excludes unscored samples from pass-rate trends while retaining scored failures.
     @Test func trendOmitsUnscoredRatesWithoutHidingScoredFailures() {
         let unscored = fixture(status: .unscored)
         let failed = fixture(status: .failed)
@@ -63,10 +49,7 @@ struct WorkspacePresentationTests {
         #expect(trend.recentCount == 2)
         #expect(trend.points.map(\.id) == [failed.id])
         #expect(trend.points.map(\.rate) == [0])
-        #expect(trend.title == "Pass rate · 1 scored of last 2 runs")
-        #expect(trend.comparisonCaption == "No comparable scored run")
         #expect(RunTrendSummary(runs: [unscored]).points.isEmpty)
-        #expect(RunTrendSummary(runs: [unscored]).comparisonCaption == "First saved run")
     }
 
     @Test func changedSuitesDoNotDisplayOldPassingChecksAsCurrent() {

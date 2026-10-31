@@ -72,9 +72,11 @@ final class WorkflowTraceUITests: XCTestCase {
     }
 
     @MainActor
+    /// Verifies cancellation and confirmation of destructive workspace actions and their persisted result.
     func testWorkspaceResetConfirmationAndPersistence() throws {
         try withFixtureApplication(windowWidth: 1000) { app in
-            func choose(_ title: String) {
+            /// Opens the workspace action menu and invokes the named action on the UI actor.
+            @MainActor func choose(_ title: String) {
                 app.descendants(matching: .any).matching(identifier: "Start from Scratch").firstMatch.click()
                 app.menuItems[title].click()
             }

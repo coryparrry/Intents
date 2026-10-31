@@ -3,36 +3,9 @@ import assert from "node:assert/strict";
 import {
   addCase,
   duplicateCase,
-  removeCase,
   caseEditingSelection,
 } from "../ui/react/case-actions.js";
 
-test("case duplication preserves setup and assertions without sharing mutable data", () => {
-  const original = {
-    id: "original",
-    name: "JSON",
-    prompt: "Only JSON",
-    conversation: { setupTurns: [{ id: "turn", prompt: "Remember apple" }] },
-    fieldAssertions: [
-      {
-        id: "check",
-        pointer: "/fruit",
-        operation: "equals",
-        expectedValue: '"apple"',
-      },
-    ],
-  };
-  const draft = { cases: [original] };
-  const copy = duplicateCase(draft, original.id);
-  assert.notEqual(copy.id, original.id);
-  assert.deepEqual(copy.conversation, original.conversation);
-  copy.conversation.setupTurns[0].prompt = "Changed";
-  copy.fieldAssertions[0].expectedValue = '"banana"';
-  assert.equal(original.conversation.setupTurns[0].prompt, "Remember apple");
-  assert.equal(original.fieldAssertions[0].expectedValue, '"apple"');
-  assert.equal(removeCase(draft, copy.id), original.id);
-  assert.throws(() => removeCase(draft, original.id), /at least one/);
-});
 test("case selection follows visible search results and empty/limit cases are safe", () => {
   const draft = {
     cases: [

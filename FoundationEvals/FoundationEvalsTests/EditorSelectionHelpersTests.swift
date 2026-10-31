@@ -1,36 +1,18 @@
-import Foundation
 import Testing
 @testable import FoundationEvals
 
 struct EditorSelectionHelpersTests {
-    @Test func selectionUpdatesOnlyWhenInvalid() {
-        let first = UUID()
-        let second = UUID()
-        var selected: UUID? = second
-        var updates = 0
-        func repair(_ ids: [UUID]) {
-            repairEditorSelection(selected, ids: ids) {
-                updates += 1
-                selected = $0
-            }
-        }
-
-        repair([first, second])
-        repair([second, second])
-        #expect(selected == second)
-        #expect(updates == 0)
-        repair([first, first])
-        #expect(selected == first)
-        #expect(updates == 1)
-        repair([])
+    /// Keeps a valid selection and repairs it when cases disappear or become available again.
+    @Test func selectionTracksAvailableCases() {
+        var selected: Int? = 2
+        repairEditorSelection(selected, ids: [1, 2]) { selected = $0 }
+        #expect(selected == 2)
+        repairEditorSelection(selected, ids: [1]) { selected = $0 }
+        #expect(selected == 1)
+        repairEditorSelection(selected, ids: []) { selected = $0 }
         #expect(selected == nil)
-        #expect(updates == 2)
-        repair([])
-        #expect(selected == nil)
-        #expect(updates == 3)
-        repair([second])
-        #expect(selected == second)
-        #expect(updates == 4)
+        repairEditorSelection(selected, ids: [2]) { selected = $0 }
+        #expect(selected == 2)
     }
 
     @Test func numberedNamesFillGapsAndRespectPrefixes() {

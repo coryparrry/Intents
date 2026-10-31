@@ -379,10 +379,11 @@ struct EvaluationWorkspaceRepairTests {
         #expect(recovered.selectedProjectID == recovered.projects.first { $0.name == "Recovery workspace" }?.id)
     }
 
+    /// Preserves the malformed catalog bytes while repairing empty suite collections into a usable workspace.
     @Test func catalogWithEmptySuitesDoesNotCrashAndPreservesOriginalBytes() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = EvaluationStore(supportDirectory: directory)
+        _ = EvaluationStore(supportDirectory: directory)
         let catalogURL = directory.appending(path: EvaluationWorkspacePersistence.catalogFilename)
         var catalog = try CanonicalJSON.decode(EvaluationWorkspaceCatalog.self, from: Data(contentsOf: catalogURL))
         catalog.projects[0].suites = []

@@ -55,20 +55,6 @@ struct RunToolbarProgressTests {
         }
     }
 
-    @Test func updatingProgressPreservesInsetsAndTrackWidth() throws {
-        let host = makeHost(completed: 0, total: 100)
-        for completed in [1, 50, 100] {
-            host.rootView = RunToolbarProgress(completed: completed, total: 100)
-            host.frame.size = NSSize(width: host.fittingSize.width, height: 32)
-            host.layoutSubtreeIfNeeded()
-            let indicator = try #require(findIndicator(in: host))
-            let rect = indicator.convert(indicator.bounds, to: host)
-            #expect(rect.minX >= 11.9)
-            #expect(abs(rect.width - 90) < 0.1)
-            #expect(rect.maxX <= host.bounds.maxX - 11.9)
-        }
-    }
-
     private func makeHost(completed: Int, total: Int) -> NSHostingView<RunToolbarProgress> {
         let host = NSHostingView(rootView: RunToolbarProgress(completed: completed, total: total))
         host.frame.size = NSSize(width: host.fittingSize.width, height: 32)

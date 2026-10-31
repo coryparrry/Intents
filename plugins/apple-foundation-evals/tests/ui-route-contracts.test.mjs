@@ -68,7 +68,7 @@ test('actual entry mounts React navigation, preserves case contracts and guards 
       savedRequests.push(structuredClone(params.arguments));
       return { structuredContent: { suite: await saveResponse(params.arguments) } };
     };
-    const original = newAppSuite('project-a'); original.name = 'Native suite'; original.revision = 'r1';
+    const original = newAppSuite('project-a'); original.name = 'Native suite'; original.version = 'v2'; original.revision = 'r1';
     original.cases[0].name = 'Apple'; original.cases[0].prompt = 'Only JSON';
     original.releasePolicy = { required: true, criticalCaseIDs: [original.cases[0].id.toUpperCase()] };
     original.cases[0].fieldAssertions = [{ id: 'check', pointer: '/fruit', operation: 'equals', expectedValue: '"apple"' }];
@@ -77,6 +77,11 @@ test('actual entry mounts React navigation, preserves case contracts and guards 
     await act(async () => app.acceptResult({ structuredContent: workspace }));
     const search = within(sidebar).getByLabelText('Search workspace');
     search.focus();
+    for (const query of ['  NATIVE ', 'v2']) {
+      await act(async () => fireEvent.change(search, { target: { value: query } }));
+      assert.ok(within(sidebar).getByRole('button', { name: original.name }));
+      assert.equal(document.activeElement, search);
+    }
     await act(async () => fireEvent.change(search, { target: { value: 'missing' } }));
     assert.equal(document.activeElement, search);
     assert.equal(within(sidebar).queryByRole('button', { name: original.name }), null);
@@ -105,12 +110,17 @@ test('actual entry mounts React navigation, preserves case contracts and guards 
     await act(async () => fireEvent.keyDown(within(main).getByRole('button', { name: 'Case actions' }), { key: 'Enter' }));
     await act(async () => fireEvent.click(within(document.body).getByRole('menuitem', { name: 'Duplicate case' })));
     assert.equal(draft.cases.length, 2); const copy = draft.cases[1];
+    assert.notEqual(copy.id, first.id);
     assert.equal(app.state.caseId, copy.id); assert.deepEqual(copy.fieldAssertions, first.fieldAssertions); assert.deepEqual(copy.conversation, first.conversation);
     await act(async () => fireEvent.change(within(main).getByLabelText('Prompt'), { target: { value: 'Changed copy' } }));
     assert.equal(first.prompt, 'Only JSON');
     await act(async () => fireEvent.click(within(main).getByRole('button', { name: 'Conversation setup' })));
     await act(async () => fireEvent.change(within(main).getByLabelText('Setup turn 1'), { target: { value: 'Copy memory' } }));
     assert.equal(first.conversation.setupTurns[0].prompt, 'Remember pear');
+    await act(async () => fireEvent.click(within(main).getByRole('button', { name: /Field checks/ })));
+    await act(async () => fireEvent.change(within(main).getByLabelText('Expected value'), { target: { value: '"banana"' } }));
+    assert.equal(copy.fieldAssertions[0].expectedValue, '"banana"');
+    assert.equal(first.fieldAssertions[0].expectedValue, '"pear"');
     await act(async () => fireEvent.keyDown(within(main).getByRole('button', { name: 'Case actions' }), { key: 'Enter' }));
     await act(async () => fireEvent.click(within(document.body).getByRole('menuitem', { name: 'Delete case' })));
     assert.equal(draft.cases.length, 1); assert.equal(app.state.caseId, first.id);

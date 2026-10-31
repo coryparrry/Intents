@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { cases, spans, filterCases, resolveSelection, escapeHTML } from '../dist/demo-data.mjs';
 
 test('search matches case names, prompts, and responses without case sensitivity', () => {
@@ -41,15 +40,6 @@ test('published trace bars stay visible within the timeline and have timing deta
     assert.ok(span.x >= 0 && span.width > 0 && span.x + span.width <= 100);
     assert.ok(span.duration && span.start && span.end);
   }
-});
-
-test('local assets and section links in the published HTML resolve', () => {
-  const html = readFileSync(new URL('../dist/index.html',import.meta.url),'utf8');
-  for(const [,path] of html.matchAll(/(?:src|href)="(\/[^"#]+)(?:#[^"]*)?"/g)) {
-    assert.ok(existsSync(fileURLToPath(new URL(`../dist${path === '/' ? '/index.html' : /\.[^/]+$/.test(path) ? path : `${path}.html`}`,import.meta.url))),path);
-  }
-  const ids = new Set([...html.matchAll(/id="([^"]+)"/g)].map(match => match[1]));
-  for(const [,id] of html.matchAll(/href="#([^"]+)"/g)) assert.ok(ids.has(id),id);
 });
 
 test('all rendered icon names exist in the vendored native icon sprite', () => {

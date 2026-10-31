@@ -38,14 +38,6 @@ struct ScoringAttributionTests {
         )
     }
 
-    @Test func namesLocalScoringModesWithoutAJudgeIdentity() {
-        let result = sample(status: .passed)
-        #expect(result.scorerSummary(scoringMode: .exactMatch) == "Exact text (local)")
-        #expect(result.scorerSummary(scoringMode: .containsExpected) == "Contains text (local)")
-        #expect(result.scorerSummary(scoringMode: .review) == "Collect only (unscored)")
-        #expect(result.scorerSummary(scoringMode: .modelJudge) == "AI rubric")
-    }
-
     @Test func namesLocalFieldAssertionsInCollectOnlyMode() {
         var result = sample(status: .passed)
         result.fieldAssertionResults = [

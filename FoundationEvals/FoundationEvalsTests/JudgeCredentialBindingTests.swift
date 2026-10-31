@@ -19,12 +19,12 @@ struct JudgeCredentialBindingTests {
         changed = saved; changed.modelID = "another-model"
         #expect(try EvaluationJudgeCredentialBinding.decode(bytes, for: changed) == "fixture-secret")
     }
+    /// Rejects an unbound credential until it is explicitly encoded for the selected connection.
     @Test func legacyCredentialRequiresExplicitRebinding() throws {
         let saved = EvaluationJudgeConnection(id: UUID(), name: "Saved", kind: .customCompatible,
             baseURL: "https://judge.example/v1", modelID: "fixture")
         let legacy = Data("fixture-secret".utf8)
         #expect(throws: EvaluationCompatibleJudgeError.self) { try EvaluationJudgeCredentialBinding.decode(legacy, for: saved) }
-        #expect(legacy == Data("fixture-secret".utf8))
         let rebound = try EvaluationJudgeCredentialBinding.encode("fixture-secret", for: saved)
         #expect(try EvaluationJudgeCredentialBinding.decode(rebound, for: saved) == "fixture-secret")
     }

@@ -125,7 +125,8 @@ enum EvaluationInputTokenCounter {
             case .reasoning(var reasoning):
                 reasoning.segments = segmentsWithoutImages(reasoning.segments)
                 return .reasoning(reasoning)
-            @unknown default:
+            default:
+                // Nonsegmented entries, including newer SDK kinds, have no supported segments to rewrite.
                 return entry
             }
         }
@@ -140,7 +141,7 @@ enum EvaluationInputTokenCounter {
         case .toolOutput(let output): output.segments
         case .response(let response): response.segments
         case .reasoning(let reasoning): reasoning.segments
-        @unknown default: []
+        default: []
         }
     }
 

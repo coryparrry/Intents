@@ -123,7 +123,7 @@ final class EvaluationReviewUITests: XCTestCase {
         sheet.buttons["Cancel"].click()
     }
 
-    /// Keeps the report focused on outcomes while retaining its extra columns and selected response.
+    /// Selects a named result cell and preserves its response while toggling report columns at narrow and wide widths.
     @MainActor
     func testRunReportRevealsAdditionalColumns() throws {
         continueAfterFailure = false
@@ -136,27 +136,41 @@ final class EvaluationReviewUITests: XCTestCase {
         let latest = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Latest run:")).firstMatch
         XCTAssertTrue(latest.waitForExistence(timeout: 5), app.debugDescription)
         latest.click()
-        let more = app.buttons["More columns"]
-        XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
-        let secondRow = app.descendants(matching: .outlineRow).containing(.staticText, identifier: "Second case").firstMatch
-        XCTAssertTrue(secondRow.waitForExistence(timeout: 3), app.debugDescription)
-        let secondCase = secondRow.staticTexts["Second case"]
-        XCTAssertTrue(secondCase.isHittable, app.debugDescription)
-        secondCase.click()
-        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: secondRow)
-        XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed, app.debugDescription)
-        let column = app.buttons["Latency"]
-        XCTAssertFalse(column.exists)
-        let response = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Second distinct response", "Second distinct response")).firstMatch
-        XCTAssertTrue(response.waitForExistence(timeout: 3), app.debugDescription)
-        more.click()
-        XCTAssertTrue(column.waitForExistence(timeout: 3), app.debugDescription)
-        XCTAssertTrue(secondRow.isSelected)
-        XCTAssertTrue(response.exists)
-        app.buttons["Fewer columns"].click()
-        XCTAssertFalse(column.exists)
-        XCTAssertTrue(secondRow.isSelected)
-        XCTAssertTrue(response.exists)
+        let window = app.windows.firstMatch
+        for width in [CGFloat(1000), CGFloat(1180)] {
+            let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -1, dy: 0))
+            let target = edge.withOffset(CGVector(dx: width - window.frame.width, dy: 0))
+            edge.hover()
+            edge.click(forDuration: 0.25, thenDragTo: target)
+            XCTAssertEqual(window.frame.width, width, accuracy: 8, "Exercise both narrow and wide report layouts")
+            let more = app.buttons["More columns"]
+            XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
+            let firstRow = app.descendants(matching: .outlineRow).containing(.staticText, identifier: "Meeting date").firstMatch
+            firstRow.cells.containing(.staticText, identifier: "Meeting date").firstMatch.click()
+            XCTAssertTrue(firstRow.isSelected, app.debugDescription)
+            let secondRow = app.descendants(matching: .outlineRow).containing(.staticText, identifier: "Second case").firstMatch
+            let caseCell = secondRow.cells.containing(.staticText, identifier: "Second case").firstMatch
+            XCTAssertTrue(caseCell.waitForExistence(timeout: 3), app.debugDescription)
+            // A row's centre can land on a column divider; target the named case cell instead.
+            let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: secondRow)
+            XCTAssertEqual(XCTWaiter.wait(for: [hittable], timeout: 3), .completed, app.debugDescription)
+            caseCell.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+            let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: secondRow)
+            XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed, app.debugDescription)
+            let column = app.buttons["Latency"]
+            XCTAssertFalse(column.exists)
+            let response = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Second distinct response", "Second distinct response")).firstMatch
+            XCTAssertTrue(response.waitForExistence(timeout: 3), app.debugDescription)
+            more.click()
+            XCTAssertTrue(column.waitForExistence(timeout: 3), app.debugDescription)
+            XCTAssertTrue(secondRow.isSelected)
+            XCTAssertTrue(response.exists)
+            app.buttons["Fewer columns"].click()
+            XCTAssertFalse(column.exists)
+            XCTAssertTrue(secondRow.isSelected)
+            XCTAssertTrue(response.exists)
+            try window.screenshot().pngRepresentation.write(to: UITestStorage.screenshotURL(name: "report-columns-\(Int(width))"))
+        }
     }
 
     /// Removes a deleted-source judge example, collects a replacement through human review, and verifies both changes survive relaunch.

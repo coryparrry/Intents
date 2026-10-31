@@ -22,7 +22,7 @@ For an iPhone or iPad target, add these values to its Info.plist:
 <string>Connect to Intents on your development Mac.</string>
 <key>NSBonjourServices</key>
 <array>
-    <string>_fnd-evals._tcp</string>
+    <string>_intents-v2._tcp</string>
 </array>
 ```
 
@@ -119,8 +119,8 @@ Pairing is never automatic:
    grouped pairing code, endpoint name, and five-minute expiry.
 2. In Intents, connect to that discovered runner and enter the code
    shown on the runner.
-3. The Multipeer Connectivity session requires transport encryption. The code
-   itself is never sent: the desktop sends a transcript-bound HMAC proof, and
+3. Entering the complete code opens an authenticated Network.framework TLS
+   connection. The code itself is never sent: the desktop sends a transcript-bound HMAC proof, and
    the runner returns the new trust token inside an AES-GCM receipt derived from
    that high-entropy code. Only then is trust stored in the two apps' private
    support directories.
@@ -132,9 +132,11 @@ Pairing is never automatic:
    results, cancellation, and disconnect messages are then AES-GCM sealed with
    a per-connection key derived from that secret and nonce. The authenticated
    data binds the session, direction, and monotonic sequence number, so altered,
-   replayed, cross-direction, or out-of-order messages are rejected. Five
-   invalid code attempts cancel the pairing session, with a delay between
-   attempts. Removing trust requires pairing again.
+   replayed, cross-direction, or out-of-order messages are rejected. An incorrect
+   TLS pairing key cannot open a connection. Application-level invalid proofs
+   still have a five-attempt limit and a delay between attempts; TLS failures
+   happen before that counter and do not cancel another user's pairing session.
+   Removing trust requires pairing again.
 
 Call `await service.cancelPairing()` to invalidate an outstanding code and
 `await service.stop()` when the host app intentionally stops its runner. A nil
@@ -143,13 +145,17 @@ Call `await service.cancelPairing()` to invalidate an outstanding code and
 The desktop client keeps one active runner connection at a time. Other devices
 remain visible in `runners`, but connecting one requires disconnecting the
 current runner first. This matches the single-suite execution lock in
-`EvaluationStore` and avoids presenting a per-device disconnect control that
-Multipeer Connectivity cannot honor within one shared session.
+`EvaluationStore`. The slot remains reserved while the user enters a pairing
+code; call `disconnect(runnerID)` to abandon that pending attempt.
+Cancelling pairing or disconnecting suppresses automatic
+reconnection for that runner until an explicit `connect(to:)` or `trustRunner`
+request on the same client. A newly created client can reconnect saved runners
+automatically again.
 
 ### Transport state and ownership
 
 Discovery data is a hint, never identity. The desktop owns one candidate record
-per physical Multipeer peer; that record alone owns its claimed runner UUID,
+per discovered Network.framework endpoint; that record alone owns its claimed runner UUID,
 pairing and reconnect challenges, pending pairing proof, session cipher, and
 authentication deadline. Durable trust remains keyed by runner UUID, while an
 authenticated runner-to-peer binding is created only after proof succeeds.
@@ -164,7 +170,7 @@ The lifecycle is deliberately one-way:
   code can return a decryptable receipt.
 - The first peer to prove the saved or newly issued trust secret owns the
   authenticated binding. Competing candidates are evicted. If no peer proves
-  trust before the deadline, the unauthenticated shared session is reset to
+  trust before the deadline, the unauthenticated connections are reset to
   release its transport slots.
 - A saved-trust rejection is accepted only when it matches that peer's current
   reconnect challenge. It permits replacement pairing without deleting the
@@ -173,23 +179,60 @@ The lifecycle is deliberately one-way:
   disconnect. Closing its connection cancels the request IDs owned by that
   connection and clears its ephemeral cipher.
 - The runner buffers sealed outbound envelopes by sequence before writing them
-  to Multipeer Connectivity. Concurrent feature completions can therefore run
+  to its framed TLS connection. Concurrent feature completions can therefore run
   in parallel without putting sequence `N+1` on the wire before sequence `N`.
 
 Do not publish pairing codes, runner trust files, or test inputs in logs.
-Multipeer display names are discovery labels, not identities; the trust receipt
+Bonjour display names are discovery labels, not identities; the trust receipt
 is the authentication material. Discovery candidates remain unauthenticated
 until they prove that receipt. A candidate cannot reserve a runner UUID: each
 peer has isolated challenge and cipher state, unauthenticated candidates expire,
 and only the first peer that proves saved trust becomes the connected runner.
 
-The current encrypted LAN transport is isolated behind the protocol and host
-engine types, but it uses Multipeer Connectivity, which Xcode 27 deprecates on
-macOS 27 in favor of Network.framework. It remains available on the package's
-macOS 26 and iOS 26 deployment targets and supplies required session encryption.
-A future Network.framework transport must provision authenticated TLS identities
-before replacing it; an unencrypted Bonjour socket is not an acceptable
-migration.
+### Network transport and runner updates
+
+Update both Intents and the embedded developer package, rebuild each runner app,
+and replace the Bonjour declaration with `_intents-v2._tcp`. Earlier runner
+builds use a different transport and will not appear in this desktop version.
+Existing receipts can reconnect after both ends update if their runner and
+desktop IDs and private trust files are retained.
+
+A replacement receipt remains pending until that connection sends an authenticated
+command or reconnects with the new secret. The runner retains the last confirmed
+receipt during this window. If a response is lost, another valid pairing attempt
+reissues the same pending secret; it does not invalidate either side's saved
+receipt. Both states survive a runner restart. A failed desktop receipt write
+blocks authentication with that new receipt, and explicit revocation removes
+confirmed and pending trust together.
+
+The transport uses `NWBrowser`, `NWListener`, and `NWConnection` with authenticated
+TLS 1.2 and `TLS_PSK_WITH_AES_128_GCM_SHA256`. HKDF derives separate TLS keys from
+the random 128-bit pairing code or the saved 256-bit trust token. The key identity
+binds the runner and, for saved trust, the desktop. No shared key is advertised,
+no certificate verification is bypassed, and plaintext sockets are not accepted.
+Application proofs, encrypted receipts, and ordered AES-GCM messages remain in
+place above TLS.
+
+This PSK mode is limited to TLS 1.2 and does **not** provide forward secrecy:
+compromise of a key can expose previously recorded TLS sessions using that key.
+TLS 1.3, QUIC, and certificate-based identity provisioning are not implemented.
+Session tickets and resumption are disabled so a new connection must prove a
+currently configured key. Pairing expiry or cancellation removes that listener
+key; an already admitted connection must still pass the engine's live challenge
+and expiry checks. Listener rotation preserves existing authenticated sockets.
+A network-path failure preserves saved trust for a retry; a rejected TLS
+credential offers replacement pairing without deleting the saved receipt.
+
+TCP messages have a four-byte big-endian length and a 16 MiB encoded-envelope
+limit. Oversized feature results become a compact execution failure before
+sealing; invalid frames close the connection. Admission has a finite timeout,
+and the runner caps concurrent connections at 16. Time spent transcribing a
+pairing code does not consume the connection admission timeout.
+
+The automated transport integration runs real loopback TLS sockets on macOS,
+including pairing, wrong-key rejection, execution, cancellation, and saved-trust
+reconnection. An iPhone or iPad connection still requires device qualification;
+compilation and macOS loopback results do not establish that result.
 
 ## Desktop lifecycle and persisted evidence
 

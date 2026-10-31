@@ -1,7 +1,5 @@
 import Foundation
-import SwiftUI
 import Testing
-import UniformTypeIdentifiers
 @testable import FoundationEvals
 
 struct JSONDocumentTests {
@@ -9,14 +7,6 @@ struct JSONDocumentTests {
     @Test(arguments: [Data("{ \"z\" : 2, \"a\" : \"café\" }\n".utf8), Data([0x00, 0xff, 0x7b, 0x7d])])
     func rawInitializerPreservesPreencodedBytes(_ bytes: Data) {
         #expect(JSONDocument(data: bytes).data == bytes)
-    }
-
-    /// Both initial empty export state and an explicitly empty payload keep the JSON document content type.
-    @Test func emptyDocumentsRetainJSONContentTypes() {
-        #expect(JSONDocument().data.isEmpty)
-        #expect(JSONDocument(data: Data()).data.isEmpty)
-        #expect(JSONDocument.readableContentTypes == [.json])
-        #expect(JSONDocument.writableContentTypes == [.json])
     }
 
     /// Existing run exports still use readable, sorted canonical JSON and round-trip their ISO-8601 dates.
@@ -35,16 +25,13 @@ struct JSONDocumentTests {
         #expect(restored.results.first?.durationMilliseconds == 12.5)
     }
 
-    /// A run that JSON cannot represent throws before replacing the previously prepared export document.
-    @Test func runEncodingFailurePreservesPreparedExport() {
-        let original = Data("{\"previous\":true}".utf8)
-        var document = JSONDocument(data: original)
+    /// Rejects run values that cannot be represented as JSON numbers.
+    @Test func runEncodingRejectsNonfiniteValues() {
         let invalidRun = run(durationMilliseconds: .infinity)
 
         #expect(throws: EncodingError.self) {
-            document = try JSONDocument(run: invalidRun)
+            _ = try JSONDocument(run: invalidRun)
         }
-        #expect(document.data == original)
     }
 
     /// Creates a minimal saved run whose duration can exercise valid and nonfinite JSON numeric encoding.

@@ -212,7 +212,6 @@ PYTHON_DEPENDENCIES = {
     ".github/workflows/production-evals.yml": {
         "script.tests.test_ci_production_evals", "script.tests.test_ci_workflow",
     },
-    "script/verify_mcp_app_control.py": {"script.tests.test_verify_mcp_app_control"},
     "script/foundation-evals": {"script.tests.test_foundation_evals_cli"},
     "script/upload_posthog_symbols.sh": {"script.tests.test_upload_posthog_symbols"},
     "script/update_homebrew.py": {"script.tests.test_update_homebrew"},

@@ -100,7 +100,7 @@ struct DeveloperIntegrationGuideView: View {
     <key>NSLocalNetworkUsageDescription</key>
     <string>Connect to Intents on your Mac.</string>
     <key>NSBonjourServices</key>
-    <array><string>_fnd-evals._tcp</string></array>
+    <array><string>_intents-v2._tcp</string></array>
     """
 }
 
