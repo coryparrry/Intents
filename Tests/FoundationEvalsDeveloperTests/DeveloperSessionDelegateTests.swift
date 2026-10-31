@@ -6,14 +6,25 @@ import Testing
 private actor TransportOperationProbe {
     var started = false
     var cancelled = false
-    /// Blocks real registered work until a cancel message reaches the runner registry.
+    private var heldOperation: CheckedContinuation<String, Never>?
+    /// Blocks registered work until remote cancellation or an explicit fixture release.
     func run(_ value: String) async throws -> String {
         if value == "oversize" { return String(repeating: "x", count: 13 * 1_024 * 1_024) }
+        if value == "held" {
+            started = true
+            return await withCheckedContinuation { heldOperation = $0 }
+        }
         guard value == "wait" else { return value.uppercased() }
         started = true
         do { try await Task.sleep(for: .seconds(60)) }
         catch { cancelled = true; throw error }
         return value
+    }
+
+    /// Completes a held remote operation so another runner's cancellation can be checked without timing assumptions.
+    func releaseHeldOperation() {
+        heldOperation?.resume(returning: "HELD")
+        heldOperation = nil
     }
 }
 
@@ -182,6 +193,80 @@ struct DeveloperSessionDelegateTests {
             failedWriter.shutdown()
             client.shutdown()
             await service.stop()
+            throw error
+        }
+    }
+
+    /// Cancels an offline rejected runner without reopening it or failing another runner's pending work, then reconnects explicitly.
+    @Test func cancelledSavedTrustDoesNotReopenOnRediscovery() async throws {
+        let identity = DeveloperRunnerIdentity(id: UUID(), displayName: "Rejected saved runner", platform: .mac,
+            operatingSystem: "Fixture", hardwareModel: "Loopback", appBundleIdentifier: "test.cancelled", appVersion: "2")
+        var otherIdentity = identity
+        otherIdentity.id = UUID()
+        otherIdentity.displayName = "Other runner"
+        let first = DeveloperRunnerService(identity: identity, registry: .init())
+        let probe = TransportOperationProbe(), registry = DeveloperFeatureRegistry()
+        await registry.register(.init(id: "echo", displayName: "Held fixture", version: "1", inputTypeName: "String", outputTypeName: "String"),
+            input: String.self, output: String.self, operation: { value, _ in try await probe.run(value) }, response: { $0 })
+        let second = DeveloperRunnerService(identity: otherIdentity, registry: registry)
+        let desktop = UUID(), file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let runnerJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(identity))
+        let saved: [String: Any] = ["entries": [["endpoint": "Saved fixture", "receipt": ["runner": runnerJSON,
+            "desktopID": desktop.uuidString, "trustToken": "rejected-synthetic-token", "issuedAt": 0]]]]
+        try JSONSerialization.data(withJSONObject: saved).write(to: file)
+        let client = DeveloperRunnerClient(desktopID: desktop, trustStoreURL: file)
+        do {
+            _ = await first.beginPairing()
+            let state = await second.beginPairing()
+            guard case .advertising(let code, _, _) = state else { throw CocoaError(.featureUnsupported) }
+            try await waitUntil("both cancellation listeners") { first.isAdvertising && second.isAdvertising }
+            let peer = DeveloperPeerBox(DeveloperPeerID(displayName: "Saved endpoint"))
+            let endpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: try #require(first.listeningPort))
+            client.found(peer, runnerID: identity.id, endpoint: endpoint)
+            try await waitUntil("saved TLS credential rejected") {
+                client.runners.first(where: { $0.id == identity.id })?.state == .pairingRequired
+            }
+            client.lostPeer(peer)
+            client.disconnect(identity.id)
+            #expect(client.runners.first(where: { $0.id == identity.id })?.state == .disconnected)
+            client.found(peer, runnerID: identity.id, endpoint: endpoint)
+            let rediscovered = DeveloperPeerBox(DeveloperPeerID(displayName: "Another saved endpoint"))
+            client.found(rediscovered, runnerID: identity.id, endpoint: endpoint)
+            #expect(client.runners.first(where: { $0.id == identity.id })?.state == .discovered)
+            let other = DeveloperPeerBox(DeveloperPeerID(displayName: "Other endpoint"))
+            let otherEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: try #require(second.listeningPort))
+            client.found(other, runnerID: otherIdentity.id, endpoint: otherEndpoint)
+            try client.connect(to: otherIdentity.id)
+            try client.trustRunner(otherIdentity.id, pairingCode: code)
+            try await waitUntil("other runner authenticates after cancellation") {
+                client.runners.first(where: { $0.id == otherIdentity.id })?.state == .connected
+            }
+            let held = try request("held")
+            let execution = Task { try await client.execute(held, on: otherIdentity.id) }
+            try await waitUntil("other runner operation is pending") { await probe.started }
+            client.lostPeer(peer)
+            client.lostPeer(rediscovered)
+            client.disconnect(identity.id)
+            await probe.releaseHeldOperation()
+            #expect(try await execution.value.output?.response == "HELD")
+            client.disconnect(otherIdentity.id)
+            try await waitUntil("rotated saved-trust listener") { second.isAdvertising }
+            let reconnectEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: try #require(second.listeningPort))
+            client.found(other, runnerID: otherIdentity.id, endpoint: reconnectEndpoint)
+            #expect(client.runners.first(where: { $0.id == otherIdentity.id })?.state == .discovered)
+            try client.connect(to: otherIdentity.id)
+            try await waitUntil("explicit saved-trust reconnect") {
+                client.runners.first(where: { $0.id == otherIdentity.id })?.state == .connected
+            }
+            client.shutdown()
+            await first.stop()
+            await second.stop()
+        } catch {
+            await probe.releaseHeldOperation()
+            client.shutdown()
+            await first.stop()
+            await second.stop()
             throw error
         }
     }

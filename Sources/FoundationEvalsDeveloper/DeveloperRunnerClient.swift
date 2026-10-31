@@ -49,10 +49,11 @@ public final class DeveloperRunnerClient {
     @ObservationIgnored private var authenticatedPeersByRunnerID: [UUID: DeveloperPeerBox] = [:]
     @ObservationIgnored private var candidatesByPeer: [DeveloperPeerID: DeveloperClientCandidate] = [:]
     @ObservationIgnored private var trustByRunnerID: [UUID: DeveloperDesktopTrustState.Entry] = [:]
+    @ObservationIgnored private var userDisconnectedRunnerIDs: Set<UUID> = []
     @ObservationIgnored private var activeRunnerID: UUID?
     @ObservationIgnored private var connectingPeers: Set<DeveloperPeerID> = []
     @ObservationIgnored private var unauthenticatedSessionTimeoutTask: Task<Void, Never>?
-    @ObservationIgnored private var continuations: [UUID: CheckedContinuation<DeveloperFeatureExecutionResult, any Error>] = [:]
+    @ObservationIgnored private var continuations: [UUID: (runnerID: UUID, continuation: CheckedContinuation<DeveloperFeatureExecutionResult, any Error>)] = [:]
     @ObservationIgnored private var timeoutTasks: [UUID: Task<Void, Never>] = [:]
 
     /// Creates the desktop transport and loads saved runner trust when it can be decoded.
@@ -153,6 +154,7 @@ public final class DeveloperRunnerClient {
                 message: "Disconnect the active runner before connecting another device."
             )
         }
+        userDisconnectedRunnerIDs.remove(runnerID)
         beginConnecting(to: runnerID, peers: peers)
         return peers
     }
@@ -219,10 +221,12 @@ public final class DeveloperRunnerClient {
     }
 
     /// Disconnects this runner, clears its authentication and fails pending executions.
+    /// Suppresses automatic rediscovery reconnects until an explicit connect or pairing request.
     /// For an active runner it also asks the peer to disconnect and closes the shared transport.
-    /// - Parameter runnerID: Runner to disconnect; unknown or already inactive runners have no effect.
+    /// - Parameter runnerID: Runner to disconnect; known offline snapshots can be cancelled, and unknown runners have no effect.
     public func disconnect(_ runnerID: UUID) {
-        guard activeRunnerID == runnerID || selectedCandidatePeerByRunnerID[runnerID] != nil || authenticatedPeersByRunnerID[runnerID] != nil else { return }
+        guard runners.contains(where: { $0.id == runnerID }) else { return }
+        userDisconnectedRunnerIDs.insert(runnerID)
         guard activeRunnerID == runnerID else {
             markDisconnected(runnerID: runnerID, detail: "Disconnected by the user.")
             return
@@ -287,7 +291,7 @@ public final class DeveloperRunnerClient {
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                continuations[request.id] = continuation
+                continuations[request.id] = (runnerID, continuation)
                 timeoutTasks[request.id] = Task { [weak self] in
                     do {
                         try await Task.sleep(for: timeout)
@@ -327,7 +331,8 @@ public final class DeveloperRunnerClient {
     }
 
     /// Records a discovered endpoint, supplies a placeholder or saved identity, and invites
-    /// trusted candidates automatically when no different runner owns the session.
+    /// trusted candidates automatically when no different runner owns the session and the
+    /// caller has not explicitly disconnected that runner since its last connection request.
     /// Rediscovery only refreshes availability for an authenticated peer; its advertised
     /// runner ID cannot replace the identity, features or state established by authentication.
     func found(_ box: DeveloperPeerBox, runnerID advertisedRunnerID: UUID?, endpoint resolvedEndpoint: NWEndpoint? = nil) {
@@ -352,15 +357,17 @@ public final class DeveloperRunnerClient {
         selectedCandidatePeerByRunnerID[runnerID] = box.peer
 
         if let entry = trustByRunnerID[runnerID] {
+            let canReconnect = !userDisconnectedRunnerIDs.contains(runnerID)
+                && (activeRunnerID == nil || activeRunnerID == runnerID)
             upsertRunner(.init(
                 identity: entry.receipt.runner,
                 features: [],
-                state: activeRunnerID == nil || activeRunnerID == runnerID ? .connecting : .discovered,
-                availabilityDetail: activeRunnerID == nil || activeRunnerID == runnerID
-                    ? "Reconnecting trusted runner…"
+                state: canReconnect ? .connecting : .discovered,
+                availabilityDetail: canReconnect ? "Reconnecting trusted runner…"
+                    : userDisconnectedRunnerIDs.contains(runnerID) ? "Connect to reconnect this saved runner."
                     : "Disconnect the active runner before connecting this device."
             ))
-            if activeRunnerID == nil || activeRunnerID == runnerID {
+            if canReconnect {
                 beginConnecting(to: runnerID, peers: [box.peer])
                 try? invite(box.peer, timeout: 20)
             }
@@ -737,18 +744,18 @@ public final class DeveloperRunnerClient {
     private func finish(requestID: UUID, returning result: DeveloperFeatureExecutionResult) {
         timeoutTasks[requestID]?.cancel()
         timeoutTasks[requestID] = nil
-        continuations.removeValue(forKey: requestID)?.resume(returning: result)
+        continuations.removeValue(forKey: requestID)?.continuation.resume(returning: result)
     }
 
     /// Cancels the request timer and resumes its pending continuation once with an error.
     private func finish(requestID: UUID, throwing error: any Error) {
         timeoutTasks[requestID]?.cancel()
         timeoutTasks[requestID] = nil
-        continuations.removeValue(forKey: requestID)?.resume(throwing: error)
+        continuations.removeValue(forKey: requestID)?.continuation.resume(throwing: error)
     }
 
     /// Clears the runner's authentication and pairing state, marks its running statuses
-    /// disconnected, and fails all client continuations with the supplied connection detail.
+    /// disconnected, and fails only that runner's pending executions with the supplied detail.
     private func markDisconnected(runnerID: UUID, detail: String) {
         if let peer = authenticatedPeersByRunnerID[runnerID]?.peer {
             candidatesByPeer[peer]?.secureSession = nil
@@ -766,7 +773,7 @@ public final class DeveloperRunnerClient {
             activeRuns[runID]?.phase = .disconnected
             activeRuns[runID]?.detail = detail
         }
-        let requestIDs = continuations.keys
+        let requestIDs = continuations.compactMap { $0.value.runnerID == runnerID ? $0.key : nil }
         for requestID in requestIDs {
             finish(
                 requestID: requestID,

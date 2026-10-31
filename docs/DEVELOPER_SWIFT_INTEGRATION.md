@@ -145,7 +145,12 @@ Call `await service.cancelPairing()` to invalidate an outstanding code and
 The desktop client keeps one active runner connection at a time. Other devices
 remain visible in `runners`, but connecting one requires disconnecting the
 current runner first. This matches the single-suite execution lock in
-`EvaluationStore`.
+`EvaluationStore`. The slot remains reserved while the user enters a pairing
+code; call `disconnect(runnerID)` to abandon that pending attempt.
+Cancelling pairing or disconnecting suppresses automatic
+reconnection for that runner until an explicit `connect(to:)` or `trustRunner`
+request on the same client. A newly created client can reconnect saved runners
+automatically again.
 
 ### Transport state and ownership
 
