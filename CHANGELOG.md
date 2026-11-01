@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.6.0](https://github.com/coryparrry/Intents/compare/v1.5.2...v1.6.0) (2026-11-01)
+
+### Features
+
+- **Create evaluations from your documents.** Choose **New Suite → From document…** to turn a text-based PDF, Markdown, or UTF-8 text file into proposed questions, reference answers, and scoring criteria. Review the supporting source and choose **Check and accept draft** before creating the suite. Drafts are checked for source support and duplicate questions, while retaining relevant definitions and exceptions from your document. Generation requires Apple's on-device model and a configured semantic judge authorized to receive the document. Scanned pages, diagrams, and complex tables are not interpreted; see the [document suite guide](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Document-suites.md) for import limits and supported scoring.
+- **Compare instruction suggestions before applying them.** Choose **Improve instructions** in **Setup → Instructions** or **Compare → Instruction experiments**. Intents generates two alternatives using your Practice cases, then checks the better-performing suggestion against reserved Final check cases. Review the evidence and choose whether to apply it; instructions never change automatically. Requires Apple's on-device model and a scored, non-document suite with at least two distinct cases and no more than 100 planned samples. See the [instruction comparison guide](https://github.com/coryparrry/Intents/blob/main/docs/instruction-improvement.md) for setup and result limits.
+
+### Improvements and fixes
+
+- **Clearer evaluation and batch screens.** Active batch progress stays visible, saved results open directly, and workflow traces follow the Mac window's translucent appearance.
+- **Fresh information when inspecting rebuilt apps.** App Intent inspection reads updated app metadata after a rebuild, stays responsive, and cancels unfinished inspection when you replace or close the workspace.
+- **More relevant document scoring.** Answers are judged against what the question actually asks, without requiring unrelated details from the reference answer. Reference context keeps answer text available when space is limited and locates quoted passages correctly, including possessive wording.
+- **Comparable scores and release checks.** Cases with changed scoring requirements are excluded from baseline comparisons, and reassessing with a different scoring contract cannot approve a failed release check.
+- **Current judge-check results.** Changing the suite, connection, or calibration inputs discards stale results. Malformed judge responses produce a clear failure without making an extra correction request.
+- **Preserved review history.** Replacing a suite through the connector retains the origins of promoted regression cases. Unavailable judge examples can be replaced without losing human reviews or existing reserved example groups.
+- **Correct settings after tool calls.** Evaluations honor the requested generation settings after a tool returns and reserve response capacity for the active profile. Tool inputs retain usable non-image alternatives when image input is unavailable.
+- **Consistent batch inputs.** Batch datasets and jobs use the saved suite revision rather than unfinished edits, and retained dataset or upload content is verified before its saved evidence is reused.
+- **Accurate batch reports and limits.** Release gates accept pass-rate regressions exactly equal to the configured allowance. Report groups stay separate when metadata names or values contain separators, and invalid numeric values are rejected instead of producing unusable latency or cost reports.
+- **Reliable pause and resume.** Rapidly pausing and resuming a batch no longer allows an outdated resume request to take effect.
+- **Protected batch exports.** Exports cannot overwrite the active batch store, while exports managed through the connector remain available.
+- **Smoother developer-runner connections.** Rediscovery preserves authenticated connections. Cancelled runners stay idle for the current session, and cancelling an offline runner's pairing prompt does not fail work on another connected runner. Existing runner apps need the update described below.
+- **Easier Codex connector setup.** Copying the configuration during manual setup starts the authenticated connector for the current session. Updating an existing configuration preserves valid TOML settings and handles Windows-style line endings.
+- **Approval of the policy you inspected.** Connector disclosure approval applies to the saved policy shown to you and is blocked while conflicting draft edits are pending.
+- **Portable plugin bundles that round-trip.** Exported bundles can be imported under the same size limit, deeply nested drafts avoid size failures caused only by formatting, and oversized reference imports are rejected before files are saved.
+- **Portable traces without the original project.** The plugin can preview traces exported from another project even when that project is not present locally.
+- **Safer plugin draft recovery.** Unsaved drafts are retained when saving fails, and temporary files no longer consume the saved-record allowance.
+
+### Performance
+
+- **Less repeated batch preparation.** Unchanged inputs reuse token counts, and progress updates read only the information they need.
+- **More responsive review queues.** Large saved-review collections avoid repeatedly scanning and sorting the same evidence.
+- **Faster plugin run summaries.** Unchanged summaries are reused while modified, corrupt, or replaced evidence is still detected.
+
+### Compatibility and upgrade requirements
+
+- **Rebuild existing developer-runner apps.** Use the updated SDK and the `_intents-v2._tcp` Bonjour declaration for the new authenticated Network.framework transport. Follow the [runner integration guide](https://github.com/coryparrry/Intents/blob/main/docs/DEVELOPER_SWIFT_INTEGRATION.md) when updating your app.
+- **Xcode 27.1 plugin compatibility.** The Apple Foundation Models plugin includes compatibility fixes and rejects transcript entries that cannot be scored safely.
+
 ## [1.5.2](https://github.com/coryparrry/Intents/compare/v1.5.1...v1.5.2) (2026-10-24)
 
 

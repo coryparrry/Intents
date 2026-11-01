@@ -48,7 +48,7 @@ final class WorkspacePolishUITests: XCTestCase {
         XCTAssertFalse(instruction.exists)
     }
 
-    /// Cohort expansion and search reach entries beyond the first visible rows.
+    /// Waits for a completed captured batch before verifying cohort expansion, collapse, and search.
     @MainActor
     func testBatchReportExpandsAndSearchesCohorts() throws {
         let storage = try UITestStorage.makeDirectory(prefix: "cohort-display")
@@ -87,6 +87,10 @@ final class WorkspacePolishUITests: XCTestCase {
         let run = app.buttons["Run on this Mac"]
         XCTAssertTrue(run.waitForExistence(timeout: 10))
         run.click()
+        // Completion removes the progress toolbar and repositions the pane picker.
+        // Wait for durable results before XCTest resolves the Reports click location.
+        let completed = app.staticTexts["12 of 12 saved · completed"].firstMatch
+        try UITestStorage.waitFor(completed, in: app, timeout: 20)
         app.radioGroups["Batch workspace"].radioButtons["Reports"].click()
         let more = app.buttons["Show more cohorts"]
         XCTAssertTrue(more.waitForExistence(timeout: 20), app.debugDescription)
@@ -100,6 +104,8 @@ final class WorkspacePolishUITests: XCTestCase {
         search.click()
         search.typeText("segment-11")
         XCTAssertTrue(target.waitForExistence(timeout: 3))
+        let screenshot = try UITestStorage.screenshotURL(name: "batch-cohort-search")
+        try app.windows.firstMatch.screenshot().pngRepresentation.write(to: screenshot)
     }
 
     /// Settings keep primary controls and the optional request policy accessible.
