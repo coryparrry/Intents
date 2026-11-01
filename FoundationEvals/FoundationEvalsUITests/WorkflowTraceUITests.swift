@@ -234,7 +234,6 @@ final class WorkflowTraceUITests: XCTestCase {
             let waterfall = workflowViewport(in: app)
             let lastSpan = span(WorkflowTraceFixture.overflowLastSpanID, in: app)
             let window = app.windows.firstMatch
-            XCTAssertTrue(window.descendants(matching: .any)["Workspace status"].waitForExistence(timeout: 2))
             XCTAssertFalse(isFullyVisibleVertically(lastSpan, in: waterfall, window: window),
                 "The 38-span fixture must extend below the initial viewport")
 
@@ -260,7 +259,6 @@ final class WorkflowTraceUITests: XCTestCase {
                 WorkflowTraceFixture.longJudgeOutput, WorkflowTraceFixture.longJudgeOutput
             )).firstMatch
             let window = app.windows.firstMatch
-            XCTAssertTrue(window.descendants(matching: .any)["Workspace status"].waitForExistence(timeout: 2))
             XCTAssertFalse(isFullyVisibleVertically(output, in: inspector, window: window),
                 "The 240-line judge input must place its output below the initial viewport")
 
@@ -734,8 +732,8 @@ final class WorkflowTraceUITests: XCTestCase {
     private func contentViewport(of scrollView: XCUIElement, window: XCUIElement) -> CGRect {
         let viewport = scrollView.frame.intersection(window.frame)
         let statusBar = window.descendants(matching: .any)["Workspace status"]
-        guard !viewport.isNull, statusBar.exists else { return .null }
-        let bottom = min(viewport.maxY, statusBar.frame.minY)
+        guard !viewport.isNull else { return .null }
+        let bottom = statusBar.exists ? min(viewport.maxY, statusBar.frame.minY) : viewport.maxY
         guard bottom > viewport.minY else { return .null }
         // The footer can overlay content even when the element is fully inside the window.
         return CGRect(x: viewport.minX, y: viewport.minY, width: viewport.width, height: bottom - viewport.minY)
@@ -753,7 +751,7 @@ final class WorkflowTraceUITests: XCTestCase {
         XCTAssertTrue(element.exists, element.debugDescription, file: file, line: line)
         let frame = element.frame
         let viewport = contentViewport(of: scrollView, window: window)
-        XCTAssertFalse(viewport.isNull, "The scroll viewport must be inside the window and above the workspace status bar", file: file, line: line)
+        XCTAssertFalse(viewport.isNull, "The scroll viewport must be inside the window and above any visible workspace status bar", file: file, line: line)
         XCTAssertGreaterThanOrEqual(frame.height, minimumHeight, "The element must retain its full height", file: file, line: line)
         XCTAssertGreaterThanOrEqual(frame.minY, viewport.minY - 1, "Element \(frame) starts above viewport \(viewport)", file: file, line: line)
         XCTAssertLessThanOrEqual(frame.maxY, viewport.maxY + 1, "Element \(frame) ends below viewport \(viewport)", file: file, line: line)

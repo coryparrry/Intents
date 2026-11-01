@@ -288,13 +288,21 @@ private struct SuiteOverviewHeader: View {
                 VStack(alignment: .leading, spacing: 4) {
                     TextField("Suite name", text: $store.draftSuite.name)
                         .textFieldStyle(.plain)
-                        .font(.largeTitle.weight(.bold))
+                        .font(.title2.weight(.semibold))
                         .accessibilityLabel("Suite name").disabled(isBusy)
                     HStack(spacing: 10) {
                         Text(metadata).lineLimit(1)
                         saveStatus
+                        if !store.isRunning, let blocker = runners.runIssue(for: store) {
+                            let shortText = blocker.count <= 40 ? blocker : "Can't run"
+                            Label(shortText, systemImage: "exclamationmark.triangle.fill")
+                                .font(.callout)
+                                .foregroundStyle(WorkspaceStyle.warning)
+                                .help(blocker)
+                                .accessibilityLabel(blocker)
+                        }
                     }
-                    .font(.title3)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 16)
@@ -310,9 +318,6 @@ private struct SuiteOverviewHeader: View {
                     .foregroundStyle(.secondary)
                     .help("Version and model availability")
                     .popover(isPresented: $showsDetails, arrowEdge: .bottom) { details }
-            }
-            if let blocker = runners.runIssue(for: store), !store.isRunning {
-                WorkspaceNotice(.warning, message: blocker)
             }
         }
     }

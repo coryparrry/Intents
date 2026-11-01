@@ -12,7 +12,7 @@ struct MacIntentTestingView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                WorkspacePageHeader("App Intent Testing", subtitle: "Test an action from a built macOS app.")
+                WorkspacePageHeader("App Intents", subtitle: "Test an action from a built macOS app.")
                 configurationForm
             }
             .workspacePage()

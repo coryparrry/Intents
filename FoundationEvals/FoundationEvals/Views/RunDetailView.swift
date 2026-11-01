@@ -193,10 +193,10 @@ private struct RunOverviewHeader: View {
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(run.startedAt, format: .dateTime.weekday(.wide).day().month(.wide).hour().minute())
-                        .font(.subheadline.weight(.semibold))
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                     Text(run.suiteName)
-                        .font(.largeTitle.weight(.bold))
+                        .font(.title2.weight(.semibold))
                         .lineLimit(2)
                 }
                 Spacer(minLength: 16)

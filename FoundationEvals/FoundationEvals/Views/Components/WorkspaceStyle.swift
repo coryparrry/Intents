@@ -7,20 +7,20 @@ import SwiftUI
 /// beneath them on one calm canvas: neutral grouped surfaces, the accent colour for
 /// interaction, and status colour only on the marks that report a result.
 enum WorkspaceStyle {
-    static let canvas = Color(nsColor: .windowBackgroundColor)
+    static let canvas = adaptive(light: (0.965, 0.965, 0.972), dark: (0.110, 0.110, 0.118))
     /// Grouped content, raised slightly from the canvas.
-    static let surface = adaptive(light: (1, 1, 1), dark: (0.157, 0.157, 0.165))
+    static let surface = adaptive(light: (1, 1, 1), dark: (0.157, 0.157, 0.169))
     /// Wells inside a surface, such as search fields, editors, and quoted evidence.
-    static let inset = adaptive(light: (0.953, 0.953, 0.961), dark: (0.118, 0.118, 0.125))
-    static let border = Color.primary.opacity(0.08)
+    static let inset = adaptive(light: (0.945, 0.945, 0.953), dark: (0.125, 0.125, 0.133))
+    static let border = Color.primary.opacity(0.07)
 
     static let success = Color(nsColor: .systemGreen)
     static let warning = Color(nsColor: .systemOrange)
     static let failure = Color(nsColor: .systemRed)
 
-    static let panelRadius: CGFloat = 16
-    static let controlRadius: CGFloat = 10
-    static let pagePadding: CGFloat = 32
+    static let panelRadius: CGFloat = 12
+    static let controlRadius: CGFloat = 8
+    static let pagePadding: CGFloat = 28
     static let readableWidth: CGFloat = 1_160
 
     /// System-feeling springs. Callers pass `nil` when Reduce Motion is on.
@@ -37,11 +37,11 @@ enum WorkspaceStyle {
 }
 
 extension View {
-    /// Uses a system material to separate content from the workspace backdrop.
+    /// Creates a raised surface with a subtle hairline border.
     func workspaceSurface(radius: CGFloat = WorkspaceStyle.panelRadius) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return clipShape(shape)
-            .background(.regularMaterial, in: shape)
+            .background(WorkspaceStyle.surface, in: shape)
             .overlay { shape.strokeBorder(WorkspaceStyle.border, lineWidth: 1).allowsHitTesting(false) }
     }
 
@@ -66,26 +66,11 @@ extension View {
     /// Centres page content at a readable width with consistent margins.
     func workspacePage() -> some View {
         padding(.horizontal, WorkspaceStyle.pagePadding)
-            .padding(.top, 20)
-            .padding(.bottom, 36)
+            .padding(.top, 16)
+            .padding(.bottom, 28)
             .frame(maxWidth: WorkspaceStyle.readableWidth, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .top)
     }
-}
-
-/// Blends the workspace background with the desktop using macOS's adaptive window material.
-struct WorkspaceBackdrop: NSViewRepresentable {
-    /// Creates the behind-window effect without changing the window or its content ownership.
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .underWindowBackground
-        view.blendingMode = .behindWindow
-        view.state = .followsWindowActiveState
-        return view
-    }
-
-    /// Keeps the system-managed material in place when SwiftUI updates the surrounding view.
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 extension AttributedString {
@@ -243,14 +228,14 @@ struct WorkspacePageHeader<Accessory: View>: View {
         HStack(alignment: .bottom, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 if let eyebrow {
-                    Text(eyebrow).font(.subheadline.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(eyebrow).font(.caption.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Text(title)
-                    .font(.largeTitle.weight(.bold)).lineLimit(2)
+                    .font(.title2.weight(.semibold)).lineLimit(2)
                     .contentTransition(.opacity)
                     .accessibilityAddTraits(.isHeader)
                 if let subtitle {
-                    Text(subtitle).font(.title3).foregroundStyle(.secondary)
+                    Text(subtitle).font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

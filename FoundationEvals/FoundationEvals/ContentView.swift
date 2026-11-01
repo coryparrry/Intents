@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var appControl: EvaluationAppControl
     @Environment(DeveloperRunnerStore.self) private var runners
     @Environment(\.controlActiveState) private var windowActivity
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     /// Creates the workspace view with shared app control and production state, constructing control when none is supplied.
@@ -57,6 +58,10 @@ struct ContentView: View {
         store.telemetry?.screen(TelemetryScreen(selection: store.selection))
     }
 
+    private var showsWorkspaceStatus: Bool {
+        store.isRunning || runners.executingRunID != nil || store.hasUnsavedCompletedRun
+    }
+
     private var workspaceNavigation: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             WorkspaceSidebar(store: store)
@@ -73,20 +78,17 @@ struct ContentView: View {
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.hard, for: .bottom)
 
-                // Reserve layout space for the footer. Native split/list panes
-                // must end above it, including their final scrollable row.
-                WorkbenchStatusBar(store: store)
-                    .background(.regularMaterial)
-                    .overlay(alignment: .top) { Divider() }
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("Workspace status")
+                if showsWorkspaceStatus {
+                    WorkbenchStatusBar(store: store)
+                        .background(WorkspaceStyle.surface)
+                        .overlay(alignment: .top) { Divider() }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("Workspace status")
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
-            .background {
-                WorkspaceBackdrop()
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
+            .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: showsWorkspaceStatus)
+            .background(WorkspaceStyle.canvas.ignoresSafeArea())
         }
     }
 

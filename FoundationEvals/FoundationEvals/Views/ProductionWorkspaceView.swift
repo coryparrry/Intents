@@ -45,7 +45,7 @@ struct ProductionWorkspaceView: View {
             VStack(alignment: .leading, spacing: 22) {
                 if pane != .review {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Batch runs").font(.largeTitle.weight(.bold))
+                        Text("Batch runs").font(.title2.weight(.semibold))
                         Text(pane.subtitle).font(.callout).foregroundStyle(.secondary)
                     }
                 }
