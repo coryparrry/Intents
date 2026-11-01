@@ -2,64 +2,41 @@
 
 ## [1.6.0](https://github.com/coryparrry/Intents/compare/v1.5.2...v1.6.0) (2026-11-01)
 
-
 ### Features
 
-* add automatic instruction comparisons with held-out validation ([3b9c30b](https://github.com/coryparrry/Intents/commit/3b9c30b45556a37b54c5d9ea3bc59455c5469c15))
-* **suites:** create an evaluation suite from a PDF, Markdown, or text file using From document in the suite manager, then review source-backed questions and answers before accepting them ([f26880d](https://github.com/coryparrry/Intents/commit/f26880d16aaedf4fdc99ec0d5d54e80a17202e97))
-* **website:** add IndexNow notifications for published page changes ([f09d248](https://github.com/coryparrry/Intents/commit/f09d248ed70213f02ebd333b7b0c419d93a18cd7))
+- **Create evaluations from your documents.** Choose **New Suite → From document…** to turn a text-based PDF, Markdown, or UTF-8 text file into proposed questions, reference answers, and scoring criteria. Review the supporting source and choose **Check and accept draft** before creating the suite. Drafts are checked for source support and duplicate questions, while retaining relevant definitions and exceptions from your document. Generation requires Apple's on-device model and a configured semantic judge authorized to receive the document. Scanned pages, diagrams, and complex tables are not interpreted; see the [document suite guide](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Document-suites.md) for import limits and supported scoring.
+- **Compare instruction suggestions before applying them.** Choose **Improve instructions** in **Setup → Instructions** or **Compare → Instruction experiments**. Intents generates two alternatives using your Practice cases, then checks the better-performing suggestion against reserved Final check cases. Review the evidence and choose whether to apply it; instructions never change automatically. Requires Apple's on-device model and a scored, non-document suite with at least two distinct cases and no more than 100 planned samples. See the [instruction comparison guide](https://github.com/coryparrry/Intents/blob/main/docs/instruction-improvement.md) for setup and result limits.
 
+### Improvements and fixes
 
-### Bug Fixes
-
-* **app-intents:** keep application inspection responsive and cancel unfinished work when replacing or closing a workspace ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **app-intents:** read fresh built-app metadata after an application is rebuilt in place ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* connect developer runners through authenticated Network.framework transport; rebuild runner apps with the updated SDK and _intents-v2._tcp Bonjour declaration ([5ce5b6a](https://github.com/coryparrry/Intents/commit/5ce5b6aa171080f40990a5f119f14735fac6fc23))
-* **documents:** reject incomplete corpus reports and missing or invalid semantic-review batches and receipts ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **evals:** keep active batch progress visible and open saved results directly ([2f9252d](https://github.com/coryparrry/Intents/commit/2f9252d1cef1848e0ebe638cbe312c0a3100e71f))
-* **execution:** honor after-tool generation settings and reserve enough response capacity for the active profile ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **judging:** prevent a reassessment with a different scoring contract from approving a failed release check ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **judging:** report malformed response envelopes as protocol failures without an extra verdict-repair request ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **judging:** score document answers against the requested requirement without demanding unrelated reference details ([f26880d](https://github.com/coryparrry/Intents/commit/f26880d16aaedf4fdc99ec0d5d54e80a17202e97))
-* keep cancelled developer runners idle for the current app session so rediscovery does not reopen pairing or block another device ([5ce5b6a](https://github.com/coryparrry/Intents/commit/5ce5b6aa171080f40990a5f119f14735fac6fc23))
-* keep the Apple Foundation Models plugin usable with Xcode 27.1 and reject transcript entries that cannot be scored safely ([5ce5b6a](https://github.com/coryparrry/Intents/commit/5ce5b6aa171080f40990a5f119f14735fac6fc23))
-* let Cancel clear an offline runner’s pairing prompt without failing work on another connected runner ([5ce5b6a](https://github.com/coryparrry/Intents/commit/5ce5b6aa171080f40990a5f119f14735fac6fc23))
-* **mcp:** approve the inspected saved disclosure policy and reject approval while conflicting draft edits are pending ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **mcp:** keep Codex configuration valid when updating CRLF files or existing TOML table scopes ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **mcp:** start the authenticated connector when manual setup copies its configuration for the current session ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **plugin:** allow successfully exported portable bundles to be imported within the same complete-bundle size limit ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **plugin:** export deeply nested drafts without indentation alone exceeding the portable bundle limit ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **plugin:** finish recovery shutdown safely and retain unsaved drafts when a save fails ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **plugin:** preview portable traces from another project without requiring that project to exist locally ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **plugin:** reject portable reference imports above the export budget before saving files ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **plugin:** serialize suite-capacity checks and exclude temporary files from the saved-record limit ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **production:** accept pass-rate regressions exactly at the configured allowance without floating-point drift ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **production:** create MCP datasets and native jobs from the saved suite revision rather than pending edits ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **production:** keep distinct metadata cohorts separate when their keys or values contain delimiters ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **production:** keep latency and cost reports finite and reject unrepresentable charges ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **production:** prevent exports from overwriting active store files while retaining managed MCP exports ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **production:** reject stale resume requests after repeated pause and resume transitions ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **production:** verify retained dataset and upload bytes before reusing their immutable evidence ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **references:** retain answers before search terms and anchor excerpts correctly for possessive matches ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **results:** exclude cases with changed scoring requirements from baseline improvement and regression comparisons ([f26880d](https://github.com/coryparrry/Intents/commit/f26880d16aaedf4fdc99ec0d5d54e80a17202e97))
-* **reviews:** discard stale judge-check results when their suite, connection, or calibration inputs change ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **reviews:** preserve promoted regression-case provenance when MCP replaces a suite ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **reviews:** remove unavailable judge examples so replacements can be collected without losing human reviews or existing Held-out groups ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **runners:** preserve authenticated developer-runner connections when peers are rediscovered ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **suites:** check question answerability and repeated facts before reviewing proposed reference answers ([f26880d](https://github.com/coryparrry/Intents/commit/f26880d16aaedf4fdc99ec0d5d54e80a17202e97))
-* **suites:** preserve original document qualifications during imported-draft review and keep retry history when the judge is unavailable ([f26880d](https://github.com/coryparrry/Intents/commit/f26880d16aaedf4fdc99ec0d5d54e80a17202e97))
-* **telemetry:** measure completed document, import, export, review, batch and App Intent workflows without counting cancelled, duplicate or unfinished work ([1ec42d4](https://github.com/coryparrry/Intents/commit/1ec42d443e4df218933eeb06433c0777e1f8b72c))
-* **telemetry:** report failed workspace loads, checkpoint saves and connector stops with consistent diagnostic error categories ([1ec42d4](https://github.com/coryparrry/Intents/commit/1ec42d443e4df218933eeb06433c0777e1f8b72c))
-* **telemetry:** retain usage session attribution after the analytics SDK session expires ([1ec42d4](https://github.com/coryparrry/Intents/commit/1ec42d443e4df218933eeb06433c0777e1f8b72c))
-* **tools:** preserve valid non-image alternatives when resolving image-capable tool inputs ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **ui:** simplify evaluation and batch screens and make workflow traces follow the Mac window's translucent appearance ([39998d8](https://github.com/coryparrry/Intents/commit/39998d8245050907b2c9945c96ebfbd3b9bb991d))
-
+- **Clearer evaluation and batch screens.** Active batch progress stays visible, saved results open directly, and workflow traces follow the Mac window's translucent appearance.
+- **Fresh information when inspecting rebuilt apps.** App Intent inspection reads updated app metadata after a rebuild, stays responsive, and cancels unfinished inspection when you replace or close the workspace.
+- **More relevant document scoring.** Answers are judged against what the question actually asks, without requiring unrelated details from the reference answer. Reference context keeps answer text available when space is limited and locates quoted passages correctly, including possessive wording.
+- **Comparable scores and release checks.** Cases with changed scoring requirements are excluded from baseline comparisons, and reassessing with a different scoring contract cannot approve a failed release check.
+- **Current judge-check results.** Changing the suite, connection, or calibration inputs discards stale results. Malformed judge responses produce a clear failure without making an extra correction request.
+- **Preserved review history.** Replacing a suite through the connector retains the origins of promoted regression cases. Unavailable judge examples can be replaced without losing human reviews or existing reserved example groups.
+- **Correct settings after tool calls.** Evaluations honor the requested generation settings after a tool returns and reserve response capacity for the active profile. Tool inputs retain usable non-image alternatives when image input is unavailable.
+- **Consistent batch inputs.** Batch datasets and jobs use the saved suite revision rather than unfinished edits, and retained dataset or upload content is verified before its saved evidence is reused.
+- **Accurate batch reports and limits.** Release gates accept pass-rate regressions exactly equal to the configured allowance. Report groups stay separate when metadata names or values contain separators, and invalid numeric values are rejected instead of producing unusable latency or cost reports.
+- **Reliable pause and resume.** Rapidly pausing and resuming a batch no longer allows an outdated resume request to take effect.
+- **Protected batch exports.** Exports cannot overwrite the active batch store, while exports managed through the connector remain available.
+- **Smoother developer-runner connections.** Rediscovery preserves authenticated connections. Cancelled runners stay idle for the current session, and cancelling an offline runner's pairing prompt does not fail work on another connected runner. Existing runner apps need the update described below.
+- **Easier Codex connector setup.** Copying the configuration during manual setup starts the authenticated connector for the current session. Updating an existing configuration preserves valid TOML settings and handles Windows-style line endings.
+- **Approval of the policy you inspected.** Connector disclosure approval applies to the saved policy shown to you and is blocked while conflicting draft edits are pending.
+- **Portable plugin bundles that round-trip.** Exported bundles can be imported under the same size limit, deeply nested drafts avoid size failures caused only by formatting, and oversized reference imports are rejected before files are saved.
+- **Portable traces without the original project.** The plugin can preview traces exported from another project even when that project is not present locally.
+- **Safer plugin draft recovery.** Unsaved drafts are retained when saving fails, and temporary files no longer consume the saved-record allowance.
 
 ### Performance
 
-* **evals:** reuse invariant token counts and add lightweight batch progress reads ([2f9252d](https://github.com/coryparrry/Intents/commit/2f9252d1cef1848e0ebe638cbe312c0a3100e71f))
-* **plugin:** reuse unchanged run summaries while still detecting modified, corrupt, or replaced evidence ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
-* **reviews:** index saved evidence and compute queue ordering once so large review collections remain responsive ([688cd71](https://github.com/coryparrry/Intents/commit/688cd7167ee1690036055d759c3e7ee532584b7f))
+- **Less repeated batch preparation.** Unchanged inputs reuse token counts, and progress updates read only the information they need.
+- **More responsive review queues.** Large saved-review collections avoid repeatedly scanning and sorting the same evidence.
+- **Faster plugin run summaries.** Unchanged summaries are reused while modified, corrupt, or replaced evidence is still detected.
+
+### Compatibility and upgrade requirements
+
+- **Rebuild existing developer-runner apps.** Use the updated SDK and the `_intents-v2._tcp` Bonjour declaration for the new authenticated Network.framework transport. Follow the [runner integration guide](https://github.com/coryparrry/Intents/blob/main/docs/DEVELOPER_SWIFT_INTEGRATION.md) when updating your app.
+- **Xcode 27.1 plugin compatibility.** The Apple Foundation Models plugin includes compatibility fixes and rejects transcript entries that cannot be scored safely.
 
 ## [1.5.2](https://github.com/coryparrry/Intents/compare/v1.5.1...v1.5.2) (2026-10-24)
 
