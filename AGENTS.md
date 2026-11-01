@@ -96,16 +96,48 @@
 
 ## Clear feature descriptions and release notes
 
-- Published Release Me / Release Please notes and changelog entries must include only new features, bug fixes, and changes that affect people using the product. Include an entry only when it explains something users can now do, a problem they no longer encounter, or a meaningful change to their workflow, compatibility, performance, or security.
-- Exclude internal-only work: CI and release automation, tests, refactoring, code cleanup, developer tooling, routine dependency updates, and repository or agent instructions. Judge relevance by the actual user impact, not the commit type. If internal work also changes user-visible behavior, describe only that behavior and its benefit.
-- Automatic filtering in `release-please-config.json` publishes only `feat:`, `fix:`, and `perf:` entries. Reserve these types for product features, user-facing fixes, and product performance improvements; use internal types for automation fixes and test speedups. When a dependency update or revert fixes a user-facing problem, add a `fix:` entry explaining that problem and the resulting behavior.
-- Keep the required typed `BEGIN_COMMIT_OVERRIDE` block for every ordinary PR, including internal-only PRs, but do not relabel internal work as a feature or bug fix to make it appear in a release. Keep internal entries out of published notes; if generation includes them, correct the release-note filtering and its documentation before publishing.
-- Write feature summaries and Release Me / Release Please notes for someone who has not read the code or the PR. Explain what the feature does, what the user can now do, and why it is useful in plain English.
-- For each feature, name the affected workflow or screen and explain how to find or use it when that is needed to understand the change. Include a short concrete example when the feature would otherwise be unclear. Mention material requirements or limits; do not claim behavior that has not been implemented or verified.
-- Avoid unexplained acronyms, internal component names, vague labels such as "quality improvements," and implementation-only descriptions. Fix notes should explain the problem the user experienced and the resulting behavior.
-- Put these explanations in the actual `BEGIN_COMMIT_OVERRIDE` entries in the PR body, following `docs/releasing.md`. Release Please uses those entries for the changelog and published release notes, so a clear PR summary alone is insufficient. Keep each entry a self-contained Conventional Commit line and use one entry per independently useful change.
-- Example: instead of `feat: add document suite generation`, write `feat: create an evaluation suite from a PDF, Markdown, or text file so you can test a model against questions based on your document` (only when those formats and behavior are supported).
-- Before posting or updating a PR or release, read the feature notes on their own. Revise any entry that does not make clear what changed and what it lets the user do. Inspect generated release notes before release, remove internal-only entries, and correct unclear source entries before merging the release PR.
+- The agent owns release-note writing as part of the normal PR workflow. Before pushing a candidate for a new PR, prepare finished release-note entries for its actual changes; include them in the PR's `BEGIN_COMMIT_OVERRIDE` block when opening it. When pushing further changes to an existing PR, update that block to match the final scope and revalidate the actual PR metadata before reporting completion.
+- Use the existing Release Please collection automatically: write the release copy during PR work, rather than leaving it for the user or a later release task. This workflow needs no separate scheduled Codex automation, model API call, or API key. Let Release Please assemble the changelog and published notes from the PR entries.
+
+### What belongs in the published changelog
+
+The changelog is for people using the app and its distributed CLI, SDK, plugin, or connector. Each entry must explain an actual change to that experience and answer: **What can I do now, what problem is fixed, or what do I need to do differently?**
+
+| Include | Required content |
+|---|---|
+| New features | What users can now do, where to find or start it when needed, and why it is useful. Name supported inputs or targets when they define the capability. |
+| User-facing fixes | The concrete symptom or failed task users experienced and the resulting behavior. Describe the effect, rather than the helper, guard, or algorithm changed. |
+| Workflow and interface changes | The affected screen or task and how using it changes. Include meaningful removals or changed defaults and the replacement or migration step when applicable. |
+| Compatibility and upgrade requirements | Affected platforms, versions, integrations, or file formats, plus any action users must take, such as rebuilding an SDK runner. Keep required technical identifiers when users need them to act. |
+| Product performance improvements | Which user task becomes faster or more responsive, or uses fewer resources. Include measured numbers only when supported by actual evidence. |
+| Product security and privacy changes | The protection or behavior that changes for users, plus any required action. Avoid sensitive implementation or exploit details. |
+
+- Include only behavior implemented in the release being described. Do not announce planned work, unreleased experiments, or features still hidden behind a disabled release flag. State material prerequisites and limitations; distinguish implementation from live-provider, device, installer, or release qualification and never imply checks passed without evidence.
+- Cover every independently useful user-facing change in the PR. Combine related implementation details into one entry about the user outcome; do not create a separate entry for each commit, helper, defensive check, or test.
+
+### What stays out of the published changelog
+
+- Exclude CI, signing-pipeline and release-automation maintenance, tests and coverage, refactoring, code cleanup, internal diagnostics and telemetry plumbing, repository or agent instructions, routine dependency bumps, and tooling used only to develop this repository. These belong in the PR description and verification evidence.
+- A change to the distributed CLI, SDK, plugin, or connector can be a product change even when its users are developers. Judge the actual effect on those users, rather than treating all developer-facing work as internal.
+- If internal work also fixes a product problem, describe only that product problem and its resolution. For example, publish that previously failing PDFs now open, rather than the dependency update that enabled the fix.
+- Do not publish vague claims such as "quality improvements," "various fixes," "harden execution," or "improve reliability." Name the affected task and specific improvement. Avoid unexplained acronyms, internal component names, and implementation-only descriptions.
+
+### Write and validate the actual release entries
+
+- Put finished release copy in the actual `BEGIN_COMMIT_OVERRIDE` entries in the PR body, following `docs/releasing.md`. A clear PR summary alone is insufficient: Release Please uses the override entries for `CHANGELOG.md` and published release notes. Each entry must be a self-contained Conventional Commit line that makes sense without the PR, issue, diff, or commit history.
+- Automatic filtering in `release-please-config.json` publishes only `feat:`, `fix:`, and `perf:` entries. Use those types only for product changes and match the PR title and actual behavior. Use hidden types such as `docs:`, `ci:`, `test:`, `refactor:`, `build:`, `chore:`, or `deps:` for internal work. A dependency update or revert that fixes a product problem needs a `fix:` entry explaining that problem.
+- Every ordinary PR still needs its typed override block, including an internal-only PR. An internal-only PR should contribute no published changelog entry. Never relabel it as a feature or bug fix merely to make it appear in a release. Do not introduce breaking-change markers unless explicitly requested.
+- Use plain English and lead with the capability or outcome. Prefer one concise sentence per entry; include a short example or required action when it makes the change understandable. These examples illustrate the expected wording and may be used only when the behavior is actually implemented and verified:
+
+| Avoid | Expected wording |
+|---|---|
+| `feat: add document suite generation` | `feat: create an evaluation suite from a PDF, Markdown, or text file using From document in the suite manager, then review the proposed questions and answers before accepting them` |
+| `fix: invalidate inspection cache` | `fix: show updated App Intent information after rebuilding an app in place` |
+| `perf: index review evidence` | `perf: keep large saved-review collections responsive when opening the review queue` |
+| `fix: migrate runner transport` | `fix: connect developer runners through authenticated Network.framework transport; rebuild runner apps with the updated SDK and the _intents-v2._tcp Bonjour declaration` |
+
+- Before posting or updating the PR, read its release entries on their own. Check that every entry names a user capability, symptom, or required action; that all independently useful product changes are covered; that related details are combined; and that internal work and unsupported claims are absent. Revise failing entries and validate the exact PR metadata with `script.release_notes.validate_pull_request`.
+- Before merging a release PR, inspect the generated notes for these same criteria. Correct unclear source entries and remove internal-only entries. If generation includes hidden internal types, correct the release-note filtering and its documentation before publishing. Do not rely on a later manual rewrite to make the normal PR notes usable.
 
 ## Pull request completion and merge requirements
 
