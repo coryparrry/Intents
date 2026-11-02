@@ -226,6 +226,7 @@ final class WorkflowTraceUITests: XCTestCase {
         }
     }
 
+    /// Verifies scrolling reveals the full final span in an overflowing waterfall.
     @MainActor
     func testOverflowingWaterfallScrollsTheEntireLastSpanIntoView() throws {
         try withFixtureApplication { app in
@@ -245,6 +246,7 @@ final class WorkflowTraceUITests: XCTestCase {
         }
     }
 
+    /// Verifies long judge output can be scrolled fully into view in the inspector.
     @MainActor
     func testLongJudgeInspectorScrollsTheEntireOutputIntoView() throws {
         try withFixtureApplication(longJudgeEvidence: true) { app in
@@ -396,6 +398,7 @@ final class WorkflowTraceUITests: XCTestCase {
         }
     }
 
+    /// Verifies report controls and setup sections remain reachable at minimum window width.
     @MainActor
     func testNavigationKeepsControlsVisibleAtMinimumWidth() throws {
         try withFixtureApplication(openTrace: false, windowWidth: 1_000) { app in
@@ -420,20 +423,18 @@ final class WorkflowTraceUITests: XCTestCase {
             }
 
             app.typeKey("3", modifierFlags: .command)
-            for title in ["Cases", "Review", "Compare", "Setup", "History"] {
+            for title in ["Cases", "Runs", "Review", "Setup"] {
                 XCTAssertTrue(app.radioButtons[title].isHittable)
                 assertWithinWindow(app.radioButtons[title], window: window)
             }
             try capture(app, name: "minimum-width-suite-tabs")
-            app.radioButtons["Setup"].click()
-            app.popUpButtons["Suite setup"].click()
-            let headingTop = app.textFields["Suite name"].frame.minY
-            app.menuItems["Scoring"].click()
-            XCTAssertEqual(app.textFields["Suite name"].frame.minY, headingTop, accuracy: 1,
-                           "Switching setup sections must preserve the heading’s top spacing")
+            UITestStorage.selectSetupSection("Scoring", in: app)
+            let scoringSection = app.descendants(matching: .any)["Setup section Scoring"]
+            XCTAssertTrue(scoringSection.isHittable && scoringSection.frame.intersects(window.frame),
+                          "Scoring must be reachable as a section of the Setup page")
             try capture(app, name: "minimum-width-setup-scoring")
             app.scrollViews["Suite editor scroll"].scroll(byDeltaX: 0, deltaY: -1500)
-            app.radioButtons["History"].click()
+            app.radioButtons["Runs"].click()
             XCTAssertTrue(app.textFields["Suite name"].isHittable)
             app.radioButtons["Setup"].click()
             XCTAssertTrue(app.textFields["Suite name"].isHittable,
@@ -449,9 +450,16 @@ final class WorkflowTraceUITests: XCTestCase {
     func testHistoryOpensComparisonAndOptionalTokenUsage() throws {
         try withFixtureApplication(openTrace: false, includeBaseline: true) { app in
             app.typeKey("3", modifierFlags: .command)
-            app.radioButtons["History"].click()
+            app.radioButtons["Runs"].click()
             let compare = app.buttons["Compare runs"]
             XCTAssertTrue(compare.waitForExistence(timeout: 5))
+            XCTAssertFalse(app.popUpButtons["Baseline picker"].exists)
+            compare.click()
+            XCTAssertTrue(app.popUpButtons["Baseline picker"].waitForExistence(timeout: 5))
+            let backToRuns = app.buttons["Back to runs"]
+            XCTAssertTrue(backToRuns.waitForExistence(timeout: 3))
+            backToRuns.click()
+            XCTAssertTrue(compare.waitForExistence(timeout: 3))
             XCTAssertFalse(app.popUpButtons["Baseline picker"].exists)
             compare.click()
             XCTAssertTrue(app.popUpButtons["Baseline picker"].waitForExistence(timeout: 5))
@@ -479,14 +487,7 @@ final class WorkflowTraceUITests: XCTestCase {
             XCTAssertTrue(spanID.waitForExistence(timeout: 3))
 
             app.typeKey("3", modifierFlags: .command)
-            app.radioButtons["Setup"].click()
-            let setupMenu = app.popUpButtons["Suite setup"]
-            if setupMenu.exists {
-                setupMenu.click()
-                app.menuItems["Scoring"].click()
-            } else {
-                app.buttons["Scoring"].click()
-            }
+            UITestStorage.selectSetupSection("Scoring", in: app)
             let guide = app.disclosureTriangles["How scoring works"]
             XCTAssertTrue(guide.waitForExistence(timeout: 5))
             let editor = app.scrollViews["Suite editor scroll"]
@@ -551,6 +552,7 @@ final class WorkflowTraceUITests: XCTestCase {
         }
     }
 
+    /// Launches the isolated fixture app and opens its saved run detail for a test.
     @MainActor
     private func withFixtureApplication(
         longJudgeEvidence: Bool = false,
@@ -581,7 +583,7 @@ final class WorkflowTraceUITests: XCTestCase {
         let showSidebar = app.buttons["Show Sidebar"]
         if showSidebar.exists { showSidebar.click() }
         let savedRun = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label == %@", WorkflowTraceFixture.runName)).firstMatch
+            .matching(identifier: "Sidebar run \(WorkflowTraceFixture.runID)").firstMatch
         try UITestStorage.waitFor(savedRun, in: app, timeout: 5)
         savedRun.click()
         try UITestStorage.waitFor(app.radioButtons["Workflow trace"], in: app, timeout: 5)
@@ -728,6 +730,7 @@ final class WorkflowTraceUITests: XCTestCase {
         XCTAssertLessThanOrEqual(frame.maxX, bounds.maxX + 1, "\(element) extends past the right edge of the window.", file: file, line: line)
     }
 
+    /// Computes the visible scroll area, excluding any overlapping workspace status bar.
     @MainActor
     private func contentViewport(of scrollView: XCUIElement, window: XCUIElement) -> CGRect {
         let viewport = scrollView.frame.intersection(window.frame)
@@ -739,6 +742,7 @@ final class WorkflowTraceUITests: XCTestCase {
         return CGRect(x: viewport.minX, y: viewport.minY, width: viewport.width, height: bottom - viewport.minY)
     }
 
+    /// Asserts that an element is fully visible with its minimum height in the scroll viewport.
     @MainActor
     private func assertFullyVisibleVertically(
         _ element: XCUIElement,
@@ -776,6 +780,7 @@ final class WorkflowTraceUITests: XCTestCase {
 /// Times, responses, and HTTP metadata below are deterministic fixture values, not real model results.
 private enum WorkflowTraceFixture {
     static let runName = "Trace inspector test fixture"
+    static let runID = "D0000000-0000-0000-0000-000000000001"
     static let rootID = "A0000000-0000-0000-0000-000000000001"
     static let preparationID = "A0000000-0000-0000-0000-000000000002"
     static let generationID = "A0000000-0000-0000-0000-000000000003"
@@ -793,6 +798,7 @@ private enum WorkflowTraceFixture {
     static let longJudgeOutput = "Fixture judge output reached."
     private static let longJudgePrompt = "Trace inspector long-input test fixture.\n" + String(repeating: "Fixture input.\n", count: 240)
 
+    /// Writes the saved run, suite, and optional baseline into isolated fixture storage.
     static func write(
         to directory: URL,
         longJudgeEvidence: Bool = false,
@@ -810,7 +816,7 @@ private enum WorkflowTraceFixture {
             ]
         }
         let document: [String: Any] = [
-            "id": "D0000000-0000-0000-0000-000000000001",
+            "id": runID,
             "suiteID": "D0000000-0000-0000-0000-000000000002",
             "suiteName": runName,
             "suiteVersion": "fixture-v1",
@@ -834,7 +840,7 @@ private enum WorkflowTraceFixture {
             "results": [firstSample, legacySample, cancelledSample, overflowingSample]
         ]
         let data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: runs.appending(path: "D0000000-0000-0000-0000-000000000001.json"), options: .atomic)
+        try data.write(to: runs.appending(path: "\(runID).json"), options: .atomic)
         if includeBaseline {
             var baseline = document
             baseline["id"] = "D0000000-0000-0000-0000-000000000003"

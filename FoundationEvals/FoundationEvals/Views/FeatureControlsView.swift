@@ -21,6 +21,7 @@ enum FeatureEditorPage: String, CaseIterable, Identifiable {
 struct FeatureControlsView: View {
     @Bindable var store: EvaluationStore
     var selectedPage: FeatureEditorPage = .tools
+    var showsSectionHeader = true
 
     private var isDisabled: Bool {
         store.isRunning || store.isImportingFiles || store.isProcessingFiles
@@ -29,7 +30,8 @@ struct FeatureControlsView: View {
     var body: some View {
         EditorSection(
             selectedPage.title,
-            description: "These settings apply to every case in this suite."
+            description: "These settings apply to every case in this suite.",
+            showsHeader: showsSectionHeader
         ) {
             VStack(alignment: .leading, spacing: 16) {
                 FeaturePageContent(

@@ -93,9 +93,9 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         fixture.finishResponse()
     }
 
-    /// A running evaluation locks scoring edits without locking its read-only explanation.
+    /// A running evaluation leaves the instruction and scoring editors available with their explanation.
     @MainActor
-    func testScoringGuideRemainsAvailableDuringRun() throws {
+    func testInstructionsAndScoringRemainEditableDuringRun() throws {
         try openSuiteEditor()
         XCTAssertTrue(FileManager.default.fileExists(atPath: storage.appending(path: "workspace-v1.json").path),
                       "The test must use its isolated workspace")
@@ -113,11 +113,21 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         run.click()
         XCTAssertTrue(fixture.waitForRequest(timeout: 5))
 
+        selectSetup("Instructions")
+        let instructions = app.textViews["Model instructions"]
+        XCTAssertTrue(instructions.waitForExistence(timeout: 3))
+        scrollIntoView(instructions)
+        replaceText(in: instructions, with: "The active run keeps its captured instructions.")
+        XCTAssertEqual(instructions.value as? String, "The active run keeps its captured instructions.")
+
         selectSetup("Scoring")
         let guide = app.disclosureTriangles["How scoring works"]
         XCTAssertTrue(guide.waitForExistence(timeout: 3))
         XCTAssertTrue(guide.isEnabled)
-        XCTAssertFalse(criteria.isEnabled)
+        XCTAssertTrue(app.radioButtons["AI rubric"].isEnabled, app.debugDescription)
+        scrollIntoView(criteria)
+        replaceText(in: criteria, with: "The response answers the question with updated scoring.")
+        XCTAssertEqual(criteria.value as? String, "The response answers the question with updated scoring.")
         let editor = app.scrollViews["Suite editor scroll"]
         XCTAssertTrue(editor.waitForExistence(timeout: 3))
         editor.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.20))
@@ -337,16 +347,25 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Run evaluation"].isEnabled, app.debugDescription)
     }
 
+    /// Selects and reveals a section in the single-page Setup view.
     @MainActor
     private func selectSetup(_ title: String) {
-        app.radioButtons["Setup"].click()
-        let menu = app.popUpButtons["Suite setup"]
-        if menu.exists {
-            menu.click()
-            app.menuItems[title].click()
-        } else {
-            app.buttons[title].click()
+        UITestStorage.selectSetupSection(title, in: app)
+    }
+
+    /// Scrolls a setup editor fully into the viewport before checking its interactive state.
+    @MainActor
+    private func scrollIntoView(_ element: XCUIElement) {
+        let page = app.scrollViews["Suite editor scroll"]
+        XCTAssertTrue(page.waitForExistence(timeout: 3), app.debugDescription)
+        let viewport = page.frame.intersection(app.windows.firstMatch.frame).insetBy(dx: 0, dy: 12)
+        for _ in 0..<16 {
+            if element.isHittable && viewport.contains(element.frame) { return }
+            let delta: CGFloat = element.frame.minY < viewport.minY ? 180 : -180
+            page.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+                .scroll(byDeltaX: 0, deltaY: delta)
         }
+        XCTAssertTrue(element.isHittable && viewport.contains(element.frame), app.debugDescription)
     }
 
     @MainActor

@@ -71,6 +71,7 @@ final class FoundationEvalsUITests: XCTestCase {
         app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
     }
 
+    /// Verifies primary suite controls and that advanced setup sections stay collapsed until opened.
     @MainActor
     func testSuiteEditorShowsPrimaryRunControls() throws {
         let app = verificationApplication()
@@ -115,6 +116,7 @@ final class FoundationEvalsUITests: XCTestCase {
         XCTAssertTrue(app.popUpButtons["Model provider"].exists)
         XCTAssertTrue(app.popUpButtons["Sampling"].exists)
         XCTAssertFalse(app.popUpButtons["System model use case"].exists)
+        XCTAssertFalse(app.buttons["Add Tool"].exists, "Advanced setup sections must start collapsed")
         let advancedOptions = app.disclosureTriangles["Advanced model options"]
         let editor = app.scrollViews["Suite editor scroll"]
         editor.scroll(byDeltaX: 0, deltaY: -1200)
@@ -126,7 +128,9 @@ final class FoundationEvalsUITests: XCTestCase {
         XCTAssertTrue(app.popUpButtons["System model guardrails"].exists)
 
         selectSetup("Scoring", in: app)
-        XCTAssertTrue(app.staticTexts["Scoring and repetitions"].exists)
+        let scoringSection = app.groups["Setup section Scoring"]
+        XCTAssertTrue(scoringSection.staticTexts["Scoring"].exists)
+        XCTAssertTrue(scoringSection.staticTexts["How each response is marked pass or fail"].exists)
         XCTAssertTrue(app.radioButtons["AI rubric"].exists)
 
         for (mode, expectedCount) in [("Collect only", 0), ("Exact text", 1), ("Contains text", 1), ("AI rubric", 1)] {
@@ -272,16 +276,10 @@ final class FoundationEvalsUITests: XCTestCase {
             to: UITestStorage.screenshotURL(name: "case-search-recovered"))
     }
 
+    /// Selects and reveals a section in the single-page Setup view.
     @MainActor
     private func selectSetup(_ title: String, in app: XCUIApplication) {
-        app.radioButtons["Setup"].click()
-        let menu = app.popUpButtons["Suite setup"]
-        if menu.exists {
-            menu.click()
-            app.menuItems[title].click()
-        } else {
-            app.buttons[title].click()
-        }
+        UITestStorage.selectSetupSection(title, in: app)
     }
 
     @MainActor

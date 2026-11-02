@@ -49,6 +49,44 @@ enum UITestStorage {
         try waitFor(app.buttons["Run evaluation"], in: app, timeout: 5, file: file, line: line)
     }
 
+    /// Opens Setup, scrolls to a named section, and expands it when it is advanced.
+    @MainActor
+    static func selectSetupSection(_ title: String, in app: XCUIApplication) {
+        let setup = app.radioButtons["Setup"]
+        XCTAssertTrue(setup.waitForExistence(timeout: 5), app.debugDescription)
+        setup.click()
+
+        let identifier = "Setup section \(title)"
+        let section = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+        XCTAssertTrue(section.waitForExistence(timeout: 5), app.debugDescription)
+        let page = app.scrollViews["Suite editor scroll"]
+        XCTAssertTrue(page.waitForExistence(timeout: 3), app.debugDescription)
+        let viewport = page.frame.intersection(app.windows.firstMatch.frame).insetBy(dx: 0, dy: 12)
+        for _ in 0..<16 {
+            if section.isHittable && section.frame.intersects(viewport) { break }
+            let delta: CGFloat = section.frame.minY < viewport.minY ? 180 : -180
+            page.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+                .scroll(byDeltaX: 0, deltaY: delta)
+        }
+        XCTAssertTrue(section.isHittable && section.frame.intersects(viewport), app.debugDescription)
+
+        let advancedContent = [
+            "Tools": "Add Tool",
+            "Structured output": "Add Field",
+            "Session profile": "Use an evaluation profile",
+            "Performance": "Prewarm the model before each sample"
+        ]
+        guard let contentIdentifier = advancedContent[title] else { return }
+
+        let content = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier == %@ OR label == %@", contentIdentifier, contentIdentifier)
+        ).firstMatch
+        if !content.exists {
+            section.click()
+        }
+        XCTAssertTrue(content.waitForExistence(timeout: 3), app.debugDescription)
+    }
+
     /// Rejects an unexpected application alert or sheet before a UI flow continues.
     @MainActor
     static func requireNoAlert(in app: XCUIApplication) throws {

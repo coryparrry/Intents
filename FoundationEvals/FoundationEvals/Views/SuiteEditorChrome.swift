@@ -1,8 +1,13 @@
 import SwiftUI
 
-enum SuiteSetupPage: String, WorkspacePane {
+enum SuiteSetupPage: String, CaseIterable, Identifiable, Hashable {
     case instructions, scoring, model, tools, output, profile, performance
+
+    static let basics: [Self] = [.instructions, .scoring, .model]
+    static let advanced: [Self] = [.tools, .output, .profile, .performance]
+
     var id: Self { self }
+
     var title: String {
         switch self {
         case .instructions: "Instructions"
@@ -23,23 +28,6 @@ enum SuiteSetupPage: String, WorkspacePane {
         case .output: "Ask for a fixed response shape"
         case .profile: "Change instructions between turns"
         case .performance: "Streaming and prewarming"
-        }
-    }
-    var group: String? {
-        switch self {
-        case .instructions, .scoring, .model: "Basics"
-        case .tools, .output, .profile, .performance: "Advanced"
-        }
-    }
-    var symbol: String {
-        switch self {
-        case .instructions: "text.alignleft"
-        case .scoring: "checkmark.seal"
-        case .model: "cpu"
-        case .tools: "wrench.and.screwdriver"
-        case .output: "curlybraces"
-        case .profile: "arrow.triangle.branch"
-        case .performance: "gauge.with.dots.needle.50percent"
         }
     }
 }
