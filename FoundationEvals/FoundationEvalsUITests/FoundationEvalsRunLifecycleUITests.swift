@@ -118,11 +118,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertTrue(guide.waitForExistence(timeout: 3))
         XCTAssertTrue(guide.isEnabled)
         XCTAssertFalse(criteria.isEnabled)
-        let editor = app.scrollViews["Suite editor scroll"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 3))
-        editor.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.20))
-            .scroll(byDeltaX: 0, deltaY: -400)
-        XCTAssertTrue(guide.isHittable && editor.frame.contains(guide.frame), app.debugDescription)
+        scrollIntoView(guide)
         guide.click()
         let score = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Passing score: 3 or 4", "Passing score: 3 or 4")
         XCTAssertTrue(app.staticTexts.matching(score).firstMatch.waitForExistence(timeout: 3))
@@ -337,16 +333,25 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Run evaluation"].isEnabled, app.debugDescription)
     }
 
+    /// Selects and reveals a section in the single-page Setup view.
     @MainActor
     private func selectSetup(_ title: String) {
-        app.radioButtons["Setup"].click()
-        let menu = app.popUpButtons["Suite setup"]
-        if menu.exists {
-            menu.click()
-            app.menuItems[title].click()
-        } else {
-            app.buttons[title].click()
+        UITestStorage.selectSetupSection(title, in: app)
+    }
+
+    /// Scrolls a setup editor fully into the viewport before checking its interactive state.
+    @MainActor
+    private func scrollIntoView(_ element: XCUIElement) {
+        let page = app.scrollViews["Suite editor scroll"]
+        XCTAssertTrue(page.waitForExistence(timeout: 3), app.debugDescription)
+        let viewport = page.frame.intersection(app.windows.firstMatch.frame).insetBy(dx: 0, dy: 12)
+        for _ in 0..<16 {
+            if element.isHittable && viewport.contains(element.frame) { return }
+            let delta: CGFloat = element.frame.minY < viewport.minY ? 180 : -180
+            page.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+                .scroll(byDeltaX: 0, deltaY: delta)
         }
+        XCTAssertTrue(element.isHittable && viewport.contains(element.frame), app.debugDescription)
     }
 
     @MainActor

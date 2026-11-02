@@ -49,22 +49,25 @@ private enum RubricTemplate: String, CaseIterable, Identifiable {
 
 enum SuiteEditorPage: String, CaseIterable, Identifiable {
     case cases
+    case runs
     case review
-    case compare
     case configure
-    case history
 
     var id: Self { self }
 
     var title: LocalizedStringResource {
         switch self {
         case .cases: "Cases"
+        case .runs: "Runs"
         case .review: "Review"
-        case .compare: "Compare"
         case .configure: "Setup"
-        case .history: "History"
         }
     }
+}
+
+private enum RunsMode {
+    case history
+    case compare
 }
 
 struct SuiteEditorView: View {
@@ -74,6 +77,10 @@ struct SuiteEditorView: View {
     let initialPage: SuiteEditorPage
     @State private var selectedPage: SuiteEditorPage
     @State private var configurationPage = SuiteSetupPage.instructions
+    @State private var configurationScrollRequest = UUID()
+    @State private var shouldScrollToConfigurationPage = false
+    @State private var expandedSetupSections: Set<SuiteSetupPage> = []
+    @State private var runsMode: RunsMode = .history
     @State private var selectedCaseID: UUID?
     @State private var showsRunDetails = false
     @State private var showsDevices = false
@@ -108,7 +115,7 @@ struct SuiteEditorView: View {
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView {
-                            VStack(alignment: .leading, spacing: 24) {
+                            VStack(alignment: .leading, spacing: selectedPage == .configure ? 28 : 24) {
                                 header
                                 selectedPageContent
                             }
@@ -116,10 +123,9 @@ struct SuiteEditorView: View {
                             .id("suite-page-top")
                         }
                         .accessibilityIdentifier("Suite editor scroll")
-                        .onChange(of: configurationPage) { _, _ in
-                            var transaction = Transaction(animation: nil)
-                            transaction.disablesAnimations = true
-                            withTransaction(transaction) { proxy.scrollTo("suite-page-top", anchor: .top) }
+                        .onAppear { scrollToConfigurationPage(using: proxy) }
+                        .onChange(of: configurationScrollRequest) { _, _ in
+                            scrollToConfigurationPage(using: proxy)
                         }
                     }
                 }
@@ -136,7 +142,11 @@ struct SuiteEditorView: View {
         .defaultFocus($isEditorFocused, true)
         .background {
             SuiteEditorSelectionObserver(
-                store: store, initialPage: initialPage, selectedPage: $selectedPage, selectedCaseID: $selectedCaseID
+                store: store,
+                initialPage: initialPage,
+                selectedPage: $selectedPage,
+                selectedCaseID: $selectedCaseID,
+                runsMode: $runsMode
             )
         }
         .navigationTitle(store.draftSuite.name)
@@ -162,7 +172,7 @@ struct SuiteEditorView: View {
         .sheet(isPresented: $showsPromptImprovement) {
             PromptImprovementView(store: store) { needsCases in
                 if needsCases { selectedPage = .cases }
-                else { configurationPage = .scoring; selectedPage = .configure }
+                else { showConfigurationPage(.scoring) }
             }
         }
         .alert("Could not start run", isPresented: Binding(get: { runError != nil }, set: { if !$0 { runError = nil } })) {
@@ -199,26 +209,130 @@ struct SuiteEditorView: View {
         switch selectedPage {
         case .cases:
             EmptyView() // Laid out separately in `body` as a master–detail page.
-        case .history:
-            SuiteResultsView(store: store, showCompare: { selectedPage = .compare })
+        case .runs:
+            switch runsMode {
+            case .history:
+                SuiteResultsView(store: store, showCompare: {
+                    selectedPage = .runs
+                    runsMode = .compare
+                })
+            case .compare:
+                VStack(alignment: .leading, spacing: 16) {
+                    Button("All runs", systemImage: "chevron.left") { runsMode = .history }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("Back to runs")
+                    SuiteCompareView(store: store, showPromptImprovement: { showsPromptImprovement = true })
+                }
+            }
         case .review:
             SuiteReviewView(store: store, showCases: { id in
                 selectedCaseID = id; selectedPage = .cases
-            }, showCompare: { selectedPage = .compare })
+            }, showCompare: {
+                selectedPage = .runs
+                runsMode = .compare
+            })
                 .id(store.selectedSuiteID)
-        case .compare:
-            SuiteCompareView(store: store, showPromptImprovement: { showsPromptImprovement = true })
         case .configure:
-            WorkspacePaneLayout(heading: "Suite setup", selection: $configurationPage) {
-                if configurationPage == .instructions || configurationPage == .scoring { configurationContent }
-                else { configurationContent.disabled(store.isRunning || store.isReassessing || store.isProcessingFiles) }
+            setupPageContent
+        }
+    }
+
+    private var setupPageContent: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            ForEach(SuiteSetupPage.basics) { page in
+                setupSection(page)
+            }
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Advanced")
+                    .font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                ForEach(SuiteSetupPage.advanced) { page in
+                    setupSection(page)
+                }
             }
         }
     }
 
+    /// Builds an always-visible basic section or a collapsed advanced section.
     @ViewBuilder
-    private var configurationContent: some View {
-        switch configurationPage {
+    private func setupSection(_ page: SuiteSetupPage) -> some View {
+        if SuiteSetupPage.basics.contains(page) {
+            VStack(alignment: .leading, spacing: 12) {
+                setupSectionHeading(page)
+                configurationContent(for: page)
+            }
+            .id(page)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("Setup section \(page.title)")
+        } else {
+            DisclosureGroup(isExpanded: setupSectionExpansion(for: page)) {
+                configurationContent(for: page)
+                    .disabled(isConfigurationBusy)
+                    .padding(.top, 14)
+            } label: {
+                setupSectionHeading(page)
+                    .padding(.leading, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .id(page)
+            .accessibilityIdentifier("Setup section \(page.title)")
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .workspaceSurface()
+        }
+    }
+
+    /// Builds the title and supporting copy shown for a setup section.
+    private func setupSectionHeading(_ page: SuiteSetupPage) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(page.title)
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            Text(page.subtitle)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var isConfigurationBusy: Bool {
+        store.isRunning || store.isReassessing || store.isProcessingFiles
+    }
+
+    /// Binds an advanced section's disclosure state to the expanded-section set.
+    private func setupSectionExpansion(for page: SuiteSetupPage) -> Binding<Bool> {
+        Binding(
+            get: { expandedSetupSections.contains(page) },
+            set: { isExpanded in
+                if isExpanded { expandedSetupSections.insert(page) }
+                else { expandedSetupSections.remove(page) }
+            }
+        )
+    }
+
+    /// Opens Setup, expands an advanced target, and requests a scroll to it.
+    private func showConfigurationPage(_ page: SuiteSetupPage) {
+        if SuiteSetupPage.advanced.contains(page) {
+            expandedSetupSections.insert(page)
+        }
+        configurationPage = page
+        selectedPage = .configure
+        shouldScrollToConfigurationPage = true
+        configurationScrollRequest = UUID()
+    }
+
+    /// Scrolls to a requested section after its ScrollViewReader is available.
+    private func scrollToConfigurationPage(using proxy: ScrollViewProxy) {
+        guard shouldScrollToConfigurationPage else { return }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { proxy.scrollTo(configurationPage, anchor: .top) }
+        shouldScrollToConfigurationPage = false
+    }
+
+    /// Builds the existing controls for the specified setup section.
+    @ViewBuilder
+    private func configurationContent(for page: SuiteSetupPage) -> some View {
+        switch page {
         case .instructions:
             ModelInstructionsSection(store: store, showPromptImprovement: { showsPromptImprovement = true })
             SharedReferenceFilesSection(store: store)
@@ -236,13 +350,13 @@ struct SuiteEditorView: View {
         case .model:
             ModelControlsSection(store: store)
         case .tools:
-            FeatureControlsView(store: store, selectedPage: .tools)
+            FeatureControlsView(store: store, selectedPage: .tools, showsSectionHeader: false)
         case .output:
-            FeatureControlsView(store: store, selectedPage: .output)
+            FeatureControlsView(store: store, selectedPage: .output, showsSectionHeader: false)
         case .profile:
-            FeatureControlsView(store: store, selectedPage: .profile)
+            FeatureControlsView(store: store, selectedPage: .profile, showsSectionHeader: false)
         case .performance:
-            FeatureControlsView(store: store, selectedPage: .performance)
+            FeatureControlsView(store: store, selectedPage: .performance, showsSectionHeader: false)
         }
     }
 }
@@ -252,6 +366,7 @@ private struct SuiteEditorSelectionObserver: View {
     let initialPage: SuiteEditorPage
     @Binding var selectedPage: SuiteEditorPage
     @Binding var selectedCaseID: UUID?
+    @Binding var runsMode: RunsMode
 
     var body: some View {
         Color.clear
@@ -260,7 +375,10 @@ private struct SuiteEditorSelectionObserver: View {
             .onAppear {
                 repairEditorSelection(selectedCaseID, ids: store.draftSuite.cases.map(\.id)) { selectedCaseID = $0 }
             }
-            .onChange(of: store.draftSuite.id) { _, _ in selectedPage = initialPage }
+            .onChange(of: store.draftSuite.id) { _, _ in
+                selectedPage = initialPage
+                runsMode = .history
+            }
             .onChange(of: store.draftSuite.cases.map(\.id)) { _, _ in
                 repairEditorSelection(selectedCaseID, ids: store.draftSuite.cases.map(\.id)) { selectedCaseID = $0 }
             }
@@ -288,13 +406,21 @@ private struct SuiteOverviewHeader: View {
                 VStack(alignment: .leading, spacing: 4) {
                     TextField("Suite name", text: $store.draftSuite.name)
                         .textFieldStyle(.plain)
-                        .font(.largeTitle.weight(.bold))
+                        .font(.title2.weight(.semibold))
                         .accessibilityLabel("Suite name").disabled(isBusy)
                     HStack(spacing: 10) {
                         Text(metadata).lineLimit(1)
                         saveStatus
+                        if !store.isRunning, let blocker = runners.runIssue(for: store) {
+                            let shortText = blocker.count <= 40 ? blocker : "Can't run"
+                            Label(shortText, systemImage: "exclamationmark.triangle.fill")
+                                .font(.callout)
+                                .foregroundStyle(WorkspaceStyle.warning)
+                                .help(blocker)
+                                .accessibilityLabel(blocker)
+                        }
                     }
-                    .font(.title3)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 16)
@@ -310,9 +436,6 @@ private struct SuiteOverviewHeader: View {
                     .foregroundStyle(.secondary)
                     .help("Version and model availability")
                     .popover(isPresented: $showsDetails, arrowEdge: .bottom) { details }
-            }
-            if let blocker = runners.runIssue(for: store), !store.isRunning {
-                WorkspaceNotice(.warning, message: blocker)
             }
         }
     }
@@ -495,7 +618,8 @@ private struct ModelInstructionsSection: View {
     var body: some View {
         EditorSection(
             "Model instructions",
-            description: "Tell the model how to respond across all cases."
+            description: "Tell the model how to respond across all cases.",
+            showsHeader: false
         ) {
             TextEditor(text: $store.draftSuite.instructions)
                 .accessibilityLabel("Model instructions")
@@ -511,12 +635,15 @@ private struct ModelInstructionsSection: View {
 private struct ScoringSection: View {
     @Bindable var store: EvaluationStore
     /// Blocks scoring edits while preserving access to the read-only guide.
-    private var editingDisabled: Bool { store.isRunning || store.isReassessing || store.isProcessingFiles }
+    private var editingDisabled: Bool {
+        store.isRunning || store.isReassessing || store.isProcessingFiles
+    }
 
     var body: some View {
         EditorSection(
             "Scoring and repetitions",
-            description: "Decide what counts as a good answer, and how many times to ask."
+            description: "Decide what counts as a good answer, and how many times to ask.",
+            showsHeader: false
         ) {
             VStack(alignment: .leading, spacing: 14) {
                 Picker("Scoring method", selection: $store.draftSuite.scoringMode) {

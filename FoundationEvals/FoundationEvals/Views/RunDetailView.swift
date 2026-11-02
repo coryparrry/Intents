@@ -35,7 +35,7 @@ private enum ResultFilter: String, CaseIterable, Identifiable {
 }
 
 private enum RunPage: CaseIterable, Hashable, Identifiable, Sendable {
-    case report, workflow, performance, review
+    case report, workflow, performance
 
     var id: Self { self }
 
@@ -44,7 +44,6 @@ private enum RunPage: CaseIterable, Hashable, Identifiable, Sendable {
         case .report: "Report"
         case .workflow: "Workflow trace"
         case .performance: "Performance"
-        case .review: "Review & release"
         }
     }
 }
@@ -79,8 +78,6 @@ struct RunDetailView: View {
                         .id(run.id)
                 case .performance:
                     performance
-                case .review:
-                    review
                 }
             }
         }
@@ -105,6 +102,13 @@ struct RunDetailView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 WorkspaceResetControl(store: store)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                if selectedPage == .report {
+                    Button("Approve as baseline", systemImage: "checkmark.seal", action: approveAsBaseline)
+                        .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles || isApprovedAssessment)
+                        .accessibilityIdentifier("Approve as baseline")
+                }
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Export Run as JSON", systemImage: "square.and.arrow.up") {
@@ -148,6 +152,13 @@ struct RunDetailView: View {
                     .id(run.id)
                 RunConfigurationSection(run: run)
                     .padding(.top, 6)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Review and release")
+                        .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                    RunWorkflowPanel(store: store, run: run)
+                }
+                .accessibilityIdentifier("Run review and release section")
             }
             .workspacePage()
         }
@@ -167,16 +178,23 @@ struct RunDetailView: View {
         .accessibilityIdentifier("Run performance scroll")
     }
 
-    private var review: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                RunOverviewHeader(run: run)
-                RunSectionLabel("Review and release tools")
-                RunWorkflowPanel(store: store, run: run)
-            }
-            .workspacePage()
+    private var selectedAssessmentID: UUID? {
+        guard let selectedID = run.selectedAssessmentID else { return run.assessments?.last?.id }
+        return run.assessments?.first { $0.id == selectedID }?.id
+    }
+
+    private var isApprovedAssessment: Bool {
+        store.activeBaselineApproval?.runID == run.id
+            && store.activeBaselineApproval?.assessmentID == selectedAssessmentID
+    }
+
+    /// Approves the assessment selected for this run as its baseline.
+    private func approveAsBaseline() {
+        do {
+            try store.approveBaseline(runID: run.id, assessmentID: selectedAssessmentID)
+        } catch {
+            store.notice = error.localizedDescription
         }
-        .accessibilityIdentifier("Run review scroll")
     }
 
     /// Replaces filename characters outside ASCII letters, digits, underscores, and hyphens with a hyphen.
@@ -193,10 +211,10 @@ private struct RunOverviewHeader: View {
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(run.startedAt, format: .dateTime.weekday(.wide).day().month(.wide).hour().minute())
-                        .font(.subheadline.weight(.semibold))
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                     Text(run.suiteName)
-                        .font(.largeTitle.weight(.bold))
+                        .font(.title2.weight(.semibold))
                         .lineLimit(2)
                 }
                 Spacer(minLength: 16)

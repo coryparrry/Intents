@@ -54,6 +54,42 @@ final class EvaluationReviewUITests: XCTestCase {
         XCTAssertEqual(runs.count, before)
     }
 
+    /// Keeps saved runs collapsible beneath the selected suite in the sidebar.
+    @MainActor
+    func testSelectedSuiteRunsCanBeCollapsedAndExpanded() throws {
+        continueAfterFailure = false
+        let storage = try reviewStorage()
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let runsDirectory = storage.appending(path: "Runs")
+        let runURL = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: runsDirectory, includingPropertiesForKeys: nil).first)
+        let run = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: runURL)) as? [String: Any])
+        let runID = try XCTUnwrap(run["id"] as? String)
+        let app = application(storage: storage)
+        launchWorkspace(app)
+        defer { app.terminate() }
+        assertReviewFixture(in: app)
+
+        sidebarDestination("Sidebar overview", in: app).click()
+        let suiteRow = app.staticTexts["Review example"].firstMatch
+        XCTAssertTrue(suiteRow.waitForExistence(timeout: 5), app.debugDescription)
+        suiteRow.click()
+
+        let disclosure = app.outlines.firstMatch.disclosureTriangles.firstMatch
+        let runRow = app.descendants(matching: .any)["Sidebar run \(runID)"]
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(runRow.waitForExistence(timeout: 5), app.debugDescription)
+
+        disclosure.click()
+        let runRowHidden = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: runRow
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [runRowHidden], timeout: 3), .completed, app.debugDescription)
+
+        disclosure.click()
+        XCTAssertTrue(runRow.waitForExistence(timeout: 3), app.debugDescription)
+    }
+
     /// Keeps batch dataset actions and advanced settings available after simplifying the default sheet.
     @MainActor
     func testBatchSetupRevealsAdvancedOptionsWithoutLosingValues() throws {
