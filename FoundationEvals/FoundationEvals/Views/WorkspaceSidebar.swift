@@ -15,6 +15,7 @@ struct WorkspaceSidebar: View {
     @State private var isManagingWorkspace = false
     @State private var isCreatingSuite = false
     @State private var isCreatingProject = false
+    @State private var collapsedSuiteIDs: Set<UUID> = []
     @State private var runToDelete: EvaluationRun?
     @State private var runSearch = ""
     @State private var showsAllRuns = false
@@ -95,9 +96,14 @@ struct WorkspaceSidebar: View {
                 ForEach(store.suiteRecords.filter { $0.archivedAt == nil }) { suite in
                     let isSelected = suite.id == store.selectedSuiteID
                     DisclosureGroup(isExpanded: Binding(
-                        get: { isSelected },
+                        get: { isSelected && !collapsedSuiteIDs.contains(suite.id) },
                         set: { isExpanded in
-                            if isExpanded { destination.wrappedValue = .suite(suite.id) }
+                            if isExpanded {
+                                collapsedSuiteIDs.remove(suite.id)
+                                destination.wrappedValue = .suite(suite.id)
+                            } else {
+                                collapsedSuiteIDs.insert(suite.id)
+                            }
                         }
                     )) {
                         if isSelected {
