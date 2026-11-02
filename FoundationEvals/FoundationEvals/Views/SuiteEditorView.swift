@@ -625,7 +625,7 @@ private struct ModelInstructionsSection: View {
                 .accessibilityLabel("Model instructions")
                 .font(.body)
                 .workspaceTextWell(minHeight: 140)
-                .disabled(store.isProcessingFiles || store.isReassessing)
+                .disabled(store.isRunning || store.isProcessingFiles || store.isReassessing)
             Button(store.activePromptImprovementID == nil ? "Improve instructions" : "View comparison", systemImage: "sparkles", action: showPromptImprovement)
                 .accessibilityIdentifier("Improve instructions")
         }
@@ -634,8 +634,9 @@ private struct ModelInstructionsSection: View {
 
 private struct ScoringSection: View {
     @Bindable var store: EvaluationStore
+    /// Blocks scoring edits while preserving access to the read-only guide.
     private var editingDisabled: Bool {
-        store.isReassessing || store.isProcessingFiles
+        store.isRunning || store.isReassessing || store.isProcessingFiles
     }
 
     var body: some View {

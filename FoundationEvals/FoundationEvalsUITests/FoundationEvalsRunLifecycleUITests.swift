@@ -93,9 +93,9 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         fixture.finishResponse()
     }
 
-    /// A running evaluation leaves the instruction and scoring editors available with their explanation.
+    /// A running evaluation locks scoring edits without locking its read-only explanation.
     @MainActor
-    func testInstructionsAndScoringRemainEditableDuringRun() throws {
+    func testScoringGuideRemainsAvailableDuringRun() throws {
         try openSuiteEditor()
         XCTAssertTrue(FileManager.default.fileExists(atPath: storage.appending(path: "workspace-v1.json").path),
                       "The test must use its isolated workspace")
@@ -113,26 +113,12 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         run.click()
         XCTAssertTrue(fixture.waitForRequest(timeout: 5))
 
-        selectSetup("Instructions")
-        let instructions = app.textViews["Model instructions"]
-        XCTAssertTrue(instructions.waitForExistence(timeout: 3))
-        scrollIntoView(instructions)
-        replaceText(in: instructions, with: "The active run keeps its captured instructions.")
-        XCTAssertEqual(instructions.value as? String, "The active run keeps its captured instructions.")
-
         selectSetup("Scoring")
         let guide = app.disclosureTriangles["How scoring works"]
         XCTAssertTrue(guide.waitForExistence(timeout: 3))
         XCTAssertTrue(guide.isEnabled)
-        XCTAssertTrue(app.radioButtons["AI rubric"].isEnabled, app.debugDescription)
-        scrollIntoView(criteria)
-        replaceText(in: criteria, with: "The response answers the question with updated scoring.")
-        XCTAssertEqual(criteria.value as? String, "The response answers the question with updated scoring.")
-        let editor = app.scrollViews["Suite editor scroll"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 3))
-        editor.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.20))
-            .scroll(byDeltaX: 0, deltaY: -400)
-        XCTAssertTrue(guide.isHittable && editor.frame.contains(guide.frame), app.debugDescription)
+        XCTAssertFalse(criteria.isEnabled)
+        scrollIntoView(guide)
         guide.click()
         let score = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Passing score: 3 or 4", "Passing score: 3 or 4")
         XCTAssertTrue(app.staticTexts.matching(score).firstMatch.waitForExistence(timeout: 3))
