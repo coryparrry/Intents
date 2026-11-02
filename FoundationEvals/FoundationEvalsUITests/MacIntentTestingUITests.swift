@@ -20,6 +20,11 @@ final class MacIntentTestingUITests: XCTestCase {
         app.menuItems["Show App Intents"].click()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Sidebar app intents"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any)["App Intent step 1"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["App Intent step 2"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["App Intent step 3"].exists)
+        XCTAssertTrue(app.staticTexts["Choose an app to inspect its actions and inputs."].exists)
+        XCTAssertTrue(app.staticTexts["Choose an app to prepare a native test run."].exists)
         XCTAssertTrue(app.buttons["Choose built macOS app…"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.outlines.staticTexts["Intent Lab"].exists)
         XCTAssertFalse(app.outlines.staticTexts["App automation"].exists)
@@ -70,7 +75,21 @@ final class MacIntentTestingUITests: XCTestCase {
         XCTAssertTrue(app.textViews["Expected value JSON"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Expected value JSON"].exists)
         XCTAssertEqual(app.textViews["Expected value JSON"].value as? String, "null")
-        XCTAssertTrue(app.textFields["Developer directory"].exists)
+        let advanced = app.disclosureTriangles["Advanced: build and signing"]
+        XCTAssertTrue(advanced.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.textFields["Developer directory"].exists)
+        let page = app.scrollViews["App Intent steps"]
+        XCTAssertTrue(page.waitForExistence(timeout: 3), app.debugDescription)
+        let viewport = page.frame.intersection(app.windows.firstMatch.frame).insetBy(dx: 0, dy: 12)
+        for _ in 0..<16 {
+            if advanced.isHittable && viewport.contains(advanced.frame) { break }
+            let delta: CGFloat = advanced.frame.minY < viewport.minY ? 180 : -180
+            page.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+                .scroll(byDeltaX: 0, deltaY: delta)
+        }
+        XCTAssertTrue(advanced.isHittable && viewport.contains(advanced.frame), app.debugDescription)
+        advanced.click()
+        XCTAssertTrue(app.textFields["Developer directory"].waitForExistence(timeout: 3), app.debugDescription)
         XCTAssertTrue(app.textFields["Signing identity"].exists)
         XCTAssertTrue(app.textFields["Team identifier"].exists)
         XCTAssertTrue(app.buttons["Run native test"].exists)

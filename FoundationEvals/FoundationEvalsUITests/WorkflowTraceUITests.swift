@@ -357,10 +357,11 @@ final class WorkflowTraceUITests: XCTestCase {
         }
     }
 
+    /// Verifies run review actions live in the Report tab alongside the three-tab navigation.
     @MainActor
     func testReportKeepsAdvancedToolsInDedicatedTabs() throws {
         try withFixtureApplication(openTrace: false, windowWidth: 1_000) { app in
-            for title in ["Report", "Workflow trace", "Performance", "Review & release"] {
+            for title in ["Report", "Workflow trace", "Performance"] {
                 let tab = app.radioButtons[title]
                 XCTAssertTrue(tab.isHittable)
                 XCTAssertEqual(app.radioButtons.matching(identifier: title).count, 1)
@@ -372,28 +373,33 @@ final class WorkflowTraceUITests: XCTestCase {
             XCTAssertTrue(resultSearch.isHittable)
             XCTAssertTrue(app.staticTexts["Results"].exists)
             XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Response latency", "Response latency")).firstMatch.exists)
-            XCTAssertFalse(app.buttons["Approve as baseline"].exists)
+            let approve = app.buttons["Approve as baseline"]
+            XCTAssertTrue(approve.exists)
+            XCTAssertEqual(app.buttons.matching(identifier: "Approve as baseline").count, 1)
             try capture(app, name: "simplified-results-report")
 
             for iteration in 0..<2 {
-                app.radioButtons["Review & release"].click()
-                XCTAssertTrue(app.scrollViews["Run review scroll"].waitForExistence(timeout: 3))
-                XCTAssertTrue(app.buttons["Approve as baseline"].isHittable)
-                XCTAssertTrue(app.buttons["Release report"].isHittable)
-                XCTAssertFalse(app.scrollViews["Run report scroll"].exists)
-                if iteration == 0 { try capture(app, name: "minimum-width-review-tab") }
+                let releaseReport = app.buttons["Release report"]
+                reveal(releaseReport, in: app)
+                XCTAssertTrue(app.staticTexts["Review and release"].exists)
+                XCTAssertTrue(releaseReport.isHittable)
+                XCTAssertTrue(approve.isHittable)
+                XCTAssertEqual(app.buttons.matching(identifier: "Approve as baseline").count, 1)
+                if iteration == 0 { try capture(app, name: "report-review-and-release-section") }
 
                 app.radioButtons["Performance"].click()
                 XCTAssertTrue(app.scrollViews["Run performance scroll"].waitForExistence(timeout: 3))
                 XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Response latency", "Response latency")).firstMatch.exists)
-                XCTAssertFalse(app.buttons["Approve as baseline"].exists)
+                XCTAssertFalse(approve.exists)
                 if iteration == 0 { try capture(app, name: "minimum-width-performance-tab") }
 
                 app.radioButtons["Workflow trace"].click()
                 XCTAssertTrue(app.popUpButtons["Trace case"].waitForExistence(timeout: 3))
+                XCTAssertFalse(approve.exists)
                 app.radioButtons["Report"].click()
                 XCTAssertTrue(app.staticTexts["Evaluation result headline"].waitForExistence(timeout: 3))
                 XCTAssertFalse(app.scrollViews["Run performance scroll"].exists)
+                XCTAssertTrue(approve.exists)
             }
         }
     }
