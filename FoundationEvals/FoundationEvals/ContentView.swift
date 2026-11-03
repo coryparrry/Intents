@@ -77,18 +77,20 @@ struct ContentView: View {
                 }
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.hard, for: .bottom)
-
+            }
+            .safeAreaPadding(.bottom, showsWorkspaceStatus ? 66 : 0)
+            .overlay(alignment: .bottom) {
                 if showsWorkspaceStatus {
                     WorkbenchStatusBar(store: store)
-                        .background(WorkspaceStyle.surface)
-                        .overlay(alignment: .top) { Divider() }
+                        .workspaceSurface(radius: 100)
+                        .padding(.horizontal, 28).padding(.bottom, 14)
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("Workspace status")
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: showsWorkspaceStatus)
-            .background(WorkspaceStyle.canvas.ignoresSafeArea())
+            .background { WorkspaceBackdrop() }
         }
     }
 

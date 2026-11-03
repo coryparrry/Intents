@@ -75,7 +75,7 @@ struct RunReportSummary: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceSurface()
+        .workspaceSurface(tint: run.failedCount > 0 ? WorkspaceStyle.failure : isIncomplete || presentation.attentionCount > 0 ? WorkspaceStyle.warning : WorkspaceStyle.success)
         .task(id: run.id) {
             shown = false
             try? await Task.sleep(for: .milliseconds(150))

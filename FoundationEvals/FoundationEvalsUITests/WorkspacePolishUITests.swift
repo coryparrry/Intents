@@ -3,6 +3,28 @@ import XCTest
 final class WorkspacePolishUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    /// Glass page navigation retains native radio roles, selection values, and unique tab labels.
+    @MainActor
+    func testGlassSuiteTabsPreserveRadioSelection() throws {
+        let storage = try UITestStorage.makeDirectory(prefix: "glass-suite-tabs")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launch()
+        defer { app.terminate() }
+        try UITestStorage.openSuiteEditor(in: app)
+        for title in ["Runs", "Review", "Setup", "Cases"] {
+            let tabs = app.radioGroups["Editor page"]
+            let tab = tabs.radioButtons[title]
+            XCTAssertTrue(tab.waitForExistence(timeout: 5))
+            XCTAssertTrue(tab.isHittable)
+            XCTAssertEqual(app.radioButtons.matching(identifier: title).count, 1)
+            tab.click()
+            let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 1"), object: tab)
+            XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed)
+        }
+    }
+
     /// Offers a direct route to saved jobs from both batch evidence empty states.
     @MainActor
     func testBatchEmptyStatesOpenJobs() throws {

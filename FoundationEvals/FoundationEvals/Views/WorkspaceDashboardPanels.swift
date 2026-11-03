@@ -85,7 +85,7 @@ struct HomeHero: View {
         }
         .padding(26)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceSurface()
+        .workspaceSurface(tint: .blue)
         .accessibilityElement(children: .contain)
     }
 }
@@ -227,7 +227,7 @@ struct HomeOnboarding: View {
                 Label(primaryTitle, systemImage: hasSuite ? "arrow.right" : "plus").labelStyle(.titleAndIcon)
                     .padding(.horizontal, 6)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .controlSize(.large)
             .disabled(disabled)
         }

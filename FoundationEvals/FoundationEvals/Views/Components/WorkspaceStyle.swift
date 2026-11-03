@@ -3,9 +3,9 @@ import SwiftUI
 
 /// Shared presentation for the workspace and its evaluation evidence.
 ///
-/// The system's Liquid Glass sidebar and toolbar are the navigation layer. Content sits
-/// beneath them on one calm canvas: neutral grouped surfaces, the accent colour for
-/// interaction, and status colour only on the marks that report a result.
+/// Liquid Glass cards and floating controls sit above a static, appearance-tuned
+/// aurora canvas. Status tints give evidence depth without replacing readable text.
+/// Reduce Transparency restores opaque surfaces and a plain canvas throughout.
 enum WorkspaceStyle {
     static let canvas = adaptive(light: (0.965, 0.965, 0.972), dark: (0.110, 0.110, 0.118))
     /// Grouped content, raised slightly from the canvas.
@@ -18,7 +18,7 @@ enum WorkspaceStyle {
     static let warning = Color(nsColor: .systemOrange)
     static let failure = Color(nsColor: .systemRed)
 
-    static let panelRadius: CGFloat = 12
+    static let panelRadius: CGFloat = 20
     static let controlRadius: CGFloat = 8
     static let pagePadding: CGFloat = 28
     static let readableWidth: CGFloat = 1_160
@@ -36,18 +36,117 @@ enum WorkspaceStyle {
     }
 }
 
-extension View {
-    /// Creates a raised surface with a subtle hairline border.
-    func workspaceSurface(radius: CGFloat = WorkspaceStyle.panelRadius) -> some View {
+/// Static ambient colour behind the detail column; never participates in interaction.
+struct WorkspaceBackdrop: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        ZStack {
+            WorkspaceStyle.canvas
+            if !reduceTransparency {
+                let dark = colorScheme == .dark
+                RadialGradient(colors: [.indigo.opacity(dark ? 0.38 : 0.23), .clear], center: .topLeading, startRadius: 0, endRadius: 850)
+                RadialGradient(colors: [.teal.opacity(dark ? 0.25 : 0.20), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 700)
+                RadialGradient(colors: [.purple.opacity(dark ? 0.24 : 0.14), .clear], center: .topTrailing, startRadius: 0, endRadius: 600)
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct WorkspaceGlassSurface: ViewModifier {
+    let radius: CGFloat
+    let tint: Color?
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    /// Applies glass only when transparency is permitted, retaining a readable opaque fallback.
+    func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        return clipShape(shape)
-            .background(WorkspaceStyle.surface, in: shape)
-            .overlay { shape.strokeBorder(WorkspaceStyle.border, lineWidth: 1).allowsHitTesting(false) }
+        Group {
+            if reduceTransparency {
+                content.clipShape(shape).background(WorkspaceStyle.surface, in: shape)
+            } else {
+                content.clipShape(shape)
+                    .glassEffect(.regular.tint(tint?.opacity(0.16) ?? .clear), in: shape)
+            }
+        }
+        .overlay { shape.strokeBorder(.white.opacity(reduceTransparency ? 0 : 0.22), lineWidth: 0.5).allowsHitTesting(false) }
+        .shadow(color: .black.opacity(reduceTransparency ? 0 : 0.09), radius: 14, x: 0, y: 7)
+    }
+}
+
+private struct WorkspaceInsetSurface: ViewModifier {
+    let radius: CGFloat
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    /// Keeps text wells recessed and legible without obscuring the ambient colour.
+    func body(content: Content) -> some View {
+        content.background(reduceTransparency ? WorkspaceStyle.inset : Color.primary.opacity(0.05), in: .rect(cornerRadius: radius, style: .continuous))
+    }
+}
+
+/// Floating page navigation with a native segmented accessibility representation.
+struct WorkspaceGlassTabs<Page: Hashable & Identifiable>: View {
+    let title: String
+    let identifier: String
+    let pages: [Page]
+    @Binding var selection: Page
+    let label: (Page) -> LocalizedStringResource
+    @Namespace private var namespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        GlassEffectContainer(spacing: 6) {
+            HStack(spacing: 4) {
+                ForEach(pages) { page in
+                    Button { selection = page } label: {
+                        Text(label(page))
+                            .font(.subheadline.weight(selection == page ? .semibold : .medium))
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background {
+                                if selection == page {
+                                    if reduceTransparency {
+                                        Capsule().fill(WorkspaceStyle.surface)
+                                    } else {
+                                        Capsule().fill(.clear)
+                                            .glassEffect(.regular.tint(.accentColor.opacity(0.18)).interactive(), in: .capsule)
+                                            .glassEffectID("selected", in: namespace)
+                                    }
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(5)
+            .workspaceSurface(radius: 100)
+        }
+        .fixedSize()
+        .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: selection)
+        .accessibilityRepresentation {
+            Picker(title, selection: $selection) {
+                ForEach(pages) { page in Text(label(page)).tag(page) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier(identifier)
+        }
+    }
+}
+
+extension View {
+    /// Raises content on glass with a specular edge and optional semantic tint.
+    func workspaceSurface(radius: CGFloat = WorkspaceStyle.panelRadius, tint: Color? = nil) -> some View {
+        modifier(WorkspaceGlassSurface(radius: radius, tint: tint))
     }
 
     /// Adds a rounded recessed background using the workspace inset color.
     func workspaceInset(radius: CGFloat = WorkspaceStyle.controlRadius) -> some View {
-        background(WorkspaceStyle.inset, in: .rect(cornerRadius: radius, style: .continuous))
+        modifier(WorkspaceInsetSurface(radius: radius))
     }
 
     /// A recessed well for multi-line text editors.
@@ -231,7 +330,7 @@ struct WorkspacePageHeader<Accessory: View>: View {
                     Text(eyebrow).font(.caption.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Text(title)
-                    .font(.title2.weight(.semibold)).lineLimit(2)
+                    .font(.largeTitle.weight(.bold)).lineLimit(2)
                     .contentTransition(.opacity)
                     .accessibilityAddTraits(.isHeader)
                 if let subtitle {
@@ -546,7 +645,7 @@ struct WorkspaceEmptyState: View {
                         Text(actionTitle)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .controlSize(.large)
                 .padding(.top, 8)
             }

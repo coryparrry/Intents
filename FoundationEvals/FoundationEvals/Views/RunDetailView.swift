@@ -90,15 +90,7 @@ struct RunDetailView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Picker("Run view", selection: $selectedPage) {
-                    ForEach(RunPage.allCases) { page in
-                        Text(page.title).tag(page)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .accessibilityIdentifier("Run view")
+                WorkspaceGlassTabs(title: "Run view", identifier: "Run view", pages: RunPage.allCases, selection: $selectedPage) { $0.title }
             }
             ToolbarItem(placement: .primaryAction) {
                 WorkspaceResetControl(store: store)
@@ -106,6 +98,7 @@ struct RunDetailView: View {
             ToolbarItem(placement: .primaryAction) {
                 if selectedPage == .report {
                     Button("Approve as baseline", systemImage: "checkmark.seal", action: approveAsBaseline)
+                        .buttonStyle(.glassProminent)
                         .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles || isApprovedAssessment)
                         .accessibilityIdentifier("Approve as baseline")
                 }

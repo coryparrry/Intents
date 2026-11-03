@@ -1,5 +1,22 @@
 import SwiftUI
 
+/// Finder-style colour belongs to the navigation symbol, not its readable label.
+private struct WorkspaceSidebarLabelStyle: LabelStyle {
+    let color: Color
+
+    /// Renders the symbol in a coloured badge while retaining the system text style.
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 9) {
+            configuration.icon
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 26, height: 26)
+                .background(color.opacity(0.13), in: .rect(cornerRadius: 7))
+            configuration.title
+        }
+    }
+}
+
 private enum WorkspaceDestination: Hashable {
     case overview
     case evaluations
@@ -76,18 +93,23 @@ struct WorkspaceSidebar: View {
         SidebarNavigationList(selection: destination) {
             Section {
                 Label("Overview", systemImage: "square.grid.2x2")
+                    .labelStyle(WorkspaceSidebarLabelStyle(color: .blue))
                     .accessibilityIdentifier("Sidebar overview")
                     .tag(WorkspaceDestination.overview)
                 Label("Evaluations", systemImage: "checklist")
+                    .labelStyle(WorkspaceSidebarLabelStyle(color: .green))
                     .accessibilityIdentifier("Sidebar evaluations")
                     .tag(WorkspaceDestination.evaluations)
                 Label("Batch runs", systemImage: "square.stack.3d.down.right")
+                    .labelStyle(WorkspaceSidebarLabelStyle(color: .orange))
                     .accessibilityIdentifier("Sidebar batch runs")
                     .tag(WorkspaceDestination.batchRuns)
                 Label("Traces", systemImage: "point.3.connected.trianglepath.dotted")
+                    .labelStyle(WorkspaceSidebarLabelStyle(color: .purple))
                     .accessibilityIdentifier("Sidebar traces")
                     .tag(WorkspaceDestination.traces)
                 Label("App Intents", systemImage: "app.badge.checkmark")
+                    .labelStyle(WorkspaceSidebarLabelStyle(color: .pink))
                     .accessibilityIdentifier("Sidebar app intents")
                     .tag(WorkspaceDestination.appIntentTesting)
             }
@@ -138,6 +160,7 @@ struct WorkspaceSidebar: View {
                         }
                     } label: {
                         Label(isSelected ? store.draftSuite.name : suite.name, systemImage: "doc.text")
+                            .labelStyle(WorkspaceSidebarLabelStyle(color: .accentColor))
                             .lineLimit(1)
                             .contextMenu {
                                 Button("Duplicate suite", systemImage: "plus.square.on.square") {
@@ -167,7 +190,7 @@ struct WorkspaceSidebar: View {
                         .font(.callout.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glassProminent)
                 .help("Create a new evaluation suite in this project")
                 Spacer()
             }

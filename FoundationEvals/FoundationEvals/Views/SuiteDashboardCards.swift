@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A slim bar along the bottom of the content for a running or unsaved evaluation.
+/// A floating status capsule for a running or unsaved evaluation.
 struct WorkbenchStatusBar: View {
     let store: EvaluationStore
     @Environment(DeveloperRunnerStore.self) private var runners
@@ -53,7 +53,7 @@ struct WorkbenchStatusBar: View {
         .font(.subheadline)
         .foregroundStyle(isRunning ? .primary : .secondary)
         .padding(.horizontal, 20)
-        .frame(height: 32)
+        .frame(height: 44)
         .frame(maxWidth: .infinity)
         .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: isRunning)
         .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: store.hasUnsavedCompletedRun)
