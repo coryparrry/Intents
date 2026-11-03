@@ -66,7 +66,7 @@ struct HomeHero: View {
                             .contentTransition(.interpolate)
                             .accessibilityAddTraits(.isHeader)
                         Text(detail)
-                            .font(.callout).foregroundStyle(.secondary)
+                            .font(.callout).foregroundStyle(WorkspaceStyle.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -132,13 +132,13 @@ struct HomeTrendChart: View {
                 Spacer()
                 if let first = points.map(\.date).min() {
                     Text("Since \(first.formatted(.dateTime.month(.abbreviated).day()))")
-                        .font(.subheadline).foregroundStyle(.secondary)
+                        .font(.subheadline).foregroundStyle(WorkspaceStyle.secondaryText)
                 }
             }
             if points.isEmpty {
                 HStack(spacing: 8) {
-                    Image(systemName: "chart.xyaxis.line").foregroundStyle(.secondary)
-                    Text("Your trend appears after the first scored run.").font(.callout).foregroundStyle(.secondary)
+                    Image(systemName: "chart.xyaxis.line").foregroundStyle(WorkspaceStyle.secondaryText)
+                    Text("Your trend appears after the first scored run.").font(.callout).foregroundStyle(WorkspaceStyle.secondaryText)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -174,7 +174,7 @@ struct HomeTrendChart: View {
                             Text(selected.suite).font(.callout.weight(.semibold))
                             Text("\(Int(selected.rate.rounded()))% passed").font(.callout.monospacedDigit())
                             Text(selected.date.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(.caption).foregroundStyle(WorkspaceStyle.secondaryText)
                         }
                         .padding(.horizontal, 12).padding(.vertical, 8)
                         .workspaceSurface(radius: 12)
@@ -217,7 +217,7 @@ struct HomeOnboarding: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Run your first evaluation").font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
                 Text("Write a few prompts, decide what a good answer looks like, then see how the model does.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.callout).foregroundStyle(WorkspaceStyle.secondaryText)
             }
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 14) { tiles }
@@ -262,7 +262,7 @@ private struct OnboardingTile: View {
             WorkspaceStepNumber(number: number, isDone: isDone, isCurrent: isCurrent)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.headline)
-                Text(detail).font(.callout).foregroundStyle(.secondary)
+                Text(detail).font(.callout).foregroundStyle(WorkspaceStyle.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -312,7 +312,7 @@ struct SuiteRow: View {
                     WorkspaceStatusMark(state: isRunning ? .running : summary?.state.mark ?? .running, size: 24)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title).font(.headline).lineLimit(1)
-                        Text(detail).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                        Text(detail).font(.callout).foregroundStyle(WorkspaceStyle.secondaryText).lineLimit(1)
                             .contentTransition(.opacity)
                         if let warning {
                             Label(warning, systemImage: "exclamationmark.triangle.fill")
@@ -327,7 +327,7 @@ struct SuiteRow: View {
                             .font(.title2.weight(.semibold)).monospacedDigit()
                             .contentTransition(.numericText())
                         Text(summary?.latestPassRate == nil ? "No score" : "passed")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(WorkspaceStyle.secondaryText)
                     }
                     .frame(minWidth: 64, alignment: .trailing)
                 }
@@ -443,7 +443,7 @@ struct RecentRunsTimeline: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.suite.name).font(.callout.weight(.medium)).lineLimit(1)
                                 Text(item.point.date.formatted(.relative(presentation: .named)))
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .font(.caption).foregroundStyle(WorkspaceStyle.secondaryText)
                             }
                             Spacer(minLength: 8)
                             VStack(alignment: .trailing, spacing: 2) {
@@ -453,7 +453,7 @@ struct RecentRunsTimeline: View {
                                         .font(.caption).monospacedDigit()
                                 }
                             }
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(WorkspaceStyle.secondaryText)
                         }
                         .padding(.horizontal, 18).padding(.vertical, 11)
                         .contentShape(.rect)

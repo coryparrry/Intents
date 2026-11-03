@@ -124,13 +124,7 @@ struct WorkspaceOverviewView: View {
     private var gallery: some View {
         VStack(alignment: .leading, spacing: 14) {
             WorkspaceSectionTitle("Suites", count: records.count) {
-                Picker("Show", selection: $attentionOnly) {
-                    Text("All").tag(false)
-                    Text("Needs attention").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+                WorkspaceGlassTabs(title: "Show", identifier: "Show", pages: [false, true], selection: $attentionOnly) { $0 ? "Needs attention" : "All" }
                 .accessibilityLabel("Show only suites needing attention")
             }
             if visibleRecords.isEmpty, !records.isEmpty {

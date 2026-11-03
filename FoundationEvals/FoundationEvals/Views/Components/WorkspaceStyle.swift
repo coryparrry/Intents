@@ -13,6 +13,7 @@ enum WorkspaceStyle {
     /// Wells inside a surface, such as search fields, editors, and quoted evidence.
     static let inset = adaptive(light: (0.945, 0.945, 0.953), dark: (0.125, 0.125, 0.133))
     static let border = Color.primary.opacity(0.07)
+    static let secondaryText = adaptive(light: (0.38, 0.38, 0.41), dark: (0.78, 0.78, 0.82))
 
     static let success = Color(nsColor: .systemGreen)
     static let warning = Color(nsColor: .systemOrange)
@@ -36,7 +37,7 @@ enum WorkspaceStyle {
     }
 }
 
-/// Static ambient colour behind the detail column; never participates in interaction.
+/// Static window-wide ambient colour; never participates in interaction.
 struct WorkspaceBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -46,9 +47,9 @@ struct WorkspaceBackdrop: View {
             WorkspaceStyle.canvas
             if !reduceTransparency {
                 let dark = colorScheme == .dark
-                RadialGradient(colors: [.indigo.opacity(dark ? 0.38 : 0.23), .clear], center: .topLeading, startRadius: 0, endRadius: 850)
-                RadialGradient(colors: [.teal.opacity(dark ? 0.25 : 0.20), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 700)
-                RadialGradient(colors: [.purple.opacity(dark ? 0.24 : 0.14), .clear], center: .topTrailing, startRadius: 0, endRadius: 600)
+                RadialGradient(colors: [.indigo.opacity(dark ? 0.38 : 0.46), .clear], center: .topLeading, startRadius: 0, endRadius: 1000)
+                RadialGradient(colors: [.teal.opacity(dark ? 0.25 : 0.40), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 900)
+                RadialGradient(colors: [.purple.opacity(dark ? 0.24 : 0.30), .clear], center: .topTrailing, startRadius: 0, endRadius: 800)
             }
         }
         .ignoresSafeArea()
@@ -60,6 +61,7 @@ struct WorkspaceBackdrop: View {
 private struct WorkspaceGlassSurface: ViewModifier {
     let radius: CGFloat
     let tint: Color?
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     /// Applies glass only when transparency is permitted, retaining a readable opaque fallback.
@@ -70,11 +72,11 @@ private struct WorkspaceGlassSurface: ViewModifier {
                 content.clipShape(shape).background(WorkspaceStyle.surface, in: shape)
             } else {
                 content.clipShape(shape)
-                    .glassEffect(.regular.tint(tint?.opacity(0.16) ?? .clear), in: shape)
+                    .glassEffect(.regular.tint(tint?.opacity(colorScheme == .dark ? 0.08 : 0.16) ?? .clear), in: shape)
             }
         }
         .overlay { shape.strokeBorder(.white.opacity(reduceTransparency ? 0 : 0.22), lineWidth: 0.5).allowsHitTesting(false) }
-        .shadow(color: .black.opacity(reduceTransparency ? 0 : 0.09), radius: 14, x: 0, y: 7)
+        .shadow(color: .black.opacity(reduceTransparency ? 0 : colorScheme == .dark ? 0.08 : 0.05), radius: 6, x: 0, y: 3)
     }
 }
 
@@ -88,52 +90,63 @@ private struct WorkspaceInsetSurface: ViewModifier {
     }
 }
 
-/// Floating page navigation with a native segmented accessibility representation.
-struct WorkspaceGlassTabs<Page: Hashable & Identifiable>: View {
+/// Glass navigation and filters with native segmented accessibility semantics.
+/// Toolbar instances defer their outer glass to the system toolbar background.
+struct WorkspaceGlassTabs<Page: Hashable>: View {
     let title: String
     let identifier: String
     let pages: [Page]
     @Binding var selection: Page
+    var isToolbar: Bool = false
     let label: (Page) -> LocalizedStringResource
     @Namespace private var namespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
-        GlassEffectContainer(spacing: 6) {
-            HStack(spacing: 4) {
-                ForEach(pages) { page in
-                    Button { selection = page } label: {
-                        Text(label(page))
-                            .font(.subheadline.weight(selection == page ? .semibold : .medium))
-                            .padding(.horizontal, 14).padding(.vertical, 8)
-                            .background {
-                                if selection == page {
-                                    if reduceTransparency {
-                                        Capsule().fill(WorkspaceStyle.surface)
-                                    } else {
-                                        Capsule().fill(.clear)
-                                            .glassEffect(.regular.tint(.accentColor.opacity(0.18)).interactive(), in: .capsule)
-                                            .glassEffectID("selected", in: namespace)
-                                    }
-                                }
-                            }
-                    }
-                    .buttonStyle(.plain)
+        let controls = HStack(spacing: 4) {
+            ForEach(pages, id: \.self) { page in
+                Button { selection = page } label: {
+                    tabLabel(page)
                 }
+                .buttonStyle(.plain)
             }
-            .padding(5)
-            .workspaceSurface(radius: 100)
+        }
+        .padding(5)
+        GlassEffectContainer(spacing: 6) {
+            if isToolbar {
+                controls
+            } else {
+                controls.workspaceSurface(radius: 100)
+            }
         }
         .fixedSize()
         .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: selection)
         .accessibilityRepresentation {
             Picker(title, selection: $selection) {
-                ForEach(pages) { page in Text(label(page)).tag(page) }
+                ForEach(pages, id: \.self) { page in Text(label(page)).tag(page) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .accessibilityIdentifier(identifier)
+        }
+    }
+
+    /// Keeps selected text above its morphing glass pill, with an opaque accessibility fallback.
+    @ViewBuilder
+    private func tabLabel(_ page: Page) -> some View {
+        let text = Text(label(page))
+            .font(.subheadline.weight(selection == page ? .semibold : .medium))
+            .padding(.horizontal, 14).padding(.vertical, 8)
+        if selection == page {
+            if reduceTransparency {
+                text.background(WorkspaceStyle.surface, in: .capsule)
+            } else {
+                text.glassEffect(.regular.tint(.accentColor.opacity(0.18)).interactive(), in: .capsule)
+                    .glassEffectID("selected", in: namespace)
+            }
+        } else {
+            text
         }
     }
 }

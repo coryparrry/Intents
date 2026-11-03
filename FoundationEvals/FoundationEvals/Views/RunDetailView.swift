@@ -90,7 +90,7 @@ struct RunDetailView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                WorkspaceGlassTabs(title: "Run view", identifier: "Run view", pages: RunPage.allCases, selection: $selectedPage) { $0.title }
+                WorkspaceGlassTabs(title: "Run view", identifier: "Run view", pages: RunPage.allCases, selection: $selectedPage, isToolbar: true) { $0.title }
             }
             ToolbarItem(placement: .primaryAction) {
                 WorkspaceResetControl(store: store)
@@ -207,7 +207,7 @@ private struct RunOverviewHeader: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Text(run.suiteName)
-                        .font(.title2.weight(.semibold))
+                        .font(.largeTitle.weight(.bold))
                         .lineLimit(2)
                 }
                 Spacer(minLength: 16)
@@ -537,10 +537,7 @@ private struct ResultsSection: View {
     @ViewBuilder
     private var resultControls: some View {
         if !run.results.isEmpty {
-            Picker("Result filter", selection: $filter) {
-                ForEach(ResultFilter.allCases) { filter in Text(filter.title).tag(filter) }
-            }
-            .labelsHidden().pickerStyle(.segmented).fixedSize()
+            WorkspaceGlassTabs(title: "Result filter", identifier: "Result filter", pages: ResultFilter.allCases, selection: $filter) { $0.title }
 
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)

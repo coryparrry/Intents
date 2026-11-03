@@ -3,6 +3,28 @@ import XCTest
 final class WorkspacePolishUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    /// Overview filters preserve radio selection even before any evaluation has run.
+    @MainActor
+    func testGlassOverviewFiltersPreserveRadioSelection() throws {
+        let storage = try UITestStorage.makeDirectory(prefix: "glass-overview-filters")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launch()
+        defer { app.terminate() }
+        let overview = app.staticTexts["Sidebar overview"]
+        XCTAssertTrue(overview.waitForExistence(timeout: 5))
+        overview.click()
+        for title in ["Needs attention", "All"] {
+            let tab = app.radioGroups["Show"].radioButtons[title]
+            XCTAssertTrue(tab.waitForExistence(timeout: 5))
+            XCTAssertTrue(tab.isHittable)
+            tab.click()
+            let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 1"), object: tab)
+            XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 3), .completed)
+        }
+    }
+
     /// Glass page navigation retains native radio roles, selection values, and unique tab labels.
     @MainActor
     func testGlassSuiteTabsPreserveRadioSelection() throws {

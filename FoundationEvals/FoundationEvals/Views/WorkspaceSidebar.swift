@@ -178,6 +178,7 @@ struct WorkspaceSidebar: View {
             }
 
         }
+        .scrollContentBackground(.hidden)
         .onChange(of: store.selectedSuiteID) { _, _ in runSearch = ""; showsAllRuns = false }
         .safeAreaInset(edge: .top, spacing: 0) {
             projectSwitcher
@@ -188,7 +189,6 @@ struct WorkspaceSidebar: View {
                 Button { isCreatingSuite = true } label: {
                     Label("New Suite", systemImage: "plus")
                         .font(.callout.weight(.medium))
-                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.glassProminent)
                 .help("Create a new evaluation suite in this project")

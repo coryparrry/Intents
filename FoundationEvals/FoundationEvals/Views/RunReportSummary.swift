@@ -50,7 +50,7 @@ struct RunReportSummary: View {
                     Text(presentation.headline)
                         .font(.title3.weight(.semibold))
                         .accessibilityIdentifier("Evaluation result headline")
-                    Text(presentation.nextStep).font(.callout).foregroundStyle(.secondary)
+                    Text(presentation.nextStep).font(.callout).foregroundStyle(WorkspaceStyle.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     WorkspaceProportionBar(segments: [
                         WorkspaceRingSegment(count: run.passedCount, color: WorkspaceStyle.success),

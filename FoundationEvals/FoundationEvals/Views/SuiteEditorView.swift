@@ -152,7 +152,7 @@ struct SuiteEditorView: View {
         .navigationTitle(store.draftSuite.name)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                WorkspaceGlassTabs(title: "Suite page", identifier: "Editor page", pages: SuiteEditorPage.allCases, selection: $selectedPage) { $0.title }
+                WorkspaceGlassTabs(title: "Suite page", identifier: "Editor page", pages: SuiteEditorPage.allCases, selection: $selectedPage, isToolbar: true) { $0.title }
             }
             SuiteRunToolbar(
                 store: store,
@@ -400,7 +400,7 @@ private struct SuiteOverviewHeader: View {
                 VStack(alignment: .leading, spacing: 4) {
                     TextField("Suite name", text: $store.draftSuite.name)
                         .textFieldStyle(.plain)
-                        .font(.title2.weight(.semibold))
+                        .font(.largeTitle.weight(.bold))
                         .accessibilityLabel("Suite name").disabled(isBusy)
                     HStack(spacing: 10) {
                         Text(metadata).lineLimit(1)

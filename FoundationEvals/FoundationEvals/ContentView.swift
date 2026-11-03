@@ -90,8 +90,8 @@ struct ContentView: View {
                 }
             }
             .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: showsWorkspaceStatus)
-            .background { WorkspaceBackdrop() }
         }
+        .background { WorkspaceBackdrop() }
     }
 
     @ViewBuilder
