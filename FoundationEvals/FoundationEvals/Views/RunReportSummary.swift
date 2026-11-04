@@ -50,7 +50,7 @@ struct RunReportSummary: View {
                     Text(presentation.headline)
                         .font(.title3.weight(.semibold))
                         .accessibilityIdentifier("Evaluation result headline")
-                    Text(presentation.nextStep).font(.callout).foregroundStyle(.secondary)
+                    Text(presentation.nextStep).font(.callout).foregroundStyle(WorkspaceStyle.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     WorkspaceProportionBar(segments: [
                         WorkspaceRingSegment(count: run.passedCount, color: WorkspaceStyle.success),
@@ -75,7 +75,7 @@ struct RunReportSummary: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceSurface()
+        .workspaceSurface(tint: run.failedCount > 0 ? WorkspaceStyle.failure : isIncomplete || presentation.attentionCount > 0 ? WorkspaceStyle.warning : WorkspaceStyle.success)
         .task(id: run.id) {
             shown = false
             try? await Task.sleep(for: .milliseconds(150))

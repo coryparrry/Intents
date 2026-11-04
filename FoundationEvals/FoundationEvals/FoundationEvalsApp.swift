@@ -189,7 +189,7 @@ struct FoundationEvalsApp: App {
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
-                Button("Show App Intent Testing") {
+                Button("Show App Intents") {
                     store.selection = .appIntentTesting
                     openWindow(id: "evaluation-main", value: "main")
                 }
