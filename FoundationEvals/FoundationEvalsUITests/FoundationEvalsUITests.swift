@@ -107,8 +107,8 @@ final class FoundationEvalsUITests: XCTestCase {
         referenceFiles.click()
         let addFiles = app.buttons["Add Files"]
         if !addFiles.waitForExistence(timeout: 2) {
-            referenceFiles.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
-                .withOffset(CGVector(dx: 27, dy: 0)).click()
+            app.staticTexts["Reference files"].coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 1))
+                .withOffset(CGVector(dx: -12, dy: 0)).click()
         }
         XCTAssertTrue(addFiles.waitForExistence(timeout: 3))
 

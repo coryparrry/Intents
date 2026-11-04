@@ -90,7 +90,15 @@ struct RunDetailView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                WorkspaceGlassTabs(title: "Run view", identifier: "Run view", pages: RunPage.allCases, selection: $selectedPage, isToolbar: true) { $0.title }
+                Picker("Run view", selection: $selectedPage) {
+                    ForEach(RunPage.allCases) { page in
+                        Text(page.title).tag(page)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("Run view")
             }
             ToolbarItem(placement: .primaryAction) {
                 WorkspaceResetControl(store: store)
@@ -537,7 +545,10 @@ private struct ResultsSection: View {
     @ViewBuilder
     private var resultControls: some View {
         if !run.results.isEmpty {
-            WorkspaceGlassTabs(title: "Result filter", identifier: "Result filter", pages: ResultFilter.allCases, selection: $filter) { $0.title }
+            Picker("Result filter", selection: $filter) {
+                ForEach(ResultFilter.allCases) { filter in Text(filter.title).tag(filter) }
+            }
+            .labelsHidden().pickerStyle(.segmented).fixedSize()
 
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.tertiary)

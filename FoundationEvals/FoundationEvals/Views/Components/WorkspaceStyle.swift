@@ -90,67 +90,6 @@ private struct WorkspaceInsetSurface: ViewModifier {
     }
 }
 
-/// Glass navigation and filters with native segmented accessibility semantics.
-/// Toolbar instances defer their outer glass to the system toolbar background.
-struct WorkspaceGlassTabs<Page: Hashable>: View {
-    let title: String
-    let identifier: String
-    let pages: [Page]
-    @Binding var selection: Page
-    var isToolbar: Bool = false
-    let label: (Page) -> LocalizedStringResource
-    @Namespace private var namespace
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    var body: some View {
-        let controls = HStack(spacing: 4) {
-            ForEach(pages, id: \.self) { page in
-                Button { selection = page } label: {
-                    tabLabel(page)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(5)
-        GlassEffectContainer(spacing: 6) {
-            if isToolbar {
-                controls
-            } else {
-                controls.workspaceSurface(radius: 100)
-            }
-        }
-        .fixedSize()
-        .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: selection)
-        .accessibilityRepresentation {
-            Picker(title, selection: $selection) {
-                ForEach(pages, id: \.self) { page in Text(label(page)).tag(page) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityIdentifier(identifier)
-        }
-    }
-
-    /// Keeps selected text above its morphing glass pill, with an opaque accessibility fallback.
-    @ViewBuilder
-    private func tabLabel(_ page: Page) -> some View {
-        let text = Text(label(page))
-            .font(.subheadline.weight(selection == page ? .semibold : .medium))
-            .padding(.horizontal, 14).padding(.vertical, 8)
-        if selection == page {
-            if reduceTransparency {
-                text.background(WorkspaceStyle.surface, in: .capsule)
-            } else {
-                text.glassEffect(.regular.tint(.accentColor.opacity(0.18)).interactive(), in: .capsule)
-                    .glassEffectID("selected", in: namespace)
-            }
-        } else {
-            text
-        }
-    }
-}
-
 extension View {
     /// Raises content on glass with a specular edge and optional semantic tint.
     func workspaceSurface(radius: CGFloat = WorkspaceStyle.panelRadius, tint: Color? = nil) -> some View {

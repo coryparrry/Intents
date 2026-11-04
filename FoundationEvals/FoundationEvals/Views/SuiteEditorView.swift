@@ -152,7 +152,13 @@ struct SuiteEditorView: View {
         .navigationTitle(store.draftSuite.name)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                WorkspaceGlassTabs(title: "Suite page", identifier: "Editor page", pages: SuiteEditorPage.allCases, selection: $selectedPage, isToolbar: true) { $0.title }
+                Picker("Suite page", selection: $selectedPage) {
+                    ForEach(SuiteEditorPage.allCases) { page in Text(page.title).tag(page) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("Editor page")
             }
             SuiteRunToolbar(
                 store: store,
