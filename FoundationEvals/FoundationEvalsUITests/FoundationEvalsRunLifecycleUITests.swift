@@ -102,7 +102,20 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         configureSuite(name: "Scoring guide fixture", endpointPath: "/success")
         let guided = app.checkBoxes["Guided generation"]
         XCTAssertTrue(guided.waitForExistence(timeout: 3))
+        let editor = app.scrollViews["Suite editor scroll"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        let viewport = editor.frame.intersection(app.windows.firstMatch.frame).insetBy(dx: 0, dy: 12)
+        // The capability toggle can exist in the accessibility tree below the visible page.
+        for _ in 0..<8 {
+            let frame = guided.frame
+            if guided.isHittable && viewport.contains(frame) { break }
+            editor.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+                .scroll(byDeltaX: 0, deltaY: frame.minY < viewport.minY ? 180 : -180)
+        }
+        XCTAssertTrue(guided.isHittable && viewport.contains(guided.frame), app.debugDescription)
         guided.click()
+        XCTAssertTrue((guided.value as? NSNumber)?.intValue == 1 || guided.value as? String == "1",
+                      "The subject must support guided generation before using the same model to judge the rubric")
         selectSetup("Scoring")
         app.radioButtons["AI rubric"].click()
         let criteria = app.textViews["AI rubric requirements"]
@@ -118,7 +131,6 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertTrue(guide.waitForExistence(timeout: 3))
         XCTAssertTrue(guide.isEnabled)
         XCTAssertFalse(criteria.isEnabled)
-        let editor = app.scrollViews["Suite editor scroll"]
         XCTAssertTrue(editor.waitForExistence(timeout: 3))
         editor.coordinate(withNormalizedOffset: CGVector(dx: 0.90, dy: 0.20))
             .scroll(byDeltaX: 0, deltaY: -400)
