@@ -52,10 +52,13 @@ the exact number of passing repeats may be unavailable.
 
 Use **Run facts and evidence** to locate the generated Swift, log, and result
 bundle. **Documents → Import result bundle…** accepts an `.xcresult` from an
-exported Swift test. It matches the attached scenario ID and revision. Open the
-corresponding scenario document to see its authored expectations. **Open saved
-run…** accepts the directory containing `run.json`. Run records and scenario
-documents are under `~/Library/Application Support/Intents/SiriStudio/`.
+exported Swift test. To grade the import, Studio verifies the scenario content,
+revision, and target app against the export. Re-export and rerun tests whose
+attachments lack a content fingerprint. **Open saved run…** accepts the
+directory containing a `run.json` of up to 64 MiB. Runs and imports require an
+empty output directory, which Studio makes private before writing evidence.
+Run records and scenario documents are under
+`~/Library/Application Support/Intents/SiriStudio/`.
 Verdict-only export omits the authored and observed conversation. The separate
 transcript export includes it.
 

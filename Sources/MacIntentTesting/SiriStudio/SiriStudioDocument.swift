@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// A versioned set of authored Siri scenarios for one compiled Mac app.
@@ -69,6 +70,18 @@ public struct SiriStudioScenario: Identifiable, Codable, Sendable, Equatable {
                 setup: MacIntentTestCase? = nil) {
         self.id = id; self.name = name; self.revision = revision; self.repeatCount = repeatCount
         self.turns = turns; self.scenarioExpectations = scenarioExpectations; self.setup = setup
+    }
+
+    /// Fingerprints the full authored scenario and target app independently of JSON file formatting.
+    func contentDigest(bundleIdentifier: String) throws -> String {
+        struct Input: Encodable {
+            let bundleIdentifier: String
+            let scenario: SiriStudioScenario
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let bytes = try encoder.encode(Input(bundleIdentifier: bundleIdentifier, scenario: self))
+        return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
 
     /// The Apple metrics that the authored expectations actually produce.

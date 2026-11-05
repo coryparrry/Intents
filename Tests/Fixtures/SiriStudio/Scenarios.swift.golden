@@ -13,6 +13,7 @@ private struct StudioEvaluation: Evaluation {
     let name: String
     let scenarioID: String
     let revision: Int
+    let contentDigest: String
     let turnIDs: [String]
     let samples: [SiriScenario]
     let setup: (@Sendable () async throws -> Void)?
@@ -86,6 +87,7 @@ private struct StudioEvaluation: Evaluation {
         object["version"] = 1
         object["scenarioID"] = scenarioID
         object["revision"] = revision
+        object["contentDigest"] = contentDigest
         do {
             let bytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
             Attachment.record(String(decoding: bytes, as: UTF8.self), named: "siri-studio-\(scenarioID)-\(suffix).json")
@@ -200,6 +202,7 @@ private actor StudioReports {
 struct SiriStudioScenarios {
     private static let evaluation_7517157C_7AD9_57B4_B874_532684066A7D = StudioEvaluation(
         name: "Add and open", scenarioID: "7517157C-7AD9-57B4-B874-532684066A7D", revision: 1,
+        contentDigest: "4abdc448688ba4dafcba97d09c38ee59c2ac3557ca0d60d8e643d346a833937d",
         turnIDs: ["B715B5A3-7C65-5DE5-85A5-4FD3F5B1CD2E"],
         samples: (0..<1).map { _ in
             SiriScenario {
@@ -235,6 +238,7 @@ struct SiriStudioScenarios {
 
     private static let evaluation_77348B60_F402_50EA_A83C_B48C2576EE08 = StudioEvaluation(
         name: "Missing jersey number", scenarioID: "77348B60-F402-50EA-A83C-B48C2576EE08", revision: 1,
+        contentDigest: "ddbd81345b6512979fd1b91a1f346d214e9b3b21a72e7632fd1cf6cdbad7bbc7",
         turnIDs: ["10F8AD6A-F642-5DC5-BFF0-8C9760D9379C", "A0D9B916-DEA3-5240-B0AB-61E4DB551BB2"],
         samples: (0..<1).map { _ in
             SiriScenario {
@@ -274,6 +278,7 @@ struct SiriStudioScenarios {
 
     private static let evaluation_CABD7177_4E3A_5B9C_BFE6_714ED964CB9A = StudioEvaluation(
         name: "Don’t act on a question", scenarioID: "CABD7177-4E3A-5B9C-BFE6-714ED964CB9A", revision: 1,
+        contentDigest: "c62593c3eb05b5e0909b68c12d7b2a17bab26274c2c60478db53d93324bacd74",
         turnIDs: ["2A189DCA-5F0F-5444-B788-91B6E5F97264"],
         samples: (0..<1).map { _ in
             SiriScenario {
@@ -305,6 +310,7 @@ struct SiriStudioScenarios {
 
     private static let evaluation_A282A26D_0004_588D_97CE_BF0051B568B0 = StudioEvaluation(
         name: "Deliberate mismatch", scenarioID: "A282A26D-0004-588D-97CE-BF0051B568B0", revision: 1,
+        contentDigest: "4fff646283ba4e66ebf00028730ac41181d903632b80468b0992a17dd3311f6f",
         turnIDs: ["B139EE9B-A6B1-5F68-B542-8E55305429A8"],
         samples: (0..<1).map { _ in
             SiriScenario {

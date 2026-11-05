@@ -19,13 +19,8 @@ public final class SiriStudioRunner {
         let scenarios = try SiriStudioSource.selection(in: document, scenarioIDs)
         let directory = configuration.outputDirectory
         let files = FileManager.default
-        try files.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        guard try files.contentsOfDirectory(atPath: directory.path).isEmpty else {
-            throw MacIntentTestingError("Choose an empty Siri Studio run directory.")
-        }
         let logURL = directory.appendingPathComponent("run.log")
-        files.createFile(atPath: logURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
-        let log = try FileHandle(forWritingTo: logURL)
+        let log = try Self.openOutputLog(logURL)
         defer { try? log.close() }
         let startedAt = Date()
         let resultURL = directory.appendingPathComponent("Result.xcresult")
@@ -151,7 +146,9 @@ public final class SiriStudioRunner {
         let record = SiriStudioRunRecord(document: document, productIdentity: catalog.productIdentity, xcodeBuild: build,
             osBuild: Self.osBuild(), startedAt: startedAt, endedAt: Date(), sourceURL: sourceURL,
             resultBundleURL: files.fileExists(atPath: resultURL.path) ? resultURL : nil, logURL: logURL,
-            scenarios: scenarios.map { evidence.result(for: $0, blocked: blocked, cancelled: cancelled) })
+            scenarios: scenarios.map {
+                evidence.result(for: $0, bundleIdentifier: document.bundleIdentifier, blocked: blocked, cancelled: cancelled)
+            })
         try record.write(to: directory)
         return record
     }
@@ -163,10 +160,8 @@ public final class SiriStudioRunner {
         try session.begin()
         defer { session.end() }
         let files = FileManager.default
-        try files.createDirectory(at: outputDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let logURL = outputDirectory.appendingPathComponent("import.log")
-        files.createFile(atPath: logURL.path, contents: nil)
-        let log = try FileHandle(forWritingTo: logURL)
+        let log = try Self.openOutputLog(logURL)
         defer { try? log.close() }
         let environment = Self.environment(for: developerDirectory)
         let evidence = try await attachments(from: resultURL, in: outputDirectory, environment: environment, log: log)
@@ -186,11 +181,30 @@ public final class SiriStudioRunner {
         let record = SiriStudioRunRecord(document: document, productIdentity: nil, xcodeBuild: nil,
             osBuild: facts.osBuild, startedAt: facts.started, endedAt: facts.ended, sourceURL: nil, resultBundleURL: resultURL,
             logURL: logURL, scenarios: selected.map {
-                evidence.result(for: $0, blocked: tests[$0.id] == true ? nil : "The Studio test did not execute exactly once.",
+                evidence.result(for: $0, bundleIdentifier: document.bundleIdentifier,
+                                blocked: tests[$0.id] == true ? nil : "The Studio test did not execute exactly once.",
                                 allowStale: true)
             })
         try record.write(to: outputDirectory)
         return record
+    }
+
+    /// Claims an empty directory for one run and restricts access before creating any evidence.
+    private static func openOutputLog(_ logURL: URL) throws -> FileHandle {
+        let directory = logURL.deletingLastPathComponent()
+        let files = FileManager.default
+        try files.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        defer { close(descriptor) }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0,
+              try files.contentsOfDirectory(atPath: directory.path).isEmpty else {
+            throw MacIntentTestingError("Choose an empty Siri Studio run directory.")
+        }
+        guard fchmod(descriptor, 0o700) == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        let log = open(logURL.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard log >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        return FileHandle(fileDescriptor: log, closeOnDealloc: true)
     }
 
     /// Reads the chosen Xcode's version and checks its actual Mac developer framework.

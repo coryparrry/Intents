@@ -5,6 +5,7 @@ enum SiriStudioGeneratedSupport {
         let name: String
         let scenarioID: String
         let revision: Int
+        let contentDigest: String
         let turnIDs: [String]
         let samples: [SiriScenario]
         let setup: (@Sendable () async throws -> Void)?
@@ -78,6 +79,7 @@ enum SiriStudioGeneratedSupport {
             object["version"] = 1
             object["scenarioID"] = scenarioID
             object["revision"] = revision
+            object["contentDigest"] = contentDigest
             do {
                 let bytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
                 Attachment.record(String(decoding: bytes, as: UTF8.self), named: "siri-studio-\(scenarioID)-\(suffix).json")

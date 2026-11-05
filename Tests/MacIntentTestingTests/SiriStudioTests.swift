@@ -109,6 +109,43 @@ struct SiriStudioTests {
         }
     }
 
+    /// A run secures a pre-existing empty folder, and imports leave prior evidence and permissions intact.
+    @MainActor @Test func preservesExistingEvidenceAndSecuresEmptyOutput() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "siri-output-\(UUID())")
+        let files = FileManager.default
+        try files.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: directory) }
+        try files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+
+        let catalog = try fixtureCatalog()
+        let document = SiriStudioDocument(bundleIdentifier: catalog.bundleIdentifier, scenarios: [.init(name: "Invalid fixture")])
+        let developer = URL(filePath: "/unused/Xcode")
+        let configuration = MacIntentRunConfiguration(developerDirectory: developer, signingIdentity: "",
+            teamIdentifier: "", outputDirectory: directory)
+        let runner = SiriStudioRunner()
+        let record = try await runner.run(document: document, catalog: catalog, configuration: configuration)
+        #expect(record.state == .blocked)
+        let mode = try files.attributesOfItem(atPath: directory.path)[.posixPermissions] as? Int
+        #expect(mode == 0o700)
+
+        let log = directory.appending(path: "import.log")
+        let priorLog = Data("prior import".utf8)
+        try priorLog.write(to: log)
+        let run = directory.appending(path: "run.json")
+        let priorRun = try Data(contentsOf: run)
+        try files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        let result = directory.appending(path: "unused.xcresult")
+        let error = await #expect(throws: MacIntentTestingError.self) {
+            try await runner.importResult(result, document: document, developerDirectory: developer,
+                                          outputDirectory: directory)
+        }
+        #expect(error?.message == "Choose an empty Siri Studio run directory.")
+        #expect(try Data(contentsOf: log) == priorLog)
+        #expect(try Data(contentsOf: run) == priorRun)
+        let preservedMode = try files.attributesOfItem(atPath: directory.path)[.posixPermissions] as? Int
+        #expect(preservedMode == 0o755)
+    }
+
     /// Opens actual compiled metadata from the synthetic Courtside app.
     private func fixtureCatalog() throws -> MacIntentCatalog {
         try MacIntentCatalog.decode(data: Data(contentsOf: Self.fixture.appending(path: "Courtside.actions.json")),

@@ -4,6 +4,7 @@ import Testing
 
 /// Drives the attachment decoder and verdict rules with repeat-level evidence.
 struct SiriStudioReportTests {
+    private let bundle = "dev.intents.test"
     private let id = UUID(uuidString: "39F7384C-54D1-4524-AD43-363FC48D6DEE")!
     private let first = UUID(uuidString: "55EB5CE9-8F77-4C66-AFB9-C525D75ECA42")!
     private let second = UUID(uuidString: "5C38F116-318C-4B9C-93B5-583DD4799AC9")!
@@ -11,14 +12,15 @@ struct SiriStudioReportTests {
     /// Tests failure precedence over incomplete repeats, then confirms persistence on reopen.
     @Test func failurePrecedesPartialAndBothPersist() throws {
         let scenario = scenario(repeats: 2)
-        let partial = try report(index: 1, reached: 1)
-        let complete = try report(index: 0, reached: 2)
-        let failed = SiriStudioScenarioResult.assess(scenario, reports: [partial, complete],
-            summary: summary(0.5, rows: [.init(repeatIndex: 0, metrics: ["siriResponseAllPass": 0])]))
+        let digest = try scenario.contentDigest(bundleIdentifier: bundle)
+        let partial = try report(digest: digest, index: 1, reached: 1)
+        let complete = try report(digest: digest, index: 0, reached: 2)
+        let failed = SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: [partial, complete],
+            summary: summary(digest, 0.5, rows: [.init(repeatIndex: 0, metrics: ["siriResponseAllPass": 0])]))
         #expect(failed.state == .failed && failed.passed == 0 && failed.failingMetrics == ["siriResponseAllPass"])
-        let incomplete = SiriStudioScenarioResult.assess(scenario, reports: [partial, complete], summary: summary(0.5))
+        let incomplete = SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: [partial, complete], summary: summary(digest, 0.5))
         #expect(incomplete.state == .incomplete && incomplete.reason == "1 of 2 turns reached.")
-        let cancelled = SiriStudioScenarioResult.assess(scenario, reports: [partial, complete],
+        let cancelled = SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: [partial, complete],
             summary: nil, blocked: "Build error", cancelled: "Run cancelled.")
         #expect(cancelled.state == .cancelled)
         let folder = FileManager.default.temporaryDirectory.appending(path: "siri-record-\(UUID())")
@@ -38,22 +40,23 @@ struct SiriStudioReportTests {
     /// Verifies complete evidence, all-blocked evidence, missing metrics and the aggregate fallback.
     @Test func neverPassesMissingEvidenceAndUsesAggregateFallback() throws {
         let scenario = scenario(repeats: 2)
-        let complete = try [report(index: 0, reached: 2), report(index: 1, reached: 2)]
-        let setup = try report(index: 0, reached: 0, phase: "setup")
-        #expect(SiriStudioScenarioResult.assess(scenario, reports: complete, summary: summary(1)).state == .passed)
-        #expect(SiriStudioScenarioResult.assess(scenario, reports: complete, summary: summary(0.5)).state == .failed)
-        #expect(SiriStudioScenarioResult.assess(scenario, reports: complete, summary: summary(-1)).state == .blocked)
-        #expect(SiriStudioScenarioResult.assess(scenario, reports: complete, summary: nil).state == .blocked)
-        #expect(SiriStudioScenarioResult.assess(scenario, reports: [complete[0], complete[0]], summary: summary(1)).state == .blocked)
-        #expect(SiriStudioScenarioResult.assess(scenario, reports: [setup], summary: summary(1)).state == .blocked)
-        var evaluatorFailed = summary(1)
+        let digest = try scenario.contentDigest(bundleIdentifier: bundle)
+        let complete = try [report(digest: digest, index: 0, reached: 2), report(digest: digest, index: 1, reached: 2)]
+        let setup = try report(digest: digest, index: 0, reached: 0, phase: "setup")
+        #expect(SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: complete, summary: summary(digest, 1)).state == .passed)
+        #expect(SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: complete, summary: summary(digest, 0.5)).state == .failed)
+        #expect(SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: complete, summary: summary(digest, -1)).state == .blocked)
+        #expect(SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: complete, summary: nil).state == .blocked)
+        #expect(SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: [complete[0], complete[0]], summary: summary(digest, 1)).state == .blocked)
+        #expect(SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: [setup], summary: summary(digest, 1)).state == .blocked)
+        var evaluatorFailed = summary(digest, 1)
         evaluatorFailed.evaluatorFailureCount = 1
-        let missingGrade = SiriStudioScenarioResult.assess(scenario, reports: complete, summary: evaluatorFailed)
+        let missingGrade = SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: complete, summary: evaluatorFailed)
         #expect(missingGrade.state == .blocked && missingGrade.passed == nil)
-        let mixed = SiriStudioScenarioResult.assess(scenario, reports: [setup, complete[1]], summary: summary(1))
+        let mixed = SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: [setup, complete[1]], summary: summary(digest, 1))
         #expect(mixed.state == .incomplete && mixed.passed == 1 && mixed.attempted == 2)
         #expect(mixed.reports.first?.blocked?.phase == .setup)
-        #expect(SiriStudioScenarioResult.assess(scenario, reports: complete, summary: summary(1), blocked: "Wrong team").state == .blocked)
+        #expect(SiriStudioScenarioResult.assess(scenario, bundleIdentifier: bundle, reports: complete, summary: summary(digest, 1), blocked: "Wrong team").state == .blocked)
     }
 
     /// Reads an xcresulttool-style manifest, rejects foreign test IDs, and preserves older revisions as stale.
@@ -61,9 +64,11 @@ struct SiriStudioReportTests {
         let folder = FileManager.default.temporaryDirectory.appending(path: "siri-attachments-\(UUID())")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let transcript = try report(index: 0, reached: 2)
+        let authored = scenario(repeats: 1)
+        let digest = try authored.contentDigest(bundleIdentifier: bundle)
+        let transcript = try report(digest: digest, index: 0, reached: 2)
         try JSONEncoder().encode(transcript).write(to: folder.appending(path: "one.json"))
-        try JSONEncoder().encode(summary(1)).write(to: folder.appending(path: "two.json"))
+        try JSONEncoder().encode(summary(digest, 1)).write(to: folder.appending(path: "two.json"))
         let token = id.uuidString.replacingOccurrences(of: "-", with: "_")
         let manifest = folder.appending(path: "manifest.json")
         let attachments = [
@@ -73,14 +78,61 @@ struct SiriStudioReportTests {
         let data = try JSONSerialization.data(withJSONObject: [["testIdentifier": "SiriStudioScenarios/scenario_\(token)()", "attachments": attachments]])
         try data.write(to: manifest)
         let evidence = try SiriStudioAttachments.load(from: folder)
-        #expect(evidence.result(for: scenario(repeats: 1)).state == .passed)
-        var edited = scenario(repeats: 1)
+        #expect(evidence.result(for: authored, bundleIdentifier: bundle).state == .passed)
+        var edited = authored
         edited.revision += 1
-        let stale = evidence.result(for: edited, allowStale: true)
+        let stale = evidence.result(for: edited, bundleIdentifier: bundle, allowStale: true)
         #expect(stale.revision == 1 && stale.reports == [transcript] && stale.state == .blocked)
         let wrong = try JSONSerialization.data(withJSONObject: [["testIdentifier": "other()", "attachments": attachments]])
         try wrong.write(to: manifest)
         #expect(throws: MacIntentTestingError.self) { try SiriStudioAttachments.load(from: folder) }
+    }
+
+    /// A passing bundle cannot grade changed text, changed expectations, or another app at the same revision.
+    @Test func rejectsSameRevisionEditsAndUnboundAttachments() throws {
+        let authored = scenario(repeats: 1)
+        let digest = try authored.contentDigest(bundleIdentifier: bundle)
+        let complete = try report(digest: digest, index: 0, reached: 2)
+        let evidence = SiriStudioAttachments(reports: [complete], summaries: [summary(digest, 1)])
+        var changedUtterance = authored
+        changedUtterance.turns[0].utterance = "A different question."
+        var changedExpectation = authored
+        changedExpectation.turns[0].expectations.replyContains[0].text = "A different expected reply."
+        for edited in [changedUtterance, changedExpectation] {
+            let result = evidence.result(for: edited, bundleIdentifier: bundle, allowStale: true)
+            #expect(result.state == .blocked && result.reports.isEmpty && result.summary == nil)
+            #expect(result.reason?.contains("could not verify this scenario's content") == true)
+        }
+        #expect(evidence.result(for: authored, bundleIdentifier: "dev.intents.other", allowStale: true).state == .blocked)
+
+        let legacy = try report(digest: nil, index: 0, reached: 2)
+        let legacyEvidence = SiriStudioAttachments(reports: [legacy], summaries: [summary(nil, 1)])
+        #expect(legacyEvidence.result(for: authored, bundleIdentifier: bundle, allowStale: true).state == .blocked)
+        let mixed = SiriStudioAttachments(reports: [legacy], summaries: [summary(digest, 1)])
+        #expect(mixed.result(for: authored, bundleIdentifier: bundle, allowStale: true).state == .blocked)
+    }
+
+    /// Rejects oversized reads and writes at the same byte boundary without replacing earlier evidence.
+    @Test func boundsSavedRunRecordSize() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "siri-record-size-\(UUID())")
+        let files = FileManager.default
+        try files.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: folder) }
+        let run = folder.appending(path: "run.json")
+        let limit = 64 * 1024 * 1024
+        let original = Data("prior evidence".utf8)
+        try original.write(to: run)
+        var authored = scenario(repeats: 1)
+        authored.turns[0].utterance = String(repeating: "x", count: limit)
+        let record = SiriStudioRunRecord(document: .init(bundleIdentifier: bundle, scenarios: [authored]),
+            productIdentity: nil, xcodeBuild: nil, osBuild: "Test", startedAt: .now, endedAt: .now, sourceURL: nil,
+            resultBundleURL: nil, logURL: folder.appending(path: "run.log"), scenarios: [])
+        #expect(throws: MacIntentTestingError.self) { try record.write(to: folder) }
+        #expect(try Data(contentsOf: run) == original)
+        let handle = try FileHandle(forWritingTo: run)
+        defer { try? handle.close() }
+        try handle.truncate(atOffset: UInt64(limit + 1))
+        #expect(throws: MacIntentTestingError.self) { try SiriStudioRunRecord.read(from: folder) }
     }
 
     /// Accepts genuine Swift test assertion failures but rejects skipped or unexecuted selections.
@@ -127,7 +179,7 @@ struct SiriStudioReportTests {
     }
 
     /// Decodes the same transcript keys and optional fields emitted by the generated support.
-    private func report(index: Int, reached: Int, phase: String? = nil) throws -> SiriStudioReport {
+    private func report(digest: String?, index: Int, reached: Int, phase: String? = nil) throws -> SiriStudioReport {
         let turns = [first, second].prefix(reached).map { id -> [String: Any] in
             ["turnID": id.uuidString, "utterance": "fixture utterance", "invocations": [],
              "foundEntities": [], "onScreenEntities": [], "loadedSkills": [],
@@ -138,13 +190,14 @@ struct SiriStudioReportTests {
             "repeatIndex": index, "status": phase == nil ? "ran" : "blocked", "turnsAuthored": 2,
             "turnsReached": reached, "turns": turns,
         ]
+        report["contentDigest"] = digest
         if let phase { report["blocked"] = ["phase": phase, "errorType": "FixtureError", "message": "Setup failed."] }
         return try JSONDecoder().decode(SiriStudioReport.self, from: JSONSerialization.data(withJSONObject: report))
     }
 
     /// Supplies only Apple's expected reply metric, with optional sample rows.
-    private func summary(_ value: Double, rows: [SiriStudioSummary.RepeatMetrics]? = nil) -> SiriStudioSummary {
-        .init(schema: "dev.intents.siri-studio.summary", version: 1, scenarioID: id, revision: 1,
+    private func summary(_ digest: String?, _ value: Double, rows: [SiriStudioSummary.RepeatMetrics]? = nil) -> SiriStudioSummary {
+        .init(schema: "dev.intents.siri-studio.summary", version: 1, scenarioID: id, revision: 1, contentDigest: digest,
               metrics: ["siriResponseAllPass": value], perRepeat: rows, inferenceFailureCount: 0, metricsNotFound: [])
     }
 }

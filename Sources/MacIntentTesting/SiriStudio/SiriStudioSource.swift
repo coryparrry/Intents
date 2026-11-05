@@ -56,6 +56,7 @@ public enum SiriStudioSource {
         return """
         private static let evaluation_\(token) = StudioEvaluation(
             name: \(literal(scenario.name)), scenarioID: \(literal(id)), revision: \(scenario.revision),
+            contentDigest: \(literal(try scenario.contentDigest(bundleIdentifier: catalog.bundleIdentifier))),
             turnIDs: [\(scenario.turns.map { literal($0.id.uuidString) }.joined(separator: ", "))],
             samples: (0..<\(scenario.repeatCount)).map { _ in
                 SiriScenario {

@@ -7,6 +7,7 @@ public struct SiriStudioReport: Codable, Sendable, Equatable {
     public let version: Int
     public let scenarioID: UUID
     public let revision: Int
+    public let contentDigest: String?
     public let repeatIndex: Int
     public let status: Status
     public let blocked: Blocked?
@@ -72,6 +73,7 @@ public struct SiriStudioSummary: Codable, Sendable, Equatable {
     public let version: Int
     public let scenarioID: UUID
     public let revision: Int
+    public let contentDigest: String?
     public let metrics: [String: Double]
     public let perRepeat: [RepeatMetrics]?
     public let inferenceFailureCount: Int
@@ -102,20 +104,27 @@ public struct SiriStudioScenarioResult: Codable, Sendable, Equatable, Identifiab
     public let failingMetrics: [String]
     public let reason: String?
 
-    /// Applies verdict precedence to the exact scenario snapshot and Apple metrics.
-    static func assess(_ scenario: SiriStudioScenario, reports input: [SiriStudioReport], summary: SiriStudioSummary?,
+    /// Grades only evidence from the exact scenario snapshot and target app.
+    static func assess(_ scenario: SiriStudioScenario, bundleIdentifier: String,
+                       reports input: [SiriStudioReport], summary: SiriStudioSummary?,
                        blocked: String? = nil, cancelled: String? = nil) -> Self {
+        let digest = try? scenario.contentDigest(bundleIdentifier: bundleIdentifier)
         let reports = input.filter {
-            $0.consistent && $0.scenarioID == scenario.id && $0.revision == scenario.revision
+            digest != nil && $0.contentDigest == digest
+                && $0.consistent && $0.scenarioID == scenario.id && $0.revision == scenario.revision
                 && $0.repeatIndex < scenario.repeatCount && $0.turnsAuthored == scenario.turns.count
                 && $0.turns.map(\.id) == Array(scenario.turns.prefix($0.turnsReached).map(\.id))
         }.sorted { $0.repeatIndex < $1.repeatIndex }
-        let summary = summary.flatMap { evidence in
+        let currentSummary = summary.flatMap { evidence in
             evidence.schema == SiriStudioSummary.schemaID && evidence.version == 1
-                && evidence.scenarioID == scenario.id && evidence.revision == scenario.revision ? evidence : nil
+                && evidence.scenarioID == scenario.id && evidence.revision == scenario.revision
+                && digest != nil && evidence.contentDigest == digest ? evidence : nil
         }
+        let unverified = summary != nil && currentSummary == nil
         return classify(id: scenario.id, revision: scenario.revision, name: scenario.name, attempted: scenario.repeatCount,
-                        asserted: scenario.metrics, reports: reports, summary: summary, blocked: blocked, cancelled: cancelled)
+                        asserted: scenario.metrics, reports: reports, summary: currentSummary,
+                        blocked: blocked ?? (unverified ? "The result could not verify this scenario's content. Export and run the current scenario again." : nil),
+                        cancelled: cancelled)
     }
 
     /// Shows the observations of an older revision without applying the current document's expectations to them.
@@ -187,6 +196,9 @@ public struct SiriStudioScenarioResult: Codable, Sendable, Equatable, Identifiab
 
 /// The frozen input, verdicts and local evidence paths for a Studio run.
 public struct SiriStudioRunRecord: Codable, Sendable {
+    private static let maximumBytes = 64 * 1024 * 1024
+    private static let sizeError = "Saved Siri Studio runs must be at most 64 MiB."
+
     public let document: SiriStudioDocument
     public let productIdentity: MacIntentProductIdentity?
     public let xcodeBuild: String?
@@ -205,16 +217,26 @@ public struct SiriStudioRunRecord: Codable, Sendable {
             ?? (states.isEmpty ? .blocked : .passed)
     }
 
-    /// Reopens a previously saved local run.
+    /// Reopens a local run without loading more than the saved record size limit.
     public static func read(from directory: URL) throws -> Self {
-        try JSONDecoder().decode(Self.self, from: Data(contentsOf: directory.appendingPathComponent("run.json")))
+        let url = directory.appendingPathComponent("run.json")
+        guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+            throw MacIntentTestingError("Choose a folder containing a regular run.json file.")
+        }
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        let bytes = try file.read(upToCount: maximumBytes + 1) ?? Data()
+        guard bytes.count <= maximumBytes else { throw MacIntentTestingError(sizeError) }
+        return try JSONDecoder().decode(Self.self, from: bytes)
     }
 
     /// Persists the immutable run snapshot and evidence in a single atomic write.
     func write(to directory: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
-        try encoder.encode(self).write(to: directory.appendingPathComponent("run.json"), options: .atomic)
+        let bytes = try encoder.encode(self)
+        guard bytes.count <= Self.maximumBytes else { throw MacIntentTestingError(Self.sizeError) }
+        try bytes.write(to: directory.appendingPathComponent("run.json"), options: .atomic)
     }
 }
 

@@ -146,15 +146,17 @@ struct SiriStudioAttachments {
         }
     }
 
-    /// Finds unambiguous, revision-matched evidence for a scenario.
-    func result(for scenario: SiriStudioScenario, blocked: String? = nil, cancelled: String? = nil,
+    /// Finds unambiguous evidence for this scenario and optionally preserves historical transcripts.
+    func result(for scenario: SiriStudioScenario, bundleIdentifier: String, blocked: String? = nil, cancelled: String? = nil,
                 allowStale: Bool = false) -> SiriStudioScenarioResult {
         let summaries = summaries.filter { $0.scenarioID == scenario.id }
         let summary = summaries.count == 1 ? summaries.first : nil
         let reports = reports.filter { $0.scenarioID == scenario.id }
         if allowStale, let summary, summary.revision != scenario.revision {
-            return .stale(scenario, reports: reports.filter { $0.revision == summary.revision }, summary: summary, blocked: blocked)
+            let historical = reports.filter { $0.revision == summary.revision && $0.contentDigest == summary.contentDigest }
+            return .stale(scenario, reports: historical, summary: summary, blocked: blocked)
         }
-        return .assess(scenario, reports: reports, summary: summary, blocked: blocked, cancelled: cancelled)
+        return .assess(scenario, bundleIdentifier: bundleIdentifier, reports: reports, summary: summary,
+                       blocked: blocked, cancelled: cancelled)
     }
 }
