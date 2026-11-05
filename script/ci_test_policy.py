@@ -5,7 +5,10 @@ NATIVE_MANUAL_METHODS = frozenset({
     "FoundationEvalsTests/CoreAIModelLoaderTests/configuredResourcesLoadAndGenerate()",
 })
 
-SWIFT_MANUAL_METHODS = frozenset()
+# Live Siri drives the UI and may use Private Cloud Compute on a signed Mac.
+SWIFT_MANUAL_METHODS = frozenset({
+    "SiriStudioLiveTests/signedCourtsideSiri",
+})
 
 
 def swift_manual_methods():

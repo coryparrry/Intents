@@ -69,12 +69,14 @@ extension MacIntentCatalog {
                     throw MacIntentTestingError("Malformed parameter metadata in \(key).")
                 }
                 let enumID = ((valueType["linkEnumeration"] as? [String: Any])?["wrapper"] as? [String: Any])?["identifier"] as? String
+                let entityID = ((valueType["entity"] as? [String: Any])?["wrapper"] as? [String: Any])?["typeName"] as? String
                 let metadata = p["typeSpecificMetadata"] as? [Any] ?? []
                 let hasDefault = metadata.contains { ($0 as? String) == "LNValueTypeSpecificMetadataKeyDefaultValue" }
                 parsed.append(.init(id: name, name: title(p["title"]) ?? name,
                                     type: enumID == nil ? typeName(valueType) : "Enum",
                                     required: !optional && !hasDefault,
-                                    enumIdentifier: enumID, enumCases: enumID.flatMap { enums[$0] } ?? []))
+                                    enumIdentifier: enumID, enumCases: enumID.flatMap { enums[$0] } ?? [],
+                                    entityIdentifier: entityID))
             }
             guard Set(parsed.map(\.id)).count == parsed.count else { throw MacIntentTestingError("Duplicate parameter identifiers in \(key).") }
             actions.append(.init(id: id, title: title(raw["title"]) ?? id, parameters: parsed,

@@ -1,5 +1,8 @@
 # Test Mac App Intents
 
+Use **Direct Action** for the workflow below. For multi-turn tests of Siri’s
+action choices and replies, switch to [Siri Studio](Siri-Studio.md).
+
 Use **App Intent Testing** in Intents, or the `intents-native-tests` command, to
 inspect a built Mac app and run explicit input/result checks. Execution uses
 Apple’s `AppIntentsTesting` framework in a generated macOS UI-test target.

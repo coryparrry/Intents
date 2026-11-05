@@ -144,12 +144,17 @@ UI_FEATURE_TESTS = {
     "settings": [UI_TARGET + "WorkspacePolishUITests/testSettingsTabsKeepTheirPrimaryControlsAccessible"],
     "imports": [UI_TARGET + "WorkspacePolishUITests/testImportIssuesKeepCancelAndImportVisible"],
     "review": [UI_TARGET + "EvaluationReviewUITests"],
+    "native-intents": [UI_TARGET + "MacIntentTestingUITests"],
 }
 ALL_UI_GROUPS = set(UI_BASELINE) | set(UI_FEATURE_TESTS)
 
 
 def app_ui_groups(relative):
     """Map known app sources to owning UI groups, return no groups for service-only changes, and return None for unclassified app sources."""
+    if relative.startswith("Views/SiriStudio/") or relative in {
+        "Views/MacIntentTestingView.swift", "Stores/MacIntentTestingStore.swift", "Stores/SiriStudioStore.swift",
+    }:
+        return {"native-intents"}
     if relative in UI_APP_GROUPS:
         return UI_APP_GROUPS[relative]
     if relative == "Services/EvaluationRunner.swift" or relative.startswith("Services/EvaluationRunner+"):
@@ -163,6 +168,7 @@ UI_FEATURE_CLASSES = {
     "runs": {"FoundationEvalsRunLifecycleUITests"},
     "traces": {"WorkflowTraceUITests"},
     "review": {"EvaluationReviewUITests"},
+    "native-intents": {"MacIntentTestingUITests"},
 }
 NATIVE_UI_HELPERS = {
     "script/ci_native_tests.py": "script.tests.test_ci_native_tests",
@@ -321,7 +327,7 @@ def package_test_suites(path, root):
 def package_ui_groups(path):
     """Map known package source prefixes to affected app UI groups, using an empty set for sources without UI ownership and None otherwise."""
     if path.startswith("Sources/MacIntentTesting/"):
-        return set()
+        return {"native-intents"}
     if path.startswith("Sources/FoundationEvalsDeveloper/"):
         return {"suite-editor", "runs"}
     if path.startswith("Sources/ProductionEvalsCLI/"):
@@ -517,11 +523,14 @@ def coverage_plan(paths, root=ROOT):
                 reasons.add(
                     "Production package tests and documentation run production qualification without unrelated root runtime checks."
                 )
+        elif path.startswith(("examples/SiriStudioSample/", "Tests/Fixtures/SiriStudio/")):
+            swift.update({"SiriStudioTests", "SiriStudioReportTests"})
+            reasons.add("The Courtside and Siri Studio evidence fixtures select the Siri authoring and report contracts.")
         elif path.startswith("Tests/"):
             swift.update(package_test_suites(path, root))
             reasons.add("Package test changes select declared suites; helper and fixture changes select the full package.")
         elif path.startswith("Sources/MacIntentTestingCLI/"):
-            swift.update({"NativeTestsCLITests", "NativeTestsSignalTests"})
+            swift.update({"NativeTestsCLITests", "NativeTestsSignalTests", "SiriStudioCLITests"})
             reasons.add("Native intent CLI changes run parser, manifest, and signal cleanup contracts.")
         elif package_ui_groups(path) is not None:
             groups = package_ui_groups(path)
