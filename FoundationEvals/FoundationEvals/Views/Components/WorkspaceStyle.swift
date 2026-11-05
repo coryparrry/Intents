@@ -3,11 +3,10 @@ import SwiftUI
 
 /// Shared presentation for the workspace and its evaluation evidence.
 ///
-/// Liquid Glass cards and floating controls sit above a static, appearance-tuned
-/// aurora canvas. Status tints give evidence depth without replacing readable text.
-/// Reduce Transparency restores opaque surfaces and a plain canvas throughout.
+/// Liquid Glass cards and floating controls sit above the system's adaptive window material.
+/// Reduce Transparency restores opaque surfaces throughout.
 enum WorkspaceStyle {
-    static let canvas = adaptive(light: (0.965, 0.965, 0.972), dark: (0.110, 0.110, 0.118))
+    static let canvas = Color(nsColor: .windowBackgroundColor)
     /// Grouped content, raised slightly from the canvas.
     static let surface = adaptive(light: (1, 1, 1), dark: (0.157, 0.157, 0.169))
     /// Wells inside a surface, such as search fields, editors, and quoted evidence.
@@ -37,30 +36,23 @@ enum WorkspaceStyle {
     }
 }
 
-/// Static window-wide ambient colour; never participates in interaction.
-struct WorkspaceBackdrop: View {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    var body: some View {
-        ZStack {
-            WorkspaceStyle.canvas
-            if !reduceTransparency {
-                let dark = colorScheme == .dark
-                RadialGradient(colors: [.indigo.opacity(dark ? 0.38 : 0.46), .clear], center: .topLeading, startRadius: 0, endRadius: 1000)
-                RadialGradient(colors: [.teal.opacity(dark ? 0.25 : 0.40), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 900)
-                RadialGradient(colors: [.purple.opacity(dark ? 0.24 : 0.30), .clear], center: .topTrailing, startRadius: 0, endRadius: 800)
-            }
-        }
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+/// Blends the workspace background with the desktop using macOS's adaptive window material.
+struct WorkspaceBackdrop: NSViewRepresentable {
+    /// Creates the behind-window effect without changing the window or its content ownership.
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .underWindowBackground
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
     }
+
+    /// Keeps the system-managed material in place when SwiftUI updates the surrounding view.
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 private struct WorkspaceGlassSurface: ViewModifier {
     let radius: CGFloat
-    let tint: Color?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -72,7 +64,7 @@ private struct WorkspaceGlassSurface: ViewModifier {
                 content.clipShape(shape).background(WorkspaceStyle.surface, in: shape)
             } else {
                 content.clipShape(shape)
-                    .glassEffect(.regular.tint(tint?.opacity(colorScheme == .dark ? 0.08 : 0.16) ?? .clear), in: shape)
+                    .glassEffect(.regular, in: shape)
             }
         }
         .overlay { shape.strokeBorder(.white.opacity(reduceTransparency ? 0 : 0.22), lineWidth: 0.5).allowsHitTesting(false) }
@@ -91,9 +83,9 @@ private struct WorkspaceInsetSurface: ViewModifier {
 }
 
 extension View {
-    /// Raises content on glass with a specular edge and optional semantic tint.
-    func workspaceSurface(radius: CGFloat = WorkspaceStyle.panelRadius, tint: Color? = nil) -> some View {
-        modifier(WorkspaceGlassSurface(radius: radius, tint: tint))
+    /// Raises content on glass with a specular edge.
+    func workspaceSurface(radius: CGFloat = WorkspaceStyle.panelRadius) -> some View {
+        modifier(WorkspaceGlassSurface(radius: radius))
     }
 
     /// Adds a rounded recessed background using the workspace inset color.
