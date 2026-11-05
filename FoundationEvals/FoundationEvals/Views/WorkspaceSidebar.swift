@@ -178,7 +178,6 @@ struct WorkspaceSidebar: View {
             }
 
         }
-        .scrollContentBackground(.hidden)
         .onChange(of: store.selectedSuiteID) { _, _ in runSearch = ""; showsAllRuns = false }
         .safeAreaInset(edge: .top, spacing: 0) {
             projectSwitcher
