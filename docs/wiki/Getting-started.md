@@ -8,7 +8,7 @@ Intents requires **macOS 27 or later**. The default on-device model also require
 
 Other providers have different requirements. See [Models, scoring, and tools](Models-scoring-and-tools.md). Mac App Intent tests and source builds require Xcode 27+. A normal on-device suite does not require Xcode.
 
-1. Download `Intents.dmg` from the [latest release](https://github.com/coryparrry/Intents/releases/latest).
+1. Download the macOS disk image from the [latest release](https://github.com/coryparrry/Intents/releases/latest).
 2. Open the disk image.
 3. Drag **Intents** to **Applications**.
 4. Eject the disk image.
@@ -25,7 +25,7 @@ run `brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
 
 ## Create a small evaluation
 
-1. In **Model evaluations**, select **New Suite**.
+1. Select **New Suite** at the bottom of the sidebar.
 2. Enter a suite name. Select **Blank suite** for your own cases, or select a starter pack for editable examples.
 3. Select **Create suite**.
 4. Open the suite's **Cases** page. Select the first case. Enter a case name and prompt.
@@ -49,15 +49,15 @@ For practice, use the prompt `Reply with only the capital of France` and the req
 - **Collect only** can leave samples without scores. JSON field checks can still give a pass or failure.
 - A repetition makes another response to the same case. A small number of repetitions cannot establish statistical certainty.
 - A run keeps its suite definition, model, environment, responses, and available traces. Later suite edits do not change that run.
-- Model evaluations can show **Changed** after you edit a suite. Run the suite again before you use its status as a current result.
+- **Overview** can show **Out of date** after you edit a suite. Run it again to check the edited version.
 
-## Test App Intents and Siri
+## Choose what to test next
 
-Open **App Intents & Siri** for the shared app testing workspace. **App automation & Siri** prepares an app and checks its exposed actions, UI, or Siri behavior on supported targets. The app explains target restrictions before preparation. **Intent Lab · Beta** verifies requirements through Apple test connections; when the lab is unavailable, its tab explains why.
+- To draft an evaluation from a text-based PDF, Markdown, or text file, select **New Suite → From document…**. Review the generated questions, answers, and scoring criteria before creating the suite. [Document suites](Document-suites.md).
+- To send suite cases to a feature in your own iPhone, iPad, or Mac app, pair a developer runner and select its feature from the run destination menu. [App feature runners](App-feature-runners.md).
+- To call an action in a built macOS app with explicit inputs, open **App Intent Testing** in the sidebar. Choose a development-signed build and enter the action's JSON inputs and optional expected result. [Mac App Intent tests](Mac-App-Intent-tests.md).
 
-Model suites belong to the selected project. App automation uses a shared workspace across projects. In **Model evaluations**, the contextual **Model tools** links open the current suite's review, resumable batch jobs, and the current suite's saved traces.
-
-Read [Projects and suites](Projects-and-suites.md) for imports and references. Read [Runs and results](Runs-and-results.md) for traces, comparisons, and baselines.
+The sidebar also opens **Evaluations** for review, **Batch runs** for resumable jobs, and **Traces** for saved execution evidence.
 
 ## Review the output before expanding the test
 

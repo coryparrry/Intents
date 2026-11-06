@@ -51,6 +51,8 @@ Changes to cases, a rubric, or judge settings can limit a comparison.
 
 Under **Compare → Instruction experiments**, select **New Experiment**. Enter a name and proposed instructions. Select **Create experiment**. Then select **Run** on its row to run both versions. Read the results and use **Record decision**.
 
+To generate suggestions, choose **Improve instructions** in **Compare → Instruction experiments** or **Setup → Instructions**. Intents tries two alternatives on Practice cases. If a suggestion improves the Practice pass rate, Intents compares the best suggestion with the original on reserved Final check cases. Review the comparison before applying any changes. [Improve suite instructions](../instruction-improvement.md).
+
 ## Approve a baseline or read release requirements
 
 1. Open a saved run's **Report → Review and approval**.
@@ -61,7 +63,7 @@ For an AI-assessed run, the selected assessment is part of the approval. The pan
 
 Use **Setup → Scoring → Release requirements** to set limits for errors, pass-rate changes, latency, and critical cases. You can also require an approved baseline. A release report applies these saved limits. It does not replace a review of unclear evidence.
 
-If you edit a suite after its latest run, run it again. Then use the new result for the current status in **Model evaluations**.
+If you edit a suite after its latest run, run it again to update the status in **Overview**.
 
 ## Delete evidence
 
