@@ -4,7 +4,7 @@ Canonical page: https://intents-workbench.coryparry.chatgpt.site/guides/evaluate
 
 ## Short answer
 
-Install Intents 1.5.2 on an Apple silicon Mac running macOS 27 or later, with Apple Intelligence enabled and its model downloaded. Create one suite with an explicit scoring rule, run it, and read the saved response and trace. Expand with failure cases and repetitions before treating the result as evidence for a release.
+Install Intents 1.6.0 on an Apple silicon Mac running macOS 27 or later, with Apple Intelligence enabled and its model downloaded. Create one suite with an explicit scoring rule, run it, and read the saved response and trace. Expand with failure cases and repetitions before treating the result as evidence for a release.
 
 ## Prepare the Mac
 
@@ -12,7 +12,7 @@ Install the released app with the download or Homebrew below. Ordinary on-device
 
 ## Create one literal-text check
 
-1. In **Model evaluations**, select **New Suite**, choose **Blank suite**, enter a name, and select **Create suite**.
+1. Select **New Suite** at the bottom of the sidebar, choose **Blank suite**, enter a name, and select **Create suite**.
 2. Open **Cases** and select the first case. Name it “Capital answer” and enter `Reply with only the capital of France`.
 3. Open **Setup → Scoring** and select **Contains text**. Enter `Paris` as the case’s **Required text**; set **Repetitions** to 1. Use **Exact text** if additional words must fail.
 4. Confirm **Setup → Model** is ready and the destination shows **This Mac · built-in evaluator**. Select **Run**.
@@ -28,11 +28,11 @@ Use **Review → Samples** to record a human verdict before revealing the AI jud
 
 Saved comparisons, JSON reports, Review, and Batch runs are released features. Mac App Intent JSON checks described on this site remain development-source workflows requiring a signed AppIntentsTesting runner; live reliability is unqualified and microphone Siri is not verified. The homepage demos are historical browser recreations, not this evaluation.
 
-Follow the [released first-suite guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Getting-started.md) and [Review guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/EVAL_REVIEW_GUIDE.md). Compare the workbench with [Apple Evaluations](/compare/apple-evaluations) if your evaluation belongs in an app test target.
+Follow the [released first-suite guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Getting-started.md) and [Review guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/EVAL_REVIEW_GUIDE.md). Compare the workbench with [Apple Evaluations](/compare/apple-evaluations) if your evaluation belongs in an app test target.
 
-## Try Intents 1.5.2
+## Try Intents 1.6.0
 
-[Download for macOS · v1.5.2](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg) · [Getting started](/getting-started)
+[Download for macOS · v1.6.0](https://github.com/coryparrry/Intents/releases/download/v1.6.0/Intents-1.6.0-macOS-arm64.dmg) · [Getting started](/getting-started)
 
 ```sh
 brew install --cask coryparrry/tap/intents
@@ -42,7 +42,7 @@ Free, MIT licensed, macOS 27+, Apple silicon. Enable Apple Intelligence and down
 
 ## Sources and corrections
 
-Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
+Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.6.0) · [User guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
 
 [All comparisons](/compare) · [Evaluate on a Mac](/guides/evaluate-apple-foundation-models-mac) · [Connect an agent](/guides/intents-mcp-coding-agents)
 

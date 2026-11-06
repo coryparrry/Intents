@@ -13,7 +13,7 @@ const data = text => [...text.matchAll(/<script type="application\/ld\+json">([\
   const item = JSON.parse(json);
   return item['@graph'] || [item];
 });
-const dmg = 'https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg';
+const dmg = 'https://github.com/coryparrry/Intents/releases/download/v1.6.0/Intents-1.6.0-macOS-arm64.dmg';
 
 test('sitemap routes are unique, resolve, and include the main product pages', () => {
   assert.equal(new Set(routes).size, routes.length);
@@ -76,9 +76,10 @@ test('current product surfaces and SoftwareApplication describe the stable Inten
   for (const entry of readdirSync(root, { recursive: true })) {
     if (!/\.(html|md|js|mjs|txt)$/.test(entry)) continue;
     assert.doesNotMatch(read(entry), /Foundation-Evals-1\.3|current download is Foundation Evals|Intents (?:v)?1\.[34]\.0/, entry);
+    assert.doesNotMatch(read(entry), /releases\/download\/v1\.5\.2\//, `${entry}: stale installer`);
   }
   const app = data(read('index.html')).find(item => item['@type'] === 'SoftwareApplication');
-  assert.equal(app.softwareVersion, '1.5.2');
+  assert.equal(app.softwareVersion, '1.6.0');
   assert.equal(app.downloadUrl, dmg);
   assert.deepEqual(app.sameAs, ['https://github.com/coryparrry/Intents', 'https://github.com/coryparrry/homebrew-tap', 'https://coryparry.dev/projects/intents']);
   assert.deepEqual(app.alternateName, ['Foundation Evals', 'Intents for Apple Foundation Models']);
@@ -86,6 +87,16 @@ test('current product surfaces and SoftwareApplication describe the stable Inten
   assert.equal(app.installUrl, 'https://github.com/coryparrry/homebrew-tap');
   const manifest = JSON.parse(readFileSync(new URL('../.openai/hosting.json', import.meta.url), 'utf8'));
   assert.equal(manifest.static.not_found_handling, 'none');
+});
+
+test('getting started and its Markdown alternate link the 1.6.0 workflows', () => {
+  for (const page of ['getting-started.html', 'getting-started.html.md']) {
+    const content = read(page);
+    assert.ok(content.includes(dmg), page);
+    assert.ok(content.includes('/blob/v1.6.0/docs/wiki/Document-suites.md'), page);
+    assert.ok(content.includes('/blob/v1.6.0/docs/instruction-improvement.md'), page);
+    assert.ok(content.includes('/blob/v1.6.0/docs/wiki/Mac-App-Intent-tests.md'), page);
+  }
 });
 
 test('every public page links the project home and preserves showcase canonicals and app aliases', () => {

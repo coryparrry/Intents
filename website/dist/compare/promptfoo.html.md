@@ -14,7 +14,7 @@ Stay with Promptfoo if your team already versions evaluation configuration with 
 
 Try Intents when you want to author small Apple model suites, read saved responses and traces, and review results in a Mac interface. You can retain Promptfoo for your existing CI checks.
 
-| Detail | Intents 1.5.2 | Promptfoo |
+| Detail | Intents 1.6.0 | Promptfoo |
 | --- | --- | --- |
 | Interface | Native macOS app | CLI, library, browser viewer |
 | Definitions | Suites in a Mac workspace | Declarative YAML configuration |
@@ -42,9 +42,9 @@ Intents is a Mac evaluation workbench. This comparison does not claim equivalent
 
 Yes. Use each for its own workflow and compare results only when cases, models, scoring rules, and environments match.
 
-## Try Intents 1.5.2
+## Try Intents 1.6.0
 
-[Download for macOS · v1.5.2](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg) · [Getting started](/getting-started)
+[Download for macOS · v1.6.0](https://github.com/coryparrry/Intents/releases/download/v1.6.0/Intents-1.6.0-macOS-arm64.dmg) · [Getting started](/getting-started)
 
 ```sh
 brew install --cask coryparrry/tap/intents
@@ -54,7 +54,7 @@ Free, MIT licensed, macOS 27+, Apple silicon. Enable Apple Intelligence and down
 
 ## Sources and corrections
 
-Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
+Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.6.0) · [User guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
 
 [All comparisons](/compare) · [Evaluate on a Mac](/guides/evaluate-apple-foundation-models-mac) · [Connect an agent](/guides/intents-mcp-coding-agents)
 
