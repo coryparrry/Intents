@@ -6,14 +6,13 @@ struct SiriStudioConversation: View {
     @Binding var scenario: SiriStudioScenario
     let actions: [MacIntentAction]
     @Binding var turnID: UUID?
+    let showsAdvanced: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Conversation").font(.headline)
-            TextField("Scenario name", text: $scenario.name).textFieldStyle(.roundedBorder)
+            TextField("Conversation name", text: $scenario.name).textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("siri-studio-scenario-name")
-            Stepper("Repeats: \(scenario.repeatCount)", value: $scenario.repeatCount, in: 1...10)
-            Text("Name the app in the request when Siri needs to find it in the background.")
+            Text("Mention your app in the first message, then add follow-ups as needed.")
                 .font(.caption).foregroundStyle(.secondary)
             ForEach($scenario.turns) { $turn in
                 VStack(alignment: .leading, spacing: 6) {
@@ -27,8 +26,13 @@ struct SiriStudioConversation: View {
                             .disabled(scenario.turns.count <= 1)
                     }
                     TextField("What should the user say?", text: $turn.utterance, axis: .vertical)
-                        .textFieldStyle(.roundedBorder).lineLimit(2...5)
+                        .textFieldStyle(.roundedBorder).lineLimit(1...4)
                         .accessibilityIdentifier("siri-studio-utterance-\(ordinal(turn.id))")
+                    if showsAdvanced && active(turn.id) {
+                        SiriStudioExpectationEditor(group: $turn.expectations, actions: actions, allowsReply: true)
+                    } else {
+                        expectedActions($turn.expectations, for: turn.id)
+                    }
                 }
                 .padding(8)
                 .background(active(turn.id) ? Color.accentColor.opacity(0.10) : Color.secondary.opacity(0.06),
@@ -38,12 +42,39 @@ struct SiriStudioConversation: View {
                 let turn = SiriStudioTurn()
                 scenario.turns.append(turn); turnID = turn.id
             }.disabled(scenario.turns.count >= 12)
-            Divider()
-            DisclosureGroup("Scenario-wide expectations") {
-                SiriStudioExpectationEditor(group: $scenario.scenarioExpectations, actions: actions, allowsReply: false)
-                    .padding(.top, 6)
+            if showsAdvanced {
+                Divider()
+                Stepper("Repeats: \(scenario.repeatCount)", value: $scenario.repeatCount, in: 1...10)
+                DisclosureGroup("Scenario-wide expectations") {
+                    SiriStudioExpectationEditor(group: $scenario.scenarioExpectations, actions: actions, allowsReply: false)
+                        .padding(.top, 6)
+                }
+                DisclosureGroup("Before each repeat") { setup.padding(.top, 6) }
             }
-            DisclosureGroup("Before each repeat") { setup.padding(.top, 6) }
+        }
+    }
+
+    /// Selects expected actions by their user-facing names while preserving every saved argument and result constraint.
+    private func expectedActions(_ group: Binding<SiriStudioExpectations>, for id: UUID) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(group.calls) { call in
+                HStack {
+                    Text("Siri should: " + (actions.first { $0.id == call.wrappedValue.actionIdentifier }?.title ?? call.wrappedValue.actionIdentifier))
+                        .font(.callout)
+                    Spacer()
+                    Button("Remove expected action", systemImage: "xmark.circle") {
+                        let removed = call.wrappedValue.id
+                        group.wrappedValue.calls.removeAll { $0.id == removed }
+                    }
+                    .labelStyle(.iconOnly).buttonStyle(.borderless)
+                }
+            }
+            Menu(group.wrappedValue.calls.isEmpty ? "Choose expected action" : "Add expected action") {
+                ForEach(actions) { action in
+                    Button(action.title) { group.wrappedValue.calls.append(.init(actionIdentifier: action.id)) }
+                }
+            }
+            .accessibilityIdentifier("siri-studio-expected-action-\(ordinal(id))")
         }
     }
 

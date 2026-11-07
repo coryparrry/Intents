@@ -16,27 +16,34 @@ runs an action with the inputs you supply.
    The **Siri Studio setup** checklist automatically finds a compatible Xcode and
    fills the development team and a matching, valid signing certificate. It keeps
    an already-compatible Xcode choice and never changes your system's selected Xcode.
-3. Add a scenario and enter one or more turns. Name the app in requests where
-   Siri needs to find it in the background.
-4. In the inspector, choose required actions and any argument or result
-   constraints. Required calls in one group can be ordered or unordered.
-   Use **Forbidden calls** to catch unwanted actions: required calls alone
-   allow extra calls. A forbidden action can fail the check when Siri runs it
-   or asks for confirmation. Argument constraints on forbidden calls and enum
-   case matching are pending live preview qualification.
-5. Add reply checks, scenario-wide constraints, or an optional Direct Action
-   setup that resets app state before each repeat.
-6. Use **Save** to store the draft. **Documents → Open scenario document…**
-   opens a copy of exported JSON for the selected app.
+3. Choose **New conversation** and enter your messages. Mention the app in the
+   first message, then add follow-ups with **Add turn**.
+4. Under each message, use **Choose expected action** to select what Siri should do.
+   You can expect more than one action. Required actions allow additional calls.
+5. Press **Run**. The outcome, observed actions, and Siri’s reply appear below the
+   conversation. Use **Save** to keep the draft.
 
-Validation and Swift export work without running Siri. **Export Swift…** saves
-the exact test source for the selected scenario. Use **Documents → Export all
+The main page shows the next missing setup action and a single conversation editor.
+Turn on **Advanced** for all setup facts, detailed checks, repeat counts, setup
+hooks, signing overrides, Swift exports, result imports, and raw run evidence.
+Turning Advanced off preserves every authored setting. A notice identifies tests
+that still use advanced settings; **Review settings** reopens those controls.
+
+In Advanced, the selected turn exposes argument and result constraints, action
+ordering, forbidden calls, and reply checks. Scenario-wide constraints and an
+optional Direct Action setup remain available. A forbidden action can fail a
+check when Siri runs it or asks for confirmation. Argument constraints on
+forbidden calls and enum case matching are pending live preview qualification.
+**Advanced → Documents → Open scenario document…** opens a copy of exported JSON.
+
+Validation and Swift export work without running Siri. **Advanced → Export Swift…** saves
+the exact test source for the selected scenario. Use **Advanced → Documents → Export all
 scenarios as Swift…** for the complete document. The export records local
 transcripts when run; treat its test results as potentially sensitive.
 
 ## Guided setup
 
-The checklist shows seven prerequisites and the next action for each missing one:
+The simple flow shows the next missing prerequisite. Advanced shows all seven checks:
 
 - **Compatible Mac:** macOS 27.3 or later.
 - **Xcode:** Xcode 27.3 or later with SiriEvaluations. Compatible installations in
@@ -58,16 +65,16 @@ The checklist shows seven prerequisites and the next action for each missing one
 
 When the checklist says **Ready to run**, write a scenario, choose its expectations,
 and press **Run**. Results appear in Studio automatically. Normal runs do not
-require a terminal or a manual result import. You can hide the checklist to author
-or export while prerequisites are missing. **Xcode and signing** below the editor
-remains available for advanced overrides; use **Recheck setup** after changing them.
+require a terminal or a manual result import. You can write a conversation while
+finishing setup. **Advanced → Xcode and signing** holds manual overrides;
+use **Recheck setup** after changing them.
 Discovery preserves edits made while a check is in progress.
 
-For an app with an isolated test-data mode, enter its flags in **Xcode and signing →
+For an app with an isolated test-data mode, enter its flags in **Advanced → Xcode and signing →
 App launch arguments** before pressing Run. Each line is one literal argument,
 including any spaces; shell expansion and shell quoting are not used. Arguments
 are saved with the selected app’s scenario document, replayed by Studio and the CLI,
-and shown in **Run facts and evidence**. Changing
+and shown in **Advanced → Run facts and evidence**. Changing
 arguments marks an earlier captured run stale. Imported or older runs may have
 unknown launch arguments. Use non-sensitive test flags: scenario exports, local runs, and explicit
 full-transcript exports retain them, while verdict-only exports omit them.
@@ -97,7 +104,7 @@ mark an earlier result **Stale**. If Apple provides only aggregate metrics,
 the exact number of passing repeats may be unavailable.
 
 Use **Run facts and evidence** to locate the generated Swift, log, and result
-bundle. **Documents → Import result bundle…** accepts an `.xcresult` from an
+bundle. **Advanced → Documents → Import result bundle…** accepts an `.xcresult` from an
 exported Swift test. To grade the import, Studio verifies the scenario content,
 revision, and target app against the export. Re-export and rerun tests whose
 attachments lack a content fingerprint. **Open saved run…** accepts the

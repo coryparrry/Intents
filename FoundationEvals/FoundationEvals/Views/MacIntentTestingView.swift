@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 struct MacIntentTestingView: View {
     @Bindable var model: MacIntentTestingStore
-    @AppStorage("appIntentTesting.mode") private var mode = "direct"
+    @AppStorage("appIntentTesting.mode") private var mode = "siri"
     @State private var choosingApp = false
     @State private var showsBuildDetails = false
     @State private var showsSupportedTypes = false
@@ -34,6 +34,7 @@ struct MacIntentTestingView: View {
             }
             .workspacePage()
         }
+        .accessibilityIdentifier("App Intent steps")
         .fileImporter(isPresented: $choosingApp, allowedContentTypes: [.applicationBundle]) { result in
             do {
                 let url = try result.get()
@@ -50,9 +51,14 @@ struct MacIntentTestingView: View {
     /// Selects one built app for both native test modes.
     private var appSelection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Install and launch the app normally once to register it, then quit it before choosing its build.")
-            Button("Choose built macOS app…") { choosingApp = true }
-                .buttonStyle(.borderedProminent)
+            if mode == "direct" {
+                Text("Install and launch the app normally once to register it, then quit it before choosing its build.")
+            } else if model.catalog == nil {
+                Text("Choose the Mac app you want to test. We’ll check the setup for you.")
+            }
+            Button(model.catalog == nil ? "Choose built macOS app…" : "Change app…") { choosingApp = true }
+                .accessibilityLabel("Choose built macOS app…")
+                .buttonStyle(.bordered)
                 .disabled(model.isRunning || model.siri.isBusy)
             if model.isLoading {
                 HStack {
@@ -64,16 +70,17 @@ struct MacIntentTestingView: View {
             if let catalog = model.catalog {
                 HStack {
                     Text(catalog.appURL.deletingPathExtension().lastPathComponent).font(.headline)
-                    Text(catalog.bundleIdentifier).font(.caption).foregroundStyle(.secondary)
-                    if let product = catalog.productIdentity {
-                        Text(String(product.sha256.prefix(10))).font(.caption.monospaced()).foregroundStyle(.secondary)
-                    }
                 }
-                DisclosureGroup(isExpanded: $showsBuildDetails) {
-                    LabeledContent("Path", value: catalog.appURL.path)
-                    LabeledContent("Bundle identifier", value: catalog.bundleIdentifier)
-                } label: {
-                    Text("Build details").contentShape(Rectangle()).onTapGesture { showsBuildDetails.toggle() }
+                if mode == "direct" {
+                    DisclosureGroup(isExpanded: $showsBuildDetails) {
+                        LabeledContent("Path", value: catalog.appURL.path)
+                        LabeledContent("Bundle identifier", value: catalog.bundleIdentifier)
+                        if let product = catalog.productIdentity {
+                            LabeledContent("Build", value: String(product.sha256.prefix(10)))
+                        }
+                    } label: {
+                        Text("Build details").contentShape(Rectangle()).onTapGesture { showsBuildDetails.toggle() }
+                    }
                 }
             }
         }

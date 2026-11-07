@@ -9,36 +9,33 @@ struct SiriStudioView: View {
     @Bindable var studio: SiriStudioStore
     let catalog: MacIntentCatalog
     @State private var turnID: UUID?
+    @State private var showsAdvanced = false
     @State private var customAllowance = false
     @State private var allowance = 900
     @State private var pendingDeletion: SiriStudioScenario?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SiriStudioSetupView(native: native, catalog: catalog)
             toolbar
-            if !studio.appLaunchArguments.isEmpty {
-                Text("App launch arguments: " + studio.appLaunchArguments.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(2)
-            }
+            SiriStudioSetupView(native: native, catalog: catalog, showsAdvanced: showsAdvanced)
             if let reason = studio.diagnostic ?? studio.validationError {
                 Label(reason, systemImage: "exclamationmark.circle")
                     .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                     .accessibilityIdentifier("siri-studio-diagnostic")
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 16) {
-                    scenarioList.frame(width: 180)
-                    conversation.frame(minWidth: 265, maxWidth: .infinity, alignment: .topLeading)
-                    inspector.frame(minWidth: 260, maxWidth: 390, alignment: .topLeading)
+            if !showsAdvanced && hasAdvancedSettings {
+                HStack {
+                    Label("Advanced settings apply to this test.", systemImage: "slider.horizontal.3")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Review settings") { showsAdvanced = true }
                 }
-                VStack(alignment: .leading, spacing: 16) {
-                    scenarioList
-                    conversation
-                    inspector
-                }
+                .accessibilityIdentifier("siri-studio-saved-settings")
             }
-            signing
+            scenarioPicker
+            conversation
+            results
+            if showsAdvanced { signing }
+
         }
         .task { native.detectSiriSetup() }
         .onChange(of: studio.selection) { _, _ in turnID = nil }
@@ -68,12 +65,32 @@ struct SiriStudioView: View {
         }
     }
 
-    /// Provides run and file actions without requiring the generated project to be opened manually.
+    /// Keeps the primary test actions visible and technical controls behind one explicit option.
     private var toolbar: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) { runControls; Spacer(minLength: 0); fileControls }
-            VStack(alignment: .leading, spacing: 8) { runControls; fileControls }
+            HStack(spacing: 10) { runControls; Spacer(minLength: 0); fileControls; advancedToggle }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack { runControls; Spacer(minLength: 0); advancedToggle }
+                fileControls
+            }
         }
+    }
+
+    /// Preserves advanced editor state while switching its presentation without changing saved test behavior.
+    private var advancedToggle: some View {
+        Toggle("Advanced", isOn: $showsAdvanced)
+            .toggleStyle(.button)
+            .accessibilityIdentifier("siri-studio-advanced")
+    }
+
+    /// Warns when a saved conversation has checks or runtime settings beyond the simple action selections.
+    private var hasAdvancedSettings: Bool {
+        guard let scenario = studio.document?.scenarios.first(where: { $0.id == studio.selection }) else { return false }
+        let groups = [scenario.scenarioExpectations] + scenario.turns.map(\.expectations)
+        return !studio.appLaunchArguments.isEmpty || customAllowance || scenario.repeatCount > 1 || scenario.setup != nil
+            || groups.contains { $0.ordering != .ordered || !$0.forbidden.isEmpty || !$0.replyContains.isEmpty
+                || $0.calls.contains { !$0.arguments.isEmpty || $0.result != nil } }
+            || !scenario.scenarioExpectations.calls.isEmpty
     }
 
     /// Shows the current scenario and repeat while the generated suite runs.
@@ -82,14 +99,10 @@ struct SiriStudioView: View {
             Button("Run") { start(all: false) }
                 .buttonStyle(.borderedProminent)
                 .disabled(busy || prerequisite != nil || studio.validationError != nil || studio.selection == nil)
-            Menu {
-                Button("Run all scenarios") { start(all: true) }
-            } label: {
-                Image(systemName: "chevron.down")
+            if showsAdvanced {
+                Menu("Run options") { Button("Run all scenarios") { start(all: true) } }
+                    .disabled(busy || prerequisite != nil || studio.validationError != nil)
             }
-            .accessibilityLabel("Run options")
-            .fixedSize()
-            .disabled(busy || prerequisite != nil || studio.validationError != nil)
             if studio.isBusy {
                 ProgressView().controlSize(.small)
                 Text(progressLabel).font(.caption)
@@ -104,20 +117,23 @@ struct SiriStudioView: View {
             Button("Save") { perform { try studio.save() } }
                 .keyboardShortcut("s", modifiers: .command)
                 .disabled(studio.document == nil)
-            Button("Export Swift…") { export(swift: true) }
-                .disabled(studio.validationError != nil)
-            Menu("Documents") {
-                Button("Export all scenarios as Swift…") { export(swift: true, all: true) }
+            if showsAdvanced {
+                Button("Export Swift…") { export(swift: true) }
                     .disabled(studio.validationError != nil)
-                Button("Open scenario document…") { open(.document) }
-                Button("Export scenario document…") { export(swift: false) }.disabled(studio.document == nil)
-                Divider()
-                Button("Import result bundle…") { open(.result) }.disabled(studio.document == nil)
-                Button("Open saved run…") { open(.run) }
-                if studio.run != nil {
+                Menu("Documents") {
+                    Button("Export all scenarios as Swift…") { export(swift: true, all: true) }
+                        .disabled(studio.validationError != nil)
+                    Button("Open scenario document…") { open(.document) }
+                    Button("Export scenario document…") { export(swift: false) }.disabled(studio.document == nil)
                     Divider()
-                    Button("Export verdict summary…") { exportEvidence(transcripts: false) }
-                    Button("Export run with transcripts…") { exportEvidence(transcripts: true) }
+                    Button("Import result bundle…") { open(.result) }.disabled(studio.document == nil)
+                    Button("Open saved run…") { open(.run) }
+                    if studio.run != nil {
+                        Divider()
+                        Button("Export verdict summary…") { exportEvidence(transcripts: false) }
+                        Button("Export run with transcripts…") { exportEvidence(transcripts: true) }
+                    }
+
                 }
             }
         }.disabled(busy)
@@ -132,68 +148,46 @@ struct SiriStudioView: View {
         return "\(scenario.name) · repeat \(progress.repeatIndex + 1) of \(scenario.repeatCount)"
     }
 
-    /// Shows draft scenarios and the latest verdict attached to each.
-    private var scenarioList: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Scenarios").font(.headline)
-            ForEach(studio.document?.scenarios ?? []) { scenario in
-                Button {
-                    studio.selection = scenario.id
-                } label: {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(scenario.name.isEmpty ? "Untitled scenario" : scenario.name).fontWeight(.medium)
-                        if let result = studio.run?.scenarios.first(where: { $0.id == scenario.id }) {
-                            Text(studio.isStale(result) ? "Stale · \(result.state.label)" : result.state.label)
-                                .font(.caption).foregroundStyle(.secondary)
-                            if let passed = result.passed {
-                                Text("\(passed) of \(result.attempted) repeats passed").font(.caption2).foregroundStyle(.secondary)
-                            }
-                        }
+    /// Chooses saved conversations without reserving a separate sidebar beside the editor.
+    private var scenarioPicker: some View {
+        HStack {
+            if let scenarios = studio.document?.scenarios, scenarios.count > 1 {
+                Picker("Conversation", selection: $studio.selection) {
+                    ForEach(scenarios) { scenario in
+                        Text(scenario.name.isEmpty ? "Untitled conversation" : scenario.name).tag(Optional(scenario.id))
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-                    .background(studio.selection == scenario.id ? Color.accentColor.opacity(0.15) : .clear,
-                                in: RoundedRectangle(cornerRadius: 6))
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(studio.selection == scenario.id ? .isSelected : [])
-                .contextMenu {
-                    Button("Delete scenario…", role: .destructive) { pendingDeletion = scenario }.disabled(busy)
-                }
-            }
-            Button("New scenario", systemImage: "plus") { addScenario() }
+            } else { Text("Conversation").font(.headline) }
+            Spacer(minLength: 8)
+            Button("New conversation", systemImage: "plus") { addScenario() }
                 .accessibilityIdentifier("siri-studio-new-scenario")
                 .disabled(busy || studio.document == nil || (studio.document?.scenarios.count ?? 0) >= 200)
+            Button("Delete conversation", systemImage: "trash") {
+                pendingDeletion = studio.document?.scenarios.first { $0.id == studio.selection }
+            }
+            .labelStyle(.iconOnly)
+            .disabled(busy || studio.selection == nil)
         }
     }
 
     /// Shows the selected scenario's conversation, repeat count, and optional setup.
     @ViewBuilder private var conversation: some View {
         if let id = studio.selection, let scenario = binding(for: id) {
-            SiriStudioConversation(scenario: scenario, actions: catalog.actions, turnID: $turnID)
+            SiriStudioConversation(scenario: scenario, actions: catalog.actions, turnID: $turnID, showsAdvanced: showsAdvanced)
                 .disabled(busy)
         } else {
-            ContentUnavailableView("No scenario selected", systemImage: "text.bubble",
-                description: Text("Create a scenario or open a document to start authoring."))
+            ContentUnavailableView("No conversation yet", systemImage: "text.bubble",
+                description: Text("Create a conversation to get started."))
         }
     }
 
-    /// Edits the selected turn and shows its observations from the frozen run.
-    @ViewBuilder private var inspector: some View {
-        if let id = studio.selection, let scenario = binding(for: id) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Inspector").font(.headline)
-                if let turn = scenario.turns.first(where: { $0.wrappedValue.id == turnID }) ?? scenario.turns.first {
-                    SiriStudioExpectationEditor(group: turn.expectations, actions: catalog.actions, allowsReply: true)
-                        .disabled(busy)
-                }
-                if let run = studio.run, let result = run.scenarios.first(where: { $0.id == id }) {
-                    SiriStudioInspector(run: run, result: result,
-                        turnID: turnID ?? scenario.wrappedValue.turns.first?.id,
-                        stale: studio.isStale(result))
-                }
-            }
+    /// Places the selected conversation's outcome below its messages, with raw evidence available in Advanced.
+    @ViewBuilder private var results: some View {
+        if let id = studio.selection, let run = studio.run,
+           let result = run.scenarios.first(where: { $0.id == id }) {
+            SiriStudioInspector(run: run, result: result,
+                turnID: turnID ?? studio.document?.scenarios.first(where: { $0.id == id })?.turns.first?.id,
+                stale: studio.isStale(result), showsAdvanced: showsAdvanced, actions: catalog.actions)
         }
     }
 
@@ -201,6 +195,8 @@ struct SiriStudioView: View {
     private var signing: some View {
         DisclosureGroup("Xcode and signing") {
             VStack(alignment: .leading, spacing: 8) {
+                LabeledContent("App", value: catalog.appURL.path)
+                LabeledContent("Bundle identifier", value: catalog.bundleIdentifier)
                 TextField("Developer directory", text: $native.developerDirectory)
                     .accessibilityLabel("Developer directory")
                 TextField("Signing identity", text: $native.signingIdentity, prompt: Text("Apple Development: …"))
@@ -224,7 +220,7 @@ struct SiriStudioView: View {
 
     /// Creates and selects a new draft without losing any existing scenarios.
     private func addScenario() {
-        let new = SiriStudioScenario(name: "Scenario \((studio.document?.scenarios.count ?? 0) + 1)")
+        let new = SiriStudioScenario(name: "Conversation \((studio.document?.scenarios.count ?? 0) + 1)")
         studio.document?.scenarios.append(new)
         studio.selection = new.id
     }

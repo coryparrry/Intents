@@ -6,7 +6,7 @@ import SwiftUI
 struct SiriStudioSetupView: View {
     @Bindable var native: MacIntentTestingStore
     let catalog: MacIntentCatalog
-    @State private var expanded = true
+    let showsAdvanced: Bool
     @State private var copied = false
 
     /// Uses the validated configuration and explicit Siri confirmation to describe readiness.
@@ -17,7 +17,7 @@ struct SiriStudioSetupView: View {
         if ready { return "Ready to run" }
         if native.siriSetup.isChecking { return "Checking setup…" }
         if let report = native.siriSetup.report, report.configuration != native.setupConfiguration { return "Recheck settings" }
-        return "\(native.siriSetup.steps.filter(\.complete).count) of 7 ready"
+        return showsAdvanced ? "\(native.siriSetup.steps.filter(\.complete).count) of 7 ready" : "Finish setup"
     }
 
     var body: some View {
@@ -29,25 +29,24 @@ struct SiriStudioSetupView: View {
                 Spacer()
                 Text(status)
                     .foregroundStyle(ready ? .green : .secondary)
-                Button(expanded ? "Hide setup checklist" : "Show setup checklist") { expanded.toggle() }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("siri-studio-setup-status")
-            if expanded {
+            if !ready || showsAdvanced {
                 if native.siriSetup.isChecking {
                     HStack {
                         ProgressView().controlSize(.small)
                         Text("Detecting Xcode, signing, and app registration…")
                     }
                 }
-                ForEach(native.siriSetup.steps) { step in
+                ForEach(showsAdvanced ? native.siriSetup.steps : Array(native.siriSetup.steps.filter { !$0.complete }.prefix(1))) { step in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: step.complete ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(step.complete ? .green : .secondary)
                             .accessibilityLabel(step.complete ? "Ready" : "Action needed")
                         VStack(alignment: .leading, spacing: 3) {
                             Text(step.title).fontWeight(.medium)
-                            Text(step.detail).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                            Text(showsAdvanced ? step.detail : help(for: step.id)).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                         }
                         Spacer(minLength: 8)
                         if !step.complete { action(step.action) }
@@ -59,21 +58,37 @@ struct SiriStudioSetupView: View {
                    native.siriSetup.diagnostic != nil || native.siriSetup.report?.configuration != native.setupConfiguration {
                     Text(issue).font(.callout).foregroundStyle(.secondary)
                 }
-                Toggle("Siri AI is enabled and its downloads are complete", isOn: $setup.siriConfirmed)
-                    .accessibilityIdentifier("siri-studio-confirm-siri")
+                if !setup.siriConfirmed || showsAdvanced {
+                    Toggle("Siri AI is enabled and its downloads are complete", isOn: $setup.siriConfirmed)
+                        .accessibilityIdentifier("siri-studio-confirm-siri")
+                }
                 Text("Keep this Mac unlocked during a run. You can write and export scenarios while finishing setup.")
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button("Recheck setup") { native.detectSiriSetup() }
                         .disabled(native.siriSetup.isChecking || native.isRunning || native.siri.isBusy)
-                    Text("Xcode, team, and certificate are filled automatically. Override them in Xcode and signing below if needed.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    if showsAdvanced {
+                        Text("Xcode, team, and certificate are filled automatically.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
         }
         .padding(14)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
-        .onChange(of: ready) { _, value in if value { expanded = false } }
+    }
+
+    /// Describes only the next user action in the simple flow; Advanced retains the complete detected facts.
+    private func help(for step: String) -> String {
+        switch step {
+        case "macos": "Update this Mac to run Siri conversations."
+        case "xcode": "Install Xcode and finish its first-launch setup."
+        case "signing": "Add your developer account in Xcode to sign tests."
+        case "xcodegen": "Install the test project helper once."
+        case "registered": "Use the installed copy of your app, then check again."
+        case "stopped": "Close the app before running a test."
+        default: "Enable Siri AI and finish its downloads."
+        }
     }
 
     /// Offers only explicit prerequisite actions; setup never installs tools, signs apps, or quits another app automatically.

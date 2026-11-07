@@ -95,22 +95,51 @@ final class MacIntentTestingUITests: XCTestCase {
         defer { app.terminate() }
         try openWorkspace(in: app, fixture: fixture)
         chooseMode("Siri Studio", in: app)
-        let checklist = app.buttons["Hide setup checklist"]
-        XCTAssertTrue(checklist.waitForExistence(timeout: 5), app.debugDescription)
+        let advanced = app.descendants(matching: .any)["siri-studio-advanced"].firstMatch
+        XCTAssertTrue(advanced.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.descendants(matching: .any)["siri-studio-setup-status"].firstMatch.exists)
         XCTAssertTrue(app.descendants(matching: .any)["siri-studio-confirm-siri"].firstMatch.exists)
-        checklist.click()
+        XCTAssertFalse(app.buttons["Export Swift…"].exists)
+        XCTAssertFalse(app.menuButtons["Documents"].exists)
+        XCTAssertFalse(app.textFields["Developer directory"].exists)
+        let recheck = app.buttons["Recheck setup"]
+        XCTAssertTrue(recheck.waitForExistence(timeout: 5), app.debugDescription)
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in recheck.isEnabled }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 45), .completed, app.debugDescription)
+        let stepIDs = ["macos", "xcode", "signing", "xcodegen", "registered", "stopped", "siri"]
+        XCTAssertLessThanOrEqual(stepIDs.filter {
+            app.descendants(matching: .any)["siri-studio-setup-" + $0].firstMatch.exists
+        }.count, 1, "The simple flow should show only the next missing setup action on any authoring host")
         let newScenario = app.buttons["siri-studio-new-scenario"]
         XCTAssertTrue(newScenario.waitForExistence(timeout: 5), app.debugDescription)
         newScenario.click()
         try enter("Open the fixture.", in: "siri-studio-utterance-1", app: app)
+        app.menuButtons["siri-studio-expected-action-1"].click()
+        app.menuItems["Echo"].click()
         app.buttons["Add turn"].click()
         try enter("What is its status?", in: "siri-studio-utterance-2", app: app)
-        app.buttons["Add reply check"].click()
+        reveal(advanced, in: app, scrollingDown: false)
+        advanced.click()
+        let replyCheck = app.buttons["Add reply check"]
+        reveal(replyCheck, in: app)
+        replyCheck.click()
         try enter("ready", in: "siri-studio-reply-check-0", app: app)
+        reveal(advanced, in: app, scrollingDown: false)
+        advanced.click()
+        XCTAssertFalse(app.menuButtons["Documents"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["siri-studio-saved-settings"].firstMatch.exists)
         app.buttons["Save"].click()
         let documentURL = storage.appending(path: "Workspace/SiriStudio/Scenarios/example.MacIntentUITestFixture.json")
         let bytes = try Data(contentsOf: documentURL)
+        let authored = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        let scenarios = try XCTUnwrap(authored["scenarios"] as? [[String: Any]])
+        let turns = try XCTUnwrap(scenarios.first?["turns"] as? [[String: Any]])
+        let firstChecks = try XCTUnwrap(turns[0]["expectations"] as? [String: Any])
+        let calls = try XCTUnwrap(firstChecks["calls"] as? [[String: Any]])
+        XCTAssertEqual(calls.first?["actionIdentifier"] as? String, "EchoIntent")
+        let secondChecks = try XCTUnwrap(turns[1]["expectations"] as? [String: Any])
+        let replies = try XCTUnwrap(secondChecks["replyContains"] as? [[String: Any]])
+        XCTAssertEqual(replies.first?["text"] as? String, "ready", "Hiding Advanced must preserve its checks")
         app.buttons["Save"].click()
         XCTAssertEqual(try Data(contentsOf: documentURL), bytes)
 
@@ -118,29 +147,24 @@ final class MacIntentTestingUITests: XCTestCase {
         app.launch()
         try openWorkspace(in: app, fixture: fixture)
         chooseMode("Siri Studio", in: app)
-        let reopenedChecklist = app.buttons["Hide setup checklist"]
-        XCTAssertTrue(reopenedChecklist.waitForExistence(timeout: 5), app.debugDescription)
-        reopenedChecklist.click()
+        XCTAssertFalse(app.menuButtons["Documents"].exists)
         let reopened = app.descendants(matching: .any)["siri-studio-utterance-2"].firstMatch
         XCTAssertTrue(reopened.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(reopened.value as? String, "What is its status?")
+        let reopenedAdvanced = app.descendants(matching: .any)["siri-studio-advanced"].firstMatch
+        reopenedAdvanced.click()
         let signing = app.disclosureTriangles["Xcode and signing"]
-        let page = app.scrollViews.containing(.disclosureTriangle, identifier: "Xcode and signing").firstMatch
-        XCTAssertTrue(page.waitForExistence(timeout: 3), app.debugDescription)
-        let wheel = page.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
-        wheel.scroll(byDeltaX: 0, deltaY: -400)
-        XCTAssertTrue(signing.isHittable && page.frame.insetBy(dx: 0, dy: 12).contains(signing.frame),
-                      app.debugDescription)
-        // SwiftUI includes leading padding and the label in the AX frame; click the chevron itself.
+        reveal(signing, in: app)
+        // Click the native disclosure chevron so its label padding cannot intercept the action.
         signing.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
             .withOffset(CGVector(dx: 27, dy: 0)).click()
         let developer = app.textFields["Developer directory"]
         XCTAssertTrue(developer.waitForExistence(timeout: 3), app.debugDescription)
-        wheel.scroll(byDeltaX: 0, deltaY: -400)
-        XCTAssertTrue(developer.isHittable && page.frame.contains(developer.frame), app.debugDescription)
+        reveal(developer, in: app)
         developer.click()
         developer.typeKey("a", modifierFlags: .command)
         developer.typeText("/Applications/Xcode.app/Contents/Developer")
+        reveal(app.menuButtons["Documents"], in: app, scrollingDown: false)
         for action in ["Open scenario document…", "Import result bundle…", "Open saved run…",
                        "Export scenario document…"] {
             app.menuButtons["Documents"].click()
@@ -154,6 +178,26 @@ final class MacIntentTestingUITests: XCTestCase {
             XCTAssertTrue(app.buttons["Save"].isEnabled)
             XCTAssertEqual(reopened.value as? String, "What is its status?")
         }
+        let savedRun = try makeRunFixture(authored, in: storage)
+        app.menuButtons["Documents"].click()
+        app.menuItems["Open saved run…"].click()
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        let runPath = app.sheets.textFields.firstMatch
+        XCTAssertTrue(runPath.waitForExistence(timeout: 5))
+        runPath.typeText(savedRun.path)
+        app.typeKey(.return, modifierFlags: [])
+        let openRun = app.sheets.buttons["Open"].firstMatch
+        XCTAssertTrue(openRun.waitForExistence(timeout: 5))
+        openRun.click()
+        let technical = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@",
+                                    "framework-result-fixture", "framework-result-fixture")
+        let rawResult = app.staticTexts.matching(technical).firstMatch
+        XCTAssertTrue(rawResult.waitForExistence(timeout: 5), app.debugDescription)
+        reveal(reopenedAdvanced, in: app, scrollingDown: false)
+        reopenedAdvanced.click()
+        XCTAssertTrue(rawResult.waitForNonExistence(timeout: 3), "Raw framework evidence belongs in Advanced")
+        let plain = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "ready", "ready")
+        XCTAssertTrue(app.staticTexts.matching(plain).firstMatch.exists, "The plain Siri reply must stay visible")
         let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         attachment.name = "Siri Studio two-turn conversation"
         attachment.lifetime = .keepAlways
@@ -181,11 +225,25 @@ final class MacIntentTestingUITests: XCTestCase {
         open.click()
     }
 
+    /// Brings a real control into the page's visible viewport without depending on a specific content height.
+    @MainActor
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, scrollingDown: Bool = true) {
+        XCTAssertTrue(element.waitForExistence(timeout: 5), app.debugDescription)
+        let page = app.scrollViews["App Intent steps"]
+        let wheel = page.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+        for _ in 0..<8 {
+            if element.isHittable && page.frame.insetBy(dx: 0, dy: 8).contains(element.frame) { return }
+            wheel.scroll(byDeltaX: 0, deltaY: scrollingDown ? -350 : 350)
+        }
+        XCTAssertTrue(element.isHittable && page.frame.contains(element.frame), app.debugDescription)
+    }
+
     /// Selects a segment by its accessibility label.
     @MainActor
     private func chooseMode(_ label: String, in app: XCUIApplication) {
         let segment = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
         XCTAssertTrue(segment.waitForExistence(timeout: 5), app.debugDescription)
+        reveal(segment, in: app, scrollingDown: false)
         segment.click()
     }
 
@@ -196,6 +254,36 @@ final class MacIntentTestingUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
         field.click()
         field.typeText(text)
+    }
+
+    /// Supplies synthetic saved evidence to exercise result presentation without calling Siri or claiming a live evaluation.
+    private func makeRunFixture(_ document: [String: Any], in directory: URL) throws -> URL {
+        let scenario = try XCTUnwrap((document["scenarios"] as? [[String: Any]])?.first)
+        let id = try XCTUnwrap(scenario["id"] as? String)
+        let revision = try XCTUnwrap(scenario["revision"] as? Int)
+        let turns = try XCTUnwrap(scenario["turns"] as? [[String: Any]])
+        let transcript: [[String: Any]] = try turns.map { turn in
+            ["turnID": try XCTUnwrap(turn["id"] as? String), "utterance": turn["utterance"] ?? "",
+             "foundEntities": [], "onScreenEntities": [], "loadedSkills": [],
+             "invocations": [["intent": "EchoIntent", "arguments": [String: String](),
+                               "outcome": "succeeded", "ran": true, "committed": true,
+                               "result": "framework-result-fixture", "timestamp": "2026-01-01T12:00:00Z"]],
+             "response": ["text": "ready", "timestamp": "2026-01-01T12:00:00Z"]]
+        }
+        let summary: [String: Any] = ["schema": "dev.intents.siri-studio.summary", "version": 1,
+            "scenarioID": id, "revision": revision, "metrics": ["intentsAllPass": 1],
+            "inferenceFailureCount": 0, "metricsNotFound": []]
+        let report: [String: Any] = ["schema": "dev.intents.siri-studio.report", "version": 1,
+            "scenarioID": id, "revision": revision, "repeatIndex": 0, "status": "ran",
+            "turnsAuthored": turns.count, "turnsReached": turns.count, "turns": transcript]
+        let verdict: [String: Any] = ["id": id, "revision": revision, "name": scenario["name"] ?? "Fixture",
+            "state": "passed", "attempted": 1, "passed": 1, "failingMetrics": [], "reports": [report], "summary": summary]
+        let run: [String: Any] = ["document": document, "osBuild": "UI fixture", "startedAt": 0,
+            "endedAt": 1, "logURL": directory.appending(path: "fixture.log").absoluteString, "scenarios": [verdict]]
+        let folder = directory.appending(path: "SavedRun", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: run).write(to: folder.appending(path: "run.json"))
+        return folder
     }
 
     /// Creates an isolated catalog-only app bundle with no executable App Intent behavior.
