@@ -86,14 +86,17 @@ class SelectionTests(unittest.TestCase):
                     self.assertEqual(environment["SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH"], "4")
                 self.assertEqual(os.environ["SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH"], "128")
 
-    def test_full_swift_selection_runs_all_including_new_suites(self):
+    def test_full_swift_selection_runs_all_ordinary_suites_including_new_suites(self):
+        """Runs all ordinary tests and excludes the explicit live Siri opt-in."""
         with patch.object(runner.subprocess, "run") as run:
             runner.run_tests("swift", ["*"])
         self.assertEqual(run.call_count, 1)
         command = run.call_args.args[0]
         self.assertEqual(command[:2], ["swift", "test"])
         self.assertNotIn("--filter", command)
-        self.assertNotIn("--skip", command)
+        skip = command[command.index("--skip") + 1]
+        self.assertRegex("MacIntentTestingTests.SiriStudioLiveTests/signedCourtsideSiri()", skip)
+        self.assertNotRegex("MacIntentTestingTests.SiriStudioTests/fixtureGeneratesGoldenSwiftFromCompiledCatalog()", skip)
 
     def test_malformed_or_option_like_selections_never_start_processes(self):
         for kind, names in (

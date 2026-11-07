@@ -14,11 +14,12 @@ public struct MacIntentParameter: Identifiable, Codable, Sendable, Equatable {
     public var required: Bool
     public var enumIdentifier: String?
     public var enumCases: [String]
+    public var entityIdentifier: String?
     /// Describes a discovered parameter, including whether input is required and any declared enum identifiers.
     public init(id: String, name: String, type: String, required: Bool,
-                enumIdentifier: String? = nil, enumCases: [String] = []) {
+                enumIdentifier: String? = nil, enumCases: [String] = [], entityIdentifier: String? = nil) {
         self.id = id; self.name = name; self.type = type; self.required = required
-        self.enumIdentifier = enumIdentifier; self.enumCases = enumCases
+        self.enumIdentifier = enumIdentifier; self.enumCases = enumCases; self.entityIdentifier = entityIdentifier
     }
 }
 

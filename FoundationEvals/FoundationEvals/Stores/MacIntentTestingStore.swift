@@ -15,7 +15,9 @@ import Observation
     private(set) var isLoading = false
     private(set) var result: MacIntentRunResult?
     private(set) var diagnostic: String?
-    @ObservationIgnored private let runner = MacIntentRunner()
+    let siri: SiriStudioStore
+    let siriSetup: SiriStudioSetupStore
+    @ObservationIgnored private let runner: MacIntentRunner
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var catalogLoadID: UUID?
@@ -26,9 +28,14 @@ import Observation
     @ObservationIgnored private var draftRevision = 0
 
     /// Creates an intent test session with optional content-free telemetry and injectable execution/catalog loading.
-    init(telemetry: TelemetryController? = nil,
+    init(telemetry: TelemetryController? = nil, siriStudioRoot: URL? = nil,
+         setupProbe: ((URL, SiriStudioSetupConfiguration) async throws -> SiriStudioSetupReport)? = nil,
          runOverride: (@MainActor (MacIntentCatalog, [MacIntentTestCase], MacIntentRunConfiguration) async throws -> MacIntentRunResult)? = nil,
          catalogLoader: @escaping @Sendable (URL) async throws -> MacIntentCatalog = { try await MacIntentCatalog.loadAsync(appURL: $0) }) {
+        siriSetup = SiriStudioSetupStore(probe: setupProbe)
+        let session = NativeTestSession()
+        runner = MacIntentRunner(session: session)
+        siri = SiriStudioStore(session: session, telemetry: telemetry, root: siriStudioRoot)
         self.runOverride = runOverride
         self.catalogLoader = catalogLoader
         self.telemetry = telemetry
@@ -48,7 +55,8 @@ import Observation
     /// Starts owned off-actor catalog loading, replacing an older selection only after its cancelled load has finished.
     /// Clears previous results immediately; only the current load may publish selection or diagnostics.
     func load(appURL: URL) {
-        guard !isClosing, !isRunning else { return }
+        guard !isClosing, !isRunning, !siri.isBusy else { return }
+        siriSetup.clear()
         let previous = loadTask
         previous?.cancel()
         let loadID = UUID()
@@ -81,6 +89,24 @@ import Observation
         }
     }
 
+    /// Captures the shared editable configuration without retaining any certificate private key.
+    var setupConfiguration: SiriStudioSetupConfiguration {
+        .init(developerDirectory: developerDirectory, teamIdentifier: teamIdentifier, signingIdentity: signingIdentity)
+    }
+
+    /// Detects settings for the selected app and applies them only if neither the app nor the user's fields changed.
+    func detectSiriSetup() {
+        guard !isClosing, !isRunning, !siri.isBusy, let catalog else { return }
+        let before = setupConfiguration
+        siriSetup.refresh(appURL: catalog.appURL, configuration: before) { [weak self] detected in
+            guard let self, !self.isClosing, !self.isRunning, !self.siri.isBusy, self.catalog?.appURL == catalog.appURL,
+                  self.setupConfiguration == before else { return }
+            self.developerDirectory = detected.developerDirectory
+            self.teamIdentifier = detected.teamIdentifier
+            self.signingIdentity = detected.signingIdentity
+        }
+    }
+
     /// Publishes a file-selection error unless it represents user cancellation.
     func reportSelectionError(_ error: any Error) {
         guard (error as NSError).code != NSUserCancelledError else { return }
@@ -108,7 +134,7 @@ import Observation
     /// Validates signing and test inputs, then launches a generated test-host run for the loaded catalog.
     /// Publishes results only if the draft revision still matches; records one content-free outcome after owned execution finishes.
     func start() {
-        guard !isClosing, !isRunning, !isLoading, let catalog else { return }
+        guard !isClosing, !isRunning, !isLoading, !siri.isBusy, let catalog else { return }
         let span = telemetry?.begin(.appIntentRun)
         result = nil
         diagnostic = nil
@@ -158,6 +184,8 @@ import Observation
         cancel()
         await loading?.value
         await running?.value
+        await siri.closeAndWait()
+        await siriSetup.closeAndWait()
     }
 
     /// Waits for the current catalog load, including any cancelled predecessor it owns.
@@ -168,8 +196,9 @@ import Observation
 
     /// Requests cancellation of catalog inspection, the store execution task, and the underlying intent runner.
     func cancel() {
+        siriSetup.clear()
         loadTask?.cancel()
         task?.cancel()
-        runner.cancel()
+        if isRunning { runner.cancel() }
     }
 }

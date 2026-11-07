@@ -14,4 +14,11 @@ same Apple development team. Run against explicit JSON inputs and expected
 results, retain the runner diagnostics, and confirm the observed returned values.
 Seven local generated-runner cases passed on the native sample. This qualifies
 that sample/environment, while unit tests and generated project inspection remain
-separate evidence. Siri is outside this workflow.
+separate evidence.
+
+[Siri Studio](wiki/Siri-Studio.md) requires a compatible macOS 27.3 Mac,
+Siri AI, Xcode 27.3 and matching development signing. The ordinary runner
+excludes `SiriStudioLiveTests/signedCourtsideSiri`. Follow the
+[Courtside qualification steps](../examples/SiriStudioSample/README.md) to
+run that test, the app and CLI, and import a result from exported Swift.
+Compiler and synthetic attachment tests do not qualify live Siri.

@@ -30,7 +30,7 @@ struct FoundationEvalsApp: App {
         do { storeDirectory = Self.launchesProductionWorker ? try ProductionNativeWorkerCommand.prepareScratch() : Self.acceptanceStorageDirectory }
         catch { FileHandle.standardError.write(Data(("Native eval worker: \(error.localizedDescription)\n").utf8)); ProductionNativeWorkerCommand.finish(30) }
         let store = EvaluationStore(supportDirectory: storeDirectory, telemetry: telemetry)
-        let control = EvaluationAppControl(store: store)
+        let control = EvaluationAppControl(store: store, isolatedStorage: storeDirectory)
         appControl = control
         let runtime = FoundationEvalsMCPRuntime(store: store, control: control)
         let settings = MCPSettingsController(

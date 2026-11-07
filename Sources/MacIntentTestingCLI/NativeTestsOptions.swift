@@ -6,6 +6,8 @@ struct NativeTestsOptions {
     intents-native-tests catalog --app PATH
     intents-native-tests run --app PATH --cases FILE --developer-dir PATH --team TEAM --identity ID --output PATH [--timeout SECONDS]
 
+    intents-native-tests siri --help
+
     Cases: a JSON array of {"actionIdentifier":"IntentID","inputs":{},"expectedValue":"expected"}.
     Omit expectedValue for an execution smoke test. null is unsupported.
     Requires macOS 27, Xcode 27, XcodeGen, and an installed Mac app signed by the selected team.

@@ -8,7 +8,7 @@ enum TelemetryOperation: String, Codable, Sendable {
     case modelLoad = "model_load", cloudMetadata = "cloud_metadata"
     case mcpStart = "mcp_start", mcpInstall = "mcp_install", mcpStop = "mcp_stop"
     case documentGenerate = "document_generate", suiteImport = "suite_import", suiteExport = "suite_export"
-    case reviewSave = "review_save", batchRun = "batch_run", appIntentRun = "app_intent_run"
+    case reviewSave = "review_save", batchRun = "batch_run", appIntentRun = "app_intent_run", siriStudioRun = "siri_studio_run"
     case documentImport = "document_import", referenceImport = "reference_import"
     case datasetImport = "dataset_import", resultExport = "results_export"
 }
@@ -107,7 +107,7 @@ enum TelemetryFeature: String, Sendable, CaseIterable {
     case evaluation
     case suiteSaved = "suite_saved", mcpStarted = "mcp_started", mcpInstalled = "mcp_installed"
     case documentGenerated = "document_generated", suiteImported = "suite_imported", suiteExported = "suite_exported"
-    case reviewSaved = "review_saved", batchRun = "batch_run", appIntentRun = "app_intent_run"
+    case reviewSaved = "review_saved", batchRun = "batch_run", appIntentRun = "app_intent_run", siriStudioRun = "siri_studio_run"
     case mcpConnected = "mcp_connected"
     case documentImported = "document_imported", referencesImported = "references_imported"
     case datasetImported = "dataset_imported", resultsExported = "results_exported"
@@ -125,6 +125,7 @@ enum TelemetryFeature: String, Sendable, CaseIterable {
         case .reviewSave: self = .reviewSaved
         case .batchRun: self = .batchRun
         case .appIntentRun: self = .appIntentRun
+        case .siriStudioRun: self = .siriStudioRun
         case .documentImport: self = .documentImported
         case .referenceImport: self = .referencesImported
         case .datasetImport: self = .datasetImported

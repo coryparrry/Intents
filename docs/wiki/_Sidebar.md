@@ -9,5 +9,6 @@
 - [Models, scoring, and tools](Models-scoring-and-tools.md)
 - [App feature runners](App-feature-runners.md)
 - [Mac App Intent tests](Mac-App-Intent-tests.md)
+- [Siri Studio](Siri-Studio.md)
 - [Codex and MCP](Codex-and-MCP.md)
 - [Data and troubleshooting](Data-and-troubleshooting.md)
