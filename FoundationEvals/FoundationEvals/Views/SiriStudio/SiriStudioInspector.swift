@@ -39,6 +39,8 @@ struct SiriStudioInspector: View {
                             Text("Turn \(index + 1)").tag(Optional(id))
                         }
                     }
+                    .accessibilityLabel("Observed turn")
+                    .accessibilityIdentifier("siri-studio-observed-turn")
                 }
                 repeats
             }

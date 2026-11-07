@@ -231,6 +231,8 @@ struct SiriStudioView: View {
                         !(studio.document?.scenarios.contains { $0.id == result.id } ?? false)
                     }) { Text("Saved · " + $0.name).tag(Optional($0.id)) }
                 }
+                .accessibilityLabel("Conversation")
+                .accessibilityIdentifier("siri-studio-result-conversation")
             }
             if studio.isBusy {
                 ProgressView(progressLabel)

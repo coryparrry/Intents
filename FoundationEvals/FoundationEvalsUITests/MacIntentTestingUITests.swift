@@ -193,7 +193,7 @@ final class MacIntentTestingUITests: XCTestCase {
         XCTAssertFalse(reopened.exists, "Opening a run should navigate to Results, not mix it into the editor")
         advancedAction("Show advanced controls", in: app)
         XCTAssertTrue(rawResult.waitForNonExistence(timeout: 3), "Raw framework evidence belongs in Advanced")
-        let observedTurn = app.popUpButtons["Observed turn"]
+        let observedTurn = app.popUpButtons["siri-studio-observed-turn"]
         XCTAssertTrue(observedTurn.waitForExistence(timeout: 5), "Results must let the user inspect every observed turn")
         observedTurn.click()
         app.menuItems["Turn 2"].click()
@@ -207,7 +207,7 @@ final class MacIntentTestingUITests: XCTestCase {
         choosePage("Conversations", in: app)
         app.buttons["siri-studio-new-scenario"].click()
         choosePage("Results", in: app)
-        let resultPicker = app.popUpButtons["Conversation"]
+        let resultPicker = app.popUpButtons["siri-studio-result-conversation"]
         XCTAssertTrue(resultPicker.waitForExistence(timeout: 5), "An unrun draft must not hide existing results")
         resultPicker.click()
         app.menuItems[try XCTUnwrap(scenarios.first?["name"] as? String)].click()
