@@ -10,21 +10,21 @@ Intents is a free, open-source Mac workbench for Apple Foundation Models. Start 
 
 ## Choose a build
 
-### Released download: Intents 1.5.2
+### Install Intents 1.6.0
 
-Intents was previously named Foundation Evals. The released app includes prompt suites, scoring, traces, saved comparisons, Review, Batch runs, JSON exports, and authenticated local MCP access.
+Use the signed download on an Apple silicon Mac with macOS 27 or later. Intents was previously named Foundation Evals.
 
-[Download for macOS · v1.5.2](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg) · [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.5.2)
+[Download for macOS · v1.6.0](https://github.com/coryparrry/Intents/releases/download/v1.6.0/Intents-1.6.0-macOS-arm64.dmg) · [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.6.0)
 
 ```sh
 brew install --cask coryparrry/tap/intents
 ```
 
-Open `Intents-1.5.2-macOS-arm64.dmg`, drag Intents to Applications, eject the disk image, and open the app. Follow the [v1.5.2 instructions](https://github.com/coryparrry/Intents/blob/v1.5.2/README.md#run-your-first-evaluation) for this interface.
+Open `Intents-1.6.0-macOS-arm64.dmg`, drag Intents to Applications, eject the disk image, and open the app. Follow the [v1.6.0 instructions](https://github.com/coryparrry/Intents/blob/v1.6.0/README.md#run-your-first-evaluation) for this interface.
 
 ### Development source: Intents
 
-Build source to develop the app or try changes that have not shipped. Review and Batch runs are also available in the released 1.5.2 app. Check [published releases](https://github.com/coryparrry/Intents/releases) for any later download.
+Build from source to develop the app or try upcoming changes.
 
 With Xcode 27 and its command-line tools selected, clone the repository and run the project’s build script:
 
@@ -44,7 +44,7 @@ Compatible Core AI models and custom HTTP providers have their own requirements.
 
 ## Run your first case
 
-In the released app, select **Model evaluations → New Suite → Blank suite → Create suite**, then open **Cases** and **Setup → Scoring**.
+Select **New Suite** at the bottom of the sidebar. Choose **Blank suite**, enter a name, and select **Create suite**. Open **Cases** and **Setup → Scoring**.
 
 - Name the case “Capital answer”. Enter the prompt `Reply with only the capital of France` and expected text `Paris`.
 
@@ -58,15 +58,20 @@ Inspect the actual answer alongside the score. A pass means the response met you
 
 Add a formatting failure, an ambiguous request, and a changed-preference case. Use repetitions to inspect variation. Small examples are not model benchmarks and do not establish statistical certainty. In the released app, [Review](https://github.com/coryparrry/Intents/blob/main/docs/EVAL_REVIEW_GUIDE.md) records human verdicts and verified regression cases; [Batch runs](https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md) retains frozen datasets and resumable jobs.
 
-## Testing your app’s actions
+## Try the 1.6.0 evaluation workflows
 
-[Mac App Intent tests in development source](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Mac-App-Intent-tests.md) reads a normally installed Mac app’s compiled metadata and accepts explicit JSON inputs and expected returned values. It needs Xcode 27+, macOS 27+, and a generated AppIntentsTesting UI-test runner signed by the same development team as the app. This is an unshipped source workflow. Live runner reliability remains unqualified; Siri is not verified.
+- Choose **New Suite → From document…** to draft questions, reference answers, and scoring criteria from a text-based PDF, Markdown, or UTF-8 text file. Review the source evidence and accept drafts before creating the suite. Generation uses Apple’s on-device model and a configured semantic judge you authorize to receive the document. [Document suite guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Document-suites.md).
+- Choose **Setup → Instructions → Improve instructions** to compare two suggested sets of instructions on Practice cases. If a suggestion improves the Practice pass rate, Intents checks the best one on reserved Final check cases. You choose whether to apply it. [Instruction comparison guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/instruction-improvement.md).
+
+## Test your Mac app’s actions
+
+Open **App Intent Testing** in the sidebar, choose a built macOS app, and select an action. Supply its JSON inputs and, optionally, the expected return value. The generated AppIntentsTesting runner needs Xcode 27 or later, XcodeGen, a normally installed and registered app, and matching development-team signatures. The check calls the action directly. [Mac App Intent setup and qualification](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Mac-App-Intent-tests.md).
 
 ## Help improve a failure case
 
 When [reporting an issue](https://github.com/coryparrry/Intents/issues), include your release or source commit, macOS and model, a minimal synthetic prompt, scoring rule, expected result, and actual response. Review exports for private content before attaching them. A reproducible case, documentation correction, or focused patch helps others test the same behavior. The source uses the [MIT licence](https://github.com/coryparrry/Intents/blob/main/LICENSE).
 
-Version facts checked 26 October 2026. The homepage’s HTML/CSS examples use a recorded 17 September evaluation and an illustrative source-only Mac App Intent contract. They are browser recreations, not live model or App Intent execution. Example scores are not model benchmarks.
+Release details checked 6 November 2026. The homepage shows a recorded 17 September evaluation and a sample Mac App Intent JSON contract. Both are browser examples. The scores describe the recorded cases.
 
 [Return to the workbench showcase](/) · [Product overview in Markdown](/index.html.md)
 

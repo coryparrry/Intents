@@ -9,7 +9,7 @@ Project home (canonical human page): https://coryparry.dev/projects/intents
 - [Project page](https://coryparry.dev/projects/intents)
 - [Cory Parry project guides](https://coryparry.dev/llms.txt)
 
-Made by Cory Parry; MIT licensed. Intents was previously Foundation Evals. Search tip: older posts, downloads and screenshots use the name Foundation Evals. As checked 30 October 2026, the released download is Intents 1.5.2, including Review and Batch runs. Development source may include unshipped changes.
+Made by Cory Parry; MIT licensed. Intents was previously Foundation Evals. Search tip: older posts, downloads and screenshots use the name Foundation Evals. The released download is Intents 1.6.0, with document suites, instruction comparisons, and direct Mac App Intent tests.
 
 macOS 27+. The default on-device model needs an Apple Intelligence-capable Apple silicon Mac, Apple Intelligence enabled, and its model downloaded. Xcode 27 is needed for source builds and Mac App Intent tests, not ordinary suites. Remote providers and judges use their configured services. The released app uses authenticated local MCP. Website examples are historical browser recreations, not model benchmarks.
 
@@ -17,15 +17,15 @@ macOS 27+. The default on-device model needs an Apple Intelligence-capable Apple
 
 - [Product overview](https://intents-workbench.coryparry.chatgpt.site/index.html.md): Release/source distinction, requirements, limitations, and historical example provenance.
 - [Getting started](https://intents-workbench.coryparry.chatgpt.site/getting-started.html.md): Choose a build, create a small evaluation, and inspect evidence.
-- [Interactive showcase](https://intents-workbench.coryparry.chatgpt.site/): Browser recreations of a recorded 17 September evaluation and a source-only Mac App Intent JSON example.
+- [Interactive showcase](https://intents-workbench.coryparry.chatgpt.site/): Browser recreations of a recorded 17 September evaluation and a sample Mac App Intent JSON contract.
 
 ## Install
 
 - [Install with Homebrew](https://intents-workbench.coryparry.chatgpt.site/guides/install-intents-homebrew): `brew install --cask coryparrry/tap/intents`.
-- [Intents 1.5.2 DMG](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg): Current Apple silicon installer.
+- [Intents 1.6.0 DMG](https://github.com/coryparrry/Intents/releases/download/v1.6.0/Intents-1.6.0-macOS-arm64.dmg): Current Apple silicon installer.
 
-- [Intents 1.5.2 release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2): Published installer, notes, and checksums.
-- [v1.5.2 instructions](https://github.com/coryparrry/Intents/blob/v1.5.2/README.md): Released interface and MCP behavior.
+- [Intents 1.6.0 release](https://github.com/coryparrry/Intents/releases/tag/v1.6.0): Published installer, notes, and checksums.
+- [v1.6.0 instructions](https://github.com/coryparrry/Intents/blob/v1.6.0/README.md): Released interface and MCP behavior.
 
 ## Source docs
 
@@ -34,7 +34,7 @@ macOS 27+. The default on-device model needs an Apple Intelligence-capable Apple
 - [User guide](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Home.md): Workflows and evidence boundaries.
 - [Review guide](https://github.com/coryparrry/Intents/blob/main/docs/EVAL_REVIEW_GUIDE.md): Human verdicts, regression cases, and held-out judge checks.
 - [Batch guide](https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md): Frozen datasets, resumable jobs, and release reports.
-- [Mac App Intent tests (development source)](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Mac-App-Intent-tests.md): Best-effort compiled metadata catalog, explicit JSON inputs and expected results, and a generated AppIntentsTesting runner. Requires a normally installed Mac app, Xcode 27+, macOS 27+, and matching signing teams. Live reliability remains unqualified; no Siri verification.
+- [Mac App Intent tests](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Mac-App-Intent-tests.md): Best-effort compiled metadata catalog, explicit JSON inputs and expected results, and a generated AppIntentsTesting runner. Requires a normally installed Mac app, Xcode 27+, macOS 27+, and matching signing teams. Live reliability remains unqualified; no Siri verification.
 - [Swift integration](https://github.com/coryparrry/Intents/blob/main/docs/DEVELOPER_SWIFT_INTEGRATION.md): Registered feature closures on paired apps.
 - [MCP guide](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Codex-and-MCP.md): Current authenticated local integration.
 - [MIT licence](https://github.com/coryparrry/Intents/blob/main/LICENSE): Source terms.
@@ -66,4 +66,4 @@ macOS 27+. The default on-device model needs an Apple Intelligence-capable Apple
 
 ### Is Intents related to Apple's App Intents?
 
-No. Intents is an independent evaluation app for Apple Foundation Models. Its development source includes optional Mac App Intent tests, which are unshipped.
+No. Intents is an independent evaluation app for Apple Foundation Models. App Intent Testing calls a selected action directly in a built macOS app.

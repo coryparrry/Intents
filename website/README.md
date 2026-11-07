@@ -1,7 +1,9 @@
 # Intents showcase
 
 A static, responsive Intents showcase with historical browser examples and a
-practical getting-started guide. The report and workflow trace use recorded evaluation outputs. The Mac App Intent example is an illustrative JSON contract for unshipped development source; it does not run an intent.
+practical getting-started guide. The report and workflow trace use recorded evaluation
+outputs. The Mac App Intent example shows the JSON contract for a direct action check
+in Intents 1.6.0.
 
 All commands below run from the `website/` directory. From the repository root, enter it first:
 
@@ -47,8 +49,8 @@ source synchronization and publication.
   times are rounded from the recorded start plus duration; displayed timings
   are not intended as performance benchmarks.
 - Mac App Intent example: authored JSON inputs and expected returned value for
-  unshipped Mac-only development source. No browser invocation, Siri check, or
-  successful runtime qualification is implied.
+  the native Mac action test. Runtime evidence comes from the documented sample
+  and environment.
 - Reference direction: [Inspora](https://www.inspora.design/?category=Web), including
   its glassmorphism animation example: restrained depth, controlled transitions,
   clear typographic hierarchy. No third-party artwork was copied.
@@ -90,15 +92,14 @@ layout read.
   proposal. It is not an indexing requirement or a ranking guarantee.
 - `dist/index.html.md` is a linked Markdown product overview. Keep its facts
   and the JSON-LD consistent with the visible site and current product.
-- `dist/getting-started.html` and its Markdown alternate distinguish the
-  Intents v1.5.2 download from Intents development source, explain
-  a first evaluation, and link current source guides.
+- `dist/getting-started.html` and its Markdown alternate cover the Intents 1.6.0
+  download, a first evaluation, document suites, instruction comparisons, and
+  Mac App Intent tests.
 - Sites serves that HTML at `/getting-started` and redirects its `.html` URL.
   Canonical, sitemap and internal links use the extensionless public route.
   A plain local static server may still require `/getting-started.html`.
-- Download and Apple-tool facts were verified on 30 October 2026. Recheck published release
-  assets before publishing or updating version copy.
-  Review and Batch runs are also available in the v1.5.2 release.
+- The 1.6.0 GitHub installer and Homebrew cask were verified on 6 November 2026.
+  Recheck published release assets before updating version copy.
 - `.openai/hosting.json` disables the homepage fallback for nonexistent URLs,
   so missing pages return HTTP 404 instead of duplicate homepage content.
 - Alternate and canonical links are in the HTML head. Sites serves the text

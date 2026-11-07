@@ -4,13 +4,13 @@
 
 Apple's Foundation Models SDK for Python provides bindings for scripting and evaluating Foundation Models features with Python tooling. Intents is a native Mac workbench with no code needed for ordinary suites, plus saved runs, traces, Review and Batch runs. They are complementary: choose Python for programmable analysis and Intents for an interactive workspace around repeatable cases.
 
-| Detail | Intents 1.5.2 | Apple Python SDK |
+| Detail | Intents 1.6.0 | Apple Python SDK |
 | --- | --- | --- |
 | Interface | Native Mac workbench | Python scripts and notebooks |
 | Language | No code for ordinary suites; Swift source | Python bindings to Foundation Models |
 | Install | DMG or brew install --cask coryparrry/tap/intents | pip install apple-fm-sdk |
 | Requirements | macOS 27+, Apple silicon; Apple Intelligence and downloaded model for default provider | macOS 26.0+, Python 3.10+, compatible Mac with Apple Intelligence enabled |
-| Xcode needed | Only source builds and development-source Mac App Intent tests | Xcode 26.0+ and accepted SDK agreement, per Apple |
+| Xcode needed | Only source builds and Mac App Intent tests | Xcode 26.0+ and accepted SDK agreement, per Apple |
 | On-device model | Default on-device provider | System foundation model |
 | Private Cloud Compute | Optional when available; provider requirements apply | check: the linked Python overview establishes on-device access |
 | Tool calling and guided generation | Configurable tools and structured output workflows | Tool protocol and generable schemas |
@@ -55,9 +55,9 @@ No such integration is claimed. Intents and the Python SDK are separate ways to 
 
 Apple publishes the Python SDK source under Apache-2.0. Intents source is MIT licensed. Apple's framework use also has SDK terms.
 
-## Try Intents 1.5.2
+## Try Intents 1.6.0
 
-[Download for macOS · v1.5.2](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg) · [Getting started](/getting-started)
+[Download for macOS · v1.6.0](https://github.com/coryparrry/Intents/releases/download/v1.6.0/Intents-1.6.0-macOS-arm64.dmg) · [Getting started](/getting-started)
 
 ```sh
 brew install --cask coryparrry/tap/intents
@@ -67,7 +67,7 @@ Free, MIT licensed, macOS 27+, Apple silicon. Enable Apple Intelligence and down
 
 ## Sources and corrections
 
-Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
+Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.6.0) · [User guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
 
 [All comparisons](/compare) · [Evaluate on a Mac](/guides/evaluate-apple-foundation-models-mac) · [Connect an agent](/guides/intents-mcp-coding-agents)
 
