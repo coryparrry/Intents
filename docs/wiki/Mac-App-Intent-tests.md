@@ -100,7 +100,7 @@ Review the intended effect before testing a data-changing action in your own app
 
 1. Open **App Intent Testing** in the sidebar. Select **Choose built macOS app…** and choose the installed `.app`.
 2. Select an **Action** and enter a JSON object in **Inputs JSON** using the parameter identifiers shown in the app.
-3. Enable **Compare returned value** and enter the expected JSON value. For an execution-only smoke check, turn the comparison off.
+3. Enable **Compare returned value** and enter a JSON scalar matching the action's `String`, `Bool`, `Int`, or `Double` output type. For an execution-only smoke check, turn the comparison off.
 4. Under **Xcode and signing**, enter the developer directory, signing identity, and team identifier. Select **Run native test**.
 5. Read the result and use **Show log in Finder** or **Open result bundle** to inspect the evidence.
 
