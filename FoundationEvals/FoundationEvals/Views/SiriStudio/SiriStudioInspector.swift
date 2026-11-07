@@ -10,7 +10,7 @@ struct SiriStudioInspector: View {
     let stale: Bool
     var showsAdvanced = false
     var actions: [MacIntentAction] = []
-    @State private var historicalTurnID: UUID?
+    @State private var selectedTurnID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -31,9 +31,10 @@ struct SiriStudioInspector: View {
                 }
             }
             if !result.reports.isEmpty {
-                if stale && historicalTurns.count > 1 {
-                    Picker("Observed turn", selection: $historicalTurnID) {
-                        Text("Selected or first turn").tag(UUID?.none)
+                if historicalTurns.count > 1 {
+                    Picker("Observed turn", selection: Binding(
+                        get: { displayedTurnID }, set: { selectedTurnID = $0 }
+                    )) {
                         ForEach(Array(historicalTurns.enumerated()), id: \.element) { index, id in
                             Text("Turn \(index + 1)").tag(Optional(id))
                         }
@@ -96,10 +97,14 @@ struct SiriStudioInspector: View {
         result.reports.max(by: { $0.turns.count < $1.turns.count })?.turns.map(\.id) ?? []
     }
 
+    /// Keeps every observed turn selectable on Results, including current and historical conversations.
+    private var displayedTurnID: UUID? {
+        [selectedTurnID, turnID].compactMap { $0 }.first(where: historicalTurns.contains) ?? historicalTurns.first
+    }
+
     /// Resolves the chosen turn even when it belongs to a historical revision.
     private func observedTurn(_ report: SiriStudioReport) -> SiriStudioReport.Turn? {
-        let id = stale ? historicalTurnID ?? turnID.flatMap { historicalTurns.contains($0) ? $0 : nil } ?? historicalTurns.first : turnID
-        guard let id else { return report.turns.first }
+        guard let id = displayedTurnID else { return report.turns.first }
         return report.turns.first { $0.id == id }
     }
 

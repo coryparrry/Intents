@@ -177,6 +177,7 @@ final class MacIntentTestingUITests: XCTestCase {
         XCTAssertEqual(reopened.value as? String, "What is its status?")
         let savedRun = try makeRunFixture(authored, in: storage)
         advancedAction("Open saved run…", in: app)
+        XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: 5))
         app.typeKey("g", modifierFlags: [.command, .shift])
         let runPath = app.sheets.textFields.firstMatch
         XCTAssertTrue(runPath.waitForExistence(timeout: 5))
@@ -192,6 +193,12 @@ final class MacIntentTestingUITests: XCTestCase {
         XCTAssertFalse(reopened.exists, "Opening a run should navigate to Results, not mix it into the editor")
         advancedAction("Show advanced controls", in: app)
         XCTAssertTrue(rawResult.waitForNonExistence(timeout: 3), "Raw framework evidence belongs in Advanced")
+        let observedTurn = app.popUpButtons["Observed turn"]
+        XCTAssertTrue(observedTurn.waitForExistence(timeout: 5), "Results must let the user inspect every observed turn")
+        observedTurn.click()
+        app.menuItems["Turn 2"].click()
+        let secondMessage = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "What is its status?", "What is its status?")
+        XCTAssertTrue(app.staticTexts.matching(secondMessage).firstMatch.exists)
         let plain = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "ready", "ready")
         XCTAssertTrue(app.staticTexts.matching(plain).firstMatch.exists)
         choosePage("Conversations", in: app)
@@ -308,6 +315,7 @@ final class MacIntentTestingUITests: XCTestCase {
     @MainActor
     private func openStudioFile(_ url: URL, action: String, in app: XCUIApplication) {
         advancedAction(action, in: app)
+        XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: 5))
         app.typeKey("g", modifierFlags: [.command, .shift])
         let path = app.sheets.textFields.firstMatch
         XCTAssertTrue(path.waitForExistence(timeout: 5))

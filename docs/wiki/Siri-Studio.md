@@ -25,7 +25,8 @@ runs an action with the inputs you supply.
    view shows the next missing action; **Finish setup** opens it from the editor.
 6. Use **Save** to keep the draft, then **Run** in the window toolbar. The workspace
    opens **Results**, where you can review Siri’s replies and actions and select
-   an earlier result even if the current conversation has not run.
+   an earlier result even if the current conversation has not run. Use **Observed
+   turn** to inspect each message in a multi-turn conversation.
 
 App Intents uses the same toolbar navigation, item list, and focused content
 surfaces as the suite editor. Setup and results stay on their own pages.
