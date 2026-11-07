@@ -221,7 +221,7 @@ jobs:
     needs: [changes, native-build]
     if: ${{ needs.changes.outputs.ui == 'true' }}
     runs-on: xcode-27
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -245,8 +245,9 @@ jobs:
           defaults write com.coryparry.FoundationEvals SUAutomaticallyUpdate -bool false
           python3 script/ci_ui_display.py
       - name: Run affected UI tests once
+        # Full workflow coverage includes multi-turn Studio authoring and native file sheets.
         # Leave time to export/upload evidence when this step times out.
-        timeout-minutes: 16
+        timeout-minutes: 20
         env:
           CI_TEST_SELECTION: ${{ toJSON(matrix.tests) }}
         run: python3 script/ci_native_tests.py --products "$RUNNER_TEMP/Products" --result "$RUNNER_TEMP/ui-tests.xcresult"
