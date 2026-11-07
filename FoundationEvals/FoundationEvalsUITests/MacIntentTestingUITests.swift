@@ -199,6 +199,9 @@ final class MacIntentTestingUITests: XCTestCase {
         app.menuItems["Turn 2"].click()
         let secondMessage = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "What is its status?", "What is its status?")
         XCTAssertTrue(app.staticTexts.matching(secondMessage).firstMatch.exists)
+        let foreignCall = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "EchoIntent · succeeded", "EchoIntent · succeeded")
+        XCTAssertTrue(app.staticTexts.matching(foreignCall).firstMatch.exists,
+                      "Calls from another app must retain their identifier instead of borrowing this app’s title")
         let plain = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "ready", "ready")
         XCTAssertTrue(app.staticTexts.matching(plain).firstMatch.exists)
         choosePage("Conversations", in: app)
@@ -360,7 +363,9 @@ final class MacIntentTestingUITests: XCTestCase {
              "foundEntities": [], "onScreenEntities": [], "loadedSkills": [],
              "invocations": [["intent": "EchoIntent", "arguments": [String: String](),
                                "outcome": "succeeded", "ran": true, "committed": true,
-                               "result": "framework-result-fixture", "timestamp": "2026-01-01T12:00:00Z"]],
+                               "result": "framework-result-fixture", "timestamp": "2026-01-01T12:00:00Z"],
+                              ["intent": "EchoIntent", "bundleIdentifier": "example.OtherApp", "arguments": [String: String](),
+                               "outcome": "succeeded", "ran": true, "committed": true, "timestamp": "2026-01-01T12:00:01Z"]],
              "response": ["text": "ready", "timestamp": "2026-01-01T12:00:00Z"]]
         }
         let summary: [String: Any] = ["schema": "dev.intents.siri-studio.summary", "version": 1,

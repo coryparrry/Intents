@@ -4,6 +4,42 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct MacIntentTestingStoreTests {
+    /// Rejects saved-run counters that could overflow or allocate excessive result columns, preserving the previous run.
+    @Test func savedSiriRunsRequireBoundedRepeatCounters() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let studio = SiriStudioStore(session: NativeTestSession(), root: directory.appending(path: "Studio"))
+        let bundle = "example.saved-run"
+        studio.load(.init(bundleIdentifier: bundle, appURL: directory.appending(path: "App.app"), actions: []))
+        let id = UUID().uuidString
+        let document: [String: Any] = ["version": 1, "bundleIdentifier": bundle, "scenarios": []]
+        /// Writes synthetic saved evidence without executing or grading a Siri conversation.
+        func writeRun(attempted: Int, repeatIndex: Int?) throws {
+            let reports: [[String: Any]] = repeatIndex.map { index in
+                [["schema": "dev.intents.siri-studio.report", "version": 1, "scenarioID": id,
+                  "revision": 1, "repeatIndex": index, "status": "ran", "turnsAuthored": 1,
+                  "turnsReached": 0, "turns": []]]
+            } ?? []
+            let result: [String: Any] = ["id": id, "revision": 1, "name": "Saved conversation",
+                "state": "incomplete", "attempted": attempted, "failingMetrics": [], "reports": reports]
+            let run: [String: Any] = ["document": document, "osBuild": "fixture", "startedAt": 0,
+                "endedAt": 1, "logURL": directory.appending(path: "fixture.log").absoluteString, "scenarios": [result]]
+            try JSONSerialization.data(withJSONObject: run).write(to: directory.appending(path: "run.json"))
+        }
+        for (attempts, index) in [(0, nil), (10, 9)] as [(Int, Int?)] {
+            try writeRun(attempted: attempts, repeatIndex: index)
+            try studio.openRun(directory)
+            #expect(studio.run?.scenarios.first?.attempted == attempts)
+        }
+        let previous = studio.run
+        for (attempts, index) in [(Int.max, 0), (-1, 0), (11, 0), (1, Int.max), (1, -1), (1, 10)] {
+            try writeRun(attempted: attempts, repeatIndex: index)
+            #expect(throws: (any Error).self) { try studio.openRun(directory) }
+            #expect(studio.run?.scenarios == previous?.scenarios)
+        }
+    }
+
     /// Cancels and joins a suspended catalog load without publishing its selection or an obsolete diagnostic.
     @Test func closingDuringCatalogLoadingJoinsCancellation() async {
         let (started, continuation) = AsyncStream<Void>.makeStream()
@@ -18,6 +54,25 @@ import Testing
         _ = await events.next()
         #expect(store.isLoading)
         await store.closeAndWait()
+        #expect(!store.isLoading)
+        #expect(store.catalog == nil)
+        #expect(store.diagnostic == nil)
+    }
+
+    /// Lets the inspection cancel control stop a pending load without publishing a catalog or error.
+    @Test func cancellingCatalogInspectionLeavesAuthoringAvailable() async {
+        let (started, continuation) = AsyncStream<Void>.makeStream()
+        defer { continuation.finish() }
+        var events = started.makeAsyncIterator()
+        let store = MacIntentTestingStore(catalogLoader: { app in
+            continuation.yield(())
+            try await Task.sleep(for: .seconds(30))
+            return .init(bundleIdentifier: "example.cancelled", appURL: app, actions: [])
+        })
+        store.load(appURL: URL(filePath: "/synthetic.app"))
+        _ = await events.next()
+        store.cancel()
+        await store.waitForLoad()
         #expect(!store.isLoading)
         #expect(store.catalog == nil)
         #expect(store.diagnostic == nil)

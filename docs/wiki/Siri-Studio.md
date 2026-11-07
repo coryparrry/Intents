@@ -98,6 +98,8 @@ the Mac unlocked and let the test finish without using Siri or the subject app
 during the run. Siri can use Private Cloud Compute and is subject to usage limits.
 
 Use **Run** for one scenario, or **Advanced → Run all conversations** for all scenarios.
+All conversations must be valid before Run or Swift export. Finish incomplete
+drafts or delete them before running another conversation.
 Use repeats to see whether results vary. **Cancel** stops the owned test and
 retains available evidence. The [Siri Evaluations reference](https://developer.apple.com/documentation/sirievaluations)
 describes Apple's grading.

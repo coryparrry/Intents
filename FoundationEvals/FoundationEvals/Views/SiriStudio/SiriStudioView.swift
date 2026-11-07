@@ -106,6 +106,13 @@ struct SiriStudioView: View {
                     .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                     .accessibilityIdentifier("siri-studio-diagnostic")
             }
+            if native.isLoading {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Inspecting app…")
+                    Button("Cancel inspection") { native.cancel() }
+                }
+            }
             if catalog != nil {
                 HStack(spacing: 10) {
                     if prerequisite != nil {
@@ -123,7 +130,6 @@ struct SiriStudioView: View {
             WorkspaceEmptyState(symbol: "app.badge.checkmark", title: "Test your app with Siri",
                 detail: "Choose a built Mac app, write a conversation, then run it and review what Siri did.")
             Button("Choose built macOS app…") { chooseApp() }.buttonStyle(.borderedProminent)
-            if native.isLoading { ProgressView("Inspecting app…") }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

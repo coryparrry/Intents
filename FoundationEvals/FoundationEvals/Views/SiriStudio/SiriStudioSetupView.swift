@@ -46,7 +46,7 @@ struct SiriStudioSetupView: View {
                             .accessibilityLabel(step.complete ? "Ready" : "Action needed")
                         VStack(alignment: .leading, spacing: 3) {
                             Text(step.title).fontWeight(.medium)
-                            Text(showsAdvanced ? step.detail : help(for: step.id)).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                            Text(showsAdvanced || step.id == "signing" ? step.detail : help(for: step.id)).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                         }
                         Spacer(minLength: 8)
                         if !step.complete { action(step.action) }
@@ -107,7 +107,9 @@ struct SiriStudioSetupView: View {
                 Link("Get Xcode", destination: URL(string: "https://developer.apple.com/download/all/?q=Xcode")!)
             }
         case .signing:
-            Text("Use Xcode → Settings → Accounts").font(.caption).foregroundStyle(.secondary)
+            if native.siriSetup.report?.applicationTeam != nil {
+                Text("Use Xcode → Settings → Accounts").font(.caption).foregroundStyle(.secondary)
+            }
         case .xcodegen:
             Button(copied ? "Command copied" : "Copy install command") {
                 NSPasteboard.general.clearContents()

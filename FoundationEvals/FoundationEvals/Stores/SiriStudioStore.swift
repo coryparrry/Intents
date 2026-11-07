@@ -161,6 +161,12 @@ import Observation
         guard opened.document.bundleIdentifier == catalog?.bundleIdentifier else {
             throw MacIntentTestingError("This run belongs to a different app.")
         }
+        guard opened.scenarios.allSatisfy({ result in
+            (0...10).contains(result.attempted) && result.reports.count <= 10
+                && result.reports.allSatisfy { (0..<10).contains($0.repeatIndex) }
+        }) else {
+            throw MacIntentTestingError("This saved run has invalid repeat counts. Expected at most 10 repeats.")
+        }
         run = opened; selection = opened.scenarios.first?.id ?? selection; diagnostic = nil
     }
 

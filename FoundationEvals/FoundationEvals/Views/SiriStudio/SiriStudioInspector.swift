@@ -171,7 +171,8 @@ struct SiriStudioInspector: View {
     /// Shows an invocation's outcome, arguments, result text, and observed timestamp.
     private func invocation(_ invocation: SiriStudioReport.Invocation) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("\(title(for: invocation.intent)) · \(invocation.outcome)").font(.caption.weight(.medium))
+            Text("\(belongsToApp(invocation) ? title(for: invocation.intent) : invocation.intent) · \(invocation.outcome)")
+                .font(.caption.weight(.medium))
             if showsAdvanced {
                 ForEach(invocation.arguments.keys.sorted(), id: \.self) { name in
                     Text("\(name): \(invocation.arguments[name] ?? "")").font(.caption).textSelection(.enabled)
