@@ -242,12 +242,13 @@ struct SiriStudioView: View {
         case .result: [UTType(filenameExtension: "xcresult") ?? .bundle]
         case .run: [.folder]
         }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        perform {
-            switch kind {
-            case .document: try studio.openDocument(url)
-            case .result: studio.importResult(url, developer: native.developerDirectory)
-            case .run: try studio.openRun(url)
+        present(panel) { url in
+            perform {
+                switch kind {
+                case .document: try studio.openDocument(url)
+                case .result: studio.importResult(url, developer: native.developerDirectory)
+                case .run: try studio.openRun(url)
+                }
             }
         }
     }
@@ -257,8 +258,9 @@ struct SiriStudioView: View {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = swift ? "SiriStudioTests.swift" : "scenarios.json"
         panel.allowedContentTypes = swift ? [.swiftSource] : [.json]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        perform { try studio.export(url, swift: swift, all: all) }
+        present(panel) { url in
+            perform { try studio.export(url, swift: swift, all: all) }
+        }
     }
 
     /// Requires a separate explicit choice to include authored and observed conversation text.
@@ -267,8 +269,22 @@ struct SiriStudioView: View {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = transcripts ? "siri-studio-run-with-transcripts.json" : "siri-studio-verdicts.json"
         panel.allowedContentTypes = [.json]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        perform { try run.exportEvidence(to: url, includeTranscripts: transcripts) }
+        present(panel) { url in
+            perform { try run.exportEvidence(to: url, includeTranscripts: transcripts) }
+        }
+    }
+
+    /// Presents a sheet without nesting AppKit's modal loop inside a SwiftUI menu action.
+    private func present(_ panel: NSSavePanel, completion: @escaping @MainActor @Sendable (URL) -> Void) {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else {
+            studio.report(MacIntentTestingError("Open Siri Studio in a window before choosing a file."))
+            return
+        }
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else { return }
+            panel.orderOut(nil)
+            completion(url)
+        }
     }
 
     /// Keeps file errors in the workspace diagnostic.

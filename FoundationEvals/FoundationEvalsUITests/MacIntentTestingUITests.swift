@@ -80,7 +80,7 @@ final class MacIntentTestingUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Saves a two-turn scenario, reopens the workspace, and keeps the direct mode accessible.
+    /// Reopens a two-turn scenario and cancels file sheets after editing without losing the saved conversation.
     @MainActor
     func testSiriStudioSavesAndReopensTwoTurnScenario() throws {
         continueAfterFailure = false
@@ -116,6 +116,25 @@ final class MacIntentTestingUITests: XCTestCase {
         let reopened = app.descendants(matching: .any)["siri-studio-utterance-2"].firstMatch
         XCTAssertTrue(reopened.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(reopened.value as? String, "What is its status?")
+        app.disclosureTriangles["Xcode and signing"].click()
+        let developer = app.textFields["Developer directory"]
+        XCTAssertTrue(developer.waitForExistence(timeout: 3))
+        developer.click()
+        developer.typeKey("a", modifierFlags: .command)
+        developer.typeText("/Applications/Xcode.app/Contents/Developer")
+        for action in ["Open scenario document…", "Import result bundle…", "Open saved run…",
+                       "Export scenario document…"] {
+            app.menuButtons["Documents"].click()
+            app.menuItems[action].click()
+            let sheet = app.sheets.firstMatch
+            XCTAssertTrue(sheet.waitForExistence(timeout: 5), "The file picker must open without blocking Studio")
+            let cancel = sheet.buttons["Cancel"]
+            XCTAssertTrue(cancel.waitForExistence(timeout: 3))
+            cancel.click()
+            XCTAssertTrue(sheet.waitForNonExistence(timeout: 3))
+            XCTAssertTrue(app.buttons["Save"].isEnabled)
+            XCTAssertEqual(reopened.value as? String, "What is its status?")
+        }
         let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         attachment.name = "Siri Studio two-turn conversation"
         attachment.lifetime = .keepAlways
