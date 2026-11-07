@@ -282,17 +282,24 @@ final class MacIntentTestingUITests: XCTestCase {
         open.click()
     }
 
-    /// Brings a real control into the page's visible viewport without depending on a specific content height.
+    /// Reveals the control's click point, allowing native focus rectangles to extend beyond the scroll content.
     @MainActor
     private func reveal(_ element: XCUIElement, in app: XCUIApplication, scrollingDown: Bool = true) {
         XCTAssertTrue(element.waitForExistence(timeout: 5), app.debugDescription)
         let page = app.scrollViews["App Intent steps"]
         let wheel = page.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+        /// Requires a hittable control whose center is visible, or a toolbar control above the scroll view.
+        func canClick() -> Bool {
+            let frame = element.frame
+            let viewport = page.frame.insetBy(dx: 0, dy: 8)
+            return element.isHittable && (frame.maxY <= viewport.minY
+                || viewport.contains(CGPoint(x: frame.midX, y: frame.midY)))
+        }
         for _ in 0..<8 {
-            if element.isHittable && (element.frame.maxY <= page.frame.minY || page.frame.insetBy(dx: 0, dy: 8).contains(element.frame)) { return }
+            if canClick() { return }
             wheel.scroll(byDeltaX: 0, deltaY: scrollingDown ? -350 : 350)
         }
-        XCTAssertTrue(element.isHittable && page.frame.contains(element.frame), app.debugDescription)
+        XCTAssertTrue(canClick(), "Control: \(element.frame); viewport: \(page.frame). \(app.debugDescription)")
     }
 
     /// Navigates the same native toolbar tabs used throughout the workspace.
