@@ -11,30 +11,27 @@ struct MacIntentTestingView: View {
     @State private var showsSupportedTypes = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                WorkspacePageHeader("App Intent Testing", subtitle: "Test an action or a Siri conversation from a built macOS app.")
-                Picker("Testing mode", selection: $mode) {
-                    Text("Direct Action").tag("direct")
-                    Text("Siri Studio").tag("siri")
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .accessibilityIdentifier("app-intent-testing-mode")
-                appSelection
-                if mode == "siri" {
-                    if let catalog = model.catalog {
-                        SiriStudioView(native: model, studio: model.siri, catalog: catalog)
-                    } else {
-                        Text(model.diagnostic ?? "Choose a built macOS app to create Siri scenarios.").foregroundStyle(.secondary)
-                    }
-                } else {
-                    configurationForm
-                }
+        Group {
+            if mode == "siri" {
+                SiriStudioView(native: model, studio: model.siri, catalog: model.catalog,
+                    chooseApp: { choosingApp = true }, showDirectAction: { mode = "direct" })
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        WorkspacePageHeader("App Intent Testing", subtitle: "Test an action from a built macOS app.")
+                        Picker("Testing mode", selection: $mode) {
+                            Text("Direct Action").tag("direct")
+                            Text("Siri Studio").tag("siri")
+                        }
+                        .pickerStyle(.segmented).labelsHidden()
+                        .accessibilityIdentifier("app-intent-testing-mode")
+                        .disabled(model.isRunning || model.siri.isBusy)
+                        appSelection
+                        configurationForm
+                    }.workspacePage()
+                }.accessibilityIdentifier("App Intent steps")
             }
-            .workspacePage()
         }
-        .accessibilityIdentifier("App Intent steps")
         .fileImporter(isPresented: $choosingApp, allowedContentTypes: [.applicationBundle]) { result in
             do {
                 let url = try result.get()

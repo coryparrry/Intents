@@ -10,7 +10,7 @@ struct SiriStudioConversation: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField("Conversation name", text: $scenario.name).textFieldStyle(.roundedBorder)
+            TextField("Conversation name", text: $scenario.name).font(.title3.weight(.semibold)).textFieldStyle(.plain)
                 .accessibilityIdentifier("siri-studio-scenario-name")
             Text("Mention your app in the first message, then add follow-ups as needed.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -25,8 +25,9 @@ struct SiriStudioConversation: View {
                             .labelStyle(.iconOnly).buttonStyle(.borderless)
                             .disabled(scenario.turns.count <= 1)
                     }
-                    TextField("What should the user say?", text: $turn.utterance, axis: .vertical)
-                        .textFieldStyle(.roundedBorder).lineLimit(1...4)
+                    TextEditor(text: $turn.utterance)
+                        .workspaceTextWell(minHeight: 84)
+                        .accessibilityLabel("What to say in turn \(ordinal(turn.id))")
                         .accessibilityIdentifier("siri-studio-utterance-\(ordinal(turn.id))")
                     if showsAdvanced && active(turn.id) {
                         SiriStudioExpectationEditor(group: $turn.expectations, actions: actions, allowsReply: true)
@@ -34,9 +35,7 @@ struct SiriStudioConversation: View {
                         expectedActions($turn.expectations, for: turn.id)
                     }
                 }
-                .padding(8)
-                .background(active(turn.id) ? Color.accentColor.opacity(0.10) : Color.secondary.opacity(0.06),
-                            in: RoundedRectangle(cornerRadius: 8))
+                .padding(.vertical, 6)
             }
             Button("Add turn", systemImage: "plus") {
                 let turn = SiriStudioTurn()

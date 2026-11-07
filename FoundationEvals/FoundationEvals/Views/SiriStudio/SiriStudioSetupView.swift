@@ -75,7 +75,7 @@ struct SiriStudioSetupView: View {
             }
         }
         .padding(14)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+        .workspaceSurface()
     }
 
     /// Describes only the next user action in the simple flow; Advanced retains the complete detected facts.

@@ -3,58 +3,315 @@ import MacIntentTesting
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The scenario list, conversation, and inspector for the selected app.
+/// Matches the workspace's editor navigation while separating authoring, evidence, and setup.
+private enum SiriStudioPage: String, CaseIterable, Identifiable {
+    case conversations, results, setup
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .conversations: "Conversations"
+        case .results: "Results"
+        case .setup: "Setup"
+        }
+    }
+}
+
+/// Uses the same toolbar navigation, item list, and focused content surfaces as the suite editor.
 struct SiriStudioView: View {
     @Bindable var native: MacIntentTestingStore
     @Bindable var studio: SiriStudioStore
-    let catalog: MacIntentCatalog
+    let catalog: MacIntentCatalog?
+    let chooseApp: () -> Void
+    let showDirectAction: () -> Void
+    @State private var page = SiriStudioPage.conversations
     @State private var turnID: UUID?
     @State private var showsAdvanced = false
     @State private var customAllowance = false
     @State private var allowance = 900
     @State private var pendingDeletion: SiriStudioScenario?
+    @State private var panelWindow = SiriStudioPanelWindow()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            toolbar
-            SiriStudioSetupView(native: native, catalog: catalog, showsAdvanced: showsAdvanced)
-            if let reason = studio.diagnostic ?? studio.validationError {
-                Label(reason, systemImage: "exclamationmark.circle")
-                    .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
-                    .accessibilityIdentifier("siri-studio-diagnostic")
-            }
-            if !showsAdvanced && hasAdvancedSettings {
-                HStack {
-                    Label("Advanced settings apply to this test.", systemImage: "slider.horizontal.3")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Button("Review settings") { showsAdvanced = true }
+        VStack(alignment: .leading, spacing: 20) {
+            header
+            if catalog == nil {
+                chooseAppState
+            } else if page == .conversations {
+                GeometryReader { geometry in
+                    conversationWorkspace.frame(width: geometry.size.width, height: geometry.size.height)
                 }
-                .accessibilityIdentifier("siri-studio-saved-settings")
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        if page == .setup { setupPage } else { resultsPage }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .accessibilityIdentifier("App Intent steps")
             }
-            scenarioPicker
-            conversation
-            results
-            if showsAdvanced { signing }
-
         }
-        .task { native.detectSiriSetup() }
+        .padding(.horizontal, WorkspaceStyle.pagePadding)
+        .padding(.top, 20).padding(.bottom, 18)
+        .frame(maxWidth: WorkspaceStyle.readableWidth, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .navigationTitle("App Intents")
+        .background(SiriStudioWindowReader(reference: panelWindow).frame(width: 0, height: 0))
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Siri Studio page", selection: $page) {
+                    ForEach(SiriStudioPage.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+                .accessibilityIdentifier("Siri Studio page")
+            }
+            ToolbarItem(placement: .primaryAction) { advancedMenu }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Save") { perform { try studio.save() } }
+                    .keyboardShortcut("s", modifiers: .command)
+                    .disabled(busy || studio.document == nil)
+            }
+            ToolbarItem(placement: .primaryAction) { runControls }
+        }
+        .onChange(of: catalog?.productIdentity, initial: true) { _, identity in
+            if identity != nil { native.detectSiriSetup() }
+        }
+        .onChange(of: studio.document?.bundleIdentifier, initial: true) { _, bundle in
+            if bundle != nil {
+                if studio.document?.scenarios.isEmpty == true { addScenario() }
+                page = .conversations
+            }
+        }
         .onChange(of: studio.selection) { _, _ in turnID = nil }
-        .confirmationDialog("Delete scenario?", isPresented: Binding(
+        .onChange(of: studio.run?.endedAt) { _, value in if value != nil { page = .results } }
+        .onChange(of: page) { _, value in
+            if value == .conversations, !(studio.document?.scenarios.contains { $0.id == studio.selection } ?? false) {
+                studio.selection = studio.document?.scenarios.first?.id
+            }
+        }
+        .confirmationDialog("Delete conversation?", isPresented: Binding(
             get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }
         ), titleVisibility: .visible, presenting: pendingDeletion) { scenario in
             Button("Delete \(scenario.name)", role: .destructive) { remove(scenario.id) }
         }
     }
 
-    /// Explains which runtime prerequisite needs attention while authoring stays available.
-    private var prerequisite: String? {
-        native.siriSetup.issue(configuration: native.setupConfiguration) ?? studio.launchArgumentsError
+    /// Presents app context and a direct setup action using the same heading style as other workspaces.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            WorkspacePageHeader("App Intents", subtitle: catalog.map {
+                "\($0.appURL.deletingPathExtension().lastPathComponent) · \(studio.document?.scenarios.count ?? 0) conversations"
+            } ?? "Test your app’s actions with a Siri conversation.")
+            ForEach(Array(Set([native.diagnostic, studio.diagnostic].compactMap { $0 })).sorted(), id: \.self) { issue in
+                Label(issue, systemImage: "exclamationmark.circle")
+                    .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                    .accessibilityIdentifier("siri-studio-diagnostic")
+            }
+            if catalog != nil {
+                HStack(spacing: 10) {
+                    if prerequisite != nil {
+                        Button("Finish setup", systemImage: "exclamationmark.circle") { page = .setup }
+                    } else { Label("Ready to run", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
+                    Button("Change app…") { chooseApp() }.disabled(busy)
+                }.font(.callout)
+            }
+        }
     }
 
-    /// Disables competing commands while either mode owns a run.
+    /// Gives the empty workspace a complete, actionable start state instead of an isolated file picker.
+    private var chooseAppState: some View {
+        VStack(spacing: 14) {
+            WorkspaceEmptyState(symbol: "app.badge.checkmark", title: "Test your app with Siri",
+                detail: "Choose a built Mac app, write a conversation, then run it and review what Siri did.")
+            Button("Choose built macOS app…") { chooseApp() }.buttonStyle(.borderedProminent)
+            if native.isLoading { ProgressView("Inspecting app…") }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .workspaceSurface()
+    }
+
+    /// Keeps the item list beside a focused editor, using the suite workspace's existing surfaces.
+    private var conversationWorkspace: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 20) {
+                conversationList.frame(width: 240)
+                conversationEditor.frame(minWidth: 340)
+            }
+            VStack(spacing: 16) {
+                conversationList.frame(height: 170)
+                conversationEditor
+            }
+        }
+    }
+
+    /// Lists conversations and their latest outcomes, with creation and deletion in the same places as test cases.
+    private var conversationList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            WorkspacePanelHeader("Conversations", count: studio.document?.scenarios.count ?? 0)
+            Divider()
+            ScrollView {
+                VStack(spacing: 3) {
+                    ForEach(studio.document?.scenarios ?? []) { scenario in
+                        Button { studio.selection = scenario.id } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(scenario.name.isEmpty ? "Untitled conversation" : scenario.name).fontWeight(.semibold)
+                                Text(scenario.turns.first?.utterance ?? "Add your first message")
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                if let result = studio.run?.scenarios.first(where: { $0.id == scenario.id }) {
+                                    Text(studio.isStale(result) ? "Out of date · \(result.state.label)" : result.state.label)
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                            .background(studio.selection == scenario.id ? Color.primary.opacity(0.07) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(studio.selection == scenario.id ? .isSelected : [])
+                        .contextMenu { Button("Delete conversation…", role: .destructive) { pendingDeletion = scenario }.disabled(busy) }
+                    }
+                }.padding(6)
+            }
+            Divider()
+            Button("New conversation", systemImage: "plus") { addScenario() }
+                .accessibilityIdentifier("siri-studio-new-scenario")
+                .disabled(busy || studio.document == nil || (studio.document?.scenarios.count ?? 0) >= 200)
+                .padding(12)
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .workspaceSurface()
+    }
+
+    /// Keeps only messages, expected actions, and optional advanced checks in the conversation editor.
+    private var conversationEditor: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if let id = studio.selection, let scenario = binding(for: id) {
+                    if let issue = studio.validationError {
+                        Text(issue).font(.callout).foregroundStyle(.secondary).accessibilityIdentifier("siri-studio-diagnostic")
+                    }
+                    advancedNotice
+                    SiriStudioConversation(scenario: scenario, actions: catalog?.actions ?? [], turnID: $turnID, showsAdvanced: showsAdvanced)
+                        .disabled(busy)
+                    if studio.run?.scenarios.contains(where: { $0.id == id }) == true {
+                        Button("View results", systemImage: "chart.bar.doc.horizontal") { page = .results }
+                    }
+                } else {
+                    WorkspaceEmptyState(symbol: "text.bubble", title: "Choose a conversation",
+                        detail: "Select a conversation or add one to write your messages and expected actions.")
+                }
+            }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityIdentifier("App Intent steps")
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .workspaceSurface()
+    }
+
+    /// Keeps runtime prerequisites and manual overrides on a dedicated setup page.
+    @ViewBuilder private var setupPage: some View {
+        if let catalog {
+            SiriStudioSetupView(native: native, catalog: catalog, showsAdvanced: showsAdvanced)
+            if showsAdvanced { signing.padding(20).workspaceSurface() }
+        }
+    }
+
+    /// Separates live progress and completed results from the conversation's authoring controls.
+    private var resultsPage: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let run = studio.run, !run.scenarios.isEmpty {
+                Picker("Conversation", selection: $studio.selection) {
+                    ForEach(studio.document?.scenarios ?? []) { Text($0.name).tag(Optional($0.id)) }
+                    ForEach(run.scenarios.filter { result in
+                        !(studio.document?.scenarios.contains { $0.id == result.id } ?? false)
+                    }) { Text("Saved · " + $0.name).tag(Optional($0.id)) }
+                }
+            }
+            if studio.isBusy {
+                ProgressView(progressLabel)
+                Button("Cancel") { studio.cancel() }
+            } else if let id = studio.selection, let run = studio.run,
+                      let result = run.scenarios.first(where: { $0.id == id }) {
+                SiriStudioInspector(run: run, result: result,
+                    turnID: turnID ?? studio.document?.scenarios.first(where: { $0.id == id })?.turns.first?.id,
+                    stale: studio.isStale(result), showsAdvanced: showsAdvanced, actions: catalog?.actions ?? [])
+            } else {
+                WorkspaceEmptyState(symbol: "chart.bar.doc.horizontal", title: "No result yet",
+                    detail: "Run a conversation to review Siri’s replies and the actions it called.")
+            }
+        }.padding(24).frame(maxWidth: .infinity, alignment: .leading).workspaceSurface()
+    }
+
+    /// Keeps technical controls and file operations in the same toolbar layer as the other workspaces.
+    private var advancedMenu: some View {
+        Menu("Advanced", systemImage: "slider.horizontal.3") {
+            Toggle("Show advanced controls", isOn: $showsAdvanced)
+            Button("Test an action directly") { perform { try studio.save(); showDirectAction() } }.disabled(busy)
+            Divider()
+            Button("Export Swift…") { export(swift: true) }.disabled(busy || studio.validationError != nil || !hasSelectedDraft)
+            Button("Export all scenarios as Swift…") { export(swift: true, all: true) }.disabled(busy || studio.validationError != nil)
+            Button("Open scenario document…") { open(.document) }.disabled(busy || catalog == nil)
+            Button("Export scenario document…") { export(swift: false) }.disabled(busy || studio.document == nil)
+            Button("Import result bundle…") { open(.result) }.disabled(busy || studio.document == nil)
+            Button("Open saved run…") { open(.run) }.disabled(busy || catalog == nil)
+            if studio.run != nil {
+                Button("Export verdict summary…") { exportEvidence(transcripts: false) }.disabled(busy)
+                Button("Export run with transcripts…") { exportEvidence(transcripts: true) }.disabled(busy)
+            }
+            Divider()
+            Button("Run all conversations") { start(all: true) }
+                .disabled(busy || prerequisite != nil || studio.validationError != nil)
+        }
+        .accessibilityIdentifier("siri-studio-advanced")
+    }
+
+    /// Starts the selected test from the workspace toolbar while retaining the shared runner admission checks.
+    private var runControls: some View {
+        Group {
+            if studio.isBusy { Button("Cancel") { studio.cancel() } }
+            else {
+                Button { start(all: false); page = .results } label: {
+                    Label("Run", systemImage: "play.fill").labelStyle(.titleAndIcon)
+                }
+                    .buttonStyle(.borderedProminent)
+                    .help(prerequisite ?? studio.validationError ?? "Run the selected conversation")
+                    .disabled(busy || prerequisite != nil || studio.validationError != nil || !hasSelectedDraft)
+            }
+        }
+    }
+
+    /// Makes retained technical settings visible without mixing their controls into the simple editor.
+    @ViewBuilder private var advancedNotice: some View {
+        if !showsAdvanced && hasAdvancedSettings {
+            Label("Advanced settings apply to this test.", systemImage: "slider.horizontal.3")
+                .font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("siri-studio-saved-settings")
+        }
+    }
+
+    /// Warns about every retained rule or runtime override that is not represented by the simple action menus.
+    private var hasAdvancedSettings: Bool {
+        guard let scenario = studio.document?.scenarios.first(where: { $0.id == studio.selection }) else { return false }
+        let groups = [scenario.scenarioExpectations] + scenario.turns.map(\.expectations)
+        return !studio.appLaunchArguments.isEmpty || customAllowance || scenario.repeatCount > 1 || scenario.setup != nil
+            || groups.contains { $0.ordering != .ordered || !$0.forbidden.isEmpty || !$0.replyContains.isEmpty
+                || $0.calls.contains { !$0.arguments.isEmpty || $0.result != nil } }
+            || !scenario.scenarioExpectations.calls.isEmpty
+    }
+
+    /// Distinguishes an editable conversation from an outcome whose original draft was removed.
+    private var hasSelectedDraft: Bool {
+        studio.document?.scenarios.contains { $0.id == studio.selection } ?? false
+    }
+
+    /// Explains which runtime prerequisite needs attention without locking authoring.
+    private var prerequisite: String? {
+        if catalog == nil { return "Choose an app first." }
+        return native.siriSetup.issue(configuration: native.setupConfiguration) ?? studio.launchArgumentsError
+    }
+
+    /// Disables competing commands while either native mode owns a run.
     private var busy: Bool { native.isRunning || native.isLoading || studio.isBusy }
 
-    /// Binds a scenario by stable ID so moving or deleting another row cannot redirect an edit.
+    /// Binds by stable scenario identity so selection or deletion cannot redirect edits.
     private func binding(for id: UUID) -> Binding<SiriStudioScenario>? {
         guard let initial = studio.document?.scenarios.first(where: { $0.id == id }) else { return nil }
         return Binding {
@@ -65,138 +322,19 @@ struct SiriStudioView: View {
         }
     }
 
-    /// Keeps the primary test actions visible and technical controls behind one explicit option.
-    private var toolbar: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) { runControls; Spacer(minLength: 0); fileControls; advancedToggle }
-            VStack(alignment: .leading, spacing: 10) {
-                HStack { runControls; Spacer(minLength: 0); advancedToggle }
-                fileControls
-            }
-        }
-    }
-
-    /// Preserves advanced editor state while switching its presentation without changing saved test behavior.
-    private var advancedToggle: some View {
-        Toggle("Advanced", isOn: $showsAdvanced)
-            .toggleStyle(.button)
-            .accessibilityIdentifier("siri-studio-advanced")
-    }
-
-    /// Warns when a saved conversation has checks or runtime settings beyond the simple action selections.
-    private var hasAdvancedSettings: Bool {
-        guard let scenario = studio.document?.scenarios.first(where: { $0.id == studio.selection }) else { return false }
-        let groups = [scenario.scenarioExpectations] + scenario.turns.map(\.expectations)
-        return !studio.appLaunchArguments.isEmpty || customAllowance || scenario.repeatCount > 1 || scenario.setup != nil
-            || groups.contains { $0.ordering != .ordered || !$0.forbidden.isEmpty || !$0.replyContains.isEmpty
-                || $0.calls.contains { !$0.arguments.isEmpty || $0.result != nil } }
-            || !scenario.scenarioExpectations.calls.isEmpty
-    }
-
-    /// Shows the current scenario and repeat while the generated suite runs.
-    private var runControls: some View {
-        HStack {
-            Button("Run") { start(all: false) }
-                .buttonStyle(.borderedProminent)
-                .disabled(busy || prerequisite != nil || studio.validationError != nil || studio.selection == nil)
-            if showsAdvanced {
-                Menu("Run options") { Button("Run all scenarios") { start(all: true) } }
-                    .disabled(busy || prerequisite != nil || studio.validationError != nil)
-            }
-            if studio.isBusy {
-                ProgressView().controlSize(.small)
-                Text(progressLabel).font(.caption)
-                Button("Cancel") { studio.cancel() }
-            }
-        }
-    }
-
-    /// Exposes explicit save, export and import choices.
-    private var fileControls: some View {
-        HStack {
-            Button("Save") { perform { try studio.save() } }
-                .keyboardShortcut("s", modifiers: .command)
-                .disabled(studio.document == nil)
-            if showsAdvanced {
-                Button("Export Swift…") { export(swift: true) }
-                    .disabled(studio.validationError != nil)
-                Menu("Documents") {
-                    Button("Export all scenarios as Swift…") { export(swift: true, all: true) }
-                        .disabled(studio.validationError != nil)
-                    Button("Open scenario document…") { open(.document) }
-                    Button("Export scenario document…") { export(swift: false) }.disabled(studio.document == nil)
-                    Divider()
-                    Button("Import result bundle…") { open(.result) }.disabled(studio.document == nil)
-                    Button("Open saved run…") { open(.run) }
-                    if studio.run != nil {
-                        Divider()
-                        Button("Export verdict summary…") { exportEvidence(transcripts: false) }
-                        Button("Export run with transcripts…") { exportEvidence(transcripts: true) }
-                    }
-
-                }
-            }
-        }.disabled(busy)
-    }
-
-    /// Shows either build preparation or the latest repeat started by the owned UI test.
+    /// Describes the current scenario and repeat while the generated suite runs.
     private var progressLabel: String {
         guard let progress = studio.progress,
-              let scenario = studio.document?.scenarios.first(where: { $0.id == progress.scenarioID }) else {
-            return "Preparing run…"
-        }
+              let scenario = studio.document?.scenarios.first(where: { $0.id == progress.scenarioID }) else { return "Preparing run…" }
         return "\(scenario.name) · repeat \(progress.repeatIndex + 1) of \(scenario.repeatCount)"
-    }
-
-    /// Chooses saved conversations without reserving a separate sidebar beside the editor.
-    private var scenarioPicker: some View {
-        HStack {
-            if let scenarios = studio.document?.scenarios, scenarios.count > 1 {
-                Picker("Conversation", selection: $studio.selection) {
-                    ForEach(scenarios) { scenario in
-                        Text(scenario.name.isEmpty ? "Untitled conversation" : scenario.name).tag(Optional(scenario.id))
-                    }
-                }
-            } else { Text("Conversation").font(.headline) }
-            Spacer(minLength: 8)
-            Button("New conversation", systemImage: "plus") { addScenario() }
-                .accessibilityIdentifier("siri-studio-new-scenario")
-                .disabled(busy || studio.document == nil || (studio.document?.scenarios.count ?? 0) >= 200)
-            Button("Delete conversation", systemImage: "trash") {
-                pendingDeletion = studio.document?.scenarios.first { $0.id == studio.selection }
-            }
-            .labelStyle(.iconOnly)
-            .disabled(busy || studio.selection == nil)
-        }
-    }
-
-    /// Shows the selected scenario's conversation, repeat count, and optional setup.
-    @ViewBuilder private var conversation: some View {
-        if let id = studio.selection, let scenario = binding(for: id) {
-            SiriStudioConversation(scenario: scenario, actions: catalog.actions, turnID: $turnID, showsAdvanced: showsAdvanced)
-                .disabled(busy)
-        } else {
-            ContentUnavailableView("No conversation yet", systemImage: "text.bubble",
-                description: Text("Create a conversation to get started."))
-        }
-    }
-
-    /// Places the selected conversation's outcome below its messages, with raw evidence available in Advanced.
-    @ViewBuilder private var results: some View {
-        if let id = studio.selection, let run = studio.run,
-           let result = run.scenarios.first(where: { $0.id == id }) {
-            SiriStudioInspector(run: run, result: result,
-                turnID: turnID ?? studio.document?.scenarios.first(where: { $0.id == id })?.turns.first?.id,
-                stale: studio.isStale(result), showsAdvanced: showsAdvanced, actions: catalog.actions)
-        }
     }
 
     /// Edits the shared Xcode and signing fields and the optional scenario allowance.
     private var signing: some View {
         DisclosureGroup("Xcode and signing") {
             VStack(alignment: .leading, spacing: 8) {
-                LabeledContent("App", value: catalog.appURL.path)
-                LabeledContent("Bundle identifier", value: catalog.bundleIdentifier)
+                LabeledContent("App", value: catalog?.appURL.path ?? "No app selected")
+                LabeledContent("Bundle identifier", value: catalog?.bundleIdentifier ?? "")
                 TextField("Developer directory", text: $native.developerDirectory)
                     .accessibilityLabel("Developer directory")
                 TextField("Signing identity", text: $native.signingIdentity, prompt: Text("Apple Development: …"))
@@ -253,9 +391,9 @@ struct SiriStudioView: View {
         present(panel) { url in
             perform {
                 switch kind {
-                case .document: try studio.openDocument(url)
-                case .result: studio.importResult(url, developer: native.developerDirectory)
-                case .run: try studio.openRun(url)
+                case .document: try studio.openDocument(url); page = .conversations
+                case .result: studio.importResult(url, developer: native.developerDirectory); page = .results
+                case .run: try studio.openRun(url); page = .results
                 }
             }
         }
@@ -284,7 +422,7 @@ struct SiriStudioView: View {
 
     /// Presents a sheet without nesting AppKit's modal loop inside a SwiftUI menu action.
     private func present(_ panel: NSSavePanel, completion: @escaping @MainActor @Sendable (URL) -> Void) {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else {
+        guard let window = panelWindow.window else {
             studio.report(MacIntentTestingError("Open Siri Studio in a window before choosing a file."))
             return
         }
@@ -298,6 +436,48 @@ struct SiriStudioView: View {
     /// Keeps file errors in the workspace diagnostic.
     private func perform(_ operation: () throws -> Void) {
         do { try operation() } catch { studio.report(error) }
+    }
+}
+
+/// Keeps a weak reference to the workspace's own window without publishing view-update state.
+@MainActor
+private final class SiriStudioPanelWindow {
+    weak var window: NSWindow?
+}
+
+/// Connects file sheets to their workspace even while a toolbar menu temporarily owns focus.
+private struct SiriStudioWindowReader: NSViewRepresentable {
+    let reference: SiriStudioPanelWindow
+
+    /// Creates an inert window probe whose lifetime follows this workspace.
+    func makeNSView(context: Context) -> SiriStudioWindowProbe {
+        SiriStudioWindowProbe(reference: reference)
+    }
+
+    /// Keeps the probe associated with the current reference when SwiftUI updates it.
+    func updateNSView(_ nsView: SiriStudioWindowProbe, context: Context) {
+        nsView.reference = reference
+        reference.window = nsView.window
+    }
+}
+
+/// Tracks attachment and removal without retaining the window or relying on global focus.
+private final class SiriStudioWindowProbe: NSView {
+    var reference: SiriStudioPanelWindow
+
+    /// Associates this probe with the workspace's weak window storage.
+    init(reference: SiriStudioPanelWindow) {
+        self.reference = reference
+        super.init(frame: .zero)
+    }
+
+    /// Rejects archive construction because this probe is created only by its representable.
+    required init?(coder: NSCoder) { nil }
+
+    /// Refreshes the owner when AppKit attaches or detaches the workspace.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        reference.window = window
     }
 }
 

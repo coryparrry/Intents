@@ -1,6 +1,6 @@
 # Siri Studio
 
-Use **App Intent Testing → Siri Studio** to test how Siri selects actions,
+Use **App Intents** to test how Siri selects actions,
 fills in parameters, and replies across a conversation. [Direct Action](Mac-App-Intent-tests.md)
 runs an action with the inputs you supply.
 
@@ -12,38 +12,45 @@ runs an action with the inputs you supply.
    Existing intents can keep their earlier deployment support with a
    `@available(macOS 27.3, *)` extension conforming to `ToolIntent`.
    Install the app, open it once to register it, and quit it before testing.
-2. In **App Intent Testing**, choose the installed build and select **Siri Studio**.
-   The **Siri Studio setup** checklist automatically finds a compatible Xcode and
-   fills the development team and a matching, valid signing certificate. It keeps
-   an already-compatible Xcode choice and never changes your system's selected Xcode.
-3. Choose **New conversation** and enter your messages. Mention the app in the
-   first message, then add follow-ups with **Add turn**.
+2. Open **App Intents** and choose the installed build. The workspace prepares
+   your first conversation automatically, or reopens the app’s saved conversations.
+3. Use the **Conversations** toolbar tab. Select a conversation in the list on
+   the left, then write its messages in the focused editor. Mention the app in
+   the first message and use **Add turn** for follow-ups.
 4. Under each message, use **Choose expected action** to select what Siri should do.
-   You can expect more than one action. Required actions allow additional calls.
-5. Press **Run**. The outcome, observed actions, and Siri’s reply appear below the
-   conversation. Use **Save** to keep the draft.
+   Required actions allow additional calls. Use **New conversation** in the list
+   to add another test.
+5. Finish prerequisites in the **Setup** toolbar tab. Xcode, the development team,
+   and a matching signing identity are detected automatically. The default setup
+   view shows the next missing action; **Finish setup** opens it from the editor.
+6. Use **Save** to keep the draft, then **Run** in the window toolbar. The workspace
+   opens **Results**, where you can review Siri’s replies and actions and select
+   an earlier result even if the current conversation has not run.
 
-The main page shows the next missing setup action and a single conversation editor.
-Turn on **Advanced** for all setup facts, detailed checks, repeat counts, setup
-hooks, signing overrides, Swift exports, result imports, and raw run evidence.
-Turning Advanced off preserves every authored setting. A notice identifies tests
-that still use advanced settings; **Review settings** reopens those controls.
+App Intents uses the same toolbar navigation, item list, and focused content
+surfaces as the suite editor. Setup and results stay on their own pages.
+The **Advanced** toolbar menu holds file actions and **Test an action directly**.
+Choose **Advanced → Show advanced controls** for argument and result constraints,
+forbidden calls, reply checks, repeat counts, setup hooks, and raw evidence.
+On Setup it also reveals every detected fact and manual Xcode/signing overrides.
+Hiding these controls preserves all authored settings; a notice identifies tests
+that still use them.
 
-In Advanced, the selected turn exposes argument and result constraints, action
-ordering, forbidden calls, and reply checks. Scenario-wide constraints and an
-optional Direct Action setup remain available. A forbidden action can fail a
-check when Siri runs it or asks for confirmation. Argument constraints on
-forbidden calls and enum case matching are pending live preview qualification.
-**Advanced → Documents → Open scenario document…** opens a copy of exported JSON.
+A forbidden action can fail a check when Siri runs it or asks for confirmation.
+Argument constraints on forbidden calls and enum case matching are pending live
+preview qualification. **Advanced → Open scenario document…** opens a copy of
+exported JSON. Opening a scenario returns to Conversations; opening or importing
+a result switches to Results. Historical results remain readable when their
+draft was removed; Run and selected-conversation Swift export require a current draft.
 
 Validation and Swift export work without running Siri. **Advanced → Export Swift…** saves
-the exact test source for the selected scenario. Use **Advanced → Documents → Export all
+the exact test source for the selected scenario. Use **Advanced → Export all
 scenarios as Swift…** for the complete document. The export records local
 transcripts when run; treat its test results as potentially sensitive.
 
 ## Guided setup
 
-The simple flow shows the next missing prerequisite. Advanced shows all seven checks:
+The Setup tab shows the next missing prerequisite. Advanced controls reveal all seven checks:
 
 - **Compatible Mac:** macOS 27.3 or later.
 - **Xcode:** Xcode 27.3 or later with SiriEvaluations. Compatible installations in
@@ -63,18 +70,18 @@ The simple flow shows the next missing prerequisite. Advanced shows all seven ch
   confirm **Siri AI is enabled and its downloads are complete**. This is your
   confirmation, not an automatic claim about an unavailable public setting.
 
-When the checklist says **Ready to run**, write a scenario, choose its expectations,
-and press **Run**. Results appear in Studio automatically. Normal runs do not
-require a terminal or a manual result import. You can write a conversation while
-finishing setup. **Advanced → Xcode and signing** holds manual overrides;
-use **Recheck setup** after changing them.
+When Setup says **Ready to run**, press **Run** in the window toolbar. Results
+appear automatically on Results. Normal runs need no terminal or manual import.
+You can write a conversation while finishing setup. In Setup, turn on
+**Advanced → Show advanced controls** to open **Xcode and signing** for manual
+overrides; use **Recheck setup** after changing them.
 Discovery preserves edits made while a check is in progress.
 
-For an app with an isolated test-data mode, enter its flags in **Advanced → Xcode and signing →
-App launch arguments** before pressing Run. Each line is one literal argument,
+For an app with an isolated test-data mode, enter its flags in **Setup → Xcode and signing →
+App launch arguments** with advanced controls enabled before pressing Run. Each line is one literal argument,
 including any spaces; shell expansion and shell quoting are not used. Arguments
 are saved with the selected app’s scenario document, replayed by Studio and the CLI,
-and shown in **Advanced → Run facts and evidence**. Changing
+and shown in **Results → Run facts and evidence** with advanced controls enabled. Changing
 arguments marks an earlier captured run stale. Imported or older runs may have
 unknown launch arguments. Use non-sensitive test flags: scenario exports, local runs, and explicit
 full-transcript exports retain them, while verdict-only exports omit them.
@@ -89,7 +96,7 @@ team. Approve the development automation prompt if macOS presents one. Leave
 the Mac unlocked and let the test finish without using Siri or the subject app
 during the run. Siri can use Private Cloud Compute and is subject to usage limits.
 
-Use **Run** for one scenario, or the adjacent menu for all scenarios.
+Use **Run** for one scenario, or **Advanced → Run all conversations** for all scenarios.
 Use repeats to see whether results vary. **Cancel** stops the owned test and
 retains available evidence. The [Siri Evaluations reference](https://developer.apple.com/documentation/sirievaluations)
 describes Apple's grading.
@@ -104,7 +111,7 @@ mark an earlier result **Stale**. If Apple provides only aggregate metrics,
 the exact number of passing repeats may be unavailable.
 
 Use **Run facts and evidence** to locate the generated Swift, log, and result
-bundle. **Advanced → Documents → Import result bundle…** accepts an `.xcresult` from an
+bundle. **Advanced → Import result bundle…** accepts an `.xcresult` from an
 exported Swift test. To grade the import, Studio verifies the scenario content,
 revision, and target app against the export. Re-export and rerun tests whose
 attachments lack a content fingerprint. **Open saved run…** accepts the
