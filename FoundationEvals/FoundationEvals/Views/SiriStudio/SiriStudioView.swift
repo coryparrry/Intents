@@ -17,6 +17,10 @@ struct SiriStudioView: View {
         VStack(alignment: .leading, spacing: 16) {
             SiriStudioSetupView(native: native, catalog: catalog)
             toolbar
+            if !studio.appLaunchArguments.isEmpty {
+                Text("App launch arguments: " + studio.appLaunchArguments.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(2)
+            }
             if let reason = studio.diagnostic ?? studio.validationError {
                 Label(reason, systemImage: "exclamationmark.circle")
                     .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
@@ -47,7 +51,7 @@ struct SiriStudioView: View {
 
     /// Explains which runtime prerequisite needs attention while authoring stays available.
     private var prerequisite: String? {
-        native.siriSetup.issue(configuration: native.setupConfiguration)
+        native.siriSetup.issue(configuration: native.setupConfiguration) ?? studio.launchArgumentsError
     }
 
     /// Disables competing commands while either mode owns a run.
@@ -203,6 +207,12 @@ struct SiriStudioView: View {
                     .accessibilityLabel("Signing identity")
                 TextField("Team identifier", text: $native.teamIdentifier)
                     .accessibilityLabel("Team identifier")
+                TextField("App launch arguments (one per line)", text: $studio.appLaunchArgumentsText, axis: .vertical)
+                    .lineLimit(1...3)
+                    .accessibilityLabel("App launch arguments")
+                Text("Optional test-data flags. Each line is one literal argument. Saved with this app’s scenarios and local runs; omitted from verdict-only exports.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let error = studio.launchArgumentsError { Text(error).font(.callout).foregroundStyle(.red) }
                 Toggle("Use a custom test allowance", isOn: $customAllowance)
                 if customAllowance {
                     Stepper("Per scenario: \(allowance) seconds", value: $allowance, in: 1...1800)

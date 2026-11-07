@@ -26,15 +26,25 @@ struct SiriStudioReportTests {
         let folder = FileManager.default.temporaryDirectory.appending(path: "siri-record-\(UUID())")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let record = SiriStudioRunRecord(document: .init(bundleIdentifier: "dev.intents.test", scenarios: [scenario]),
+        var authored = SiriStudioDocument(bundleIdentifier: "dev.intents.test", scenarios: [scenario])
+        authored.appLaunchArguments = ["private-document-argument-content"]
+        var record = SiriStudioRunRecord(document: authored,
             productIdentity: nil, xcodeBuild: nil, osBuild: "Test", startedAt: .now, endedAt: .now, sourceURL: nil,
             resultBundleURL: nil, logURL: folder.appending(path: "run.log"), scenarios: [failed, incomplete])
+        record.appLaunchArguments = ["private-test-argument-content"]
         try record.write(to: folder)
         #expect(try SiriStudioRunRecord.read(from: folder).scenarios == [failed, incomplete])
+        #expect(try SiriStudioRunRecord.read(from: folder).appLaunchArguments == record.appLaunchArguments)
+        var legacy = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
+        legacy.removeValue(forKey: "appLaunchArguments")
+        #expect(try JSONDecoder().decode(SiriStudioRunRecord.self, from: JSONSerialization.data(withJSONObject: legacy)).appLaunchArguments == nil)
         let export = folder.appending(path: "summary.json")
         try record.exportEvidence(to: export, includeTranscripts: false)
         let exported = try String(contentsOf: export, encoding: .utf8)
         #expect(!exported.contains("fixture utterance") && !exported.contains("fixture response"))
+        #expect(!exported.contains("private-test-argument-content") && !exported.contains("private-document-argument-content"))
+        try record.exportEvidence(to: export, includeTranscripts: true)
+        #expect(try String(contentsOf: export, encoding: .utf8).contains("private-test-argument-content"))
     }
 
     /// Verifies complete evidence, all-blocked evidence, missing metrics and the aggregate fallback.

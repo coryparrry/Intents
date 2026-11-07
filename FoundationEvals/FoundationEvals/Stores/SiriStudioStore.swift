@@ -6,6 +6,7 @@ import Observation
 @MainActor @Observable final class SiriStudioStore {
     var document: SiriStudioDocument?
     var selection: UUID?
+    var appLaunchArgumentsText = ""
     private(set) var run: SiriStudioRunRecord?
     private(set) var diagnostic: String?
     private(set) var isBusy = false
@@ -25,6 +26,17 @@ import Observation
         self.root = root ?? URL.applicationSupportDirectory.appending(path: "Intents/SiriStudio", directoryHint: .isDirectory)
     }
 
+    /// Parses one literal argument per line without shell splitting, expansion, or quoting rules.
+    var appLaunchArguments: [String] {
+        appLaunchArgumentsText.components(separatedBy: .newlines).filter { !$0.isEmpty }
+    }
+
+    /// Explains invalid app arguments while leaving scenario authoring and export available.
+    var launchArgumentsError: String? {
+        do { _ = try MacIntentRunConfiguration.validatedAppLaunchArguments(appLaunchArguments); return nil }
+        catch { return error.localizedDescription }
+    }
+
     /// Gives immediate feedback using the same rules as CLI export and execution.
     var validationError: String? {
         guard let document, let catalog else { return "Choose a built macOS app." }
@@ -37,6 +49,7 @@ import Observation
         guard !isBusy else { return }
         let previousBundle = self.catalog?.bundleIdentifier
         self.catalog = catalog
+        if previousBundle != catalog?.bundleIdentifier { appLaunchArgumentsText = "" }
         guard previousBundle != catalog?.bundleIdentifier || document == nil else { return }
         document = nil; saved = nil; needsSave = false; run = nil; diagnostic = nil; selection = nil
         guard let catalog else { return }
@@ -54,6 +67,7 @@ import Observation
     /// Persists edits while preserving unchanged bytes and incrementing each edited scenario once.
     func save() throws {
         guard var current = document else { return }
+        current.appLaunchArguments = appLaunchArguments.isEmpty ? nil : appLaunchArguments
         if let saved { current.updateRevisions(from: saved) }
         let url = try documentURL(current.bundleIdentifier)
         guard needsSave || current != saved || !FileManager.default.fileExists(atPath: url.path) else { return }
@@ -105,7 +119,8 @@ import Observation
             try save()
             guard let document else { return }
             let configuration = MacIntentRunConfiguration(developerDirectory: URL(filePath: developer),
-                signingIdentity: identity, teamIdentifier: team, outputDirectory: newRunDirectory())
+                signingIdentity: identity, teamIdentifier: team, outputDirectory: newRunDirectory(),
+                appLaunchArguments: try MacIntentRunConfiguration.validatedAppLaunchArguments(appLaunchArguments))
             let selection = all ? nil : self.selection.map { Set([$0]) }
             let span = telemetry?.begin(.siriStudioRun)
             begin {
@@ -153,7 +168,8 @@ import Observation
     func isStale(_ result: SiriStudioScenarioResult) -> Bool {
         let frozen = run?.document.scenarios.first { $0.id == result.id }
         let current = document?.scenarios.first { $0.id == result.id }
-        return current?.revision != result.revision || frozen != current
+        let argumentsChanged = run?.appLaunchArguments.map { $0 != appLaunchArguments } ?? false
+        return argumentsChanged || current?.revision != result.revision || frozen != current
     }
 
     /// Displays a local diagnostic without sending it to telemetry.
@@ -175,6 +191,7 @@ import Observation
     /// Adopts an on-disk document as the saved revision baseline.
     private func adopt(_ document: SiriStudioDocument) {
         self.document = document; saved = document; selection = document.scenarios.first?.id
+        appLaunchArgumentsText = document.appLaunchArguments?.joined(separator: "\n") ?? ""
     }
 
     /// Reserves store admission before creating the cancellable asynchronous operation.

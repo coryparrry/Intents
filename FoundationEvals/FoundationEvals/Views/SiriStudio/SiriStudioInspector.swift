@@ -195,6 +195,11 @@ struct SiriStudioInspector: View {
             Text("Started \(run.startedAt.formatted()) · ended \(run.endedAt.formatted())")
             Text(run.osBuild)
             if let xcode = run.xcodeBuild { Text(xcode) }
+            if let arguments = run.appLaunchArguments {
+                Text(arguments.isEmpty ? "App launch: default arguments" : "App launch arguments: " + arguments.joined(separator: " · "))
+            } else {
+                Text("App launch arguments were not captured for this imported or older run.")
+            }
             if let product = run.productIdentity { Text("App build: \(product.sha256.prefix(16))") }
             Button("Show run log") { NSWorkspace.shared.activateFileViewerSelecting([run.logURL]) }
             if let source = run.sourceURL {

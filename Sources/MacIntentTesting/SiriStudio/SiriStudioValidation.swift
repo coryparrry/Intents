@@ -7,6 +7,7 @@ public enum SiriStudioValidation {
         guard document.version == SiriStudioDocument.currentVersion else {
             throw MacIntentTestingError("Unsupported Siri Studio document version \(document.version).")
         }
+        _ = try MacIntentRunConfiguration.validatedAppLaunchArguments(document.appLaunchArguments ?? [])
         guard document.bundleIdentifier == catalog.bundleIdentifier else {
             throw MacIntentTestingError("This document belongs to \(document.bundleIdentifier), not \(catalog.bundleIdentifier).")
         }

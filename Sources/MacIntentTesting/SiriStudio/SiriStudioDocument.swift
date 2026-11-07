@@ -7,6 +7,7 @@ public struct SiriStudioDocument: Codable, Sendable, Equatable {
     public var version: Int
     public var bundleIdentifier: String
     public var scenarios: [SiriStudioScenario]
+    public var appLaunchArguments: [String]? = nil
 
     /// Starts a document for the given bundle.
     public init(bundleIdentifier: String, scenarios: [SiriStudioScenario] = []) {
@@ -28,7 +29,9 @@ public struct SiriStudioDocument: Codable, Sendable, Equatable {
         guard header.version == currentVersion else {
             throw MacIntentTestingError("Unsupported Siri Studio document version \(header.version).")
         }
-        return try decoder.decode(Self.self, from: bytes)
+        let document = try decoder.decode(Self.self, from: bytes)
+        _ = try MacIntentRunConfiguration.validatedAppLaunchArguments(document.appLaunchArguments ?? [])
+        return document
     }
 
     /// Increments revisions for changed scenarios, ignoring caller edits to the revision counter.
@@ -44,6 +47,7 @@ public struct SiriStudioDocument: Codable, Sendable, Equatable {
 
     /// Writes stable JSON atomically. The caller decides when draft validation is required.
     public func write(to url: URL) throws {
+        _ = try MacIntentRunConfiguration.validatedAppLaunchArguments(appLaunchArguments ?? [])
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let bytes = try encoder.encode(self)

@@ -85,12 +85,15 @@ struct SiriStudioSetupStep: Identifiable {
         guard let report else { return [] }
         let xcode = report.xcodes.first { $0.developerDirectory == report.configuration.developerDirectory }
         let identity = report.identities.first { $0.fingerprint == report.configuration.signingIdentity && $0.team == report.applicationTeam }
+        let registration = report.registeredApplicationPath.map {
+            "macOS selects another copy at \($0). Replace that installed copy with this build, or select it instead."
+        } ?? "Install this build in Applications, open it once, then quit it and recheck."
         return [
             .init(id: "macos", title: "Compatible Mac", detail: report.osSupported ? "macOS \(report.osVersion)" : "Update to macOS 27.3 or later.", complete: report.osSupported, action: .softwareUpdate),
             .init(id: "xcode", title: "Xcode", detail: xcode.map { report.xcodeReady ? "Xcode \($0.version), detected automatically" : "Open Xcode \($0.version) once and finish its component and license setup." } ?? "Install Xcode 27.3 or later, then recheck.", complete: xcode != nil && report.xcodeReady, action: .xcode),
             .init(id: "signing", title: "Development signing", detail: identity.map { "Development certificate matched to team \($0.team)" } ?? (report.applicationTeam.map { "Add an Apple Development certificate for team \($0) in Xcode → Settings → Accounts." } ?? "Choose a development-signed build of your app."), complete: identity != nil, action: .signing),
             .init(id: "xcodegen", title: "Test project tools", detail: report.xcodegen == nil ? "Install XcodeGen: brew install xcodegen" : "XcodeGen is installed", complete: report.xcodegen != nil, action: .xcodegen),
-            .init(id: "registered", title: "App registered", detail: report.registered ? "The selected build is registered with macOS" : "Install this build in Applications, open it once, then quit it and recheck.", complete: report.registered, action: .registerApp),
+            .init(id: "registered", title: "App registered", detail: report.registered ? "macOS selects the exact build you chose" : registration, complete: report.registered, action: .registerApp),
             .init(id: "stopped", title: "App closed", detail: report.running ? "Quit the selected app, then recheck." : "The selected app is closed", complete: !report.running, action: .quitApp),
             .init(id: "siri", title: "Siri AI", detail: siriConfirmed ? "Confirmed by you; leave this Mac unlocked during the run" : "Enable Siri AI and finish its model downloads in Settings, then confirm below.", complete: siriConfirmed, action: .siri),
         ]

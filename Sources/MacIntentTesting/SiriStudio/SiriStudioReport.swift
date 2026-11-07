@@ -209,6 +209,7 @@ public struct SiriStudioRunRecord: Codable, Sendable {
     public let resultBundleURL: URL?
     public let logURL: URL
     public let scenarios: [SiriStudioScenarioResult]
+    public var appLaunchArguments: [String]? = nil
 
     /// Summarizes the selected scenario verdicts with cancellation and evidence failures preserved.
     public var state: SiriStudioState {

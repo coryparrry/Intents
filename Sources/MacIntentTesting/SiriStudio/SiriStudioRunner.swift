@@ -16,6 +16,7 @@ public final class SiriStudioRunner {
     /// Freezes the selected scenarios, runs the exact export, and persists local evidence even when blocked.
     public func run(document: SiriStudioDocument, catalog: MacIntentCatalog, configuration: MacIntentRunConfiguration,
                     scenarioIDs: Set<UUID>? = nil, allowance: Int? = nil, timeout: Double? = nil) async throws -> SiriStudioRunRecord {
+        let launchArguments = try MacIntentRunConfiguration.validatedAppLaunchArguments(document.appLaunchArguments ?? configuration.appLaunchArguments)
         let scenarios = try SiriStudioSource.selection(in: document, scenarioIDs)
         let directory = configuration.outputDirectory
         let files = FileManager.default
@@ -79,6 +80,7 @@ public final class SiriStudioRunner {
             let opening = NSWorkspace.OpenConfiguration()
             opening.activates = false
             opening.createsNewApplicationInstance = true
+            opening.arguments = launchArguments
             let app = try await NSWorkspace.shared.openApplication(at: current.appURL, configuration: opening)
             launched = app
             guard let launchDate = app.launchDate else {
@@ -143,12 +145,13 @@ public final class SiriStudioRunner {
             } catch { blocked = error.localizedDescription }
         }
         if admitted, session.cancelled || Task.isCancelled { cancelled = cancelled ?? "Run cancelled." }
-        let record = SiriStudioRunRecord(document: document, productIdentity: catalog.productIdentity, xcodeBuild: build,
+        var record = SiriStudioRunRecord(document: document, productIdentity: catalog.productIdentity, xcodeBuild: build,
             osBuild: Self.osBuild(), startedAt: startedAt, endedAt: Date(), sourceURL: sourceURL,
             resultBundleURL: files.fileExists(atPath: resultURL.path) ? resultURL : nil, logURL: logURL,
             scenarios: scenarios.map {
                 evidence.result(for: $0, bundleIdentifier: document.bundleIdentifier, blocked: blocked, cancelled: cancelled)
             })
+        record.appLaunchArguments = launchArguments
         try record.write(to: directory)
         return record
     }

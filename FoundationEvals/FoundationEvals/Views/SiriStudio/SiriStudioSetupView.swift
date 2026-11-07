@@ -100,13 +100,19 @@ struct SiriStudioSetupView: View {
                 copied = true
             }
         case .registerApp:
-            Button("Open app once") {
-                Task {
-                    do { _ = try await NSWorkspace.shared.openApplication(at: catalog.appURL, configuration: .init()) }
-                    catch { native.reportSelectionError(error) }
+            if let installed = native.siriSetup.report?.registeredApplicationPath {
+                Button("Show installed copy") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: installed)])
                 }
+            } else {
+                Button("Open app once") {
+                    Task {
+                        do { _ = try await NSWorkspace.shared.openApplication(at: catalog.appURL, configuration: .init()) }
+                        catch { native.reportSelectionError(error) }
+                    }
+                }
+                .disabled(native.siriSetup.report?.running == true)
             }
-            .disabled(native.siriSetup.report?.running == true)
         case .quitApp:
             Text("Quit it, then Recheck setup").font(.caption).foregroundStyle(.secondary)
         case .siri:

@@ -6,16 +6,17 @@ import Testing
 /// Checks automatic setup, concurrent edits, cancellation, and truthful checklist readiness.
 @MainActor struct SiriStudioSetupStoreTests {
     /// Supplies synthetic inspection facts while preserving the shape of a real matching signing configuration.
-    private func report(registered: Bool = true, running: Bool = false, xcodeReady: Bool = true) -> SiriStudioSetupReport {
+    private func report(registered: Bool = true, running: Bool = false, xcodeReady: Bool = true, registeredPath: String? = nil) -> SiriStudioSetupReport {
         let config = SiriStudioSetupConfiguration(developerDirectory: "/Detected/Xcode.app/Contents/Developer", teamIdentifier: "TEAM-A", signingIdentity: "CERT-A")
         return .init(osSupported: true, osVersion: "27.3", xcodes: [.init(developerDirectory: config.developerDirectory, version: "27.3")], xcodeReady: xcodeReady,
             identities: [.init(fingerprint: "CERT-A", name: "Development", team: "TEAM-A")], applicationTeam: "TEAM-A",
-            registered: registered, running: running, xcodegen: "/tools/xcodegen", configuration: config)
+            registered: registered, running: running, xcodegen: "/tools/xcodegen", configuration: config, registeredApplicationPath: registeredPath)
     }
 
     /// Loads an app without touching disk or starting Siri, then performs the same automatic setup entry point as the view.
     private func store(probe: @escaping (URL, SiriStudioSetupConfiguration) async throws -> SiriStudioSetupReport) async -> MacIntentTestingStore {
-        let model = MacIntentTestingStore(setupProbe: probe, catalogLoader: { app in
+        let model = MacIntentTestingStore(siriStudioRoot: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
+            setupProbe: probe, catalogLoader: { app in
             .init(bundleIdentifier: "example.Setup", appURL: app, actions: [.init(id: "Open", title: "Open", parameters: [], outputType: "Void")])
         })
         model.load(appURL: URL(filePath: "/Subject.app"))
@@ -75,6 +76,25 @@ import Testing
         #expect(model.signingIdentity.isEmpty)
     }
 
+    /// Keeps literal startup flags scoped to the selected app, preserving spaces and rejecting unsafe vectors.
+    @Test func appArgumentsStayWithTheSelectedApp() async throws {
+        let found = report()
+        let model = await store { _, _ in found }
+        model.siri.load(model.catalog)
+        model.siri.appLaunchArgumentsText = "-TestMode\nvalue with spaces"
+        #expect(model.siri.appLaunchArguments == ["-TestMode", "value with spaces"])
+        #expect(model.siri.launchArgumentsError == nil)
+        try model.siri.save()
+        model.siri.load(nil)
+        model.siri.load(model.catalog)
+        #expect(model.siri.appLaunchArguments == ["-TestMode", "value with spaces"])
+        model.siri.appLaunchArgumentsText = "bad\0argument"
+        #expect(model.siri.launchArgumentsError != nil)
+        model.siri.load(nil)
+        #expect(model.siri.appLaunchArguments.isEmpty)
+        await model.closeAndWait()
+    }
+
     /// Blocks execution until Xcode has completed its first-launch components and license setup.
     @Test func incompleteXcodeFirstLaunchIsActionable() async {
         let found = report(xcodeReady: false)
@@ -106,12 +126,13 @@ import Testing
 
     /// Keeps an unregistered or running app visible as an explicit action even when every tool is available.
     @Test func registrationAndStoppedAppRemainRequired() async {
-        let found = report(registered: false, running: true)
+        let found = report(registered: false, running: true, registeredPath: "/Applications/OlderSubject.app")
         let model = await store { _, _ in found }
         model.detectSiriSetup()
         await model.siriSetup.waitForCheck()
         model.siriSetup.siriConfirmed = true
         #expect(model.siriSetup.steps.first { $0.id == "registered" }?.complete == false)
+        #expect(model.siriSetup.steps.first { $0.id == "registered" }?.detail.contains("/Applications/OlderSubject.app") == true)
         #expect(model.siriSetup.steps.first { $0.id == "stopped" }?.complete == false)
         #expect(model.siriSetup.issue(configuration: model.setupConfiguration)?.hasPrefix("App registered:") == true)
         await model.closeAndWait()

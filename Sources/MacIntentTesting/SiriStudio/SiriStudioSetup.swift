@@ -52,6 +52,7 @@ public struct SiriStudioSetupReport: Sendable {
     public let identities: [SiriStudioSigningIdentity]
     public let applicationTeam: String?
     public let registered: Bool
+    public let registeredApplicationPath: String?
     public let running: Bool
     public let xcodegen: String?
     public let configuration: SiriStudioSetupConfiguration
@@ -59,10 +60,11 @@ public struct SiriStudioSetupReport: Sendable {
     /// Creates a report without claiming that Siri AI or its downloaded models can be detected publicly.
     public init(osSupported: Bool, osVersion: String, xcodes: [SiriStudioXcode], xcodeReady: Bool = true,
                 identities: [SiriStudioSigningIdentity], applicationTeam: String?, registered: Bool,
-                running: Bool, xcodegen: String?, configuration: SiriStudioSetupConfiguration) {
+                running: Bool, xcodegen: String?, configuration: SiriStudioSetupConfiguration, registeredApplicationPath: String? = nil) {
         self.osSupported = osSupported; self.osVersion = osVersion; self.xcodes = xcodes; self.xcodeReady = xcodeReady
         self.identities = identities; self.applicationTeam = applicationTeam
-        self.registered = registered; self.running = running; self.xcodegen = xcodegen
+        self.registered = registered; self.registeredApplicationPath = registeredApplicationPath
+        self.running = running; self.xcodegen = xcodegen
         self.configuration = configuration
     }
 }
@@ -117,7 +119,8 @@ public struct SiriStudioSetupReport: Sendable {
             identities: identities, applicationTeam: team, registered: registered, running: running,
             xcodegen: ["/opt/homebrew/bin/xcodegen", "/usr/local/bin/xcodegen"].first { files.isExecutableFile(atPath: $0) },
             configuration: .init(developerDirectory: developer?.developerDirectory ?? preferred.developerDirectory,
-                teamIdentifier: team ?? preferred.teamIdentifier, signingIdentity: identity?.fingerprint ?? preferred.signingIdentity))
+                teamIdentifier: team ?? preferred.teamIdentifier, signingIdentity: identity?.fingerprint ?? preferred.signingIdentity),
+            registeredApplicationPath: installed?.path)
     }
 
     /// Captures bounded command output privately, honoring cancellation before publishing any discovery result.

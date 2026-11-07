@@ -6,8 +6,12 @@ runs an action with the inputs you supply.
 
 ## Choose the app and write a scenario
 
-1. Build a macOS app with App Intents metadata. Install it, open it once to
-   register it, and quit it before testing.
+1. Build a macOS app with App Intents metadata. Actions used by Siri’s AI model
+   must also adopt `ToolIntent` (or `@AppIntent(.tool)`) on macOS 27.3 or later;
+   ordinary App Shortcuts alone do not expose those actions as model tools.
+   Existing intents can keep their earlier deployment support with a
+   `@available(macOS 27.3, *)` extension conforming to `ToolIntent`.
+   Install the app, open it once to register it, and quit it before testing.
 2. In **App Intent Testing**, choose the installed build and select **Siri Studio**.
    The **Siri Studio setup** checklist automatically finds a compatible Xcode and
    fills the development team and a matching, valid signing certificate. It keeps
@@ -44,7 +48,9 @@ The checklist shows seven prerequisites and the next action for each missing one
 - **Test project tools:** XcodeGen. **Copy install command** copies
   `brew install xcodegen` when it is missing.
 - **App registered:** the exact selected build must be installed and opened once.
-  **Open app once** helps register it. Quit the app, then use **Recheck setup**.
+  **Open app once** helps register it. If macOS selects an older installed copy,
+  **Show installed copy** locates that build; replace it with your development build
+  or select that installed build instead. Quit the app, then use **Recheck setup**.
 - **App closed:** Intents preserves an already-running app; quit it yourself before a run.
 - **Siri AI:** **Open Siri Settings**, enable Siri AI, finish its downloads, then
   confirm **Siri AI is enabled and its downloads are complete**. This is your
@@ -56,6 +62,16 @@ require a terminal or a manual result import. You can hide the checklist to auth
 or export while prerequisites are missing. **Xcode and signing** below the editor
 remains available for advanced overrides; use **Recheck setup** after changing them.
 Discovery preserves edits made while a check is in progress.
+
+For an app with an isolated test-data mode, enter its flags in **Xcode and signing →
+App launch arguments** before pressing Run. Each line is one literal argument,
+including any spaces; shell expansion and shell quoting are not used. Arguments
+are saved with the selected app’s scenario document, replayed by Studio and the CLI,
+and shown in **Run facts and evidence**. Changing
+arguments marks an earlier captured run stale. Imported or older runs may have
+unknown launch arguments. Use non-sensitive test flags: scenario exports, local runs, and explicit
+full-transcript exports retain them, while verdict-only exports omit them.
+Exported Swift tests need their own app-launch configuration when run outside Studio.
 
 ## Run and inspect
 

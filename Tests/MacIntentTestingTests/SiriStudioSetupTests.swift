@@ -5,6 +5,33 @@ import Testing
 
 /// Checks compatibility selection and certificate-team matching without accessing the user's keychain.
 @MainActor struct SiriStudioSetupTests {
+    /// Preserves spaces and shell-looking text as literal arguments while rejecting oversized or null-containing vectors.
+    @Test func appArgumentsAreLiteralAndBounded() throws {
+        let arguments = ["-Use Test Data", "a value with spaces", "$(this is literal)"]
+        #expect(try MacIntentRunConfiguration.validatedAppLaunchArguments(arguments) == arguments)
+        let path = FileManager.default.temporaryDirectory.appending(path: "siri-arguments-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: path) }
+        for invalid in [[""], ["--test-mode\ntrue"], ["--test-mode\rtrue"], ["--test-mode\u{2028}true"]] {
+            #expect(throws: MacIntentTestingError.self) {
+                try MacIntentRunConfiguration.validatedAppLaunchArguments(invalid)
+            }
+            var rejected = SiriStudioDocument(bundleIdentifier: "example.Test")
+            rejected.appLaunchArguments = invalid
+            #expect(throws: MacIntentTestingError.self) { try rejected.write(to: path) }
+            try JSONEncoder().encode(rejected).write(to: path)
+            #expect(throws: MacIntentTestingError.self) { try SiriStudioDocument.read(from: path) }
+        }
+        var document = SiriStudioDocument(bundleIdentifier: "example.Test")
+        document.appLaunchArguments = arguments
+        #expect(try JSONDecoder().decode(SiriStudioDocument.self, from: JSONEncoder().encode(document)).appLaunchArguments == arguments)
+        var legacy = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(document)) as? [String: Any])
+        legacy.removeValue(forKey: "appLaunchArguments")
+        #expect(try JSONDecoder().decode(SiriStudioDocument.self, from: JSONSerialization.data(withJSONObject: legacy)).appLaunchArguments == nil)
+        for invalid in [[String(repeating: "x", count: 4097)], Array(repeating: "x", count: 65), ["bad\0argument"], Array(repeating: String(repeating: "x", count: 4096), count: 17)] {
+            #expect(throws: MacIntentTestingError.self) { try MacIntentRunConfiguration.validatedAppLaunchArguments(invalid) }
+        }
+    }
+
     /// Reads a synthetic public certificate; its private key is never stored in the repository.
     private func certificate() throws -> (pem: String, fingerprint: String) {
         let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
