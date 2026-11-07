@@ -199,8 +199,11 @@ struct SiriStudioView: View {
         DisclosureGroup("Xcode and signing") {
             VStack(alignment: .leading, spacing: 8) {
                 TextField("Developer directory", text: $native.developerDirectory)
+                    .accessibilityLabel("Developer directory")
                 TextField("Signing identity", text: $native.signingIdentity, prompt: Text("Apple Development: …"))
+                    .accessibilityLabel("Signing identity")
                 TextField("Team identifier", text: $native.teamIdentifier)
+                    .accessibilityLabel("Team identifier")
                 Toggle("Use a custom test allowance", isOn: $customAllowance)
                 if customAllowance {
                     Stepper("Per scenario: \(allowance) seconds", value: $allowance, in: 1...1800)

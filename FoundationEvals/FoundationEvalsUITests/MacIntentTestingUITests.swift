@@ -116,9 +116,18 @@ final class MacIntentTestingUITests: XCTestCase {
         let reopened = app.descendants(matching: .any)["siri-studio-utterance-2"].firstMatch
         XCTAssertTrue(reopened.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(reopened.value as? String, "What is its status?")
-        app.disclosureTriangles["Xcode and signing"].click()
+        let signing = app.disclosureTriangles["Xcode and signing"]
+        let page = app.scrollViews.containing(.disclosureTriangle, identifier: "Xcode and signing").firstMatch
+        XCTAssertTrue(page.waitForExistence(timeout: 3), app.debugDescription)
+        let wheel = page.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+        wheel.scroll(byDeltaX: 0, deltaY: -400)
+        XCTAssertTrue(signing.isHittable && page.frame.insetBy(dx: 0, dy: 12).contains(signing.frame),
+                      app.debugDescription)
+        signing.click()
         let developer = app.textFields["Developer directory"]
-        XCTAssertTrue(developer.waitForExistence(timeout: 3))
+        XCTAssertTrue(developer.waitForExistence(timeout: 3), app.debugDescription)
+        wheel.scroll(byDeltaX: 0, deltaY: -400)
+        XCTAssertTrue(developer.isHittable && page.frame.contains(developer.frame), app.debugDescription)
         developer.click()
         developer.typeKey("a", modifierFlags: .command)
         developer.typeText("/Applications/Xcode.app/Contents/Developer")
