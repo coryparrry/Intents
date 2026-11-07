@@ -15,14 +15,12 @@ struct SiriStudioView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            SiriStudioSetupView(native: native, catalog: catalog)
             toolbar
             if let reason = studio.diagnostic ?? studio.validationError {
                 Label(reason, systemImage: "exclamationmark.circle")
                     .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                     .accessibilityIdentifier("siri-studio-diagnostic")
-            }
-            if let reason = prerequisite {
-                Label(reason, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
             }
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 16) {
@@ -38,6 +36,7 @@ struct SiriStudioView: View {
             }
             signing
         }
+        .task { native.detectSiriSetup() }
         .onChange(of: studio.selection) { _, _ in turnID = nil }
         .confirmationDialog("Delete scenario?", isPresented: Binding(
             get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }
@@ -48,7 +47,7 @@ struct SiriStudioView: View {
 
     /// Explains which runtime prerequisite needs attention while authoring stays available.
     private var prerequisite: String? {
-        studio.prerequisite(developer: native.developerDirectory, team: native.teamIdentifier, identity: native.signingIdentity)
+        native.siriSetup.issue(configuration: native.setupConfiguration)
     }
 
     /// Disables competing commands while either mode owns a run.

@@ -95,6 +95,11 @@ final class MacIntentTestingUITests: XCTestCase {
         defer { app.terminate() }
         try openWorkspace(in: app, fixture: fixture)
         chooseMode("Siri Studio", in: app)
+        let checklist = app.buttons["Hide setup checklist"]
+        XCTAssertTrue(checklist.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.descendants(matching: .any)["siri-studio-setup-status"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["siri-studio-confirm-siri"].firstMatch.exists)
+        checklist.click()
         let newScenario = app.buttons["siri-studio-new-scenario"]
         XCTAssertTrue(newScenario.waitForExistence(timeout: 5), app.debugDescription)
         newScenario.click()
@@ -113,6 +118,9 @@ final class MacIntentTestingUITests: XCTestCase {
         app.launch()
         try openWorkspace(in: app, fixture: fixture)
         chooseMode("Siri Studio", in: app)
+        let reopenedChecklist = app.buttons["Hide setup checklist"]
+        XCTAssertTrue(reopenedChecklist.waitForExistence(timeout: 5), app.debugDescription)
+        reopenedChecklist.click()
         let reopened = app.descendants(matching: .any)["siri-studio-utterance-2"].firstMatch
         XCTAssertTrue(reopened.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(reopened.value as? String, "What is its status?")

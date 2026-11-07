@@ -9,6 +9,9 @@ runs an action with the inputs you supply.
 1. Build a macOS app with App Intents metadata. Install it, open it once to
    register it, and quit it before testing.
 2. In **App Intent Testing**, choose the installed build and select **Siri Studio**.
+   The **Siri Studio setup** checklist automatically finds a compatible Xcode and
+   fills the development team and a matching, valid signing certificate. It keeps
+   an already-compatible Xcode choice and never changes your system's selected Xcode.
 3. Add a scenario and enter one or more turns. Name the app in requests where
    Siri needs to find it in the background.
 4. In the inspector, choose required actions and any argument or result
@@ -26,6 +29,33 @@ Validation and Swift export work without running Siri. **Export Swift…** saves
 the exact test source for the selected scenario. Use **Documents → Export all
 scenarios as Swift…** for the complete document. The export records local
 transcripts when run; treat its test results as potentially sensitive.
+
+## Guided setup
+
+The checklist shows seven prerequisites and the next action for each missing one:
+
+- **Compatible Mac:** macOS 27.3 or later.
+- **Xcode:** Xcode 27.3 or later with SiriEvaluations. Compatible installations in
+  Applications, your selected Xcode, and an explicit developer directory are checked.
+  If component or license setup is unfinished, **Open Xcode** and finish it there.
+- **Development signing:** a valid Apple Development identity from the selected
+  app's own team. Intents selects its exact certificate automatically; it never
+  re-signs your app or substitutes a different team.
+- **Test project tools:** XcodeGen. **Copy install command** copies
+  `brew install xcodegen` when it is missing.
+- **App registered:** the exact selected build must be installed and opened once.
+  **Open app once** helps register it. Quit the app, then use **Recheck setup**.
+- **App closed:** Intents preserves an already-running app; quit it yourself before a run.
+- **Siri AI:** **Open Siri Settings**, enable Siri AI, finish its downloads, then
+  confirm **Siri AI is enabled and its downloads are complete**. This is your
+  confirmation, not an automatic claim about an unavailable public setting.
+
+When the checklist says **Ready to run**, write a scenario, choose its expectations,
+and press **Run**. Results appear in Studio automatically. Normal runs do not
+require a terminal or a manual result import. You can hide the checklist to author
+or export while prerequisites are missing. **Xcode and signing** below the editor
+remains available for advanced overrides; use **Recheck setup** after changing them.
+Discovery preserves edits made while a check is in progress.
 
 ## Run and inspect
 
