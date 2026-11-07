@@ -27,6 +27,7 @@ Intents is a native macOS workbench for testing Apple's Foundation Models. Creat
 | Capability | What it gives you |
 |---|---|
 | **Repeatable evaluations** | Test cases with shared instructions, attachments, and multiple repetitions. |
+| **Document suites** | Draft questions, reference answers, and scoring criteria from a text-based PDF, Markdown, or text file. [Document suite guide](docs/wiki/Document-suites.md). |
 | **Flexible scoring** | Exact matches, required text, AI rubrics, or response collection without scoring. |
 | **Execution traces** | A nested workflow waterfall with measured native stages, tool activity, token usage and a selected-span inspector. [Trace details](docs/workflow-traces.md). |
 | **Human review and regression cases** | Review outputs with AI judgments initially hidden, tag confirmed failure patterns, and promote verified failures into new cases. [Review guide](docs/EVAL_REVIEW_GUIDE.md). |
@@ -46,7 +47,7 @@ Requirements:
 - macOS 27 or later
 - For the default on-device model: a Mac that supports Apple Intelligence, with Apple Intelligence enabled and the model downloaded
 
-1. Download the installer from the [latest release](https://github.com/coryparrry/Intents/releases/latest) and open **Intents.dmg**.
+1. Download and open the macOS disk image from the [latest release](https://github.com/coryparrry/Intents/releases/latest).
 2. Drag **Intents** onto the **Applications** shortcut in the window.
 3. Eject the **Intents** disk, then open the app from **Applications** and check that the model is ready.
 
@@ -67,7 +68,7 @@ Xcode 27+ is needed to build from source or run Mac App Intent tests. It is not 
 
 ## Run your first evaluation
 
-1. In **Model evaluations**, create a suite. Open **Cases** and add prompts with an expected response or reference answer where appropriate.
+1. Select **New Suite** at the bottom of the sidebar. Open **Cases** and add prompts with an expected response or reference answer where appropriate.
 2. Use **Setup → Instructions** for shared instructions and text, JSON, CSV, PDF, or image reference files.
 3. Use **Setup → Scoring** to choose a method and number of repetitions.
 4. Click **Run**. Open the saved run's **Workflow trace** or **Report** to inspect its response, score, explanation, timing, token usage, and tool activity.
@@ -104,7 +105,7 @@ For large batches, open **Batch runs** in the sidebar. Freeze the current suite 
 
 ## Test Mac App Intents
 
-Select a normally installed, registered Mac app in **App Intent tests**, or use
+Select a normally installed, registered Mac app in **App Intent Testing**, or use
 `intents-native-tests catalog --app /path/to/MyApp.app` and `intents-native-tests run`
 with a JSON case manifest. The command builds a native macOS UI-test runner using
 Apple AppIntentsTesting. It needs Xcode 27+, macOS 27+, XcodeGen, and the same Apple
