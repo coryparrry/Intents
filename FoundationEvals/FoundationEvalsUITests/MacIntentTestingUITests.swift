@@ -123,7 +123,9 @@ final class MacIntentTestingUITests: XCTestCase {
         wheel.scroll(byDeltaX: 0, deltaY: -400)
         XCTAssertTrue(signing.isHittable && page.frame.insetBy(dx: 0, dy: 12).contains(signing.frame),
                       app.debugDescription)
-        signing.click()
+        // SwiftUI includes leading padding and the label in the AX frame; click the chevron itself.
+        signing.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
+            .withOffset(CGVector(dx: 27, dy: 0)).click()
         let developer = app.textFields["Developer directory"]
         XCTAssertTrue(developer.waitForExistence(timeout: 3), app.debugDescription)
         wheel.scroll(byDeltaX: 0, deltaY: -400)
