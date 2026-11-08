@@ -170,6 +170,47 @@ import Testing
         #expect(recovered.appLaunchArguments == ["-TestMode", "value with spaces"])
     }
 
+    /// Marks older saved verdicts stale when startup flags change, retaining explicit recorded argument precedence.
+    @Test(arguments: [(nil, nil), (nil, ["-Saved"]), ([], ["-Ignored"])] as [([String]?, [String]?)])
+    func savedRunArgumentFallbackDetectsChangedStartupConditions(recorded: [String]?, frozen: [String]?) throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let studio = makeStore(root)
+        studio.load(catalog())
+        let authored = scenario()
+        studio.document?.scenarios = [authored]
+        var document = try #require(studio.document)
+        document.appLaunchArguments = frozen
+        let digest = try authored.contentDigest(bundleIdentifier: document.bundleIdentifier)
+        let summary: [String: Any] = [
+            "schema": "dev.intents.siri-studio.summary", "version": 1,
+            "scenarioID": authored.id.uuidString, "revision": authored.revision, "authoredDigest": digest,
+            "metrics": [String: Double](), "inferenceFailureCount": 0, "metricsNotFound": [String](),
+        ]
+        let result: [String: Any] = [
+            "id": authored.id.uuidString, "revision": authored.revision, "name": authored.name,
+            "state": "passed", "attempted": 1, "passed": 1,
+            "reports": [[String: Any]](), "summary": summary, "failingMetrics": [String](),
+        ]
+        var payload: [String: Any] = [
+            "document": try JSONSerialization.jsonObject(with: JSONEncoder().encode(document)),
+            "osBuild": "fixture", "startedAt": 0, "endedAt": 1,
+            "logURL": root.appending(path: "run.log").absoluteString, "scenarios": [result],
+        ]
+        if let recorded { payload["appLaunchArguments"] = recorded }
+        try JSONSerialization.data(withJSONObject: payload).write(to: root.appending(path: "run.json"))
+        try studio.openRun(root)
+        let reopened = try #require(studio.run?.scenarios.first)
+        #expect(reopened.state == .passed)
+        let expected = recorded ?? frozen ?? []
+        studio.appLaunchArgumentsText = expected.joined(separator: "\n")
+        #expect(!studio.isStale(reopened))
+        studio.appLaunchArgumentsText = (expected + ["-Changed"]).joined(separator: "\n")
+        #expect(studio.isStale(reopened))
+        studio.appLaunchArgumentsText = expected.joined(separator: "\n")
+        #expect(!studio.isStale(reopened))
+    }
+
     /// Creates only synthetic per-test storage with no user preferences or credentials.
     private func temporaryRoot() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appending(path: "siri-store-\(UUID())")

@@ -249,7 +249,8 @@ import Observation
     func isStale(_ result: SiriStudioScenarioResult) -> Bool {
         let frozen = run?.document.scenarios.first { $0.id == result.id }
         let current = document?.scenarios.first { $0.id == result.id }
-        let argumentsChanged = run?.appLaunchArguments.map { $0 != appLaunchArguments } ?? false
+        let recordedArguments = run?.appLaunchArguments ?? run?.document.appLaunchArguments ?? []
+        let argumentsChanged = recordedArguments != appLaunchArguments
         return argumentsChanged || current?.revision != result.revision || frozen != current
     }
 
