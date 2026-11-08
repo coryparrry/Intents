@@ -20,7 +20,7 @@ final class MacIntentTestingUITests: XCTestCase {
         app.menuItems["Show App Intents"].click()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Sidebar app intents"].waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(app.descendants(matching: .any)["App Intent step 1"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["App Intent step 1"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.descendants(matching: .any)["App Intent step 2"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["App Intent step 3"].exists)
         XCTAssertTrue(app.staticTexts["Choose an app to inspect its actions and inputs."].exists)

@@ -50,41 +50,40 @@ struct MacIntentTestingView: View {
         }
     }
 
-    /// Shares the first app-selection step across Direct Action and Siri Studio without competing choosers.
+    /// Guides Direct Action setup with numbered app selection and supported input/result details.
     private var appSelection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if mode == "direct" {
+        stepCard(number: 1, title: "Choose app") {
+            VStack(alignment: .leading, spacing: 12) {
                 Text("Install and launch the app normally once to register it, then quit it before choosing its build.")
-            } else if model.catalog == nil {
-                Text("Choose the Mac app you want to test. We’ll check the setup for you.")
-            }
-            Button(model.catalog == nil ? "Choose built macOS app…" : "Change app…") { choosingApp = true }
-                .accessibilityIdentifier("mac-intent-choose-app")
-                .accessibilityLabel("Choose built macOS app…")
-                .buttonStyle(.bordered)
-                .disabled(model.isRunning || model.isLoading || model.siri.isBusy)
-            if model.isLoading {
-                HStack {
-                    ProgressView().controlSize(.small)
-                    Text("Inspecting built app…")
-                    Button("Cancel") { model.cancel() }
+                Button("Choose built macOS app…") { choosingApp = true }
+                    .accessibilityIdentifier("mac-intent-choose-app")
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isRunning || model.isLoading || model.siri.isBusy)
+                if model.isLoading {
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("Inspecting built app…")
+                        Button("Cancel") { model.cancel() }
+                    }
                 }
-            }
-            if let catalog = model.catalog {
-                HStack {
-                    Text(catalog.appURL.deletingPathExtension().lastPathComponent).font(.headline)
-                }
-                if mode == "direct" {
+                if let catalog = model.catalog {
+                    LabeledContent("Application", value: catalog.appURL.deletingPathExtension().lastPathComponent)
+                    if let product = catalog.productIdentity {
+                        LabeledContent("Build", value: String(product.sha256.prefix(10)))
+                    }
                     DisclosureGroup(isExpanded: $showsBuildDetails) {
                         LabeledContent("Path", value: catalog.appURL.path)
                         LabeledContent("Bundle identifier", value: catalog.bundleIdentifier)
-                        if let product = catalog.productIdentity {
-                            LabeledContent("Build", value: String(product.sha256.prefix(10)))
-                        }
                     } label: {
                         Text("Build details").contentShape(Rectangle()).onTapGesture { showsBuildDetails.toggle() }
                     }
                 }
+            }
+            DisclosureGroup(isExpanded: $showsSupportedTypes) {
+                Text("Intents generates a native UI test. Compiled metadata discovery is best effort. Native macOS validation covers String, Bool, Int, Double and enum inputs, String and Double results, and execution-only smoke checks. A smoke check does not compare the returned value.")
+                    .foregroundStyle(.secondary)
+            } label: {
+                Text("Supported inputs and results").contentShape(Rectangle()).onTapGesture { showsSupportedTypes.toggle() }
             }
         }
     }
