@@ -7,6 +7,37 @@ struct SiriStudioTests {
     private static let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     private static let fixture = root.appending(path: "Tests/Fixtures/SiriStudio")
 
+    /// Runs and exports a complete selection while preserving unfinished drafts and document-wide safety checks.
+    @Test func selectedConversationIgnoresUnfinishedContentButPreservesGlobalChecks() throws {
+        let catalog = try fixtureCatalog()
+        let sample = try SiriStudioDocument.read(from: Self.root.appending(path: "examples/SiriStudioSample/scenarios.json"))
+        let finished = try #require(sample.scenarios.first)
+        let draft = SiriStudioScenario(name: "Unfinished draft")
+        let document = SiriStudioDocument(bundleIdentifier: catalog.bundleIdentifier, scenarios: [finished, draft])
+        try SiriStudioValidation.validate(document, catalog: catalog, scenarioIDs: [finished.id])
+        let source = try SiriStudioSource.tests(document: document, catalog: catalog, scenarioIDs: [finished.id])
+        #expect(source.contains(finished.id.uuidString) && !source.contains(draft.id.uuidString))
+        #expect(throws: MacIntentTestingError.self) { try SiriStudioValidation.validate(document, catalog: catalog) }
+        for ids in [Set([draft.id]), Set<UUID>(), Set([UUID()])] {
+            #expect(throws: MacIntentTestingError.self) { try SiriStudioSource.tests(document: document, catalog: catalog, scenarioIDs: ids) }
+        }
+        /// Checks global identity and envelope failures even when they are outside the selected conversation.
+        func reject(_ edit: (inout SiriStudioDocument) -> Void) {
+            var changed = document
+            edit(&changed)
+            #expect(throws: MacIntentTestingError.self) {
+                try SiriStudioSource.tests(document: changed, catalog: catalog, scenarioIDs: [finished.id])
+            }
+        }
+        reject { $0.scenarios[1].id = finished.id }
+        reject { $0.scenarios[1].turns[0].id = finished.turns[0].id }
+        reject { $0.scenarios[1].scenarioExpectations.calls = [.init(id: finished.id, actionIdentifier: "Unknown")] }
+        reject { $0.bundleIdentifier = "another.app" }
+        reject { $0.version += 1 }
+        reject { $0.appLaunchArguments = ["bad\nargument"] }
+        reject { $0.scenarios += (0..<200).map { _ in SiriStudioScenario(name: "Draft") } }
+    }
+
     /// Confirms all four checked-in scenarios generate the known stand-alone Swift file.
     @Test func fixtureGeneratesGoldenSwiftFromCompiledCatalog() throws {
         let document = try SiriStudioDocument.read(from: Self.root.appending(path: "examples/SiriStudioSample/scenarios.json"))

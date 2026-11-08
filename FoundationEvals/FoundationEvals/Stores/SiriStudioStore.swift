@@ -37,10 +37,19 @@ import Observation
         catch { return error.localizedDescription }
     }
 
-    /// Gives immediate feedback using the same rules as CLI export and execution.
+    /// Checks the chosen conversation without letting other unfinished drafts block its run or export.
     var validationError: String? {
+        guard let selection else { return "Choose a conversation." }
+        return validationIssue(scenarioIDs: [selection])
+    }
+
+    /// Keeps Run all and Export all strict about every conversation in the document.
+    var allValidationError: String? { validationIssue(scenarioIDs: nil) }
+
+    /// Shares scope-aware content and document-wide safety rules with CLI export and execution.
+    private func validationIssue(scenarioIDs: Set<UUID>?) -> String? {
         guard let document, let catalog else { return "Choose a built macOS app." }
-        do { try SiriStudioValidation.validate(document, catalog: catalog); return nil }
+        do { try SiriStudioValidation.validate(document, catalog: catalog, scenarioIDs: scenarioIDs); return nil }
         catch { return error.localizedDescription }
     }
 
@@ -93,6 +102,7 @@ import Observation
         try save()
         guard let document else { return }
         if swift {
+            guard all || selection != nil else { throw MacIntentTestingError("Choose a conversation.") }
             try Data(SiriStudioSource.tests(document: document, catalog: catalog,
                 scenarioIDs: all ? nil : selection.map { Set([$0]) }).utf8).write(to: url, options: .atomic)
         } else { try document.write(to: url) }
@@ -118,10 +128,11 @@ import Observation
         do {
             try save()
             guard let document else { return }
+            let selection = all ? nil : self.selection.map { Set([$0]) }
+            try SiriStudioValidation.validate(document, catalog: catalog, scenarioIDs: selection)
             let configuration = MacIntentRunConfiguration(developerDirectory: URL(filePath: developer),
                 signingIdentity: identity, teamIdentifier: team, outputDirectory: newRunDirectory(),
                 appLaunchArguments: try MacIntentRunConfiguration.validatedAppLaunchArguments(appLaunchArguments))
-            let selection = all ? nil : self.selection.map { Set([$0]) }
             let span = telemetry?.begin(.siriStudioRun)
             begin {
                 var failure: TelemetryFailure?

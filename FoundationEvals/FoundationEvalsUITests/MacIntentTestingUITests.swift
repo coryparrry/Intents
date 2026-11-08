@@ -147,6 +147,7 @@ final class MacIntentTestingUITests: XCTestCase {
         app.launch()
         try openWorkspace(in: app, fixture: fixture)
         chooseMode("Siri Studio", in: app)
+        choosePage("Conversations", in: app)
         let reopened = app.descendants(matching: .any)["siri-studio-utterance-2"].firstMatch
         XCTAssertTrue(reopened.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(reopened.value as? String, "What is its status?")
@@ -212,6 +213,10 @@ final class MacIntentTestingUITests: XCTestCase {
         resultPicker.click()
         app.menuItems[try XCTUnwrap(scenarios.first?["name"] as? String)].click()
         XCTAssertTrue(app.staticTexts.matching(plain).firstMatch.exists)
+        app.menuButtons["siri-studio-advanced"].click()
+        XCTAssertTrue(app.menuItems["Export Swift…"].isEnabled, "The finished conversation must remain exportable beside an unfinished draft")
+        XCTAssertFalse(app.menuItems["Export all scenarios as Swift…"].isEnabled, "Export all still validates unfinished drafts")
+        app.typeKey(.escape, modifierFlags: [])
         var currentOnly = authored
         var replacement = try XCTUnwrap(scenarios.first)
         replacement["id"] = UUID().uuidString
@@ -263,15 +268,65 @@ final class MacIntentTestingUITests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: saved), invalid)
     }
 
+    /// Explains a rejected older app, preserves that selection when cancelling, and guides an updated build into setup.
+    @MainActor
+    func testAppSelectionExplainsMissingActionsAndGuidesRecovery() throws {
+        continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "siri-app-selection")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let fixture = try makeCatalogFixture(in: storage)
+        let older = storage.appending(path: "OlderApp.app")
+        try FileManager.default.moveItem(at: fixture, to: older)
+        try FileManager.default.removeItem(at: older.appending(path: "Contents/Resources/Metadata.appintents"))
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.appending(path: "Workspace").path,
+                                "--evaluation-window-width", "1250", "--evaluation-window-height", "880"]
+        app.launch()
+        defer { app.terminate() }
+        try openWorkspace(in: app, fixture: older)
+        chooseMode("Siri Studio", in: app)
+        let issue = app.descendants(matching: .any)["siri-studio-app-selection-error"].firstMatch
+        XCTAssertTrue(issue.waitForExistence(timeout: 5), app.debugDescription)
+        let name = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "OlderApp", "OlderApp")
+        XCTAssertTrue(app.staticTexts.matching(name).firstMatch.exists)
+        for title in ["Build your updated Mac app", "Install that build", "Choose the updated app here"] {
+            let copy = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", title, title)
+            XCTAssertTrue(app.staticTexts.matching(copy).firstMatch.exists, app.debugDescription)
+        }
+        app.buttons["mac-intent-choose-app"].click()
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5))
+        sheet.buttons["Cancel"].click()
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(issue.exists, "Cancelling another choice must retain the rejected app and its next steps")
+        let updated = try makeCatalogFixture(in: storage.appending(path: "Updated"))
+        chooseAppFile(updated, in: app)
+        XCTAssertTrue(issue.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["siri-studio-setup-status"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["Write a conversation"].click()
+        XCTAssertTrue(app.textViews["siri-studio-utterance-1"].waitForExistence(timeout: 5))
+        let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        attachment.name = "App selection guided recovery"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     /// Opens the app workspace and loads synthetic catalog metadata without executing an intent.
     @MainActor
     private func openWorkspace(in app: XCUIApplication, fixture: URL) throws {
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show App Intent Testing"].click()
-        let choose = app.buttons["Choose built macOS app…"]
+        chooseAppFile(fixture, in: app)
+    }
+
+    /// Selects the app through the real file importer and waits for its native sheet to close.
+    @MainActor
+    private func chooseAppFile(_ fixture: URL, in app: XCUIApplication) {
+        let choose = app.buttons["mac-intent-choose-app"]
         XCTAssertTrue(choose.waitForExistence(timeout: 5))
         choose.click()
+        XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: 5))
         app.typeKey("g", modifierFlags: [.command, .shift])
         let path = app.sheets.textFields.firstMatch
         XCTAssertTrue(path.waitForExistence(timeout: 5))
@@ -280,6 +335,7 @@ final class MacIntentTestingUITests: XCTestCase {
         let open = app.sheets.buttons["Open"].firstMatch
         XCTAssertTrue(open.waitForExistence(timeout: 5))
         open.click()
+        XCTAssertTrue(app.sheets.firstMatch.waitForNonExistence(timeout: 5))
     }
 
     /// Reveals the control's click point, allowing native focus rectangles to extend beyond the scroll content.

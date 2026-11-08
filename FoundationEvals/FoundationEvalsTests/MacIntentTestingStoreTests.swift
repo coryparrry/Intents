@@ -4,6 +4,58 @@ import Testing
 @testable import FoundationEvals
 
 @MainActor struct MacIntentTestingStoreTests {
+    /// Keeps selected export and validation available while an unrelated draft remains incomplete.
+    @Test func finishedSiriConversationCanExportAlongsideAnIncompleteDraft() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let studio = SiriStudioStore(session: NativeTestSession(), root: directory)
+        let catalog = MacIntentCatalog(bundleIdentifier: "example.Finished", appURL: URL(filePath: "/Finished.app"),
+            actions: [.init(id: "Open", title: "Open", parameters: [])])
+        studio.load(catalog)
+        let finished = SiriStudioScenario(name: "Finished", turns: [.init(utterance: "Open my app",
+            expectations: .init(calls: [.init(actionIdentifier: "Open")]))])
+        let draft = SiriStudioScenario(name: "Unfinished")
+        studio.document = .init(bundleIdentifier: catalog.bundleIdentifier, scenarios: [finished, draft])
+        studio.selection = finished.id
+        #expect(studio.validationError == nil)
+        #expect(studio.allValidationError != nil)
+        let output = directory.appending(path: "Selected.swift")
+        try studio.export(output, swift: true)
+        let source = try String(contentsOf: output, encoding: .utf8)
+        #expect(source.contains(finished.id.uuidString) && !source.contains(draft.id.uuidString))
+        let saved = try SiriStudioDocument.read(from: directory.appending(path: "Scenarios/example.Finished.json"))
+        #expect(saved.scenarios == [finished, draft])
+        #expect(throws: (any Error).self) { try studio.export(output, swift: true, all: true) }
+        studio.selection = draft.id
+        #expect(studio.validationError != nil)
+        #expect(throws: (any Error).self) { try studio.export(output, swift: true) }
+        studio.selection = nil
+        #expect(throws: (any Error).self) { try studio.export(output, swift: true) }
+        #expect(try String(contentsOf: output, encoding: .utf8) == source)
+    }
+
+    /// Retains the rejected app’s name and classified failure, then clears the failure after choosing a valid build.
+    @Test func failedAppSelectionRetainsNameAndRecoversWithUpdatedBuild() async {
+        let model = MacIntentTestingStore(catalogLoader: { app in
+            if app.lastPathComponent == "Older.app" {
+                throw MacIntentTestingError("This build has no Siri actions.", code: .missingActions)
+            }
+            return .init(bundleIdentifier: "example.Selection", appURL: app,
+                actions: [.init(id: "Open", title: "Open", parameters: [])])
+        })
+        let older = URL(filePath: "/Applications/Older.app")
+        model.load(appURL: older)
+        await model.waitForLoad()
+        #expect(model.selectedAppURL == older && model.appSelectionIssue == .missingActions)
+        #expect(model.catalog == nil && model.diagnostic != nil)
+        let updated = URL(filePath: "/Applications/Updated.app")
+        model.load(appURL: updated)
+        await model.waitForLoad()
+        #expect(model.selectedAppURL == updated && model.catalog?.appURL == updated)
+        #expect(model.appSelectionIssue == nil && model.diagnostic == nil)
+        await model.closeAndWait()
+    }
+
     /// Rejects saved-run counters that could overflow or allocate excessive result columns, preserving the previous run.
     @Test func savedSiriRunsRequireBoundedRepeatCounters() throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

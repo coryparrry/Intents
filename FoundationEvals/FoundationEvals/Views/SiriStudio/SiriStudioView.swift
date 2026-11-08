@@ -73,12 +73,11 @@ struct SiriStudioView: View {
             ToolbarItem(placement: .primaryAction) { runControls }
         }
         .onChange(of: catalog?.productIdentity, initial: true) { _, identity in
-            if identity != nil { native.detectSiriSetup() }
+            if identity != nil { native.detectSiriSetup(); page = .setup }
         }
         .onChange(of: studio.document?.bundleIdentifier, initial: true) { _, bundle in
             if bundle != nil {
                 if studio.document?.scenarios.isEmpty == true { addScenario() }
-                page = .conversations
             }
         }
         .onChange(of: studio.selection) { _, _ in turnID = nil }
@@ -100,8 +99,9 @@ struct SiriStudioView: View {
         VStack(alignment: .leading, spacing: 8) {
             WorkspacePageHeader("App Intents", subtitle: catalog.map {
                 "\($0.appURL.deletingPathExtension().lastPathComponent) · \(studio.document?.scenarios.count ?? 0) conversations"
-            } ?? "Test your app’s actions with a Siri conversation.")
-            ForEach(Array(Set([native.diagnostic, studio.diagnostic].compactMap { $0 })).sorted(), id: \.self) { issue in
+            } ?? native.selectedAppURL.map { "Selected: \($0.deletingPathExtension().lastPathComponent)" }
+              ?? "Test your app’s actions with a Siri conversation.")
+            ForEach(Array(Set([selectionFailed ? nil : native.diagnostic, studio.diagnostic].compactMap { $0 })).sorted(), id: \.self) { issue in
                 Label(issue, systemImage: "exclamationmark.circle")
                     .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                     .accessibilityIdentifier("siri-studio-diagnostic")
@@ -124,16 +124,70 @@ struct SiriStudioView: View {
         }
     }
 
-    /// Gives the empty workspace a complete, actionable start state instead of an isolated file picker.
+    /// Explains eligibility, preserves a rejected selection, and gives concrete next steps before setup.
     private var chooseAppState: some View {
-        VStack(spacing: 14) {
-            WorkspaceEmptyState(symbol: "app.badge.checkmark", title: "Test your app with Siri",
-                detail: "Choose a built Mac app, write a conversation, then run it and review what Siri did.")
-            Button("Choose built macOS app…") { chooseApp() }.buttonStyle(.borderedProminent)
+        ScrollView {
+        VStack(alignment: .leading, spacing: 20) {
+            if selectionFailed {
+                Label(native.appSelectionIssue == .missingActions
+                    ? "\(selectedAppName) doesn’t include Siri actions"
+                    : "We couldn’t inspect \(selectedAppName)", systemImage: "exclamationmark.triangle")
+                    .font(.title2.weight(.semibold))
+                    .accessibilityIdentifier("siri-studio-app-selection-error")
+                Text(native.appSelectionIssue == .missingActions
+                    ? "This copy cannot be tested yet. An older app in Applications may not include the actions you just added to your project."
+                    : "Choose the updated Mac .app itself. If access was denied, choose it again to allow Intents to read its Siri actions.")
+                appGuideStep(1, "Build your updated Mac app", "Open your project in Xcode and build the Mac target with its Siri actions.")
+                appGuideStep(2, "Install that build", "Copy the updated app to Applications, replacing the older copy. Open it once, then quit it.")
+                appGuideStep(3, "Choose the updated app here", "We’ll inspect its actions and check Xcode and signing for you.")
+            } else {
+                Label("Test your app with Siri", systemImage: "app.badge.checkmark").font(.title2.weight(.semibold))
+                Text("Start with a Mac app you’re developing that includes Siri actions. An app without those actions cannot be tested here.")
+                appGuideStep(1, "Choose your updated app", "Use the Mac build with your latest Siri actions, installed in Applications.")
+                appGuideStep(2, "Follow Setup", "We check Xcode and signing automatically and show the next action you need to take.")
+                appGuideStep(3, "Write a conversation and run it", "Describe what you would say to Siri. Results shows the actions and replies.")
+            }
+            HStack {
+                Button(selectionFailed ? "Choose another app…" : "Choose app…") { chooseApp() }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("mac-intent-choose-app")
+                    .disabled(busy)
+                if let url = native.selectedAppURL, selectionFailed {
+                    Button("Check \(selectedAppName) again") { native.load(appURL: url) }.disabled(busy)
+                }
+                if selectionFailed, let xcode = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode") {
+                    Button("Open Xcode") { NSWorkspace.shared.open(xcode) }
+                }
+            }
+            if selectionFailed && showsAdvanced, let detail = native.diagnostic {
+                Text(detail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
         }
-        .padding(24)
+        .accessibilityElement(children: .contain)
+        .padding(28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .workspaceSurface()
+    }
+
+    /// Retains the chosen name while a catalog is unavailable, including loading and failure states.
+    private var selectedAppName: String { native.selectedAppURL?.deletingPathExtension().lastPathComponent ?? "This app" }
+
+    /// Distinguishes a failed inspection from an empty workspace or an explicitly cancelled load.
+    private var selectionFailed: Bool {
+        catalog == nil && !native.isLoading && native.selectedAppURL != nil && native.diagnostic != nil
+    }
+
+    /// Presents one short, numbered instruction using the workspace’s standard text styles.
+    private func appGuideStep(_ number: Int, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("\(number)").font(.headline).frame(width: 24)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).fontWeight(.semibold)
+                Text(detail).font(.callout).foregroundStyle(.secondary)
+            }
+        }
     }
 
     /// Keeps the item list beside a focused editor, using the suite workspace's existing surfaces.
@@ -216,7 +270,10 @@ struct SiriStudioView: View {
     /// Keeps runtime prerequisites and manual overrides on a dedicated setup page.
     @ViewBuilder private var setupPage: some View {
         if let catalog {
+            Text("We check Xcode and signing for you. Complete the next step below, then open Conversations. You can write a conversation while finishing setup.")
+                .font(.callout).foregroundStyle(.secondary)
             SiriStudioSetupView(native: native, catalog: catalog, showsAdvanced: showsAdvanced)
+            Button("Write a conversation", systemImage: "text.bubble") { page = .conversations }
             if showsAdvanced { signing.padding(20).workspaceSurface() }
         }
     }
@@ -256,7 +313,7 @@ struct SiriStudioView: View {
             Button("Test an action directly") { perform { try studio.save(); showDirectAction() } }.disabled(busy)
             Divider()
             Button("Export Swift…") { export(swift: true) }.disabled(busy || studio.validationError != nil || !hasSelectedDraft)
-            Button("Export all scenarios as Swift…") { export(swift: true, all: true) }.disabled(busy || studio.validationError != nil)
+            Button("Export all scenarios as Swift…") { export(swift: true, all: true) }.disabled(busy || studio.allValidationError != nil)
             Button("Open scenario document…") { open(.document) }.disabled(busy || catalog == nil)
             Button("Export scenario document…") { export(swift: false) }.disabled(busy || studio.document == nil)
             Button("Import result bundle…") { open(.result) }.disabled(busy || studio.document == nil)
@@ -267,7 +324,8 @@ struct SiriStudioView: View {
             }
             Divider()
             Button("Run all conversations") { start(all: true) }
-                .disabled(busy || prerequisite != nil || studio.validationError != nil)
+                .help(studio.allValidationError ?? prerequisite ?? "Run every conversation")
+                .disabled(busy || prerequisite != nil || studio.allValidationError != nil)
         }
         .accessibilityIdentifier("siri-studio-advanced")
     }

@@ -1,9 +1,12 @@
 import Foundation
 
 public struct MacIntentTestingError: LocalizedError, Sendable {
+    /// Identifies actionable app-selection failures without inspecting localized message text.
+    public enum Code: Sendable, Equatable { case notMacApplication, missingActions, unreadableActions, unsupportedActions }
     public let message: String
+    public let code: Code?
     /// Retains the explanation presented for a native intent testing failure.
-    public init(_ message: String) { self.message = message }
+    public init(_ message: String, code: Code? = nil) { self.message = message; self.code = code }
     public var errorDescription: String? { message }
 }
 

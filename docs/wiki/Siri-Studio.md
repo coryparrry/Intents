@@ -12,8 +12,13 @@ runs an action with the inputs you supply.
    Existing intents can keep their earlier deployment support with a
    `@available(macOS 27.3, *)` extension conforming to `ToolIntent`.
    Install the app, open it once to register it, and quit it before testing.
-2. Open **App Intents** and choose the installed build. The workspace prepares
-   your first conversation automatically, or reopens the app’s saved conversations.
+2. Open **App Intents → Choose app…** and choose that installed build.
+   The page explains which apps work here. If a selected build has no Siri
+   actions, it keeps the app’s name visible and explains how to build, install,
+   and choose an updated copy. An older copy in Applications may not include
+   changes you just made in Xcode. Use **Check … again** after replacing it.
+   A successful choice opens **Setup**, checks Xcode and signing automatically,
+   and prepares your first conversation or reopens the app’s saved conversations.
 3. Use the **Conversations** toolbar tab. Select a conversation in the list on
    the left, then write its messages in the focused editor. Mention the app in
    the first message and use **Add turn** for follow-ups.
@@ -98,8 +103,13 @@ the Mac unlocked and let the test finish without using Siri or the subject app
 during the run. Siri can use Private Cloud Compute and is subject to usage limits.
 
 Use **Run** for one scenario, or **Advanced → Run all conversations** for all scenarios.
-All conversations must be valid before Run or Swift export. Finish incomplete
-drafts or delete them before running another conversation.
+**Run** and **Export Swift…** validate only the selected conversation’s content,
+so another unfinished draft does not block a finished conversation. Both drafts
+remain saved. **Run all conversations** and **Export all scenarios as Swift…**
+require every conversation to be complete. App identity, document version,
+shared launch arguments, and authored-ID uniqueness are checked document-wide.
+The CLI’s `--scenario UUID` uses the same selected-conversation rules; `siri
+validate` continues to check the whole document.
 Use repeats to see whether results vary. **Cancel** stops the owned test and
 retains available evidence. The [Siri Evaluations reference](https://developer.apple.com/documentation/sirievaluations)
 describes Apple's grading.

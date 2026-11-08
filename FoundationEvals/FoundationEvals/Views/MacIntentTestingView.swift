@@ -54,6 +54,7 @@ struct MacIntentTestingView: View {
                 Text("Choose the Mac app you want to test. We’ll check the setup for you.")
             }
             Button(model.catalog == nil ? "Choose built macOS app…" : "Change app…") { choosingApp = true }
+                .accessibilityIdentifier("mac-intent-choose-app")
                 .accessibilityLabel("Choose built macOS app…")
                 .buttonStyle(.bordered)
                 .disabled(model.isRunning || model.siri.isBusy)

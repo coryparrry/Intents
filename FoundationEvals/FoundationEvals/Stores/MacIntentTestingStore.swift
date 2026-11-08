@@ -15,6 +15,8 @@ import Observation
     private(set) var isLoading = false
     private(set) var result: MacIntentRunResult?
     private(set) var diagnostic: String?
+    private(set) var selectedAppURL: URL?
+    private(set) var appSelectionIssue: MacIntentTestingError.Code?
     let siri: SiriStudioStore
     let siriSetup: SiriStudioSetupStore
     @ObservationIgnored private let runner: MacIntentRunner
@@ -22,6 +24,7 @@ import Observation
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var catalogLoadID: UUID?
     @ObservationIgnored private var isClosing = false
+    @ObservationIgnored private var appAccessURL: URL?
     @ObservationIgnored private let telemetry: TelemetryController?
     @ObservationIgnored private let catalogLoader: @Sendable (URL) async throws -> MacIntentCatalog
     @ObservationIgnored private let runOverride: (@MainActor (MacIntentCatalog, [MacIntentTestCase], MacIntentRunConfiguration) async throws -> MacIntentRunResult)?
@@ -59,6 +62,10 @@ import Observation
         siriSetup.clear()
         let previous = loadTask
         previous?.cancel()
+        let previousAccess = appAccessURL
+        appAccessURL = appURL.startAccessingSecurityScopedResource() ? appURL : nil
+        selectedAppURL = appURL
+        appSelectionIssue = nil
         let loadID = UUID()
         catalogLoadID = loadID
         isLoading = true
@@ -74,6 +81,7 @@ import Observation
                 }
             }
             await previous?.value
+            previousAccess?.stopAccessingSecurityScopedResource()
             do {
                 try Task.checkCancellation()
                 let loaded = try await catalogLoader(appURL)
@@ -84,6 +92,7 @@ import Observation
                 if loaded.actions.isEmpty { diagnostic = "The compiled catalog contains no supported actions." }
             } catch {
                 guard catalogLoadID == loadID, !Task.isCancelled else { return }
+                appSelectionIssue = (error as? MacIntentTestingError)?.code
                 diagnostic = error.localizedDescription
             }
         }
@@ -186,6 +195,8 @@ import Observation
         await running?.value
         await siri.closeAndWait()
         await siriSetup.closeAndWait()
+        appAccessURL?.stopAccessingSecurityScopedResource()
+        appAccessURL = nil
     }
 
     /// Waits for the current catalog load, including any cancelled predecessor it owns.

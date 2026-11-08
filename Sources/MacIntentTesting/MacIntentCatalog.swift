@@ -18,11 +18,11 @@ extension MacIntentCatalog {
               let executableName = info["CFBundleExecutable"] as? String, !executableName.isEmpty,
               executableName != ".", executableName != "..",
               !executableName.contains("/"), !executableName.contains("\0") else {
-            throw MacIntentTestingError("Choose a compiled macOS .app with a bundle identifier and executable.")
+            throw MacIntentTestingError("Choose a compiled macOS .app with a bundle identifier and executable.", code: .notMacApplication)
         }
         guard FileManager.default.fileExists(atPath: appURL.appendingPathComponent("Contents/MacOS").path),
               info["LSRequiresIPhoneOS"] as? Bool != true else {
-            throw MacIntentTestingError("Only native macOS application bundles are supported.")
+            throw MacIntentTestingError("Only native macOS application bundles are supported.", code: .notMacApplication)
         }
         let executable = appURL.appendingPathComponent("Contents/MacOS").appendingPathComponent(executableName)
             .standardizedFileURL.resolvingSymlinksInPath()
@@ -31,8 +31,15 @@ extension MacIntentCatalog {
             throw MacIntentTestingError("The app's executable must be an executable file inside its bundle.")
         }
         let metadata = appURL.appendingPathComponent("Contents/Resources/Metadata.appintents/extract.actionsdata")
-        guard let data = try? Data(contentsOf: metadata), data.count <= 16 * 1024 * 1024 else {
-            throw MacIntentTestingError("The app has no readable compiled App Intents metadata (extract.actionsdata). Rebuild it with Xcode 27.")
+        let data: Data
+        do { data = try Data(contentsOf: metadata) }
+        catch let error as CocoaError where [.fileReadNoSuchFile, .fileNoSuchFile].contains(error.code) {
+            throw MacIntentTestingError("This build does not include App Intents. Build the Mac app with your Siri actions, then choose that updated build.", code: .missingActions)
+        } catch {
+            throw MacIntentTestingError("The app’s Siri actions could not be read. Choose the app again to grant access. \(error.localizedDescription)", code: .unreadableActions)
+        }
+        guard data.count <= 16 * 1024 * 1024 else {
+            throw MacIntentTestingError("The app’s App Intents metadata is too large to inspect.", code: .unsupportedActions)
         }
         let decoded = try decode(data: data, bundleIdentifier: identifier, appURL: appURL)
         let identity = try MacIntentProductIdentity.capture(appURL)
@@ -47,7 +54,7 @@ extension MacIntentCatalog {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let version = root["version"] as? NSNumber, CFGetTypeID(version) != CFBooleanGetTypeID(), version == 1,
               let definitions = root["actions"] as? [String: Any] else {
-            throw MacIntentTestingError("Unsupported compiled App Intents metadata schema; expected version 1 and an actions object.")
+            throw MacIntentTestingError("Unsupported compiled App Intents metadata schema; expected version 1 and an actions object.", code: .unsupportedActions)
         }
         var enums: [String: [String]] = [:]
         for item in root["enums"] as? [[String: Any]] ?? [] {
@@ -82,7 +89,7 @@ extension MacIntentCatalog {
             actions.append(.init(id: id, title: title(raw["title"]) ?? id, parameters: parsed,
                                  outputType: typeName(raw["outputType"] as? [String: Any] ?? [:])))
         }
-        guard !actions.isEmpty else { throw MacIntentTestingError("The app's compiled metadata contains no App Intent definitions.") }
+        guard !actions.isEmpty else { throw MacIntentTestingError("The app's compiled metadata contains no App Intent definitions.", code: .missingActions) }
         return .init(bundleIdentifier: bundleIdentifier, appURL: appURL, actions: actions)
     }
 
