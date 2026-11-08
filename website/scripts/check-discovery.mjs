@@ -14,17 +14,17 @@ const checks = [
   ['', 'Claude-SearchBot', /text\/html/, 'Apple Foundation Models'],
   ['robots.txt', 'OAI-SearchBot', /text\/plain/, 'User-agent: *'],
   ['sitemap.xml', 'Googlebot', /(?:application|text)\/xml/, `<loc>${canonical}</loc>`],
-  ['llms.txt', 'Claude-SearchBot', /text\/plain/, 'Intents 1.5.2'],
+  ['llms.txt', 'Claude-SearchBot', /text\/plain/, 'Intents 1.6.0'],
   ['indexnow-key.txt', 'Intents IndexNow verification', /text\/plain/, indexNowKey],
   ['index.html.md', 'ChatGPT-User', /text\/(?:markdown|plain)/, '# Intents'],
-  ['getting-started.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.5.2'],
+  ['getting-started.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.6.0'],
   ['getting-started.html.md', 'Claude-SearchBot', /text\/(?:markdown|plain)/, '# Get started with Intents'],
-  ['compare.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.5.2'],
-  ['compare/apple-evaluations.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.5.2'],
+  ['compare.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.6.0'],
+  ['compare/apple-evaluations.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.6.0'],
   ['compare/foundation-evals.html', 'OAI-SearchBot', /text\/html/, 'Foundation Evals is now Intents'],
-  ['compare/apple-fm-python-sdk.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.5.2'],
-  ['guides/fm-cli-to-repeatable-evals.html', 'Claude-SearchBot', /text\/html/, 'Intents 1.5.2'],
-  ['guides/evaluate-apple-foundation-models-mac.html', 'Claude-SearchBot', /text\/html/, 'Intents 1.5.2'],
+  ['compare/apple-fm-python-sdk.html', 'OAI-SearchBot', /text\/html/, 'Intents 1.6.0'],
+  ['guides/fm-cli-to-repeatable-evals.html', 'Claude-SearchBot', /text\/html/, 'Intents 1.6.0'],
+  ['guides/evaluate-apple-foundation-models-mac.html', 'Claude-SearchBot', /text\/html/, 'Intents 1.6.0'],
   ['privacy.html', 'Googlebot', /text\/html/, 'Website privacy'],
   ['seo-check-missing-page', 'Googlebot', null, null, 404],
 ];
@@ -58,7 +58,7 @@ const results = await Promise.allSettled(checks.map(async ([path, userAgent, typ
     assert.ok(body.includes(`<link rel="canonical" href="${canonical}${path.slice(0, -5)}"`), 'Guide canonical must use its delivered public route');
   }
   if ((!path || path.endsWith('.html') || path.endsWith('.md') || path === 'llms.txt') && path !== 'privacy.html') {
-    assert.ok(body.includes('Intents 1.5.2'), `${path || '/'} must identify the current release`);
+    assert.ok(body.includes('Intents 1.6.0'), `${path || '/'} must identify the current release`);
     assert.doesNotMatch(body, /Foundation-Evals-1\.3|current download is Foundation Evals|Intents (?:v)?1\.[34]\.0/);
   }
   if (path === 'sitemap.xml' || path === 'llms.txt') {

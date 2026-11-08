@@ -2,7 +2,7 @@ COMPARE YOUR OPTIONS
 
 # Intents vs Apple’s Evaluations framework
 
-Checked 30 October 2026 · Intents 1.5.2
+Checked 30 October 2026 · Intents 1.6.0
 
 ## Short answer
 
@@ -16,7 +16,7 @@ Choose Apple Evaluations when datasets, metrics, and evaluation code belong in y
 
 Try Intents when you want to iterate on Apple model cases and inspect evidence without writing an evaluation harness for every ordinary suite. Connect a coding agent through authenticated local MCP when that fits your work.
 
-| Detail | Intents 1.5.2 | Apple Evaluations framework |
+| Detail | Intents 1.6.0 | Apple Evaluations framework |
 | --- | --- | --- |
 | Workflow | Native Mac workspace | Swift code in app test targets |
 | Authoring | Cases and scoring in the app | Typed datasets, evaluators, metrics |
@@ -54,11 +54,11 @@ Yes. Use the Mac workspace to explore cases and the framework to keep evaluation
 
 ### Do ordinary Intents model suites need Xcode?
 
-No. Xcode 27 is required for source builds and development-source Mac App Intent tests, not ordinary on-device suites.
+No. Xcode 27 is required for source builds and Mac App Intent tests, not ordinary on-device suites.
 
-## Try Intents 1.5.2
+## Try Intents 1.6.0
 
-[Download for macOS · v1.5.2](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg) · [Getting started](/getting-started)
+[Download for macOS · v1.6.0](https://github.com/coryparrry/Intents/releases/download/v1.6.0/Intents-1.6.0-macOS-arm64.dmg) · [Getting started](/getting-started)
 
 ```sh
 brew install --cask coryparrry/tap/intents
@@ -68,7 +68,7 @@ Free, MIT licensed, macOS 27+, Apple silicon. Enable Apple Intelligence and down
 
 ## Sources and corrections
 
-Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
+Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.6.0) · [User guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
 
 [All comparisons](/compare) · [Evaluate on a Mac](/guides/evaluate-apple-foundation-models-mac) · [Connect an agent](/guides/intents-mcp-coding-agents)
 

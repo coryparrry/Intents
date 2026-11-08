@@ -13,14 +13,14 @@ Intents is a free, open-source native Mac workbench for Apple Foundation Models,
 
 ## Current download and development source
 
-Intents was previously **Foundation Evals**. As checked 30 October 2026, the current published release is **v1.5.2**. Its installer and app use the Intents name.
+Intents was previously **Foundation Evals**. The current published release is **v1.6.0**. Its installer and app use the Intents name.
 
-- [Download Intents 1.5.2 for Apple silicon](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg).
-- [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.5.2).
-- [Released interface instructions](https://github.com/coryparrry/Intents/blob/v1.5.2/README.md).
+- [Download Intents 1.6.0 for Apple silicon](https://github.com/coryparrry/Intents/releases/download/v1.6.0/Intents-1.6.0-macOS-arm64.dmg).
+- [Release notes and checksums](https://github.com/coryparrry/Intents/releases/tag/v1.6.0).
+- [Released interface instructions](https://github.com/coryparrry/Intents/blob/v1.6.0/README.md).
 - [Build development source](https://github.com/coryparrry/Intents#build-from-source).
 
-The released workflow includes prompt suites, scoring, traces, saved comparisons, JSON reports, authenticated local MCP access, **Review** and **Batch runs**. Build development source to develop the app or try unshipped changes.
+Intents 1.6.0 adds document suites and instruction comparisons with reserved cases. Find both workflows in the [Getting Started guide](/getting-started#whats-new).
 
 ## First use and development workflows
 
@@ -32,7 +32,7 @@ Try “Reply with only the capital of France” and expected text “Paris”. E
 - [Runs and comparisons](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Runs-and-results.md).
 - [Review guide](https://github.com/coryparrry/Intents/blob/main/docs/EVAL_REVIEW_GUIDE.md): Human verdicts on saved outputs, confirmed failure patterns, verified regression cases, and held-out judge checks. Review and calibration do not approve a release baseline.
 - [Batch guide](https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md): Frozen datasets, resumable jobs, captured-output review, and reports retaining missing results and policy scope.
-- [Mac App Intent tests (development source)](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Mac-App-Intent-tests.md): Best-effort compiled metadata catalog, explicit JSON inputs and expected results, and a generated AppIntentsTesting runner. Requires a normally installed Mac app, Xcode 27+, macOS 27+, and matching signing teams. Live reliability remains unqualified; no Siri verification.
+- [Mac App Intent tests](https://github.com/coryparrry/Intents/blob/main/docs/wiki/Mac-App-Intent-tests.md): Best-effort compiled metadata catalog, explicit JSON inputs and expected results, and a generated AppIntentsTesting runner. Requires a normally installed Mac app, Xcode 27+, macOS 27+, and matching signing teams. Live reliability remains unqualified; no Siri verification.
 
 ## Requirements, data, and agent access
 
@@ -44,7 +44,7 @@ Suites and evidence live on the Mac. Exports can contain prompts, responses, ref
 
 ## Historical website examples
 
-The examples are HTML/CSS browser recreations, not native recordings or live execution. The Conversation behaviour report and Latest preference wins trace use a 17 September 2026 saved run, with 13 measured spans and an 18.39-second workflow. The Mac App Intent JSON contract illustrates unshipped development source. The recorded evaluation predates Review and Batch runs and does not demonstrate today’s complete UI. They do not call models or invoke App Intents. Example scores are not model benchmarks; timings are not performance guarantees.
+The examples are HTML/CSS browser recreations, not native recordings or live execution. The Conversation behaviour report and Latest preference wins trace use a 17 September 2026 saved run, with 13 measured spans and an 18.39-second workflow. The Mac App Intent JSON contract illustrates a direct action check in Intents 1.6.0. The recorded evaluation predates Review and Batch runs and does not demonstrate today’s complete UI. They do not call models or invoke App Intents. Example scores are not model benchmarks; timings are not performance guarantees.
 
 ## Contribute
 
@@ -77,11 +77,11 @@ Intents is a free, MIT-licensed native Mac workbench for Apple Foundation Models
 
 ### How do I install Intents?
 
-Download Intents 1.5.2 for Apple silicon, or run brew install --cask coryparrry/tap/intents. Requires macOS 27 or later.
+Download Intents 1.6.0 for Apple silicon, or run brew install --cask coryparrry/tap/intents. Requires macOS 27 or later.
 
 ### Do I need Xcode?
 
-Ordinary on-device suites do not need Xcode. Source builds and development-source Mac App Intent tests require Xcode 27.
+Ordinary on-device suites do not need Xcode. Source builds and Mac App Intent tests require Xcode 27.
 
 ### Can I connect a coding agent?
 
@@ -94,4 +94,4 @@ Yes. Open Intents Settings → MCP Connector and choose Connect to Codex, then r
 
 ### Is Intents related to Apple's App Intents?
 
-No. Intents is an independent evaluation app for Apple Foundation Models. Its development source includes optional Mac App Intent tests, which are unshipped.
+No. Intents is an independent evaluation app for Apple Foundation Models. App Intent Testing calls a selected action directly in a built macOS app.

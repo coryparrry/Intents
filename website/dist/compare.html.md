@@ -52,9 +52,9 @@ Intents is not a hosted production observability service or a Python-first testi
 [Apple Evaluations session](https://developer.apple.com/videos/play/wwdc2026/298/) · [Promptfoo introduction](https://www.promptfoo.dev/docs/intro/) · [Promptfoo pricing](https://www.promptfoo.dev/pricing/) · [DeepEval quickstart](https://deepeval.com/docs/getting-started) · [Braintrust docs](https://www.braintrust.dev/docs) · [Braintrust pricing](https://www.braintrust.dev/pricing). Follow each comparison for more specific sources. No ratings, star counts, or numeric prices are assumed.
 
 
-## Try Intents 1.5.2
+## Try Intents 1.6.0
 
-[Download for macOS · v1.5.2](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg) · [Getting started](/getting-started)
+[Download for macOS · v1.6.0](https://github.com/coryparrry/Intents/releases/download/v1.6.0/Intents-1.6.0-macOS-arm64.dmg) · [Getting started](/getting-started)
 
 ```sh
 brew install --cask coryparrry/tap/intents
@@ -64,7 +64,7 @@ Free, MIT licensed, macOS 27+, Apple silicon. Enable Apple Intelligence and down
 
 ## Sources and corrections
 
-Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
+Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.6.0) · [User guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
 
 [All comparisons](/compare) · [Evaluate on a Mac](/guides/evaluate-apple-foundation-models-mac) · [Connect an agent](/guides/intents-mcp-coding-agents)
 

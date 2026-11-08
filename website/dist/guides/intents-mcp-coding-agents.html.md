@@ -31,17 +31,17 @@ Restart Claude Code from that environment and use `/mcp` to inspect the connecti
 
 Ask the agent to read `eval_get_state` and `eval_workspace_state`, then describe a saved run. For advanced operations, discover the current schema with `eval_find_actions` and `eval_describe_action`. Do not guess action parameters. Authenticated clients can change evaluation data; the revisions, confirmation fields, and operation IDs in each schema matter.
 
-Ask for saved run identifiers and inspect the result in Intents. An agent proposal is not a human review verdict. Use the [MCP control guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/MCP_CONTROL_GUIDE.md) for mutation and retry semantics.
+Ask for saved run identifiers and inspect the result in Intents. An agent proposal is not a human review verdict. Use the [MCP control guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/MCP_CONTROL_GUIDE.md) for mutation and retry semantics.
 
 ## Troubleshoot the connection
 
 If no tools appear, confirm the connector is running, restart the client, and confirm the endpoint and bearer configuration. Keep credentials out of shared logs. **Remove from Codex** removes Intents’ managed block; restart Codex afterward. Do not expose this localhost connector publicly.
 
-Sources: [released Intents MCP setup](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md) and [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp).
+Sources: [released Intents MCP setup](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Codex-and-MCP.md) and [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp).
 
-## Try Intents 1.5.2
+## Try Intents 1.6.0
 
-[Download for macOS · v1.5.2](https://github.com/coryparrry/Intents/releases/download/v1.5.2/Intents-1.5.2-macOS-arm64.dmg) · [Getting started](/getting-started)
+[Download for macOS · v1.6.0](https://github.com/coryparrry/Intents/releases/download/v1.6.0/Intents-1.6.0-macOS-arm64.dmg) · [Getting started](/getting-started)
 
 ```sh
 brew install --cask coryparrry/tap/intents
@@ -51,7 +51,7 @@ Free, MIT licensed, macOS 27+, Apple silicon. Enable Apple Intelligence and down
 
 ## Sources and corrections
 
-Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.5.2) · [User guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.5.2/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
+Facts checked 30 October 2026. [Intents release](https://github.com/coryparrry/Intents/releases/tag/v1.6.0) · [User guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Home.md) · [MCP guide](https://github.com/coryparrry/Intents/blob/v1.6.0/docs/wiki/Codex-and-MCP.md). [Report a correction](https://github.com/coryparrry/Intents/issues).
 
 [All comparisons](/compare) · [Evaluate on a Mac](/guides/evaluate-apple-foundation-models-mac) · [Connect an agent](/guides/intents-mcp-coding-agents)
 
