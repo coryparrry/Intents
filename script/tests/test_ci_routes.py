@@ -54,9 +54,13 @@ class CoverageTests(unittest.TestCase):
     def test_siri_studio_selects_its_fixture_and_editor_coverage(self):
         """Changes to authored Siri samples and views select their owning contracts."""
         fixture = routes.coverage(["examples/SiriStudioSample/scenarios.json"])
-        self.assertEqual(fixture["swift_suites"], ["SiriStudioReportTests", "SiriStudioTests"])
+        self.assertEqual(fixture["swift_suites"], ["SiriStudioReportTests", "SiriStudioSetupTests", "SiriStudioTests"])
         editor = routes.coverage(["FoundationEvals/FoundationEvals/Views/SiriStudio/SiriStudioView.swift"])
         self.assertIn("MacIntentTestingUITests", str(editor["ui_matrix"]))
+        setup = routes.coverage(["FoundationEvals/FoundationEvals/Stores/SiriStudioSetupStore.swift"])
+        self.assertIn("MacIntentTestingUITests", str(setup["ui_matrix"]))
+        certificate = routes.coverage(["Tests/Fixtures/SiriStudio/SetupDevelopmentCertificate.pem"])
+        self.assertIn("SiriStudioSetupTests", certificate["swift_suites"])
 
     def test_mac_intent_unit_changes_select_the_declared_suite(self):
         with tempfile.TemporaryDirectory() as directory:

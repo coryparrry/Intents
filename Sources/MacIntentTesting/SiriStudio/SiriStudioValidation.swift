@@ -2,11 +2,14 @@ import Foundation
 
 /// Validates the same authored document for the editor, CLI, and generator.
 public enum SiriStudioValidation {
-    /// Throws the first actionable validation error, with the scenario and turn when applicable.
-    public static func validate(_ document: SiriStudioDocument, catalog: MacIntentCatalog) throws {
+    /// Checks every document identity and shared setting, then validates content only for the requested scenarios.
+    /// A nil selection validates all conversations; an explicit selection may leave other drafts unfinished.
+    public static func validate(_ document: SiriStudioDocument, catalog: MacIntentCatalog,
+                                scenarioIDs: Set<UUID>? = nil) throws {
         guard document.version == SiriStudioDocument.currentVersion else {
             throw MacIntentTestingError("Unsupported Siri Studio document version \(document.version).")
         }
+        _ = try MacIntentRunConfiguration.validatedAppLaunchArguments(document.appLaunchArguments ?? [])
         guard document.bundleIdentifier == catalog.bundleIdentifier else {
             throw MacIntentTestingError("This document belongs to \(document.bundleIdentifier), not \(catalog.bundleIdentifier).")
         }
@@ -17,10 +20,9 @@ public enum SiriStudioValidation {
         guard actions.values.allSatisfy({ $0.count == 1 }) else {
             throw MacIntentTestingError("Duplicate action identifiers in catalog.")
         }
-        var ids = Set<UUID>()
-        for scenario in document.scenarios {
+        try validateIdentities(document)
+        for scenario in try selectedScenarios(in: document, scenarioIDs) {
             do {
-                try unique(scenario.id, in: &ids)
                 guard (1..<Int.max).contains(scenario.revision), (1...10).contains(scenario.repeatCount),
                       (1...12).contains(scenario.turns.count),
                       !scenario.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -32,9 +34,8 @@ public enum SiriStudioValidation {
                 guard !scenario.metrics.isEmpty else {
                     throw MacIntentTestingError("Add at least one expectation.")
                 }
-                try validateGroup(scenario.scenarioExpectations, actions: actions, ids: &ids)
+                try validateGroup(scenario.scenarioExpectations, actions: actions)
                 if let setup = scenario.setup {
-                    try unique(setup.id, in: &ids)
                     guard setup.expectedValueJSON == nil else {
                         throw MacIntentTestingError("Setup checks only that the action succeeds. Remove its expected result.")
                     }
@@ -43,17 +44,38 @@ public enum SiriStudioValidation {
                 }
                 for (index, turn) in scenario.turns.enumerated() {
                     do {
-                        try unique(turn.id, in: &ids)
                         guard turn.utterance.utf8.count <= 1000,
                               !turn.utterance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                             throw MacIntentTestingError("Enter an utterance from 1 to 1,000 UTF-8 bytes.")
                         }
-                        try validateGroup(turn.expectations, actions: actions, ids: &ids)
+                        try validateGroup(turn.expectations, actions: actions)
                         try requireNoContradiction(turn.expectations.calls, scenario.scenarioExpectations.forbidden)
                     } catch { throw MacIntentTestingError("Turn \(index + 1): \(error.localizedDescription)") }
                 }
             } catch { throw MacIntentTestingError("\(scenario.name): \(error.localizedDescription)") }
         }
+    }
+
+    /// Keeps document-wide identity checks even when unfinished, unselected content is not executed.
+    private static func validateIdentities(_ document: SiriStudioDocument) throws {
+        var ids = Set<UUID>()
+        for scenario in document.scenarios {
+            try unique(scenario.id, in: &ids)
+            if let setup = scenario.setup { try unique(setup.id, in: &ids) }
+            for turn in scenario.turns { try unique(turn.id, in: &ids) }
+            for group in [scenario.scenarioExpectations] + scenario.turns.map(\.expectations) {
+                for call in group.calls + group.forbidden { try unique(call.id, in: &ids) }
+            }
+        }
+    }
+
+    /// Selects in authored order and rejects unknown or explicitly empty selections.
+    static func selectedScenarios(in document: SiriStudioDocument, _ ids: Set<UUID>?) throws -> [SiriStudioScenario] {
+        let selected = document.scenarios.filter { ids?.contains($0.id) ?? true }
+        guard !selected.isEmpty, ids == nil || ids?.count == selected.count else {
+            throw MacIntentTestingError("Select at least one scenario and use only IDs in this document.")
+        }
+        return selected
     }
 
     /// Verifies UUID uniqueness across all authored items.
@@ -62,10 +84,8 @@ public enum SiriStudioValidation {
     }
 
     /// Resolves calls against compiled metadata and checks expectation consistency.
-    private static func validateGroup(_ group: SiriStudioExpectations, actions: [String: [MacIntentAction]],
-                                      ids: inout Set<UUID>) throws {
+    private static func validateGroup(_ group: SiriStudioExpectations, actions: [String: [MacIntentAction]]) throws {
         for call in group.calls + group.forbidden {
-            try unique(call.id, in: &ids)
             guard let action = actions[call.actionIdentifier]?.first else {
                 throw MacIntentTestingError("Unknown action \(call.actionIdentifier).")
             }

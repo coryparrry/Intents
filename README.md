@@ -39,7 +39,7 @@ Intents is a native macOS workbench for testing Apple's Foundation Models. Creat
 | **Agent integration** | Authenticated controls for the shared workspace, evaluations, batches, review, and developer runners. [MCP guide](docs/MCP_CONTROL_GUIDE.md). |
 | **App feature runners** | A public Swift package for evaluating real app closures on a paired iPhone, iPad, or Mac. [Integration guide](docs/DEVELOPER_SWIFT_INTEGRATION.md). |
 | **App Intent tests** | Inspect a built Mac app and run JSON input/result checks with Apple AppIntentsTesting, through the native UI or `intents-native-tests`. [Setup and qualification](docs/wiki/Mac-App-Intent-tests.md). |
-| Siri Studio | Write multi-turn Siri scenarios, run them against a development-signed Mac app, and inspect which actions Siri called. [Requirements and workflow](docs/wiki/Siri-Studio.md). |
+| Siri Studio | Choose a Mac app with Siri actions and follow its setup guide, then run a finished conversation while other drafts remain incomplete. Conversations, Results, and Setup follow the evaluation editor flow; technical controls are under Advanced. [Requirements and workflow](docs/wiki/Siri-Studio.md). |
 
 ## Install
 

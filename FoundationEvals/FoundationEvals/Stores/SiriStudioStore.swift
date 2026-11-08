@@ -11,6 +11,12 @@ import Observation
         }
     }
     var selection: UUID?
+    var appLaunchArgumentsText = "" {
+        didSet {
+            guard !isAdopting, document != nil else { return }
+            document?.appLaunchArguments = appLaunchArguments.isEmpty ? nil : appLaunchArguments
+        }
+    }
     private(set) var run: SiriStudioRunRecord?
     private(set) var diagnostic: String?
     private(set) var isBusy = false
@@ -41,10 +47,30 @@ import Observation
         let needsSave: Bool
     }
 
-    /// Gives immediate feedback using the same rules as CLI export and execution.
+    /// Parses one literal argument per line without shell splitting, expansion, or quoting rules.
+    var appLaunchArguments: [String] {
+        appLaunchArgumentsText.components(separatedBy: .newlines).filter { !$0.isEmpty }
+    }
+
+    /// Explains invalid app arguments while leaving scenario authoring and export available.
+    var launchArgumentsError: String? {
+        do { _ = try MacIntentRunConfiguration.validatedAppLaunchArguments(appLaunchArguments); return nil }
+        catch { return error.localizedDescription }
+    }
+
+    /// Checks the chosen conversation without letting other unfinished drafts block its run or export.
     var validationError: String? {
+        guard let selection else { return "Choose a conversation." }
+        return validationIssue(scenarioIDs: [selection])
+    }
+
+    /// Keeps Run all and Export all strict about every conversation in the document.
+    var allValidationError: String? { validationIssue(scenarioIDs: nil) }
+
+    /// Shares scope-aware content and document-wide safety rules with CLI export and execution.
+    private func validationIssue(scenarioIDs: Set<UUID>?) -> String? {
         guard let document, let catalog else { return "Choose a built macOS app." }
-        do { try SiriStudioValidation.validate(document, catalog: catalog); return nil }
+        do { try SiriStudioValidation.validate(document, catalog: catalog, scenarioIDs: scenarioIDs); return nil }
         catch { return error.localizedDescription }
     }
 
@@ -61,7 +87,7 @@ import Observation
             guard let catalog else {
                 isAdopting = true
                 document = nil; saved = nil; needsSave = false; run = nil; diagnostic = nil; selection = nil
-                self.catalog = nil
+                self.catalog = nil; appLaunchArgumentsText = ""
                 isAdopting = false
                 return
             }
@@ -89,6 +115,7 @@ import Observation
                 if revised != opened {
                     isAdopting = true
                     document = recovery.document; saved = recovery.saved; needsSave = recovery.needsSave
+                    appLaunchArgumentsText = recovery.document.appLaunchArguments?.joined(separator: "\n") ?? ""
                     selection = recovery.document.scenarios.first?.id
                     isAdopting = false
                 }
@@ -99,6 +126,7 @@ import Observation
     /// Persists edits while preserving unchanged bytes and incrementing each edited scenario once.
     func save() throws {
         guard var current = document else { return }
+        current.appLaunchArguments = appLaunchArguments.isEmpty ? nil : appLaunchArguments
         if let saved { current.updateRevisions(from: saved) }
         let url = try documentURL(current.bundleIdentifier)
         guard needsSave || current != saved || !FileManager.default.fileExists(atPath: url.path) else {
@@ -134,6 +162,7 @@ import Observation
         try save()
         guard let document else { return }
         if swift {
+            guard all || selection != nil else { throw MacIntentTestingError("Choose a conversation.") }
             try Data(SiriStudioSource.tests(document: document, catalog: catalog,
                 scenarioIDs: all ? nil : selection.map { Set([$0]) }).utf8).write(to: url, options: .atomic)
         } else { try document.write(to: url) }
@@ -159,9 +188,11 @@ import Observation
         do {
             try save()
             guard let document else { return }
-            let configuration = MacIntentRunConfiguration(developerDirectory: URL(filePath: developer),
-                signingIdentity: identity, teamIdentifier: team, outputDirectory: newRunDirectory())
             let selection = all ? nil : self.selection.map { Set([$0]) }
+            try SiriStudioValidation.validate(document, catalog: catalog, scenarioIDs: selection)
+            let configuration = MacIntentRunConfiguration(developerDirectory: URL(filePath: developer),
+                signingIdentity: identity, teamIdentifier: team, outputDirectory: newRunDirectory(),
+                appLaunchArguments: try MacIntentRunConfiguration.validatedAppLaunchArguments(appLaunchArguments))
             let span = telemetry?.begin(.siriStudioRun)
             begin {
                 var failure: TelemetryFailure?
@@ -205,6 +236,12 @@ import Observation
         guard opened.document.bundleIdentifier == catalog?.bundleIdentifier else {
             throw MacIntentTestingError("This run belongs to a different app.")
         }
+        guard opened.scenarios.allSatisfy({ result in
+            (0...10).contains(result.attempted) && result.reports.count <= 10
+                && result.reports.allSatisfy { (0..<10).contains($0.repeatIndex) }
+        }) else {
+            throw MacIntentTestingError("This saved run has invalid repeat counts. Expected at most 10 repeats.")
+        }
         run = opened; selection = opened.scenarios.first?.id ?? selection; diagnostic = nil
     }
 
@@ -212,7 +249,8 @@ import Observation
     func isStale(_ result: SiriStudioScenarioResult) -> Bool {
         let frozen = run?.document.scenarios.first { $0.id == result.id }
         let current = document?.scenarios.first { $0.id == result.id }
-        return current?.revision != result.revision || frozen != current
+        let argumentsChanged = run?.appLaunchArguments.map { $0 != appLaunchArguments } ?? false
+        return argumentsChanged || current?.revision != result.revision || frozen != current
     }
 
     /// Displays a local diagnostic without sending it to telemetry.
@@ -244,6 +282,7 @@ import Observation
     private func adopt(_ document: SiriStudioDocument) {
         isAdopting = true
         self.document = document; saved = document; selection = document.scenarios.first?.id
+        appLaunchArgumentsText = document.appLaunchArguments?.joined(separator: "\n") ?? ""
         isAdopting = false
     }
 

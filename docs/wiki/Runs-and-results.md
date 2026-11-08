@@ -53,6 +53,10 @@ Under **Runs → Compare runs → Instruction experiments**, select **New Experi
 
 To generate suggestions, choose **Improve instructions** in **Runs → Compare runs → Instruction experiments** or **Setup → Instructions**. Intents tries two alternatives on Practice cases. If a suggestion improves the Practice pass rate, Intents compares the best suggestion with the original on reserved Final check cases. Review the comparison before applying any changes. [Improve suite instructions](../instruction-improvement.md).
 
+To generate suggestions, choose **Improve instructions** in **Compare → Instruction experiments** or **Setup → Instructions**. Intents tries two alternatives on Practice cases. If a suggestion improves the Practice pass rate, Intents compares the best suggestion with the original on reserved Final check cases. Review the comparison before applying any changes. [Improve suite instructions](../instruction-improvement.md).
+
+In **Comparison details**, runner messages call Practice **Development** and Final check **Held-out**.
+
 ## Approve a baseline or read release requirements
 
 1. Open a saved run's **Report → Review and approval**.

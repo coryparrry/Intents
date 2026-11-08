@@ -1,6 +1,6 @@
 # Test Mac App Intents
 
-Use **Direct Action** for the workflow below. For multi-turn tests of Siri’s
+Use **App Intents → Advanced → Test an action directly** for the workflow below. For multi-turn tests of Siri’s
 action choices and replies, switch to [Siri Studio](Siri-Studio.md).
 
 Use **App Intents** in Intents, or the `intents-native-tests` command, to
@@ -28,6 +28,10 @@ after rebuilding or replacing the selected app.
 Selecting an app inspects its bundle in the background. **Inspecting built app…**
 shows progress, and **Cancel** stops that inspection. Choosing another app cancels
 the earlier inspection before loading the new selection.
+The selected app must actually contain its compiled actions. An older installed
+copy may lack actions added to your project; build and install the updated Mac
+app before selecting it. Siri Studio retains a rejected app’s name and provides
+a recovery guide instead of returning to an unexplained empty chooser.
 
 Intents reads compiled App Intents metadata to produce a best-effort catalog.
 Missing metadata or an unsupported declaration may leave an action unavailable.

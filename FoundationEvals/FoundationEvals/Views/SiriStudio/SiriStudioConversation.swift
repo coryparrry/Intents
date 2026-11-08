@@ -7,14 +7,13 @@ struct SiriStudioConversation: View {
     let actions: [MacIntentAction]
     @Binding var turnID: UUID?
     @State private var pendingRemoval: SiriStudioTurn?
+    let showsAdvanced: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Conversation").font(.headline)
-            TextField("Scenario name", text: $scenario.name).textFieldStyle(.roundedBorder)
+            TextField("Conversation name", text: $scenario.name).font(.title3.weight(.semibold)).textFieldStyle(.plain)
                 .accessibilityIdentifier("siri-studio-scenario-name")
-            Stepper("Repeats: \(scenario.repeatCount)", value: $scenario.repeatCount, in: 1...10)
-            Text("Name the app in the request when Siri needs to find it in the background.")
+            Text("Mention your app in the first message, then add follow-ups as needed.")
                 .font(.caption).foregroundStyle(.secondary)
             ForEach($scenario.turns) { $turn in
                 VStack(alignment: .leading, spacing: 6) {
@@ -27,24 +26,31 @@ struct SiriStudioConversation: View {
                             .labelStyle(.iconOnly).buttonStyle(.borderless)
                             .disabled(scenario.turns.count <= 1)
                     }
-                    TextField("What should the user say?", text: $turn.utterance, axis: .vertical)
-                        .textFieldStyle(.roundedBorder).lineLimit(2...5)
+                    TextEditor(text: $turn.utterance)
+                        .workspaceTextWell(minHeight: 84)
+                        .accessibilityLabel("What to say in turn \(ordinal(turn.id))")
                         .accessibilityIdentifier("siri-studio-utterance-\(ordinal(turn.id))")
+                    if showsAdvanced && active(turn.id) {
+                        SiriStudioExpectationEditor(group: $turn.expectations, actions: actions, allowsReply: true)
+                    } else {
+                        expectedActions($turn.expectations, for: turn.id)
+                    }
                 }
-                .padding(8)
-                .background(active(turn.id) ? Color.accentColor.opacity(0.10) : Color.secondary.opacity(0.06),
-                            in: RoundedRectangle(cornerRadius: 8))
+                .padding(.vertical, 6)
             }
             Button("Add turn", systemImage: "plus") {
                 let turn = SiriStudioTurn()
                 scenario.turns.append(turn); turnID = turn.id
             }.disabled(scenario.turns.count >= 12)
-            Divider()
-            DisclosureGroup("Scenario-wide expectations") {
-                SiriStudioExpectationEditor(group: $scenario.scenarioExpectations, actions: actions, allowsReply: false)
-                    .padding(.top, 6)
+            if showsAdvanced {
+                Divider()
+                Stepper("Repeats: \(scenario.repeatCount)", value: $scenario.repeatCount, in: 1...10)
+                DisclosureGroup("Scenario-wide expectations") {
+                    SiriStudioExpectationEditor(group: $scenario.scenarioExpectations, actions: actions, allowsReply: false)
+                        .padding(.top, 6)
+                }
+                DisclosureGroup("Before each repeat") { setup.padding(.top, 6) }
             }
-            DisclosureGroup("Before each repeat") { setup.padding(.top, 6) }
         }
         .confirmationDialog("Remove this turn and its expectations?", isPresented: Binding(
             get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }
@@ -56,6 +62,31 @@ struct SiriStudioConversation: View {
         } message: { turn in
             Text("The request ‘\(turn.utterance)’ and all its required calls, forbidden calls, and reply checks will be removed.")
         }
+    }
+
+    /// Selects expected actions by their user-facing names while preserving every saved argument and result constraint.
+    private func expectedActions(_ group: Binding<SiriStudioExpectations>, for id: UUID) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(group.calls) { call in
+                HStack {
+                    Text("Siri should: " + (actions.first { $0.id == call.wrappedValue.actionIdentifier }?.title ?? call.wrappedValue.actionIdentifier))
+                        .font(.callout)
+                    Spacer()
+                    Button("Remove expected action", systemImage: "xmark.circle") {
+                        let removed = call.wrappedValue.id
+                        group.wrappedValue.calls.removeAll { $0.id == removed }
+                    }
+                    .labelStyle(.iconOnly).buttonStyle(.borderless)
+                }
+            }
+            Menu(group.wrappedValue.calls.isEmpty ? "Choose expected action" : "Add expected action") {
+                ForEach(actions) { action in
+                    Button(action.title) { group.wrappedValue.calls.append(.init(actionIdentifier: action.id)) }
+                }
+            }
+            .accessibilityIdentifier("siri-studio-expected-action-\(ordinal(id))")
+        }
+
     }
 
     /// Shows the selected setup action and its Direct Action JSON inputs.

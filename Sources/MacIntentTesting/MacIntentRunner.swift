@@ -50,6 +50,7 @@ public final class MacIntentRunner {
             throw MacIntentTestingError("The selected app must be installed and registered as the active Mac application for \(current.bundleIdentifier). Move this build to Applications, open it normally, and select that installed copy. Another registered copy may be taking precedence.")
         }
         try Task.checkCancellation()
+        let launchArguments = try MacIntentRunConfiguration.validatedAppLaunchArguments(configuration.appLaunchArguments)
         let source = try MacIntentSource.tests(catalog: current, cases: cases)
         let fm = FileManager.default
         let identifier = UUID().uuidString.lowercased()
@@ -95,6 +96,7 @@ public final class MacIntentRunner {
             let opening = NSWorkspace.OpenConfiguration()
             opening.activates = false
             opening.createsNewApplicationInstance = true
+            opening.arguments = launchArguments
             let subject = try await NSWorkspace.shared.openApplication(at: current.appURL, configuration: opening)
             // The app was absent immediately before our explicit launch. Never
             // close or adopt an app that was already running with user work.

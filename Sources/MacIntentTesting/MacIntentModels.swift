@@ -1,9 +1,12 @@
 import Foundation
 
 public struct MacIntentTestingError: LocalizedError, Sendable {
+    /// Identifies actionable app-selection failures without inspecting localized message text.
+    public enum Code: Sendable, Equatable { case notMacApplication, missingActions, unreadableActions, unsupportedActions }
     public let message: String
+    public let code: Code?
     /// Retains the explanation presented for a native intent testing failure.
-    public init(_ message: String) { self.message = message }
+    public init(_ message: String, code: Code? = nil) { self.message = message; self.code = code }
     public var errorDescription: String? { message }
 }
 
@@ -66,12 +69,23 @@ public struct MacIntentRunConfiguration: Sendable {
     public var teamIdentifier: String
     public var outputDirectory: URL
     public var timeoutSeconds: Double
-    /// Selects Xcode, signing credentials, evidence destination, and the build/test command timeout.
+    public var appLaunchArguments: [String]
+    /// Selects Xcode, signing credentials, evidence destination, command timeout, and literal app launch arguments.
     /// The runner validates the environment and accepts timeouts from 1 through 3,600 seconds.
-    public init(developerDirectory: URL, signingIdentity: String, teamIdentifier: String, outputDirectory: URL, timeoutSeconds: Double = 600) {
+    public init(developerDirectory: URL, signingIdentity: String, teamIdentifier: String, outputDirectory: URL, timeoutSeconds: Double = 600, appLaunchArguments: [String] = []) {
         self.developerDirectory = developerDirectory; self.signingIdentity = signingIdentity
         self.teamIdentifier = teamIdentifier; self.outputDirectory = outputDirectory
         self.timeoutSeconds = timeoutSeconds
+        self.appLaunchArguments = appLaunchArguments
+    }
+
+    /// Bounds literal, nonempty single-line app arguments so the editor can preserve their exact values without a shell.
+    public static func validatedAppLaunchArguments(_ arguments: [String]) throws -> [String] {
+        guard arguments.count <= 64, arguments.allSatisfy({ !$0.isEmpty && !$0.contains(where: { $0 == "\0" || $0.isNewline }) && $0.utf8.count <= 4096 }),
+              arguments.reduce(0, { $0 + $1.utf8.count }) <= 65_536 else {
+            throw MacIntentTestingError("Use at most 64 app launch arguments, each nonempty and up to 4 KiB, without null characters or line breaks (64 KiB total).")
+        }
+        return arguments
     }
 }
 

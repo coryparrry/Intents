@@ -207,6 +207,7 @@ public struct SiriStudioRunRecord: Codable, Sendable {
     public let resultBundleURL: URL?
     public let logURL: URL
     public let scenarios: [SiriStudioScenarioResult]
+    public var appLaunchArguments: [String]? = nil
 
     /// Summarizes the selected scenario verdicts with cancellation and evidence failures preserved.
     public var state: SiriStudioState {
@@ -232,9 +233,11 @@ public struct SiriStudioRunRecord: Codable, Sendable {
             }
             return result
         }
-        return Self(document: record.document, productIdentity: record.productIdentity, xcodeBuild: record.xcodeBuild,
+        var reopened = Self(document: record.document, productIdentity: record.productIdentity, xcodeBuild: record.xcodeBuild,
             osBuild: record.osBuild, startedAt: record.startedAt, endedAt: record.endedAt, sourceURL: record.sourceURL,
             resultBundleURL: record.resultBundleURL, logURL: record.logURL, scenarios: scenarios)
+        reopened.appLaunchArguments = record.appLaunchArguments
+        return reopened
     }
 
     /// Persists the immutable run snapshot and evidence in a single atomic write.

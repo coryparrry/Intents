@@ -5,7 +5,7 @@ public enum SiriStudioSource {
     /// Validates the document and emits one Swift Testing test per selected scenario.
     public static func tests(document: SiriStudioDocument, catalog: MacIntentCatalog,
                              scenarioIDs: Set<UUID>? = nil) throws -> String {
-        try SiriStudioValidation.validate(document, catalog: catalog)
+        try SiriStudioValidation.validate(document, catalog: catalog, scenarioIDs: scenarioIDs)
         let scenarios = try selection(in: document, scenarioIDs)
         let revisions = scenarios.map { "\($0.id.uuidString)=\($0.revision)" }.joined(separator: ", ")
         let sources = try scenarios.map { try test($0, catalog: catalog) }
@@ -33,11 +33,7 @@ public enum SiriStudioSource {
 
     /// Keeps authored order and rejects unknown or empty selections.
     static func selection(in document: SiriStudioDocument, _ ids: Set<UUID>?) throws -> [SiriStudioScenario] {
-        let selected = document.scenarios.filter { ids?.contains($0.id) ?? true }
-        guard !selected.isEmpty, ids == nil || ids?.count == selected.count else {
-            throw MacIntentTestingError("Select at least one scenario and use only IDs in this document.")
-        }
-        return selected
+        try SiriStudioValidation.selectedScenarios(in: document, ids)
     }
 
     /// Builds the sample factory, evaluation trait, and metric assertions for one scenario.

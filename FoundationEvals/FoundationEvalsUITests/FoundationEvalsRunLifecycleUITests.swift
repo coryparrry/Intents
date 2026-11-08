@@ -96,18 +96,17 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
     /// A running evaluation locks scoring edits without locking its read-only explanation.
     @MainActor
     func testScoringGuideRemainsAvailableDuringRun() throws {
+        app.terminate()
+        try FileManager.default.removeItem(at: storage)
+        storage = try UITestStorage.makeDirectory(prefix: "scoring-guide")
+        try writeScoringGuideSuite()
+        app = try Self.launchApp(storage: storage)
         try openSuiteEditor()
-        XCTAssertTrue(FileManager.default.fileExists(atPath: storage.appending(path: "workspace-v1.json").path),
-                      "The test must use its isolated workspace")
-        configureSuite(name: "Scoring guide fixture", endpointPath: "/success")
-        let guided = app.checkBoxes["Guided generation"]
-        XCTAssertTrue(guided.waitForExistence(timeout: 3))
-        guided.click()
         selectSetup("Scoring")
-        app.radioButtons["AI rubric"].click()
+
         let criteria = app.textViews["AI rubric requirements"]
         XCTAssertTrue(criteria.waitForExistence(timeout: 3))
-        replaceText(in: criteria, with: "The response answers the question.")
+        XCTAssertEqual(criteria.value as? String, "The response answers the question.")
         let run = app.buttons["Run evaluation"]
         XCTAssertTrue(run.isEnabled, app.debugDescription)
         run.click()
@@ -122,6 +121,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         guide.click()
         let score = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Passing score: 3 or 4", "Passing score: 3 or 4")
         XCTAssertTrue(app.staticTexts.matching(score).firstMatch.waitForExistence(timeout: 3))
+        capture("scoring-guide-during-run")
         app.buttons["Cancel"].firstMatch.click()
         fixture.finishResponse()
     }
@@ -304,6 +304,28 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         let report = app.radioButtons["Report"]
         XCTAssertTrue(report.waitForExistence(timeout: 3), app.debugDescription)
         report.click()
+    }
+
+    /// Seeds the saved rubric and provider so the test can exercise the guide without editing model settings.
+    private func writeScoringGuideSuite() throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "review-fixture", withExtension: "json"))
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var suite = try XCTUnwrap(payload["suite"] as? [String: Any])
+        var model = try XCTUnwrap(suite["modelConfiguration"] as? [String: Any])
+        model["provider"] = "customHTTP"
+        model["customProvider"] = [
+            "endpoint": "http://127.0.0.1:\(fixture.port)/success",
+            "contextSize": 8_192,
+            "requestTimeoutSeconds": 30,
+            "supportsGuidedGeneration": true,
+            "supportsReasoning": false,
+            "supportsToolCalling": false,
+            "supportsVision": false,
+        ]
+        suite["modelConfiguration"] = model
+        suite["name"] = "Scoring guide fixture"
+        suite["criteria"] = "The response answers the question."
+        try JSONSerialization.data(withJSONObject: suite).write(to: storage.appending(path: "suite.json"), options: .atomic)
     }
 
     @MainActor

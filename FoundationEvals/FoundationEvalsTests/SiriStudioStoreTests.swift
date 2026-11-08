@@ -146,6 +146,30 @@ import Testing
         #expect(throws: (any Error).self) { try studio.persistForTermination() }
     }
 
+    /// Recovers launch arguments edited after Save and preserves them when switching between app drafts.
+    @Test func recoversUnsavedAppLaunchArguments() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let studio = makeStore(root)
+        studio.load(catalog())
+        studio.document?.scenarios = [scenario()]
+        try studio.save()
+        studio.appLaunchArgumentsText = "-TestMode\nvalue with spaces"
+        #expect(studio.hasUnsavedEdits)
+        await studio.closeAndWait()
+        let recovered = makeStore(root)
+        recovered.load(catalog())
+        #expect(recovered.appLaunchArguments == ["-TestMode", "value with spaces"])
+        #expect(recovered.document?.appLaunchArguments == recovered.appLaunchArguments)
+        #expect(recovered.hasUnsavedEdits)
+        try recovered.save()
+        #expect(!recovered.hasUnsavedEdits)
+        recovered.load(nil)
+        #expect(recovered.appLaunchArguments.isEmpty)
+        recovered.load(catalog())
+        #expect(recovered.appLaunchArguments == ["-TestMode", "value with spaces"])
+    }
+
     /// Creates only synthetic per-test storage with no user preferences or credentials.
     private func temporaryRoot() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appending(path: "siri-store-\(UUID())")

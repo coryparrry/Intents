@@ -8,38 +8,43 @@ struct SiriStudioInspector: View {
     let result: SiriStudioScenarioResult
     let turnID: UUID?
     let stale: Bool
-    @State private var historicalTurnID: UUID?
+    var showsAdvanced = false
+    var actions: [MacIntentAction] = []
+    @State private var selectedTurnID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
             Text(stale ? "Stale result · \(result.state.label)" : result.state.label).font(.headline)
             if let reason = result.reason { Text(reason).font(.callout).textSelection(.enabled) }
-            if let passed = result.passed {
+            if showsAdvanced, let passed = result.passed {
                 Text("\(passed) of \(result.attempted) repeats passed").font(.caption)
-            } else if result.attempted > 1 {
+            } else if showsAdvanced && result.attempted > 1 {
                 Text("Apple’s available metrics don’t identify how many repeats passed.").font(.caption)
             }
-            if !result.failingMetrics.isEmpty {
+            if showsAdvanced && !result.failingMetrics.isEmpty {
                 LabeledContent("Apple’s failing metrics", value: result.failingMetrics.joined(separator: ", "))
             }
-            if let summary = result.summary {
+            if showsAdvanced, let summary = result.summary {
                 ForEach(summary.metrics.keys.sorted(), id: \.self) { name in
                     LabeledContent(name, value: (summary.metrics[name] ?? 0).formatted(.percent))
                 }
             }
             if !result.reports.isEmpty {
-                if stale && historicalTurns.count > 1 {
-                    Picker("Observed turn", selection: $historicalTurnID) {
-                        Text("Selected or first turn").tag(UUID?.none)
+                if historicalTurns.count > 1 {
+                    Picker("Observed turn", selection: Binding(
+                        get: { displayedTurnID }, set: { selectedTurnID = $0 }
+                    )) {
                         ForEach(Array(historicalTurns.enumerated()), id: \.element) { index, id in
                             Text("Turn \(index + 1)").tag(Optional(id))
                         }
                     }
+                    .accessibilityLabel("Observed turn")
+                    .accessibilityIdentifier("siri-studio-observed-turn")
                 }
                 repeats
             }
-            DisclosureGroup("Run facts and evidence") { facts.padding(.top, 6) }
+            if showsAdvanced { DisclosureGroup("Run facts and evidence") { facts.padding(.top, 6) } }
         }
     }
 
@@ -49,12 +54,16 @@ struct SiriStudioInspector: View {
     }
 
     /// Shows repeats in comparable columns, with missing evidence visible as its own column.
-    private var repeats: some View {
-        ScrollView(.horizontal) {
-            HStack(alignment: .top, spacing: 10) {
-                let count = max(result.attempted, (result.reports.map(\.repeatIndex).max() ?? -1) + 1)
-                ForEach(0..<count, id: \.self) { index in
-                    repeatColumn(index).frame(width: count == 1 ? 250 : 222, alignment: .leading)
+    @ViewBuilder private var repeats: some View {
+        let count = max(result.attempted, (result.reports.map(\.repeatIndex).max() ?? -1) + 1)
+        if count == 1 {
+            repeatColumn(0).frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 10) {
+                    ForEach(0..<count, id: \.self) { index in
+                        repeatColumn(index).frame(width: 280, alignment: .leading)
+                    }
                 }
             }
         }
@@ -63,8 +72,8 @@ struct SiriStudioInspector: View {
     /// Renders a repeat's Apple metrics, blocked cause, or selected turn.
     private func repeatColumn(_ index: Int) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Repeat \(index + 1)").font(.subheadline.weight(.semibold))
-            if let metrics = result.summary?.perRepeat?.first(where: { $0.repeatIndex == index })?.metrics {
+            if showsAdvanced || result.attempted > 1 { Text("Repeat \(index + 1)").font(.subheadline.weight(.semibold)) }
+            if showsAdvanced, let metrics = result.summary?.perRepeat?.first(where: { $0.repeatIndex == index })?.metrics {
                 ForEach(metrics.keys.sorted(), id: \.self) { name in
                     LabeledContent(name, value: (metrics[name] ?? 0).formatted(.percent)).font(.caption)
                 }
@@ -90,10 +99,14 @@ struct SiriStudioInspector: View {
         result.reports.max(by: { $0.turns.count < $1.turns.count })?.turns.map(\.id) ?? []
     }
 
+    /// Keeps every observed turn selectable on Results, including current and historical conversations.
+    private var displayedTurnID: UUID? {
+        [selectedTurnID, turnID].compactMap { $0 }.first(where: historicalTurns.contains) ?? historicalTurns.first
+    }
+
     /// Resolves the chosen turn even when it belongs to a historical revision.
     private func observedTurn(_ report: SiriStudioReport) -> SiriStudioReport.Turn? {
-        let id = stale ? historicalTurnID ?? turnID.flatMap { historicalTurns.contains($0) ? $0 : nil } ?? historicalTurns.first : turnID
-        guard let id else { return report.turns.first }
+        guard let id = displayedTurnID else { return report.turns.first }
         return report.turns.first { $0.id == id }
     }
 
@@ -105,15 +118,17 @@ struct SiriStudioInspector: View {
         let invocations = observed.invocations.sorted { $0.timestamp < $1.timestamp }
         let required = local.calls
         let forbidden = local.forbidden + whole.forbidden
-        let covered = Set((required + forbidden + whole.calls).map(\.actionIdentifier))
+        let covered = Set((showsAdvanced ? required + forbidden + whole.calls : required).map(\.actionIdentifier))
         let other = invocations.filter { !belongsToApp($0) || !covered.contains($0.intent) }
         return VStack(alignment: .leading, spacing: 7) {
             Text(observed.utterance).font(.callout).textSelection(.enabled)
             if !required.isEmpty || !forbidden.isEmpty || !whole.calls.isEmpty {
                 Text("Expected and observed calls").font(.subheadline.weight(.semibold))
                 ForEach(required) { call in comparison(call, in: invocations, kind: "Required") }
-                ForEach(whole.calls) { call in comparison(call, in: invocations, kind: "Required across scenario") }
-                ForEach(forbidden) { call in comparison(call, in: invocations, kind: "Forbidden") }
+                if showsAdvanced {
+                    ForEach(whole.calls) { call in comparison(call, in: invocations, kind: "Required across scenario") }
+                    ForEach(forbidden) { call in comparison(call, in: invocations, kind: "Forbidden") }
+                }
             }
             if !other.isEmpty {
                 Text(authored == nil ? "Observed calls" : "Additional calls").font(.subheadline.weight(.semibold))
@@ -122,12 +137,14 @@ struct SiriStudioInspector: View {
             if let response = observed.response {
                 Text("Siri’s reply").font(.subheadline.weight(.semibold))
                 Text(response.text).textSelection(.enabled)
-                Text(response.timestamp).font(.caption).foregroundStyle(.secondary)
-                ForEach(local.replyContains.indices, id: \.self) { index in
-                    let check = local.replyContains[index]
-                    let matched = response.text.range(of: check.text, options: check.caseSensitive ? [] : .caseInsensitive) != nil
-                    Text("Intents check: \(matched ? "Found" : "Didn’t find") “\(check.text)”")
-                        .font(.caption).foregroundStyle(.secondary)
+                if showsAdvanced { Text(response.timestamp).font(.caption).foregroundStyle(.secondary) }
+                if showsAdvanced {
+                    ForEach(local.replyContains.indices, id: \.self) { index in
+                        let check = local.replyContains[index]
+                        let matched = response.text.range(of: check.text, options: check.caseSensitive ? [] : .caseInsensitive) != nil
+                        Text("Intents check: \(matched ? "Found" : "Didn’t find") “\(check.text)”")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -139,14 +156,16 @@ struct SiriStudioInspector: View {
         let forbidden = kind == "Forbidden"
         let hint = hint(for: call, in: matches, forbidden: forbidden)
         return VStack(alignment: .leading, spacing: 3) {
-            Text("\(kind): \(call.actionIdentifier)").font(.callout.weight(.medium))
-            ForEach(call.arguments, id: \.parameterIdentifier) { argument in
-                Text("\(argument.parameterIdentifier): \(argument.matcher.displayValue)").font(.caption)
+            Text("\(kind): \(title(for: call.actionIdentifier))").font(.callout.weight(.medium))
+            if showsAdvanced {
+                ForEach(call.arguments, id: \.parameterIdentifier) { argument in
+                    Text("\(argument.parameterIdentifier): \(argument.matcher.displayValue)").font(.caption)
+                }
+                if let expected = call.result { Text("Result: \(expected.displayValue)").font(.caption) }
             }
-            if let expected = call.result { Text("Result: \(expected.displayValue)").font(.caption) }
             ForEach(matches.indices, id: \.self) { invocation(matches[$0]) }
             if let hint {
-                Text("Intents check (unconfirmed): \(hint)").font(.caption).foregroundStyle(.secondary)
+                Text(showsAdvanced ? "Intents check (unconfirmed): \(hint)" : hint).font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -154,13 +173,21 @@ struct SiriStudioInspector: View {
     /// Shows an invocation's outcome, arguments, result text, and observed timestamp.
     private func invocation(_ invocation: SiriStudioReport.Invocation) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("\(invocation.intent) · \(invocation.outcome)").font(.caption.weight(.medium))
-            ForEach(invocation.arguments.keys.sorted(), id: \.self) { name in
-                Text("\(name): \(invocation.arguments[name] ?? "")").font(.caption).textSelection(.enabled)
+            Text("\(belongsToApp(invocation) ? title(for: invocation.intent) : invocation.intent) · \(invocation.outcome)")
+                .font(.caption.weight(.medium))
+            if showsAdvanced {
+                ForEach(invocation.arguments.keys.sorted(), id: \.self) { name in
+                    Text("\(name): \(invocation.arguments[name] ?? "")").font(.caption).textSelection(.enabled)
+                }
+                if let result = invocation.result { Text("Result: \(result)").font(.caption).textSelection(.enabled) }
+                Text(invocation.timestamp).font(.caption2).foregroundStyle(.secondary)
             }
-            if let result = invocation.result { Text("Result: \(result)").font(.caption).textSelection(.enabled) }
-            Text(invocation.timestamp).font(.caption2).foregroundStyle(.secondary)
         }
+    }
+
+    /// Uses an action's display name in the simple result and preserves identifiers in Advanced evidence.
+    private func title(for identifier: String) -> String {
+        showsAdvanced ? identifier : actions.first { $0.id == identifier }?.title ?? identifier
     }
 
     /// Disambiguates identical intent names belonging to different apps.
@@ -195,6 +222,11 @@ struct SiriStudioInspector: View {
             Text("Started \(run.startedAt.formatted()) · ended \(run.endedAt.formatted())")
             Text(run.osBuild)
             if let xcode = run.xcodeBuild { Text(xcode) }
+            if let arguments = run.appLaunchArguments {
+                Text(arguments.isEmpty ? "App launch: default arguments" : "App launch arguments: " + arguments.joined(separator: " · "))
+            } else {
+                Text("App launch arguments were not captured for this imported or older run.")
+            }
             if let product = run.productIdentity { Text("App build: \(product.sha256.prefix(16))") }
             Button("Show run log") { NSWorkspace.shared.activateFileViewerSelecting([run.logURL]) }
             if let source = run.sourceURL {

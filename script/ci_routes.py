@@ -155,7 +155,7 @@ ALL_UI_GROUPS = set(UI_BASELINE) | set(UI_FEATURE_TESTS)
 def app_ui_groups(relative):
     """Map known app sources to owning UI groups, return no groups for service-only changes, and return None for unclassified app sources."""
     if relative.startswith("Views/SiriStudio/") or relative in {
-        "Views/MacIntentTestingView.swift", "Stores/MacIntentTestingStore.swift", "Stores/SiriStudioStore.swift",
+        "Views/MacIntentTestingView.swift", "Stores/MacIntentTestingStore.swift", "Stores/SiriStudioStore.swift", "Stores/SiriStudioSetupStore.swift",
     }:
         return {"native-intents"}
     if relative in UI_APP_GROUPS:
@@ -527,7 +527,7 @@ def coverage_plan(paths, root=ROOT):
                     "Production package tests and documentation run production qualification without unrelated root runtime checks."
                 )
         elif path.startswith(("examples/SiriStudioSample/", "Tests/Fixtures/SiriStudio/")):
-            swift.update({"SiriStudioTests", "SiriStudioReportTests"})
+            swift.update({"SiriStudioTests", "SiriStudioReportTests", "SiriStudioSetupTests"})
             reasons.add("The Courtside and Siri Studio evidence fixtures select the Siri authoring and report contracts.")
         elif path.startswith("Tests/"):
             swift.update(package_test_suites(path, root))
