@@ -5,48 +5,89 @@ import UniformTypeIdentifiers
 
 struct MacIntentTestingView: View {
     @Bindable var model: MacIntentTestingStore
+    @AppStorage("appIntentTesting.mode") private var mode = "siri"
     @State private var choosingApp = false
     @State private var showsBuildDetails = false
     @State private var showsSupportedTypes = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                WorkspacePageHeader("App Intent Testing", subtitle: "Test an action from a built macOS app.")
-                configurationForm
+        Group {
+            if mode == "siri" {
+                SiriStudioView(native: model, studio: model.siri, catalog: model.catalog,
+                    chooseApp: { choosingApp = true }, showDirectAction: { mode = "direct" })
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        WorkspacePageHeader("App Intent Testing", subtitle: "Test an action from a built macOS app.")
+                        Picker("Testing mode", selection: $mode) {
+                            Text("Direct Action").tag("direct")
+                            Text("Siri Studio").tag("siri")
+                        }
+                        .pickerStyle(.segmented).labelsHidden()
+                        .accessibilityIdentifier("app-intent-testing-mode")
+                        .disabled(model.isRunning || model.siri.isBusy)
+                        appSelection
+                        configurationForm
+                    }.workspacePage()
+                }.accessibilityIdentifier("App Intent steps")
             }
-            .workspacePage()
         }
         .fileImporter(isPresented: $choosingApp, allowedContentTypes: [.applicationBundle]) { result in
-            do { model.load(appURL: try result.get()) }
-            catch { model.reportSelectionError(error) }
+            do {
+                let url = try result.get()
+                try model.siri.save()
+                model.load(appURL: url)
+            } catch { model.reportSelectionError(error) }
+        }
+        .onChange(of: model.catalog?.productIdentity, initial: true) { _, _ in
+            // The store also tracks the catalog independently of which mode is visible.
+            model.siri.load(model.catalog)
         }
     }
 
-    /// Groups the selected app, test inputs, signing options, and any result in a native form.
-    private var configurationForm: some View {
-        Form {
-            Section {
+    /// Selects one built app for both native test modes.
+    private var appSelection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if mode == "direct" {
                 Text("Install and launch the app normally once to register it, then quit it before choosing its build.")
-                Button("Choose built macOS app…") { choosingApp = true }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.isRunning)
-                if model.isLoading {
-                    HStack {
-                        ProgressView().controlSize(.small)
-                        Text("Inspecting built app…")
-                        Button("Cancel") { model.cancel() }
-                    }
+            } else if model.catalog == nil {
+                Text("Choose the Mac app you want to test. We’ll check the setup for you.")
+            }
+            Button(model.catalog == nil ? "Choose built macOS app…" : "Change app…") { choosingApp = true }
+                .accessibilityIdentifier("mac-intent-choose-app")
+                .accessibilityLabel("Choose built macOS app…")
+                .buttonStyle(.bordered)
+                .disabled(model.isRunning || model.siri.isBusy)
+            if model.isLoading {
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Inspecting built app…")
+                    Button("Cancel") { model.cancel() }
                 }
-                if let catalog = model.catalog {
-                    LabeledContent("Application", value: catalog.appURL.deletingPathExtension().lastPathComponent)
+            }
+            if let catalog = model.catalog {
+                HStack {
+                    Text(catalog.appURL.deletingPathExtension().lastPathComponent).font(.headline)
+                }
+                if mode == "direct" {
                     DisclosureGroup(isExpanded: $showsBuildDetails) {
                         LabeledContent("Path", value: catalog.appURL.path)
                         LabeledContent("Bundle identifier", value: catalog.bundleIdentifier)
+                        if let product = catalog.productIdentity {
+                            LabeledContent("Build", value: String(product.sha256.prefix(10)))
+                        }
                     } label: {
                         Text("Build details").contentShape(Rectangle()).onTapGesture { showsBuildDetails.toggle() }
                     }
                 }
+            }
+        }
+    }
+
+    /// Groups the Direct Action inputs, signing options, and result in a native form.
+    private var configurationForm: some View {
+        Form {
+            Section {
                 DisclosureGroup(isExpanded: $showsSupportedTypes) {
                     Text("Intents generates a native UI test. Compiled metadata discovery is best effort. Native macOS validation covers String, Bool, Int, Double and enum inputs, String and Double results, and execution-only smoke checks. A smoke check does not compare the returned value.")
                         .foregroundStyle(.secondary)
@@ -79,7 +120,7 @@ struct MacIntentTestingView: View {
                         Text("Execution-only smoke check. No expected result is asserted.").foregroundStyle(.secondary)
                     }
                 }
-                .disabled(model.isRunning)
+                .disabled(model.isRunning || model.siri.isBusy)
                 Section("Xcode and signing") {
                     TextField("Developer directory", text: $model.developerDirectory)
                         .accessibilityLabel("Developer directory")
@@ -89,10 +130,10 @@ struct MacIntentTestingView: View {
                         .accessibilityLabel("Team identifier")
                     Text("Use a local Xcode installation and a development identity permitted to sign the generated test host. These fields do not verify the app’s entitlements or signing compatibility.").foregroundStyle(.secondary)
                 }
-                .disabled(model.isRunning)
+                .disabled(model.isRunning || model.siri.isBusy)
                 Section {
                     HStack {
-                        Button("Run native test") { model.start() }.disabled(model.isRunning)
+                        Button("Run native test") { model.start() }.disabled(model.isRunning || model.siri.isBusy)
                         Button("Cancel") { model.cancel() }.disabled(!model.isRunning)
                         if model.isRunning { ProgressView().controlSize(.small) }
                     }

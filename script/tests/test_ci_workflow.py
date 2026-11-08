@@ -198,6 +198,19 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("CI_TEST_SELECTION: ${{ steps.route.outputs.python_tests }}", workflow)
         self.assertIn("python3 script/ci_run_tests.py python", workflow)
 
+    def test_ui_execution_budget_leaves_preparation_and_evidence_time(self):
+        """A test-step timeout must still leave room for desktop preparation and failure artifacts."""
+        workflow = job("ui-tests")
+        header, steps = workflow.split("    steps:", 1)
+        job_minutes = int(re.search(r"timeout-minutes: (\d+)", header)[1])
+        execution = steps.split("      - name: Run affected UI tests once", 1)[1].split("      - name:", 1)[0]
+        execution_minutes = int(re.search(r"timeout-minutes: (\d+)", execution)[1])
+        preparation = steps.split("      - name: Prepare measured UI desktop", 1)[1].split("      - name:", 1)[0]
+        preparation_minutes = int(re.search(r"timeout-minutes: (\d+)", preparation)[1])
+        self.assertGreaterEqual(job_minutes - execution_minutes - preparation_minutes, 2)
+        self.assertIn("if: ${{ !cancelled() }}", steps.split("      - name: Export UI test attachments", 1)[1])
+        self.assertNotIn("continue-on-error:", execution)
+
     def test_evidence_is_retained_after_failure_without_blocking_cancellation(self):
         # A status function overrides implicit success(), preserving failed-run evidence.
         # Unlike always(), !cancelled() lets superseding PR runs release their runners.

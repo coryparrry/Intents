@@ -3,6 +3,29 @@ import Testing
 @testable import MacIntentTesting
 
 struct MacIntentTestingTests {
+    /// Distinguishes an older app without actions from an unsupported catalog and recovers after rebuilding in place.
+    @Test func appSelectionClassifiesMissingActionsAndCanRetryUpdatedBuild() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let app = directory.appending(path: "OlderApp.app")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeFixtureApp(at: app, bundleIdentifier: "example.Selection", executableName: "OlderApp")
+        let metadata = app.appending(path: "Contents/Resources/Metadata.appintents/extract.actionsdata")
+        try FileManager.default.removeItem(at: metadata)
+        /// Verifies the typed failure that drives the app’s actionable selection guide.
+        func expectIssue(_ code: MacIntentTestingError.Code) {
+            do { _ = try MacIntentCatalog.load(appURL: app); Issue.record("Expected a catalog selection issue.") }
+            catch let error as MacIntentTestingError { #expect(error.code == code) }
+            catch { Issue.record("Unexpected error: \(error)") }
+        }
+        expectIssue(.missingActions)
+        try Data(#"{"version":1,"actions":{}}"#.utf8).write(to: metadata)
+        expectIssue(.missingActions)
+        try Data(#"{"version":2,"actions":{}}"#.utf8).write(to: metadata)
+        expectIssue(.unsupportedActions)
+        try writeFixtureApp(at: app, bundleIdentifier: "example.Selection", executableName: "OlderApp")
+        #expect(try MacIntentCatalog.load(appURL: app).actions.map(\.id) == ["Echo"])
+    }
+
     private let url = URL(fileURLWithPath: "/Applications/Example.app")
     private func catalog(parameters: [MacIntentParameter] = [], output: String = "String") -> MacIntentCatalog {
         .init(bundleIdentifier: "dev.example.app", appURL: url,
@@ -201,12 +224,13 @@ struct MacIntentTestingTests {
         #expect(MacIntentRunner.signingTeam(in: "TeamIdentifier=not set") == "not set")
     }
 
+    /// Rejects missing tools and terminates an owned subprocess when it exceeds its deadline.
     @MainActor @Test func subprocessLaunchFailureAndTimeoutAreBounded() async throws {
         let logURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
         let log = try FileHandle(forWritingTo: logURL)
         defer { try? log.close(); try? FileManager.default.removeItem(at: logURL) }
-        let runner = MacIntentRunner()
+        let runner = NativeTestSession()
         do {
             _ = try await runner.execute(executable: URL(fileURLWithPath: "/missing-command"), arguments: [],
                                          directory: FileManager.default.temporaryDirectory,

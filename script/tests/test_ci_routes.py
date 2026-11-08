@@ -29,26 +29,38 @@ class CoverageTests(unittest.TestCase):
 
 
     def test_mac_intent_support_selects_surviving_package_tests(self):
+        """Runs the shared native workspace UI alongside the portable contracts."""
         plan = routes.coverage(["Sources/MacIntentTesting/Catalog.swift"])
         self.assertEqual(plan["swift_suites"], ["*"])
         self.assertTrue(plan["sdk_consumer"])
         self.assertFalse(plan["input_conversion"])
-        self.assertFalse(plan["ui"])
+        self.assertTrue(plan["ui"])
         self.assertTrue(plan["native"])
         self.assertEqual(plan["native_tests"], ["FoundationEvalsTests"])
-        self.assertEqual(plan["ui_matrix"], [])
+        self.assertIn("MacIntentTestingUITests", str(plan["ui_matrix"]))
 
     def test_native_intent_cli_changes_select_parser_and_manifest_contracts(self):
         """CLI runtime edits retain signal cleanup integration beside parser contracts."""
         self.assert_selection(["Sources/MacIntentTestingCLI/NativeTestsOptions.swift"],
-                              swift=("NativeTestsCLITests", "NativeTestsSignalTests"))
+                              swift=("NativeTestsCLITests", "NativeTestsSignalTests", "SiriStudioCLITests"))
         plan = routes.coverage(["Sources/MacIntentTestingCLI/NativeTestsMain.swift"])
         self.assertEqual(plan["native_tests"], [])
         self.assertEqual(plan["ui_matrix"], [])
         for source in ("NativeTestsMain.swift", "NativeTestsSignals.swift"):
             with self.subTest(source=source):
                 selected = routes.coverage(["Sources/MacIntentTestingCLI/" + source])
-                self.assertEqual(selected["swift_suites"], ["NativeTestsCLITests", "NativeTestsSignalTests"])
+                self.assertEqual(selected["swift_suites"], ["NativeTestsCLITests", "NativeTestsSignalTests", "SiriStudioCLITests"])
+
+    def test_siri_studio_selects_its_fixture_and_editor_coverage(self):
+        """Changes to authored Siri samples and views select their owning contracts."""
+        fixture = routes.coverage(["examples/SiriStudioSample/scenarios.json"])
+        self.assertEqual(fixture["swift_suites"], ["SiriStudioReportTests", "SiriStudioSetupTests", "SiriStudioTests"])
+        editor = routes.coverage(["FoundationEvals/FoundationEvals/Views/SiriStudio/SiriStudioView.swift"])
+        self.assertIn("MacIntentTestingUITests", str(editor["ui_matrix"]))
+        setup = routes.coverage(["FoundationEvals/FoundationEvals/Stores/SiriStudioSetupStore.swift"])
+        self.assertIn("MacIntentTestingUITests", str(setup["ui_matrix"]))
+        certificate = routes.coverage(["Tests/Fixtures/SiriStudio/SetupDevelopmentCertificate.pem"])
+        self.assertIn("SiriStudioSetupTests", certificate["swift_suites"])
 
     def test_mac_intent_unit_changes_select_the_declared_suite(self):
         with tempfile.TemporaryDirectory() as directory:

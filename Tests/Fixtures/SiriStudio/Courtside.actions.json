@@ -1,0 +1,358 @@
+{
+  "version": 1,
+  "actions": {
+    "AddPlayerIntent": {
+      "identifier": "AddPlayerIntent",
+      "title": {
+        "alternatives": [],
+        "key": "Add Player"
+      },
+      "outputType": {
+        "primitive": {
+          "wrapper": {
+            "typeIdentifier": 0
+          }
+        }
+      },
+      "parameters": [
+        {
+          "capabilities": 0,
+          "dynamicOptionsSupport": 0,
+          "inputConnectionBehavior": 0,
+          "isInput": false,
+          "isOptional": false,
+          "name": "name",
+          "parameterDescription": {
+            "alternatives": [],
+            "key": "The name of the player to add."
+          },
+          "resolvableInputTypes": [
+            {
+              "kindValue": 0,
+              "valueType": {
+                "array": {
+                  "wrapper": {
+                    "capabilities": 3,
+                    "memberValueType": {
+                      "primitive": {
+                        "wrapper": {
+                          "typeIdentifier": 2
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "kindValue": 0,
+              "valueType": {
+                "primitive": {
+                  "wrapper": {
+                    "typeIdentifier": 0
+                  }
+                }
+              }
+            },
+            {
+              "kindValue": 0,
+              "valueType": {
+                "primitive": {
+                  "wrapper": {
+                    "typeIdentifier": 2
+                  }
+                }
+              }
+            }
+          ],
+          "title": {
+            "alternatives": [],
+            "key": "Player Name"
+          },
+          "typeSpecificMetadata": [],
+          "valueType": {
+            "primitive": {
+              "wrapper": {
+                "typeIdentifier": 0
+              }
+            }
+          }
+        },
+        {
+          "capabilities": 0,
+          "dynamicOptionsSupport": 1,
+          "inputConnectionBehavior": 0,
+          "isInput": false,
+          "isOptional": false,
+          "name": "team",
+          "parameterDescription": {
+            "alternatives": [],
+            "key": "The basketball team receiving the player."
+          },
+          "resolvableInputTypes": [],
+          "title": {
+            "alternatives": [],
+            "key": "Team"
+          },
+          "typeSpecificMetadata": [],
+          "valueType": {
+            "entity": {
+              "wrapper": {
+                "typeName": "TeamEntity"
+              }
+            }
+          }
+        },
+        {
+          "capabilities": 0,
+          "dynamicOptionsSupport": 0,
+          "inputConnectionBehavior": 0,
+          "isInput": false,
+          "isOptional": false,
+          "name": "position",
+          "parameterDescription": {
+            "alternatives": [],
+            "key": "The basketball position the player plays."
+          },
+          "resolvableInputTypes": [],
+          "title": {
+            "alternatives": [],
+            "key": "Position"
+          },
+          "typeSpecificMetadata": [],
+          "valueType": {
+            "linkEnumeration": {
+              "wrapper": {
+                "identifier": "Position"
+              }
+            }
+          }
+        },
+        {
+          "capabilities": 0,
+          "dynamicOptionsSupport": 0,
+          "inputConnectionBehavior": 0,
+          "isInput": false,
+          "isOptional": false,
+          "name": "number",
+          "parameterDescription": {
+            "alternatives": [],
+            "key": "The required integer jersey number."
+          },
+          "resolvableInputTypes": [
+            {
+              "kindValue": 0,
+              "valueType": {
+                "primitive": {
+                  "wrapper": {
+                    "typeIdentifier": 0
+                  }
+                }
+              }
+            },
+            {
+              "kindValue": 0,
+              "valueType": {
+                "primitive": {
+                  "wrapper": {
+                    "typeIdentifier": 2
+                  }
+                }
+              }
+            },
+            {
+              "kindValue": 0,
+              "valueType": {
+                "primitive": {
+                  "wrapper": {
+                    "typeIdentifier": 7
+                  }
+                }
+              }
+            }
+          ],
+          "title": {
+            "alternatives": [],
+            "key": "Jersey Number"
+          },
+          "typeSpecificMetadata": [],
+          "valueType": {
+            "primitive": {
+              "wrapper": {
+                "typeIdentifier": 2
+              }
+            }
+          }
+        }
+      ]
+    },
+    "DeletePlayerIntent": {
+      "identifier": "DeletePlayerIntent",
+      "title": {
+        "alternatives": [],
+        "key": "Delete Player"
+      },
+      "outputType": null,
+      "parameters": [
+        {
+          "capabilities": 0,
+          "dynamicOptionsSupport": 0,
+          "inputConnectionBehavior": 0,
+          "isInput": false,
+          "isOptional": false,
+          "name": "player",
+          "parameterDescription": {
+            "alternatives": [],
+            "key": "The name of the player to remove."
+          },
+          "resolvableInputTypes": [
+            {
+              "kindValue": 0,
+              "valueType": {
+                "array": {
+                  "wrapper": {
+                    "capabilities": 3,
+                    "memberValueType": {
+                      "primitive": {
+                        "wrapper": {
+                          "typeIdentifier": 2
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "kindValue": 0,
+              "valueType": {
+                "primitive": {
+                  "wrapper": {
+                    "typeIdentifier": 0
+                  }
+                }
+              }
+            },
+            {
+              "kindValue": 0,
+              "valueType": {
+                "primitive": {
+                  "wrapper": {
+                    "typeIdentifier": 2
+                  }
+                }
+              }
+            }
+          ],
+          "title": {
+            "alternatives": [],
+            "key": "Player Name"
+          },
+          "typeSpecificMetadata": [],
+          "valueType": {
+            "primitive": {
+              "wrapper": {
+                "typeIdentifier": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "OpenTeamIntent": {
+      "identifier": "OpenTeamIntent",
+      "title": {
+        "alternatives": [],
+        "key": "Open Team"
+      },
+      "outputType": {
+        "primitive": {
+          "wrapper": {
+            "typeIdentifier": 0
+          }
+        }
+      },
+      "parameters": [
+        {
+          "capabilities": 0,
+          "dynamicOptionsSupport": 1,
+          "inputConnectionBehavior": 0,
+          "isInput": false,
+          "isOptional": false,
+          "name": "team",
+          "parameterDescription": {
+            "alternatives": [],
+            "key": "The team whose roster to open."
+          },
+          "resolvableInputTypes": [],
+          "title": {
+            "alternatives": [],
+            "key": "Team"
+          },
+          "typeSpecificMetadata": [],
+          "valueType": {
+            "entity": {
+              "wrapper": {
+                "typeName": "TeamEntity"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ResetDataIntent": {
+      "identifier": "ResetDataIntent",
+      "title": {
+        "alternatives": [],
+        "key": "Reset Fixture Data"
+      },
+      "outputType": null,
+      "parameters": []
+    }
+  },
+  "enums": [
+    {
+      "assistantDefinedSchemas": [],
+      "availabilityAnnotations": {
+        "LNPlatformNameWildcard": {
+          "introducedVersion": "*"
+        }
+      },
+      "cases": [
+        {
+          "displayRepresentation": {
+            "title": {
+              "alternatives": [],
+              "key": "Point Guard"
+            }
+          },
+          "identifier": "pointGuard"
+        },
+        {
+          "displayRepresentation": {
+            "title": {
+              "alternatives": [],
+              "key": "Center"
+            }
+          },
+          "identifier": "center"
+        }
+      ],
+      "displayTypeName": {
+        "alternatives": [],
+        "key": "Position"
+      },
+      "effectiveBundleIdentifiers": [],
+      "fullyQualifiedTypeName": "Courtside.Position",
+      "identifier": "Position",
+      "isSystem": false,
+      "mangledTypeName": "9Courtside8PositionO",
+      "mangledTypeNameByBundleIdentifier": {},
+      "systemProtocolMetadata": [],
+      "visibilityMetadata": {
+        "assistantOnly": false,
+        "isDiscoverable": true
+      }
+    }
+  ]
+}
