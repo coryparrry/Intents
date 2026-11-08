@@ -232,8 +232,9 @@ final class WorkspacePolishUITests: XCTestCase {
         app.menuItems["Archive suite"].click()
         let disclosure = app.disclosureTriangles["Archived projects and suites"]
         XCTAssertTrue(disclosure.waitForExistence(timeout: 3))
-        // The native macOS control exposes its label in the frame, but only its leading arrow toggles.
-        disclosure.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5)).click()
+        // SwiftUI's accessibility frame precedes the visible chevron by the manager's 24-point inset.
+        disclosure.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
+            .withOffset(CGVector(dx: 24, dy: 0)).click()
         XCTAssertEqual((disclosure.value as? NSNumber)?.intValue, 1)
         let restore = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "Restore suite ")).firstMatch
         XCTAssertTrue(restore.waitForExistence(timeout: 3))

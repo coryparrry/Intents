@@ -168,8 +168,9 @@ final class MacIntentTestingUITests: XCTestCase {
         let removals = app.buttons.matching(identifier: "Remove turn")
         XCTAssertEqual(removals.count, 2)
         removals.element(boundBy: 1).click()
-        XCTAssertTrue(app.buttons["Remove turn and expectations"].waitForExistence(timeout: 3))
-        app.buttons["Cancel"].click()
+        let confirmation = app.sheets.containing(.button, identifier: "Remove turn and expectations").firstMatch
+        XCTAssertTrue(confirmation.buttons["Remove turn and expectations"].waitForExistence(timeout: 3))
+        confirmation.buttons["Cancel"].click()
         XCTAssertEqual(app.descendants(matching: .any)["siri-studio-reply-check-0"].firstMatch.value as? String, "ready")
         app.terminate()
         app.launch()
@@ -181,7 +182,7 @@ final class MacIntentTestingUITests: XCTestCase {
         app.buttons["Turn 2"].click()
         XCTAssertEqual(app.descendants(matching: .any)["siri-studio-reply-check-0"].firstMatch.value as? String, "ready")
         app.buttons.matching(identifier: "Remove turn").element(boundBy: 1).click()
-        app.buttons["Remove turn and expectations"].click()
+        confirmation.buttons["Remove turn and expectations"].click()
         XCTAssertFalse(second.exists)
         let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         attachment.name = "Siri Studio recovered authoring and confirmed turn removal"
