@@ -260,7 +260,10 @@ final class MacIntentTestingUITests: XCTestCase {
         chooseMode("Siri Studio", in: app)
         let diagnostic = app.descendants(matching: .any)["siri-studio-diagnostic"].firstMatch
         XCTAssertTrue(diagnostic.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertFalse(app.buttons["siri-studio-new-scenario"].isEnabled)
+        choosePage("Conversations", in: app)
+        let newConversation = app.buttons["siri-studio-new-scenario"]
+        XCTAssertTrue(newConversation.waitForExistence(timeout: 5))
+        XCTAssertFalse(newConversation.isEnabled)
         for page in ["Setup", "Results", "Conversations"] {
             choosePage(page, in: app)
             XCTAssertTrue(diagnostic.exists, "The load failure must remain visible independently of the selected tab")
