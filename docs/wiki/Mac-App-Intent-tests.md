@@ -96,11 +96,13 @@ execution-only smoke coverage.
 
 ## Use the native app
 
-Choose the installed `.app` in **App Intent Testing**, select an action from the
-catalog, and enter a JSON object keyed by parameter identifier. Provide the
-expected JSON value, or disable the comparison for a smoke check. Enter the Xcode
-developer directory, signing team and identity, then run and read the diagnostics.
 Review the intended effect before testing a data-changing action in your own app.
+
+1. Open **App Intent Testing** in the sidebar. Select **Choose built macOS app…** and choose the installed `.app`.
+2. Select an **Action** and enter a JSON object in **Inputs JSON** using the parameter identifiers shown in the app.
+3. Enable **Compare returned value** and enter a JSON scalar matching the action's `String`, `Bool`, `Int`, or `Double` output type. For an execution-only smoke check, turn the comparison off.
+4. Under **Xcode and signing**, enter the developer directory, signing identity, and team identifier. Select **Run native test**.
+5. Read the result and use **Show log in Finder** or **Open result bundle** to inspect the evidence.
 
 ## Evidence and limits
 

@@ -2,7 +2,7 @@
 
 Intents is a macOS app for testing Apple Foundation Models and features in your own app. A **suite** contains repeatable test cases. You can run a suite on this Mac or through a connected app. Intents saves each response and its evidence. Suite **Review** adds human labels, failure patterns, regression cases, and judge checks. **Batch runs** handles frozen datasets, resumable jobs, and review of captured outputs.
 
-**App Intent tests** inspects a built Mac app and runs explicit JSON checks through Apple AppIntentsTesting. Live runner reliability remains unqualified.
+**App Intent Testing** inspects a built Mac app and runs actions with explicit JSON inputs through Apple AppIntentsTesting. See the test guide for setup and the scope of sample verification.
 
 ## Start here
 
@@ -14,6 +14,8 @@ Intents is a macOS app for testing Apple Foundation Models and features in your 
 
 | I want to… | Read… |
 |---|---|
+| Create questions and scoring criteria from a PDF, Markdown, or text file | [Document suites](Document-suites.md) |
+| Compare suggested suite instructions on reserved cases before applying them | [Improve suite instructions](../instruction-improvement.md) |
 | Change the model, scoring, tools, structured output, or performance settings | [Models, scoring, and tools](Models-scoring-and-tools.md) |
 | Test App Intents in a built Mac app | [Mac App Intent tests](Mac-App-Intent-tests.md) |
 | Run checks on a feature in my iPhone, iPad, or Mac app | [Connect an app feature runner](App-feature-runners.md) |
@@ -28,7 +30,8 @@ Intents is a macOS app for testing Apple Foundation Models and features in your 
 |---|---|---|
 | Suite on **This Mac** | The selected model uses the suite's prompts, settings, references, and tools. | The saved responses passed the selected scoring method. |
 | Suite on a **connected app** | A feature that the app registered with Intents. | The app's feature returned responses that passed the suite's checks. |
+| **App Intent Testing** | A selected action from a built macOS app. | The action completed and, if requested, its return value matched the expected JSON value. |
 
 Intents saves runs and reports on this Mac. A score, an Xcode test result, and a release check measure different things. Read the saved evidence before you approve a baseline or release a change. Human review and judge calibration do not themselves approve a baseline. Batch reports apply the frozen dataset and job policy; their source-grouped confidence does not establish real-world prevalence for curated data.
 
-This guide describes the current app source. Some controls require a model, judge, app runner, Xcode, or physical device.
+The workflows on this page are available in Intents 1.6.0. Some require a model, judge, app runner, Xcode, or physical device.
