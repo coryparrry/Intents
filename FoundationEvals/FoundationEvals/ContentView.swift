@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var appControl: EvaluationAppControl
     @Environment(DeveloperRunnerStore.self) private var runners
     @Environment(\.controlActiveState) private var windowActivity
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     /// Creates the workspace view with shared app control and production state, constructing control when none is supplied.
@@ -57,6 +58,10 @@ struct ContentView: View {
         store.telemetry?.screen(TelemetryScreen(selection: store.selection))
     }
 
+    private var showsWorkspaceStatus: Bool {
+        store.isRunning || runners.executingRunID != nil || store.hasUnsavedCompletedRun
+    }
+
     private var workspaceNavigation: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             WorkspaceSidebar(store: store)
@@ -72,22 +77,21 @@ struct ContentView: View {
                 }
                 .scrollEdgeEffectStyle(.soft, for: .top)
                 .scrollEdgeEffectStyle(.hard, for: .bottom)
-
-                // Reserve layout space for the footer. Native split/list panes
-                // must end above it, including their final scrollable row.
-                WorkbenchStatusBar(store: store)
-                    .background(.regularMaterial)
-                    .overlay(alignment: .top) { Divider() }
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("Workspace status")
             }
-            .background {
-                WorkspaceBackdrop()
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+            .safeAreaPadding(.bottom, showsWorkspaceStatus ? 66 : 0)
+            .overlay(alignment: .bottom) {
+                if showsWorkspaceStatus {
+                    WorkbenchStatusBar(store: store)
+                        .workspaceSurface(radius: 100)
+                        .padding(.horizontal, 28).padding(.bottom, 14)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("Workspace status")
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: showsWorkspaceStatus)
         }
+        .background { WorkspaceBackdrop() }
     }
 
     @ViewBuilder

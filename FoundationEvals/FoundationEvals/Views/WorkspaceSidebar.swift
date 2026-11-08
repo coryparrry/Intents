@@ -1,5 +1,22 @@
 import SwiftUI
 
+/// Finder-style colour belongs to the navigation symbol, not its readable label.
+private struct WorkspaceSidebarLabelStyle: LabelStyle {
+    let color: Color
+
+    /// Renders the symbol in a coloured badge while retaining the system text style.
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 9) {
+            configuration.icon
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 26, height: 26)
+                .background(color.opacity(0.13), in: .rect(cornerRadius: 7))
+            configuration.title
+        }
+    }
+}
+
 private enum WorkspaceDestination: Hashable {
     case overview
     case evaluations
@@ -15,9 +32,11 @@ struct WorkspaceSidebar: View {
     @State private var isManagingWorkspace = false
     @State private var isCreatingSuite = false
     @State private var isCreatingProject = false
+    @State private var collapsedSuiteIDs: Set<UUID> = []
     @State private var runToDelete: EvaluationRun?
     @State private var runSearch = ""
     @State private var showsAllRuns = false
+    @State private var isProjectSwitcherHovered = false
 
     private var isBusy: Bool { store.isRunning || store.isReassessing || store.isProcessingFiles }
     private var filteredRuns: [EvaluationRun] {
@@ -74,70 +93,92 @@ struct WorkspaceSidebar: View {
         SidebarNavigationList(selection: destination) {
             Section {
                 Label("Overview", systemImage: "square.grid.2x2")
+                    .labelStyle(WorkspaceSidebarLabelStyle(color: .blue))
                     .accessibilityIdentifier("Sidebar overview")
                     .tag(WorkspaceDestination.overview)
-                Label { Text("Evaluations") } icon: { WorkspaceIcon(symbol: "text.bubble", size: 18) }
+                Label("Evaluations", systemImage: "checklist")
+                    .labelStyle(WorkspaceSidebarLabelStyle(color: .green))
                     .accessibilityIdentifier("Sidebar evaluations")
                     .tag(WorkspaceDestination.evaluations)
-                Label { Text("Batch runs") } icon: { WorkspaceIcon(symbol: "play.rectangle", size: 18) }
+                Label("Batch runs", systemImage: "square.stack.3d.down.right")
+                    .labelStyle(WorkspaceSidebarLabelStyle(color: .orange))
                     .accessibilityIdentifier("Sidebar batch runs")
                     .tag(WorkspaceDestination.batchRuns)
-                Label { Text("Traces") } icon: { WorkspaceIcon(symbol: "point.3.connected.trianglepath.dotted", size: 18) }
+                Label("Traces", systemImage: "point.3.connected.trianglepath.dotted")
+                    .labelStyle(WorkspaceSidebarLabelStyle(color: .purple))
                     .accessibilityIdentifier("Sidebar traces")
                     .tag(WorkspaceDestination.traces)
-                Label { Text("App Intent Testing") } icon: { WorkspaceIcon(symbol: "play", size: 18) }
+                Label("App Intents", systemImage: "app.badge.checkmark")
+                    .labelStyle(WorkspaceSidebarLabelStyle(color: .pink))
+                    .accessibilityIdentifier("Sidebar app intents")
                     .tag(WorkspaceDestination.appIntentTesting)
             }
 
             Section("Suites") {
                 ForEach(store.suiteRecords.filter { $0.archivedAt == nil }) { suite in
-                    Label(suite.id == store.selectedSuiteID ? store.draftSuite.name : suite.name, systemImage: "checklist")
-                        .lineLimit(1)
-                        .tag(WorkspaceDestination.suite(suite.id))
-                        .contextMenu {
-                            Button("Duplicate suite", systemImage: "plus.square.on.square") {
-                                perform { _ = try store.duplicateSuite(id: suite.id) }
+                    let isSelected = suite.id == store.selectedSuiteID
+                    DisclosureGroup(isExpanded: Binding(
+                        get: { isSelected && !collapsedSuiteIDs.contains(suite.id) },
+                        set: { isExpanded in
+                            if isExpanded {
+                                collapsedSuiteIDs.remove(suite.id)
+                                destination.wrappedValue = .suite(suite.id)
+                            } else {
+                                collapsedSuiteIDs.insert(suite.id)
                             }
-                            .disabled(isBusy)
-                            Button("Archive suite", systemImage: "archivebox") {
-                                perform { try store.archiveSuite(id: suite.id) }
-                            }
-                            .disabled(isBusy)
                         }
-                }
-            }
-
-            Section("Runs for \(store.draftSuite.name)") {
-                if store.runs.count > 5 || !runSearch.isEmpty {
-                    WorkspaceSearchField(prompt: "Filter runs", text: $runSearch)
-                        .selectionDisabled()
-                }
-                if filteredRuns.isEmpty {
-                    EmptyRunHistoryRow(isSearching: !runSearch.isEmpty)
-                } else {
-                    ForEach(displayedRuns) { run in
-                        RunSidebarRow(run: run)
-                            .tag(WorkspaceDestination.run(run.id))
+                    )) {
+                        if isSelected {
+                            if store.runs.count > 5 || !runSearch.isEmpty {
+                                WorkspaceSearchField(prompt: "Filter runs", text: $runSearch)
+                                    .selectionDisabled()
+                            }
+                            if filteredRuns.isEmpty {
+                                EmptyRunHistoryRow(isSearching: !runSearch.isEmpty)
+                            } else {
+                                ForEach(displayedRuns) { run in
+                                    RunSidebarRow(run: run)
+                                        .tag(WorkspaceDestination.run(run.id))
+                                        .contextMenu {
+                                            Button("Delete run…", systemImage: "trash", role: .destructive) {
+                                                runToDelete = run
+                                            }
+                                            .disabled(isBusy)
+                                        }
+                                }
+                            }
+                            if runSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && filteredRuns.count > 3 {
+                                Button {
+                                    showsAllRuns.toggle()
+                                } label: {
+                                    Label(showsAllRuns ? "Show fewer runs" : "Show all runs", systemImage: showsAllRuns ? "chevron.up" : "chevron.down")
+                                }
+                                .buttonStyle(.borderless).font(.callout).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("Sidebar run expansion")
+                                .selectionDisabled()
+                            }
+                        }
+                    } label: {
+                        Label(isSelected ? store.draftSuite.name : suite.name, systemImage: "doc.text")
+                            .labelStyle(WorkspaceSidebarLabelStyle(color: .accentColor))
+                            .lineLimit(1)
                             .contextMenu {
-                                Button("Delete run…", systemImage: "trash", role: .destructive) {
-                                    runToDelete = run
+                                Button("Duplicate suite", systemImage: "plus.square.on.square") {
+                                    perform { _ = try store.duplicateSuite(id: suite.id) }
+                                }
+                                .disabled(isBusy)
+                                Button("Archive suite", systemImage: "archivebox") {
+                                    perform { try store.archiveSuite(id: suite.id) }
                                 }
                                 .disabled(isBusy)
                             }
                     }
-                }
-                if runSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && filteredRuns.count > 3 {
-                    Button {
-                        showsAllRuns.toggle()
-                    } label: {
-                        Label(showsAllRuns ? "Show fewer runs" : "Show all runs", systemImage: showsAllRuns ? "chevron.up" : "chevron.down")
-                    }
-                        .buttonStyle(.borderless).font(.callout).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("Sidebar run expansion")
-                        .selectionDisabled()
+                    .tag(WorkspaceDestination.suite(suite.id))
                 }
             }
+
         }
+        .scrollContentBackground(.hidden)
         .onChange(of: store.selectedSuiteID) { _, _ in runSearch = ""; showsAllRuns = false }
         .safeAreaInset(edge: .top, spacing: 0) {
             projectSwitcher
@@ -148,9 +189,8 @@ struct WorkspaceSidebar: View {
                 Button { isCreatingSuite = true } label: {
                     Label("New Suite", systemImage: "plus")
                         .font(.callout.weight(.medium))
-                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glassProminent)
                 .help("Create a new evaluation suite in this project")
                 Spacer()
             }
@@ -196,19 +236,20 @@ struct WorkspaceSidebar: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(width: 22)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Project").font(.caption2).foregroundStyle(.secondary)
-                    Text(store.selectedProject.name)
-                        .font(.callout.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
-                        .contentTransition(.opacity)
-                }
+                Text(store.selectedProject.name)
+                    .font(.callout.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                    .contentTransition(.opacity)
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(.quinary, in: .rect(cornerRadius: 12, style: .continuous))
             .contentShape(.rect)
+            .background(
+                isProjectSwitcherHovered ? Color.primary.opacity(0.05) : .clear,
+                in: .rect(cornerRadius: WorkspaceStyle.controlRadius, style: .continuous)
+            )
+            .onHover { isProjectSwitcherHovered = $0 }
         }
         .menuStyle(.button)
         .buttonStyle(.plain)

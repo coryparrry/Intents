@@ -55,6 +55,7 @@ private struct SuiteRunDestinationButton: View {
                 .frame(maxWidth: 170)
         }
         .disabled(runners.isBusy(for: store))
+        .buttonStyle(.glass)
         .help("Choose where this suite runs")
         .accessibilityLabel("Run destination")
         .accessibilityValue(destinationName)
@@ -167,13 +168,13 @@ private struct SuiteRunButton: View {
             } else if store.hasUnsavedCompletedRun {
                 Button("Retry Save", systemImage: "arrow.clockwise") { store.retryPendingRunSave() }
                     .labelStyle(.titleAndIcon)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .tint(WorkspaceStyle.warning)
             } else {
                 Button(action: run) {
                     Label("Run", systemImage: "play.fill").labelStyle(.titleAndIcon)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(!runners.canStartRun(for: store))
                 .help(runners.runIssue(for: store) ?? "Run the current suite (⌘↩)")
                 .accessibilityLabel("Run suite")
