@@ -26,6 +26,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 1_000, minHeight: 700)
         .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .background { SuiteAutosaveObserver(store: store) }
         .onChange(of: store.telemetry?.isEnabled) { _, _ in recordScreen() }
         .onChange(of: store.selection, initial: true) { _, _ in recordScreen() }
@@ -90,8 +91,13 @@ struct ContentView: View {
                 }
             }
             .animation(reduceMotion ? nil : WorkspaceStyle.stateMotion, value: showsWorkspaceStatus)
+            .background {
+                WorkspaceBackdrop()
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
-        .background { WorkspaceBackdrop() }
     }
 
     @ViewBuilder

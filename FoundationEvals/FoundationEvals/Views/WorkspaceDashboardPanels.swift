@@ -85,7 +85,7 @@ struct HomeHero: View {
         }
         .padding(26)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .workspaceSurface(tint: .blue)
+        .workspaceSurface()
         .accessibilityElement(children: .contain)
     }
 }

@@ -105,7 +105,7 @@ struct RunSummaryDashboard: View {
                 .frame(maxHeight: .infinity)
             }
         }
-        .summaryCard(tint: .accentColor)
+        .summaryCard()
     }
 
     /// Formats latency ticks with enough precision to distinguish sub-millisecond samples.
@@ -157,7 +157,7 @@ struct RunSummaryDashboard: View {
                 .font(.caption)
                 .foregroundStyle(WorkspaceStyle.secondaryText)
         }
-        .summaryCard(tint: run.failedCount > 0 ? WorkspaceStyle.failure : run.passedCount > 0 ? WorkspaceStyle.success : WorkspaceStyle.warning)
+        .summaryCard()
     }
 
     private var metricsCard: some View {
@@ -184,7 +184,7 @@ struct RunSummaryDashboard: View {
             }
             Spacer(minLength: 0)
         }
-        .summaryCard(tint: .purple)
+        .summaryCard()
     }
 
     /// Displays a labeled outcome count with its status color.
@@ -223,10 +223,10 @@ struct RunSummaryDashboard: View {
 }
 
 private extension View {
-    /// Applies a semantic glass tint and flexible alignment to a dashboard summary card.
-    func summaryCard(tint: Color) -> some View {
+    /// Applies glass and flexible alignment to a dashboard summary card.
+    func summaryCard() -> some View {
         padding(18)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .workspaceSurface(tint: tint)
+            .workspaceSurface()
     }
 }
