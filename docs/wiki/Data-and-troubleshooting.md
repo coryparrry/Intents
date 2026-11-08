@@ -10,6 +10,34 @@ Intents saves projects, suites, imported files, and run history under `~/Library
 
 Deleting a run removes its saved results and trace. **Start from Scratch** can reset a suite, clear its runs and traces, or do both. The app cannot undo these actions. Before a reset, back up the Application Support data or export the evidence that you need.
 
+## Back up and restore a complete workspace
+
+Quit Intents and the standalone plugin, and stop all CLI, polling, and native workers before copying data. A copy taken during a write can mix catalog, run, and audit versions. Use a private backup destination; these directories contain authored inputs and model outputs. An exported run is only one record, not a complete workspace backup.
+
+Copy each directory that you use, preserving its complete contents and permissions:
+
+| Data | Location |
+|---|---|
+| Native projects, suites, attachments, reviews, drafts, run history and batch store | `~/Library/Application Support/FoundationEvals/` (includes `ProductionEvals/` and `ProductionReviewDrafts.json`) |
+| Siri documents, recovery drafts and frozen runs | `~/Library/Application Support/Intents/SiriStudio/` |
+| Direct App Intent logs and result bundles | `~/Library/Application Support/Intents/MacIntentTesting/` |
+| Standalone plugin projects, suites and runs | The directory selected by `FOUNDATION_EVALS_PLUGIN_DATA`, otherwise `PLUGIN_DATA`, otherwise `~/.local/share/apple-foundation-evals` |
+| Separate CLI batch stores | Every directory supplied with `--storage`; these are not automatically part of the native store |
+| Files outside these stores | Scenario and run exports, repository-backed suite files, original imported documents, custom tool resources and other external files that you need to run again |
+
+Record the app version and these chosen paths alongside the backup. Save preferences separately with `defaults export com.coryparry.FoundationEvals /private/backup/Intents-preferences.plist`, substituting your private backup path. Preferences include privacy and connection settings and are not included in the Application Support copy.
+
+Credentials are in the login Keychain. These file copies do not migrate judge keys, the MCP bearer credential or other Keychain secrets. Re-enter judge keys and reconnect MCP on the destination Mac using Settings. Do not put credentials in exported suites, jobs or backup notes. Runner trust and identity are workspace-local, but restored device connections may still need fresh pairing. Verify the intended machine and device before trusting a connection.
+
+To restore:
+
+1. Keep all writers stopped. Retain the current directories and preferences as a separate rollback copy, even if they appear empty.
+2. Copy each saved directory to an empty staging directory on the destination Mac. Compare relative file lists and file hashes with the backup before installing it. A missing optional directory means that feature had no copied data; do not silently substitute another store.
+3. Move the staged directories to their original locations, or explicitly configure the plugin environment and CLI `--storage` paths to their restored locations. Restore each directory as a whole. Do not merge catalogs or audit files from different snapshots. Keep the rollback copy until verification is complete.
+4. If you choose to restore preferences, import the saved plist with `defaults import com.coryparry.FoundationEvals /private/backup/Intents-preferences.plist` while Intents is stopped. Review privacy settings and machine-specific paths before resuming work.
+5. Start Intents without running evaluations. Check project and suite counts, archived items, a saved run and its trace, human reviews, batch reports and operator drafts. In App Intents, reopen a Siri document/run and inspect a Direct Action evidence directory. Open the plugin with its restored data directory and inspect its saved history separately.
+6. Re-enter credentials and reconnect providers, MCP and devices as needed. Historical results remain historical evidence; successful restore does not qualify current signing, Siri, model availability or network access. If verification fails, quit all writers and reinstate the complete rollback directories and preferences before trying again.
+
 ## What can leave the Mac
 
 The on-device Foundation Model runs locally. A selected cloud model uses Apple's service. An external AI judge receives evaluation evidence after the app shows a disclosure and receives approval.
@@ -82,4 +110,4 @@ Re-enter the key in judge settings if it predates endpoint binding or if you cha
 
 ### A scheduled batch has not started
 
-Schedules need the running app or an explicitly polling worker. They do not install a background daemon. Inspect the schedule, job state, worker target, and required approval before starting work again.
+A polling worker ticks schedules and executes matching jobs. An explicit `intents-evals tick --storage /path/to/store` creates due jobs but still needs a matching worker to execute them. For a native headless worker, use `--production-poll`; the CLI worker uses `--poll`. Keeping the normal app open does not tick schedules, and no background daemon is installed. Inspect the template name, next due time, paused state, remaining runs, worker target, job state and required approval before resuming work. See the [worker and schedule commands](../PRODUCTION_EVALS_GUIDE.md).

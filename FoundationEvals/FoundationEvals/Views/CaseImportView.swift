@@ -13,6 +13,7 @@ struct CaseImportView: View {
     @State private var promptColumn = ""
     @State private var expectedColumn: String?
     @State private var errorMessage: String?
+    @State private var acceptsPartialImport = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,6 +52,17 @@ struct CaseImportView: View {
                         .onChange(of: expectedColumn) { _, _ in updatePreview() }
 
                         if let preview = fileSelection.preview {
+                            Text("\(preview.totalValidRowCount) valid source rows · \(importCount) fit · \(omittedCount) omitted")
+                                .font(.callout).accessibilityIdentifier("Import coverage")
+                            if omittedCount > 0 {
+                                WorkspaceNotice(.warning, message: "Only the first \(importCount) valid rows fit in this suite. \(omittedCount) rows will not be imported. Reimporting this file repeats its first rows; use a file containing only the remaining rows to continue.")
+                                Toggle("Import only the first \(importCount) rows", isOn: $acceptsPartialImport)
+                                    .disabled(importCount == 0)
+                                Button("Use a new blank suite for this file", action: createImportSuite)
+                                    .buttonStyle(.bordered)
+                                Text("The file and mappings stay open. A new blank suite has room for up to 100 cases at its default repetition count.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                             if preview.rows.isEmpty {
                                 WorkspaceEmptyState(symbol: "tablecells", title: "No importable rows", detail: "Check the column mapping and the issues below.")
                             } else {
@@ -88,11 +100,12 @@ struct CaseImportView: View {
                 Button("Import \(importCount) \(importCount == 1 ? "Case" : "Cases")") { importCases() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(fileSelection.preview?.canImport != true || importCount == 0)
+                    .disabled(fileSelection.preview?.canImport != true || importCount == 0 || (omittedCount > 0 && !acceptsPartialImport))
             }
             .padding(.horizontal, 24).padding(.vertical, 16)
         }
         .frame(width: 760, height: 620)
+        .onChange(of: store.remainingCaseImportCapacity) { _, _ in acceptsPartialImport = false }
         .fileImporter(
             isPresented: $isChoosingFile,
             allowedContentTypes: [.commaSeparatedText, .json, .plainText],
@@ -121,6 +134,7 @@ struct CaseImportView: View {
         promptColumn = ""
         expectedColumn = nil
         errorMessage = nil
+        acceptsPartialImport = false
     }
 
     /// Builds a column picker that writes either a selected column or an unmapped value to the supplied binding.
@@ -162,6 +176,7 @@ struct CaseImportView: View {
     /// Rebuilds the preview from the current file, format, and mappings, clearing the previous error on success.
     /// Invalid mappings or data discard the preview and expose the parsing error.
     private func updatePreview() {
+        acceptsPartialImport = false
         guard let data = fileSelection.data, !promptColumn.isEmpty else { return }
         do {
             fileSelection.preview = try EvaluationCaseImporter.preview(
@@ -180,10 +195,28 @@ struct CaseImportView: View {
         min(fileSelection.preview?.totalValidRowCount ?? 0, store.remainingCaseImportCapacity)
     }
 
+    private var omittedCount: Int {
+        max(0, (fileSelection.preview?.totalValidRowCount ?? 0) - importCount)
+    }
+
+    /// Creates an empty destination while retaining the importer's navigation branch, file and mapping.
+    /// Failed creation keeps the current preview and exposes the error for retry.
+    private func createImportSuite() {
+        let previousSelection = store.selection
+        defer { store.selection = previousSelection }
+        do {
+            let name = URL(filePath: filename).deletingPathExtension().lastPathComponent
+            _ = try store.createSuite(name: name.isEmpty ? "Imported cases" : name)
+            acceptsPartialImport = false
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     /// Parses cases within the remaining workspace capacity and appends them to the store.
     /// The import sheet closes only after success; failures remain visible for correction.
     private func importCases() {
         guard let data = fileSelection.data else { return }
+        guard omittedCount == 0 || acceptsPartialImport else { return }
         do {
             let remaining = store.remainingCaseImportCapacity
             guard remaining > 0 else { throw EvaluationCaseImportError.tooManyRows(maximum: 0) }

@@ -8,7 +8,12 @@ struct NativeTestsMain {
     /// Uses exit 1 for a failed/cancelled native attempt and exit 2 for invalid arguments or setup failures.
     @MainActor static func main() async {
         do {
-            let options = try NativeTestsOptions(Array(CommandLine.arguments.dropFirst()))
+            let arguments = Array(CommandLine.arguments.dropFirst())
+            if arguments.first == "siri" {
+                try await siri(Array(arguments.dropFirst()))
+                return
+            }
+            let options = try NativeTestsOptions(arguments)
             if options.command == .help { print(NativeTestsOptions.help); return }
             let catalog = try await MacIntentCatalog.loadAsync(appURL: options.url("app"))
             if options.command == .catalog { try emit(catalog); return }
@@ -34,6 +39,39 @@ struct NativeTestsMain {
                 FileHandle.standardError.write(data + Data("\n".utf8))
             }
             exit(2)
+        }
+    }
+
+    /// Validates, exports, runs, or reopens a Siri Studio scenario document.
+    @MainActor private static func siri(_ arguments: [String]) async throws {
+        if arguments.isEmpty || arguments.contains("--help") { print(SiriStudioOptions.help); return }
+        let options = try SiriStudioOptions(arguments)
+        if options.command == .show {
+            let record = try SiriStudioRunRecord.read(from: options.url("run"))
+            try emit(SiriStudioCLIOutput(record))
+            if record.state != .passed { exit(1) }
+            return
+        }
+        let document = try SiriStudioDocument.read(from: options.url("scenarios"))
+        let catalog = try await MacIntentCatalog.loadAsync(appURL: options.url("app"))
+        switch options.command {
+        case .validate:
+            try SiriStudioValidation.validate(document, catalog: catalog)
+            try emit(["scenarios": document.scenarios.count])
+        case .export:
+            let source = try SiriStudioSource.tests(document: document, catalog: catalog,
+                scenarioIDs: options.scenarioIDs.isEmpty ? nil : options.scenarioIDs)
+            try Data(source.utf8).write(to: options.url("output"), options: .atomic)
+        case .run:
+            let runner = SiriStudioRunner()
+            let record = try await NativeTestsSignals.whileRunning(cancel: { runner.cancel() }) {
+                try await runner.run(document: document, catalog: catalog, configuration: options.configuration,
+                                     scenarioIDs: options.scenarioIDs.isEmpty ? nil : options.scenarioIDs,
+                                     allowance: options.allowance, timeout: options.timeout)
+            }
+            try emit(SiriStudioCLIOutput(record))
+            if record.state != .passed { exit(1) }
+        case .show: break
         }
     }
 

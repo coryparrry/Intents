@@ -1,0 +1,302 @@
+{
+  "bundleIdentifier": "dev.intents.samples.Courtside",
+  "scenarios": [
+    {
+      "id": "7517157C-7AD9-57B4-B874-532684066A7D",
+      "name": "Add and open",
+      "repeatCount": 1,
+      "revision": 1,
+      "scenarioExpectations": {
+        "calls": [],
+        "forbidden": [],
+        "ordering": "ordered",
+        "replyContains": []
+      },
+      "setup": {
+        "actionIdentifier": "ResetDataIntent",
+        "id": "805EB471-97F8-5204-BA8E-8EBC7CDE5003",
+        "inputsJSON": "{}"
+      },
+      "turns": [
+        {
+          "expectations": {
+            "calls": [
+              {
+                "actionIdentifier": "AddPlayerIntent",
+                "arguments": [
+                  {
+                    "matcher": {
+                      "equals": {
+                        "_0": "Maya"
+                      }
+                    },
+                    "parameterIdentifier": "name"
+                  },
+                  {
+                    "matcher": {
+                      "entityIdentifier": {
+                        "entityType": "TeamEntity",
+                        "identifier": "tigers"
+                      }
+                    },
+                    "parameterIdentifier": "team"
+                  },
+                  {
+                    "matcher": {
+                      "enumCase": {
+                        "_0": "pointGuard"
+                      }
+                    },
+                    "parameterIdentifier": "position"
+                  },
+                  {
+                    "matcher": {
+                      "intEquals": {
+                        "_0": 12
+                      }
+                    },
+                    "parameterIdentifier": "number"
+                  }
+                ],
+                "id": "55BEF9C3-FABC-53AE-8CCF-D58383B73771"
+              },
+              {
+                "actionIdentifier": "OpenTeamIntent",
+                "arguments": [
+                  {
+                    "matcher": {
+                      "entityIdentifier": {
+                        "entityType": "TeamEntity",
+                        "identifier": "tigers"
+                      }
+                    },
+                    "parameterIdentifier": "team"
+                  }
+                ],
+                "id": "84CCBA0B-701C-51A4-BB7D-880748618557"
+              }
+            ],
+            "forbidden": [
+              {
+                "actionIdentifier": "DeletePlayerIntent",
+                "arguments": [],
+                "id": "FF90DAA5-0959-56BF-8E07-4F6EEB71DDB5"
+              }
+            ],
+            "ordering": "ordered",
+            "replyContains": [
+              {
+                "caseSensitive": false,
+                "text": "Tigers"
+              }
+            ]
+          },
+          "id": "B715B5A3-7C65-5DE5-85A5-4FD3F5B1CD2E",
+          "utterance": "In Courtside, add Maya to the Tigers as a point guard wearing number 12, then open the team."
+        }
+      ]
+    },
+    {
+      "id": "77348B60-F402-50EA-A83C-B48C2576EE08",
+      "name": "Missing jersey number",
+      "repeatCount": 1,
+      "revision": 1,
+      "scenarioExpectations": {
+        "calls": [],
+        "forbidden": [
+          {
+            "actionIdentifier": "DeletePlayerIntent",
+            "arguments": [],
+            "id": "4F1EABF2-47A1-5EB9-BC6E-B0048881E161"
+          }
+        ],
+        "ordering": "ordered",
+        "replyContains": []
+      },
+      "setup": {
+        "actionIdentifier": "ResetDataIntent",
+        "id": "70F851A3-4DE7-5875-8664-3E514B121D50",
+        "inputsJSON": "{}"
+      },
+      "turns": [
+        {
+          "expectations": {
+            "calls": [],
+            "forbidden": [
+              {
+                "actionIdentifier": "AddPlayerIntent",
+                "arguments": [],
+                "id": "2F0224CC-623F-5DEE-B65B-022F807ECEC3"
+              }
+            ],
+            "ordering": "ordered",
+            "replyContains": []
+          },
+          "id": "10F8AD6A-F642-5DC5-BFF0-8C9760D9379C",
+          "utterance": "In Courtside, add Maya to the Tigers as a point guard."
+        },
+        {
+          "expectations": {
+            "calls": [
+              {
+                "actionIdentifier": "AddPlayerIntent",
+                "arguments": [
+                  {
+                    "matcher": {
+                      "intEquals": {
+                        "_0": 12
+                      }
+                    },
+                    "parameterIdentifier": "number"
+                  }
+                ],
+                "id": "55D62986-B2DD-5245-901A-491EC77241F8"
+              }
+            ],
+            "forbidden": [],
+            "ordering": "ordered",
+            "replyContains": []
+          },
+          "id": "A0D9B916-DEA3-5240-B0AB-61E4DB551BB2",
+          "utterance": "Number 12."
+        }
+      ]
+    },
+    {
+      "id": "CABD7177-4E3A-5B9C-BFE6-714ED964CB9A",
+      "name": "Don’t act on a question",
+      "repeatCount": 1,
+      "revision": 1,
+      "scenarioExpectations": {
+        "calls": [],
+        "forbidden": [],
+        "ordering": "ordered",
+        "replyContains": []
+      },
+      "setup": {
+        "actionIdentifier": "ResetDataIntent",
+        "id": "01489D66-5BC0-5CC2-8B1E-E3D0C8074B41",
+        "inputsJSON": "{}"
+      },
+      "turns": [
+        {
+          "expectations": {
+            "calls": [],
+            "forbidden": [
+              {
+                "actionIdentifier": "AddPlayerIntent",
+                "arguments": [],
+                "id": "A9404FCF-C84F-5F4F-A59E-9F79ECF65016"
+              },
+              {
+                "actionIdentifier": "DeletePlayerIntent",
+                "arguments": [],
+                "id": "133CF5B2-E47B-55C1-8970-08C329236BA4"
+              }
+            ],
+            "ordering": "ordered",
+            "replyContains": []
+          },
+          "id": "2A189DCA-5F0F-5444-B788-91B6E5F97264",
+          "utterance": "How many players are on the Tigers in Courtside?"
+        }
+      ]
+    },
+    {
+      "id": "A282A26D-0004-588D-97CE-BF0051B568B0",
+      "name": "Deliberate mismatch",
+      "repeatCount": 1,
+      "revision": 1,
+      "scenarioExpectations": {
+        "calls": [],
+        "forbidden": [],
+        "ordering": "ordered",
+        "replyContains": []
+      },
+      "setup": {
+        "actionIdentifier": "ResetDataIntent",
+        "id": "D5ABCF00-DDCD-5630-95B7-57094BCDAA80",
+        "inputsJSON": "{}"
+      },
+      "turns": [
+        {
+          "expectations": {
+            "calls": [
+              {
+                "actionIdentifier": "AddPlayerIntent",
+                "arguments": [
+                  {
+                    "matcher": {
+                      "equals": {
+                        "_0": "Maya"
+                      }
+                    },
+                    "parameterIdentifier": "name"
+                  },
+                  {
+                    "matcher": {
+                      "entityIdentifier": {
+                        "entityType": "TeamEntity",
+                        "identifier": "tigers"
+                      }
+                    },
+                    "parameterIdentifier": "team"
+                  },
+                  {
+                    "matcher": {
+                      "enumCase": {
+                        "_0": "pointGuard"
+                      }
+                    },
+                    "parameterIdentifier": "position"
+                  },
+                  {
+                    "matcher": {
+                      "intEquals": {
+                        "_0": 21
+                      }
+                    },
+                    "parameterIdentifier": "number"
+                  }
+                ],
+                "id": "2490BD96-C5C2-5CF6-8FFB-16D7B6460879"
+              },
+              {
+                "actionIdentifier": "OpenTeamIntent",
+                "arguments": [
+                  {
+                    "matcher": {
+                      "entityIdentifier": {
+                        "entityType": "TeamEntity",
+                        "identifier": "tigers"
+                      }
+                    },
+                    "parameterIdentifier": "team"
+                  }
+                ],
+                "id": "EA73B637-B611-5928-BCBC-92EAB4073C25"
+              }
+            ],
+            "forbidden": [
+              {
+                "actionIdentifier": "DeletePlayerIntent",
+                "arguments": [],
+                "id": "2633C4BD-E980-5152-8AE1-B320017F652B"
+              }
+            ],
+            "ordering": "ordered",
+            "replyContains": [
+              {
+                "caseSensitive": false,
+                "text": "Tigers"
+              }
+            ]
+          },
+          "id": "B139EE9B-A6B1-5F68-B542-8E55305429A8",
+          "utterance": "In Courtside, add Maya to the Tigers as a point guard wearing number 12, then open the team."
+        }
+      ]
+    }
+  ],
+  "version": 1
+}

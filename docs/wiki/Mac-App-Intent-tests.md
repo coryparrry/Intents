@@ -1,6 +1,9 @@
 # Test Mac App Intents
 
-Use **App Intent Testing** in Intents, or the `intents-native-tests` command, to
+Use **Direct Action** for the workflow below. For multi-turn tests of Siri’s
+action choices and replies, switch to [Siri Studio](Siri-Studio.md).
+
+Use **App Intents** in Intents, or the `intents-native-tests` command, to
 inspect a built Mac app and run explicit input/result checks. Execution uses
 Apple’s `AppIntentsTesting` framework in a generated macOS UI-test target.
 Your subject app does not need an Intents SDK or custom test adapter.
@@ -96,11 +99,13 @@ execution-only smoke coverage.
 
 ## Use the native app
 
-Choose the installed `.app` in **App Intent Testing**, select an action from the
-catalog, and enter a JSON object keyed by parameter identifier. Provide the
-expected JSON value, or disable the comparison for a smoke check. Enter the Xcode
-developer directory, signing team and identity, then run and read the diagnostics.
 Review the intended effect before testing a data-changing action in your own app.
+
+1. Open **App Intents** in the sidebar. Select **Choose built macOS app…** and choose the installed `.app`.
+2. Select an **Action** and enter a JSON object in **Inputs JSON** using the parameter identifiers shown in the app.
+3. Enable **Compare returned value** and enter the expected JSON value. For an execution-only smoke check, turn the comparison off.
+4. Under **Xcode and signing**, enter the developer directory, signing identity, and team identifier. Select **Run native test**.
+5. Read the result and use **Show log in Finder** or **Open result bundle** to inspect the evidence.
 
 ## Evidence and limits
 

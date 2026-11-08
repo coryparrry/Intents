@@ -15,7 +15,8 @@ import Observation
     private(set) var isLoading = false
     private(set) var result: MacIntentRunResult?
     private(set) var diagnostic: String?
-    @ObservationIgnored private let runner = MacIntentRunner()
+    let siri: SiriStudioStore
+    @ObservationIgnored private let runner: MacIntentRunner
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var loadTask: Task<Void, Never>?
     @ObservationIgnored private var catalogLoadID: UUID?
@@ -26,9 +27,12 @@ import Observation
     @ObservationIgnored private var draftRevision = 0
 
     /// Creates an intent test session with optional content-free telemetry and injectable execution/catalog loading.
-    init(telemetry: TelemetryController? = nil,
+    init(telemetry: TelemetryController? = nil, siriStudioRoot: URL? = nil,
          runOverride: (@MainActor (MacIntentCatalog, [MacIntentTestCase], MacIntentRunConfiguration) async throws -> MacIntentRunResult)? = nil,
          catalogLoader: @escaping @Sendable (URL) async throws -> MacIntentCatalog = { try await MacIntentCatalog.loadAsync(appURL: $0) }) {
+        let session = NativeTestSession()
+        runner = MacIntentRunner(session: session)
+        siri = SiriStudioStore(session: session, telemetry: telemetry, root: siriStudioRoot)
         self.runOverride = runOverride
         self.catalogLoader = catalogLoader
         self.telemetry = telemetry
@@ -48,7 +52,7 @@ import Observation
     /// Starts owned off-actor catalog loading, replacing an older selection only after its cancelled load has finished.
     /// Clears previous results immediately; only the current load may publish selection or diagnostics.
     func load(appURL: URL) {
-        guard !isClosing, !isRunning else { return }
+        guard !isClosing, !isRunning, !siri.isBusy else { return }
         let previous = loadTask
         previous?.cancel()
         let loadID = UUID()
@@ -108,7 +112,7 @@ import Observation
     /// Validates signing and test inputs, then launches a generated test-host run for the loaded catalog.
     /// Publishes results only if the draft revision still matches; records one content-free outcome after owned execution finishes.
     func start() {
-        guard !isClosing, !isRunning, !isLoading, let catalog else { return }
+        guard !isClosing, !isRunning, !isLoading, !siri.isBusy, let catalog else { return }
         let span = telemetry?.begin(.appIntentRun)
         result = nil
         diagnostic = nil
@@ -158,6 +162,7 @@ import Observation
         cancel()
         await loading?.value
         await running?.value
+        await siri.closeAndWait()
     }
 
     /// Waits for the current catalog load, including any cancelled predecessor it owns.
@@ -170,6 +175,6 @@ import Observation
     func cancel() {
         loadTask?.cancel()
         task?.cancel()
-        runner.cancel()
+        if isRunning { runner.cancel() }
     }
 }

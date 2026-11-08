@@ -1,0 +1,316 @@
+import Foundation
+import MacIntentTesting
+import Observation
+
+/// Owns one app's editable scenario document, frozen runs, and local persistence.
+@MainActor @Observable final class SiriStudioStore {
+    var document: SiriStudioDocument? {
+        didSet {
+            guard !isAdopting else { return }
+            do { try persistDraft() } catch { report(error) }
+        }
+    }
+    var selection: UUID?
+    private(set) var run: SiriStudioRunRecord?
+    private(set) var diagnostic: String?
+    private(set) var isBusy = false
+    private(set) var progress: SiriStudioProgress?
+    private(set) var catalog: MacIntentCatalog?
+    @ObservationIgnored private var isAdopting = false
+    @ObservationIgnored private var saved: SiriStudioDocument?
+    @ObservationIgnored private var needsSave = false
+    @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private let runner: SiriStudioRunner
+    @ObservationIgnored private let root: URL
+    @ObservationIgnored private let telemetry: TelemetryController?
+
+    /// Uses a shared native admission session and a private app support directory.
+    init(session: NativeTestSession, telemetry: TelemetryController? = nil, root: URL? = nil) {
+        runner = SiriStudioRunner(session: session)
+        self.telemetry = telemetry
+        self.root = root ?? URL.applicationSupportDirectory.appending(path: "Intents/SiriStudio", directoryHint: .isDirectory)
+    }
+
+    /// Distinguishes edits and imported copies from the last explicitly saved scenario document.
+    var hasUnsavedEdits: Bool { document != nil && (needsSave || document != saved) }
+
+    /// Retains the editable document and its revision baseline independently of the saved scenario file.
+    private struct Draft: Codable {
+        let document: SiriStudioDocument
+        let saved: SiriStudioDocument?
+        let needsSave: Bool
+    }
+
+    /// Gives immediate feedback using the same rules as CLI export and execution.
+    var validationError: String? {
+        guard let document, let catalog else { return "Choose a built macOS app." }
+        do { try SiriStudioValidation.validate(document, catalog: catalog); return nil }
+        catch { return error.localizedDescription }
+    }
+
+    /// Opens saved scenarios or a recovered draft, retaining the current app when its save fails.
+    func load(_ catalog: MacIntentCatalog?) {
+        guard !isBusy else { return }
+        let previousBundle = self.catalog?.bundleIdentifier
+        guard previousBundle != catalog?.bundleIdentifier || document == nil else {
+            self.catalog = catalog
+            return
+        }
+        do {
+            if hasUnsavedEdits { try save() }
+            guard let catalog else {
+                isAdopting = true
+                document = nil; saved = nil; needsSave = false; run = nil; diagnostic = nil; selection = nil
+                self.catalog = nil
+                isAdopting = false
+                return
+            }
+            let url = try documentURL(catalog.bundleIdentifier)
+            let opened = FileManager.default.fileExists(atPath: url.path)
+                ? try SiriStudioDocument.read(from: url) : SiriStudioDocument(bundleIdentifier: catalog.bundleIdentifier)
+            guard opened.bundleIdentifier == catalog.bundleIdentifier else {
+                throw MacIntentTestingError("The saved document belongs to a different app.")
+            }
+            let draftURL = try draftURL(catalog.bundleIdentifier)
+            let recovery: Draft? = if FileManager.default.fileExists(atPath: draftURL.path) {
+                try JSONDecoder().decode(Draft.self, from: boundedDraftData(draftURL))
+            } else { nil }
+            guard recovery == nil || (recovery?.document.bundleIdentifier == catalog.bundleIdentifier
+                && recovery?.document.version == SiriStudioDocument.currentVersion
+                && (recovery?.saved == nil || recovery?.saved?.bundleIdentifier == catalog.bundleIdentifier)) else {
+                throw MacIntentTestingError("The recovered draft has an unsupported version or belongs to a different app.")
+            }
+            self.catalog = catalog; run = nil; diagnostic = nil
+            adopt(opened)
+            if let recovery {
+                var revised = recovery.document
+                if let baseline = recovery.saved { revised.updateRevisions(from: baseline) }
+                // A crash between saving scenarios and removing the recovery file must not revive old revisions.
+                if revised != opened {
+                    isAdopting = true
+                    document = recovery.document; saved = recovery.saved; needsSave = recovery.needsSave
+                    selection = recovery.document.scenarios.first?.id
+                    isAdopting = false
+                }
+            }
+        } catch { report(error) }
+    }
+
+    /// Persists edits while preserving unchanged bytes and incrementing each edited scenario once.
+    func save() throws {
+        guard var current = document else { return }
+        if let saved { current.updateRevisions(from: saved) }
+        let url = try documentURL(current.bundleIdentifier)
+        guard needsSave || current != saved || !FileManager.default.fileExists(atPath: url.path) else {
+            try persistDraft()
+            diagnostic = nil
+            return
+        }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        try current.write(to: url)
+        isAdopting = true
+        document = current; saved = current; needsSave = false; diagnostic = nil
+        isAdopting = false
+        // Keep a clean recovery envelope if removing the previous draft is not possible.
+        try persistDraft()
+    }
+
+    /// Saves the current work before opening a copy; failures leave the current draft available for retry.
+    func openDocument(_ url: URL) throws {
+        let opened = try SiriStudioDocument.read(from: url)
+        guard opened.bundleIdentifier == catalog?.bundleIdentifier else {
+            throw MacIntentTestingError("Choose a scenario document for the selected app.")
+        }
+        try save()
+        // Persist the incoming copy before replacing the editor, so a failed recovery write cannot lose either draft.
+        try writeDraft(Draft(document: opened, saved: opened, needsSave: true))
+        adopt(opened); needsSave = true; diagnostic = nil
+    }
+
+    /// Writes a shareable copy of the current document or the exact generated Swift.
+    func export(_ url: URL, swift: Bool, all: Bool = false) throws {
+        guard let catalog else { return }
+        try save()
+        guard let document else { return }
+        if swift {
+            try Data(SiriStudioSource.tests(document: document, catalog: catalog,
+                scenarioIDs: all ? nil : selection.map { Set([$0]) }).utf8).write(to: url, options: .atomic)
+        } else { try document.write(to: url) }
+    }
+
+    /// Reports a missing platform, Xcode installation, or signing input without locking authoring.
+    func prerequisite(developer: String, team: String, identity: String) -> String? {
+        if #unavailable(macOS 27.3) { return "Live Siri evaluations require macOS 27.3 or later. You can still author and export Swift." }
+        let framework = URL(filePath: developer).appending(path: "Platforms/MacOSX.platform/Developer/Library/Frameworks/SiriEvaluations.framework")
+        guard developer.hasPrefix("/"), FileManager.default.fileExists(atPath: framework.path) else {
+            return "Choose an Xcode 27.3 or later developer directory in Xcode and signing."
+        }
+        guard !team.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !identity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "Enter the app’s development team and signing identity."
+        }
+        return nil
+    }
+
+    /// Runs the selected snapshot using shared admission and records only fixed telemetry outcomes.
+    func start(all: Bool, developer: String, team: String, identity: String, allowance: Int?) {
+        guard !isBusy, let catalog, all || selection != nil else { return }
+        do {
+            try save()
+            guard let document else { return }
+            let configuration = MacIntentRunConfiguration(developerDirectory: URL(filePath: developer),
+                signingIdentity: identity, teamIdentifier: team, outputDirectory: newRunDirectory())
+            let selection = all ? nil : self.selection.map { Set([$0]) }
+            let span = telemetry?.begin(.siriStudioRun)
+            begin {
+                var failure: TelemetryFailure?
+                defer { self.telemetry?.end(span, failure: failure) }
+                let progress = Task { await self.trackProgress(in: configuration.outputDirectory) }
+                defer { progress.cancel() }
+                do {
+                    let record = try await self.runner.run(document: document, catalog: catalog,
+                        configuration: configuration, scenarioIDs: selection, allowance: allowance)
+                    self.run = record
+                    failure = switch record.state {
+                    case .passed: nil
+                    case .cancelled: .cancelled
+                    case .blocked: .deviceUnavailable
+                    case .failed, .incomplete: .testFailure
+                    }
+                } catch {
+                    failure = Task.isCancelled ? .cancelled : .storage
+                    self.report(error)
+                }
+            }
+        } catch { report(error) }
+    }
+
+    /// Imports a developer's result bundle with the current saved scenario identity.
+    func importResult(_ url: URL, developer: String) {
+        guard !isBusy else { return }
+        do {
+            try save()
+            guard let document else { return }
+            begin {
+                self.run = try await self.runner.importResult(url, document: document, developerDirectory: URL(filePath: developer),
+                                                              outputDirectory: self.newRunDirectory())
+            }
+        } catch { report(error) }
+    }
+
+    /// Reopens a persisted run without contacting Xcode or Siri.
+    func openRun(_ directory: URL) throws {
+        let opened = try SiriStudioRunRecord.read(from: directory)
+        guard opened.document.bundleIdentifier == catalog?.bundleIdentifier else {
+            throw MacIntentTestingError("This run belongs to a different app.")
+        }
+        run = opened; selection = opened.scenarios.first?.id ?? selection; diagnostic = nil
+    }
+
+    /// Keeps authored expectations tied to the revision that actually ran.
+    func isStale(_ result: SiriStudioScenarioResult) -> Bool {
+        let frozen = run?.document.scenarios.first { $0.id == result.id }
+        let current = document?.scenarios.first { $0.id == result.id }
+        return current?.revision != result.revision || frozen != current
+    }
+
+    /// Displays a local diagnostic without sending it to telemetry.
+    func report(_ error: any Error) { diagnostic = error.localizedDescription }
+
+    /// Requires recovery only for unsaved work or a new document without a saved file.
+    /// A clean saved document can close even when its optional recovery directory is unavailable.
+    func persistForTermination() throws {
+        guard let document else { return }
+        let url = try documentURL(document.bundleIdentifier)
+        guard hasUnsavedEdits || !FileManager.default.fileExists(atPath: url.path) else { return }
+        try persistDraft()
+    }
+
+    /// Cancels only Studio's own task and waits for its native cleanup before closing.
+    func closeAndWait() async {
+        cancel()
+        await task?.value
+    }
+
+    /// Requests cancellation only when this store owns an operation.
+    func cancel() {
+        guard let task else { return }
+        task.cancel()
+        // The task's cancellation reaches the owned command without cancelling the other mode.
+    }
+
+    /// Adopts an on-disk document as the saved revision baseline.
+    private func adopt(_ document: SiriStudioDocument) {
+        isAdopting = true
+        self.document = document; saved = document; selection = document.scenarios.first?.id
+        isAdopting = false
+    }
+
+    /// Reserves store admission before creating the cancellable asynchronous operation.
+    private func begin(_ operation: @escaping @MainActor () async throws -> Void) {
+        isBusy = true; diagnostic = nil; progress = nil
+        task = Task {
+            defer { isBusy = false; task = nil; progress = nil }
+            do { try await operation() }
+            catch { report(error) }
+        }
+    }
+
+    /// Reads local, content-free progress snapshots written by the test runner.
+    private func trackProgress(in directory: URL) async {
+        while !Task.isCancelled {
+            if let current = try? SiriStudioProgress.read(from: directory) { progress = current }
+            do { try await Task.sleep(for: .milliseconds(450)) }
+            catch { return }
+        }
+    }
+
+    /// Places documents only at a bundle-identifier filename within the local scenario directory.
+    private func documentURL(_ bundle: String) throws -> URL {
+        guard !bundle.isEmpty, bundle.utf8.allSatisfy({
+            (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || [45, 46, 95].contains($0)
+        }) else { throw MacIntentTestingError("This bundle identifier cannot be used as a local scenario filename.") }
+        return root.appending(path: "Scenarios/\(bundle).json")
+    }
+
+    /// Writes each edit synchronously so closing a window or quitting cannot discard a recoverable draft.
+    private func persistDraft() throws {
+        guard let document else { return }
+        try writeDraft(Draft(document: document, saved: saved, needsSave: needsSave))
+    }
+
+    /// Publishes an atomic recovery envelope without changing the explicit saved revision baseline.
+    private func writeDraft(_ draft: Draft) throws {
+        let url = try draftURL(draft.document.bundleIdentifier)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let bytes = try encoder.encode(draft)
+        guard bytes.count <= 32 * 1024 * 1024 else {
+            throw MacIntentTestingError("The Siri Studio recovery draft exceeds 32 MB. Export a smaller document before closing.")
+        }
+        try bytes.write(to: url, options: .atomic)
+    }
+
+    /// Uses the same validated bundle filename as scenario storage, in a separate recovery directory.
+    private func draftURL(_ bundle: String) throws -> URL {
+        let name = try documentURL(bundle).lastPathComponent
+        return root.appending(path: "Drafts/\(name)")
+    }
+
+    /// Bounds recovery reads before decoding potentially damaged or externally edited files.
+    private func boundedDraftData(_ url: URL) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let bytes = try handle.read(upToCount: 32 * 1024 * 1024 + 1) ?? Data()
+        guard bytes.count <= 32 * 1024 * 1024 else {
+            throw MacIntentTestingError("The Siri Studio recovery draft exceeds 32 MB.")
+        }
+        return bytes
+    }
+
+    /// Allocates a unique path so a run or import cannot overwrite earlier evidence.
+    private func newRunDirectory() -> URL { root.appending(path: "Runs/\(UUID().uuidString)", directoryHint: .isDirectory) }
+}

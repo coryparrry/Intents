@@ -3,7 +3,7 @@ import SwiftUI
 struct SuiteCasesView: View {
     @Bindable var store: EvaluationStore
     @Binding var selectedCaseID: UUID?
-    @State private var isImportingCases = false
+    @Binding var isImportingCases: Bool
     @State private var search = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var isBusy: Bool { store.isRunning || store.isReassessing || store.isProcessingFiles }
@@ -74,7 +74,6 @@ struct SuiteCasesView: View {
                 search = ""
             }
         }
-        .sheet(isPresented: $isImportingCases) { CaseImportView(store: store) }
     }
 
     private var caseList: some View {

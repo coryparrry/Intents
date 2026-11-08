@@ -30,7 +30,7 @@ struct FoundationEvalsApp: App {
         do { storeDirectory = Self.launchesProductionWorker ? try ProductionNativeWorkerCommand.prepareScratch() : Self.acceptanceStorageDirectory }
         catch { FileHandle.standardError.write(Data(("Native eval worker: \(error.localizedDescription)\n").utf8)); ProductionNativeWorkerCommand.finish(30) }
         let store = EvaluationStore(supportDirectory: storeDirectory, telemetry: telemetry)
-        let control = EvaluationAppControl(store: store)
+        let control = EvaluationAppControl(store: store, isolatedStorage: storeDirectory)
         appControl = control
         let runtime = FoundationEvalsMCPRuntime(store: store, control: control)
         let settings = MCPSettingsController(
@@ -189,7 +189,7 @@ struct FoundationEvalsApp: App {
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
-                Button("Show App Intent Testing") {
+                Button("Show App Intents") {
                     store.selection = .appIntentTesting
                     openWindow(id: "evaluation-main", value: "main")
                 }
@@ -244,11 +244,19 @@ private final class FoundationEvalsAppDelegate: NSObject, NSApplicationDelegate 
     weak var runtime: FoundationEvalsMCPRuntime?
     private var isTerminating = false
 
-    /// Defers termination once while the runtime asynchronously prepares for shutdown, then replies to AppKit.
-    /// Repeated termination requests remain deferred until that preparation completes.
+    /// Keeps the app open when authored drafts cannot be saved; otherwise drains work before quitting.
+    /// Repeated termination requests remain deferred until asynchronous preparation completes.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let runtime else { return .terminateNow }
         guard !isTerminating else { return .terminateLater }
+        guard runtime.persistAuthoredDraftsForTermination() else {
+            let alert = NSAlert()
+            alert.messageText = "Your draft could not be saved"
+            alert.informativeText = "Intents will stay open to preserve your edits. Check the draft’s error and storage access, then retry quitting."
+            alert.addButton(withTitle: "Keep editing")
+            alert.runModal()
+            return .terminateCancel
+        }
         isTerminating = true
         Task {
             await runtime.prepareForTermination()

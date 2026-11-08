@@ -206,4 +206,107 @@ final class WorkspacePolishUITests: XCTestCase {
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(importCases.waitForExistence(timeout: 3))
     }
+    /// Archived suites remain discoverable and can be restored without recreating their identity.
+    @MainActor
+    func testManagerRestoresArchivedSuite() throws {
+        let storage = try UITestStorage.makeDirectory(prefix: "archive-restore")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launch()
+        defer { app.terminate() }
+        try UITestStorage.openSuiteEditor(in: app)
+        let chooser = app.menuButtons.matching(identifier: "Choose project").firstMatch
+        XCTAssertTrue(chooser.waitForExistence(timeout: 5))
+        chooser.click()
+        app.menuItems["Manage projects…"].click()
+        app.buttons["New suite"].click()
+        let names = app.textFields.matching(identifier: "Suite name")
+        XCTAssertTrue(names.firstMatch.waitForExistence(timeout: 3))
+        let name = try XCTUnwrap(names.allElementsBoundByIndex.last)
+        name.click(); name.typeText("Archive recovery fixture")
+        app.buttons["Create suite"].click()
+        let suiteActions = app.menuButtons["Suite actions"]
+        XCTAssertTrue(suiteActions.waitForExistence(timeout: 3))
+        suiteActions.click()
+        app.menuItems["Archive suite"].click()
+        let disclosure = app.disclosureTriangles["Archived projects and suites"]
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 3))
+        // The native macOS control exposes its label in the frame, but only its leading arrow toggles.
+        disclosure.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5)).click()
+        XCTAssertEqual((disclosure.value as? NSNumber)?.intValue, 1)
+        let restore = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "Restore suite ")).firstMatch
+        XCTAssertTrue(restore.waitForExistence(timeout: 3))
+        let restoreID = restore.identifier
+        let screenshot = try UITestStorage.screenshotURL(name: "archive-recovery-manager")
+        try app.windows.firstMatch.screenshot().pngRepresentation.write(to: screenshot)
+        restore.click()
+        XCTAssertFalse(app.buttons[restoreID].exists)
+        XCTAssertTrue(app.staticTexts["Archive recovery fixture"].exists)
+    }
+
+    /// A capacity-limited import requires a deliberate partial choice and offers a full import into an empty suite.
+    @MainActor
+    func testImportDisclosesOmissionsAndOffersBlankDestination() throws {
+        try verifyImportContinuation(fromEvaluations: false)
+    }
+
+    /// Switching the import destination also preserves a sheet opened from Evaluations' Cases page.
+    @MainActor
+    func testImportContinuationPreservesEvaluationsHost() throws {
+        try verifyImportContinuation(fromEvaluations: true)
+    }
+
+    /// Runs partial-import confirmation and empty-destination continuation in either editor navigation branch.
+    @MainActor
+    private func verifyImportContinuation(fromEvaluations: Bool) throws {
+        let storage = try UITestStorage.makeDirectory(prefix: "import-capacity")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let csv = storage.appending(path: "complete-dataset.csv")
+        let rows = (1...100).map { "Case \($0),Prompt \($0),Expected \($0)" }.joined(separator: "\n")
+        try ("name,prompt,expected\n" + rows).write(to: csv, atomically: true, encoding: .utf8)
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
+        app.launch()
+        defer { app.terminate() }
+        try UITestStorage.openSuiteEditor(in: app)
+        if fromEvaluations {
+            app.staticTexts["Sidebar evaluations"].click()
+            let cases = app.radioGroups["Editor page"].radioButtons["Cases"]
+            XCTAssertTrue(cases.waitForExistence(timeout: 3))
+            cases.click()
+        }
+        app.buttons["Import Cases"].click()
+        let importer = app.sheets.firstMatch
+        XCTAssertTrue(importer.waitForExistence(timeout: 5), app.debugDescription)
+        let chooseFile = importer.buttons["Choose File…"]
+        XCTAssertTrue(chooseFile.waitForExistence(timeout: 5), app.debugDescription)
+        chooseFile.click()
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        let path = app.textFields["PathTextField"]
+        XCTAssertTrue(path.waitForExistence(timeout: 3))
+        path.typeText(csv.path)
+        app.typeKey(.return, modifierFlags: [])
+        app.buttons["OKButton"].click()
+        let partial = app.buttons["Import 99 Cases"]
+        XCTAssertTrue(partial.waitForExistence(timeout: 5))
+        XCTAssertFalse(partial.isEnabled)
+        XCTAssertTrue(app.staticTexts["100 valid source rows · 99 fit · 1 omitted"].exists)
+        let choice = app.checkBoxes["Import only the first 99 rows"]
+        XCTAssertTrue(choice.exists)
+        choice.click()
+        XCTAssertTrue(partial.isEnabled)
+        choice.click()
+        XCTAssertFalse(partial.isEnabled)
+        app.buttons["Use a new blank suite for this file"].click()
+        let full = importer.buttons["Import 100 Cases"]
+        XCTAssertTrue(full.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(full.isEnabled)
+        XCTAssertTrue(app.staticTexts["100 valid source rows · 100 fit · 0 omitted"].exists)
+        try app.windows.firstMatch.screenshot().pngRepresentation.write(
+            to: UITestStorage.screenshotURL(name: "complete-import-destination"))
+        full.click()
+        XCTAssertTrue(app.buttons["Import Cases"].waitForExistence(timeout: 5))
+    }
+
 }

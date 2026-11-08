@@ -104,6 +104,16 @@ final class FoundationEvalsMCPRuntime {
         if stopping?.id == drain.id { stopping = nil }
     }
 
+    /// Retries authored draft writes before any shutdown teardown, retaining a usable app on failure.
+    /// Each store publishes its local error so the user can correct storage access and retry quitting.
+    func persistAuthoredDraftsForTermination() -> Bool {
+        do { try control.appIntentTesting.siri.persistForTermination() }
+        catch { control.appIntentTesting.siri.report(error); return false }
+        do { try control.production.persistForTermination() }
+        catch { control.production.error = error.localizedDescription; return false }
+        return true
+    }
+
     /// Closes mutation entry points, stops the server, and drains runner, App Intent, production,
     /// evaluation, and MCP tasks before termination.
     func prepareForTermination() async {

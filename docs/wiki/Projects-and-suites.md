@@ -8,29 +8,32 @@ A **project** groups suites for one app or area of work. A **suite** contains sh
 
 Use the **Project** menu at the top of the sidebar to change projects. This menu also has **New project…** and **Manage projects…**. The manager can create, rename, duplicate, and archive projects and suites.
 
-Select **New Suite** in **Model evaluations** or at the bottom of the sidebar. To duplicate or archive an existing suite, open its sidebar context menu.
+Select **New Suite** at the bottom of the sidebar or in **Overview**. To duplicate or archive an existing suite, open its sidebar context menu.
+
+**Blank suite** starts with no cases. Add or import your own cases before running it; starter suites retain their examples.
+
+To recover archived work, open **Manage projects… → Archived projects and suites** and choose **Restore project** or **Restore suite**. Restore preserves its identity, saved runs, and reviews. Open the restored item in the manager's active lists. Projects and suites with the same name remain separate items.
 
 Use **New Suite → From document…** to draft and review questions, reference answers, and case-specific rubrics from a local specification or guide. See [Document suites](Document-suites.md) for source review, context limits, and export behavior.
 
-**Model evaluations** shows each active suite's latest check against its current definition. Search for a suite by name, or show only suites that need attention. Select a suite to open it. Select its play button to run it. Select **Refresh** to reload saved results.
+**Overview** shows each active suite's latest check against its current definition. Search for a suite by name, or show only suites that need attention. Select a suite to open it. Select its play button to run it. Select **Refresh** to reload saved results.
 
 The sidebar **Runs** list belongs to the selected suite. Its filter accepts a suite name or version. The run context menu can delete a saved run. This deletes its results and trace from this Mac. The app cannot undo the deletion.
 
-The suite editor has five pages:
+The suite editor has four pages:
 
 | Page | Purpose |
 |---|---|
 | **Cases** | Edit, add, duplicate, delete, or import cases. |
-| **Results** | Read run history and the pass-rate chart. |
+| **Runs** | Read run history and the pass-rate chart. Select **Compare runs** to compare saved evidence and inspect instruction experiments. |
 | **Review** | Inspect saved outputs, record human reviews, find patterns, create regression cases, and check a judge. |
-| **Compare** | Compare saved runs and inspect experiments. A comparison needs two runs. |
 | **Setup** | Set instructions, scoring, the model, tools, output, the session profile, and performance. |
 
 Intents saves suite edits automatically. Before you leave the suite, read the save status near its name. This is especially useful after a storage error.
 
 ## Write cases
 
-1. Open **Cases**. Select a case in the left panel.
+1. Open **Cases**. Select **Add Case** if the suite is empty, or select an existing case in the left panel.
 2. Enter a name and the exact prompt to send to the model.
 3. Enter the expected value that your scoring method requires.
 4. Use **Case actions** to duplicate or delete the case. A suite keeps at least one case.
@@ -49,6 +52,8 @@ Use **Field checks** for exact checks on fields in structured JSON. A case can a
 6. Select **Import _N_ Cases** after the preview accepts the rows.
 
 Each line in a JSON Lines file is a JSON object. Nothing enters the suite before the preview accepts the file. The import button shows the number of cases that fit in the suite. After import, review expected text against the suite's scoring method.
+
+When only part of a file fits, the preview shows the valid source count and how many cases would be omitted. Explicitly acknowledge a partial import, or choose the new blank suite option to keep the mapped file ready in an empty destination. Reimporting the original file does not resume from the omitted rows: it can duplicate the prefix already imported. Interactive suite and repetition limits still apply in a new suite; use [Batch runs](Production-batches.md) for larger datasets.
 
 ## Add reference files to a suite
 

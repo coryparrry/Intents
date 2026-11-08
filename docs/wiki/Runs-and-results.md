@@ -20,7 +20,7 @@ If **Retry Save** appears after a run, the app did not save it. Restore storage 
 
 ## Read a saved run
 
-1. Select a run in the suite's **Results** page or the sidebar **Runs** list.
+1. Select a run in the suite's **Runs** page or the sidebar **Runs** list.
 2. Select **Workflow trace** or **Report** at the top of the run.
 
 **Workflow trace** shows a timeline for one case and repetition. Expand a span and select it to read its time, metadata, and available input or output. Work can overlap on the timeline. Do not add nested durations together. The trace does not show hidden model reasoning or internal inference timing.
@@ -37,19 +37,21 @@ Select **Export Run as JSON** in the toolbar to save a copy of the run. If a spa
 - **Collect only** saves responses without a text score. JSON field checks can still give a pass or failure.
 - An error or an unscored sample is different from a failed check.
 
-The suite's **Results** page shows the latest pass rate and recent scored runs. Pass rates use scored samples. In **Analysis**, latency percentiles exclude errors from the subject request. Read the full report for a canceled or incomplete run. A pass-rate number cannot describe missing evidence.
+The suite's **Runs** page shows the latest pass rate alongside scored/planned and saved/planned counts and completion status. Pass rates use scored samples. A directional change appears only for compatible, uninterrupted, fully scored runs; a missing comparison is different from a zero-point change. In **Analysis**, latency percentiles exclude errors from the subject request. Read the full report for a canceled or incomplete run. A pass-rate number cannot describe missing evidence.
 
 ## Compare a change
 
 1. Run the suite before the change. Run it again after the change.
 2. Keep case IDs, scoring, and the relevant model or app environment stable for a direct comparison.
-3. Open **Compare**. Select the run to inspect.
+3. Open **Runs → Compare runs**. Select the run to inspect. Use **All runs** to return to history.
 4. In **Analysis**, select an earlier run as the baseline.
 5. Read compatibility warnings, changes for each case, pass rates, and latency.
 
 Changes to cases, a rubric, or judge settings can limit a comparison.
 
-Under **Compare → Instruction experiments**, select **New Experiment**. Enter a name and proposed instructions. Select **Create experiment**. Then select **Run** on its row to run both versions. Read the results and use **Record decision**.
+Under **Runs → Compare runs → Instruction experiments**, select **New Experiment**. Enter a name and proposed instructions. Select **Create experiment**. Then select **Run** on its row to run both versions. Read the results and use **Record decision**.
+
+To generate suggestions, choose **Improve instructions** in **Runs → Compare runs → Instruction experiments** or **Setup → Instructions**. Intents tries two alternatives on Practice cases. If a suggestion improves the Practice pass rate, Intents compares the best suggestion with the original on reserved Final check cases. Review the comparison before applying any changes. [Improve suite instructions](../instruction-improvement.md).
 
 ## Approve a baseline or read release requirements
 
@@ -61,7 +63,7 @@ For an AI-assessed run, the selected assessment is part of the approval. The pan
 
 Use **Setup → Scoring → Release requirements** to set limits for errors, pass-rate changes, latency, and critical cases. You can also require an approved baseline. A release report applies these saved limits. It does not replace a review of unclear evidence.
 
-If you edit a suite after its latest run, run it again. Then use the new result for the current status in **Model evaluations**.
+If you edit a suite after its latest run, run it again to update the status in **Overview**.
 
 ## Delete evidence
 

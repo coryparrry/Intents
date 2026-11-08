@@ -78,13 +78,6 @@ struct RunWorkflowPanel: View {
                     .disabled(store.judgeConnections.isEmpty || store.isReassessing)
                     if store.isReassessing { ProgressView().controlSize(.small) }
 
-                    Button("Approve as baseline", systemImage: "checkmark.seal") {
-                        do {
-                            try store.approveBaseline(runID: run.id, assessmentID: selectedAssessment?.id)
-                        } catch { store.notice = error.localizedDescription }
-                    }
-                    .disabled(isApprovedAssessment)
-
                     Button("Release report", systemImage: "shippingbox.and.arrow.backward") {
                         reportText = EvaluationReleaseCheckEvaluator.markdown(store.releaseCheckReport(runID: run.id))
                     }

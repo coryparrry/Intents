@@ -30,8 +30,8 @@ struct ProductionBatchOutcomeSummary: View {
                 HStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(job.createdAt, format: .dateTime.weekday(.wide).day().month(.wide).hour().minute())
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                        Text(job.name).font(.largeTitle.weight(.bold)).lineLimit(2)
+                            .font(.callout).foregroundStyle(.secondary)
+                        Text(job.name).font(.title2.weight(.semibold)).lineLimit(2)
                     }
                     Spacer(minLength: 16)
                     WorkspacePill(isRunning ? "Running" : report?.phase.capitalized ?? "Loading", color: .secondary)

@@ -2,6 +2,17 @@ import AppKit
 import Foundation
 import Observation
 
+/// Unsubmitted operator input, stored separately from the immutable result and review audit.
+struct ProductionReviewDraft: Codable, Equatable, Sendable {
+    var reviewer = ""
+    var assignee = ""
+    var note = ""
+    var tags = ""
+    var outcome: ProductionOutcome = .failed
+    var verifiedOutput = ""
+    var verifiedCost = ""
+}
+
 @MainActor @Observable
 final class ProductionWorkspaceStore {
     var pane: ProductionPane = .datasets
@@ -19,6 +30,11 @@ final class ProductionWorkspaceStore {
     var selectedRecord: ProductionRecord?
     var selectedExample: ProductionExample?
     var review: ProductionReviewResolution?
+    private var reviewDrafts: [String: ProductionReviewDraft] = [:]
+    private(set) var reviewDraftSaveError: String?
+    @ObservationIgnored private var reviewDraftsDirty = false
+    @ObservationIgnored private var unreadReviewDrafts = false
+    @ObservationIgnored private let reviewDraftURL: URL
     var offset = 0
     var error: String?
     var isLoading = false
@@ -41,9 +57,52 @@ final class ProductionWorkspaceStore {
          capturedExecutor: @escaping ProductionExecutor = ProductionStorage.capturedResponse) {
         self.capturedExecutor = capturedExecutor
         self.telemetry = telemetry
+        reviewDraftURL = root.appending(path: "ProductionReviewDrafts.json")
         do { storage = try ProductionStorage(root: root.appendingPathComponent("ProductionEvals")) }
         catch { storage = nil; self.error = error.localizedDescription }
+        if FileManager.default.fileExists(atPath: reviewDraftURL.path) {
+            do { reviewDrafts = try JSONDecoder().decode([String: ProductionReviewDraft].self, from: Data(contentsOf: reviewDraftURL)) }
+            catch { unreadReviewDrafts = true; reviewDraftSaveError = "Saved operator drafts could not be read: \(error.localizedDescription)" }
+        }
     }
+    /// Reads a result's draft independently of selection, pagination, or the currently visible pane.
+    func reviewDraft(jobID: UUID, requestID: UUID) -> ProductionReviewDraft {
+        reviewDrafts[draftKey(jobID: jobID, requestID: requestID)] ?? ProductionReviewDraft()
+    }
+    /// Retains input in memory before attempting an atomic durable save; failed writes remain retryable.
+    func updateReviewDraft(_ draft: ProductionReviewDraft, jobID: UUID, requestID: UUID) {
+        guard !isClosing else { return }
+        reviewDrafts[draftKey(jobID: jobID, requestID: requestID)] = draft
+        reviewDraftsDirty = true
+        saveReviewDrafts()
+    }
+    /// Retries saving all current drafts without changing their contents or recording an audit decision.
+    func saveReviewDrafts() {
+        do { try persistReviewDrafts() }
+        catch { reviewDraftSaveError = "Operator drafts are kept in this session but could not be saved: \(error.localizedDescription)" }
+    }
+    /// Refuses termination when unsaved operator input cannot be made durable.
+    func persistForTermination() throws {
+        guard reviewDraftsDirty else { return }
+        do { try persistReviewDrafts() }
+        catch { self.error = error.localizedDescription; throw error }
+    }
+    /// Writes private draft state atomically and preserves an unreadable previous file for recovery.
+    private func persistReviewDrafts() throws {
+        try FileManager.default.createDirectory(at: reviewDraftURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if unreadReviewDrafts {
+            let recovery = reviewDraftURL.deletingLastPathComponent().appending(path: "ProductionReviewDrafts-unreadable-\(UUID()).json")
+            try FileManager.default.copyItem(at: reviewDraftURL, to: recovery)
+            unreadReviewDrafts = false
+        }
+        try JSONEncoder().encode(reviewDrafts).write(to: reviewDraftURL, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: reviewDraftURL.path)
+        reviewDraftsDirty = false
+        reviewDraftSaveError = nil
+    }
+    /// Separates jobs even if imported evidence reuses a request identifier.
+    private func draftKey(jobID: UUID, requestID: UUID) -> String { "\(jobID.uuidString)/\(requestID.uuidString)" }
+
     var selectedJob: ProductionJob? { jobs.first { $0.id == selectedJobID } }
     /// Loads a consistent workspace snapshot; the active Jobs pane uses counts while result and report panes retain audited evidence.
     func refresh() async {
@@ -392,18 +451,36 @@ final class ProductionWorkspaceStore {
         case .unavailable: return .deviceUnavailable
         }
     }
-    /// Schedules a review event for the selected record, splitting comma-separated tags and including a verified response for reconciliation.
-    /// Records the durable review-write outcome. Assignment stores an assignee; missing selection is a no-op.
+    /// Saves a frozen review action and clears its unchanged draft only after successful reconciliation.
+    /// Assignment and labels retain the form because they do not consume verified output or cost; newer edits and failed writes also remain available.
+    @discardableResult
     func appendReview(action: ProductionReviewAction, reviewer: String, assignee: String, outcome: ProductionOutcome,
-                      note: String, tags: String, verifiedOutput: String, verifiedCost: Double?) {
-        guard let jobID = selectedJobID, let record = selectedRecord else { return }
+                      note: String, tags: String, verifiedOutput: String, verifiedCost: Double?) -> Task<Void, Never>? {
+        guard !isClosing, let storage, let jobID = selectedJobID, let record = selectedRecord else { return nil }
+        let key = draftKey(jobID: jobID, requestID: record.response.requestID)
+        let submittedDraft = reviewDrafts[key]
         let response: ProductionResponse? = action == .reconcile ? .init(requestID: record.response.requestID, outcome: outcome,
             output: verifiedOutput, explanation: note, latencyMilliseconds: record.response.latencyMilliseconds,
             latencyAvailable: record.response.latencyAvailable, cost: verifiedCost) : nil
         let event = ProductionReviewEvent(requestID: record.response.requestID, reviewer: reviewer, action: action, assignee: action == .assign ? assignee : nil,
             outcome: action == .assign || action == .reconcile ? nil : outcome, note: note,
             tags: tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }, reconciledResponse: response)
-        perform({ try $0.appendReview(jobID: jobID, slot: record.slot, event: event) }, telemetryOperation: .reviewSave)
+        let span = telemetry?.begin(.reviewSave)
+        return trackOperation {
+            do {
+                try await Task.detached(priority: .utility) { try storage.appendReview(jobID: jobID, slot: record.slot, event: event) }.value
+                self.telemetry?.end(span)
+                if action == .reconcile, self.reviewDrafts[key] == submittedDraft {
+                    self.reviewDrafts[key] = nil
+                    self.reviewDraftsDirty = true
+                    self.saveReviewDrafts()
+                }
+                if !self.isClosing { await self.refresh() }
+            } catch {
+                self.telemetry?.end(span, failure: Self.executionFailure(error))
+                self.error = error.localizedDescription
+            }
+        }
     }
     /// Starts an instrumented export only after a destination is selected; cancelling the panel is a no-op.
     func export(jobID: UUID? = nil) {

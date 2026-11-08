@@ -20,6 +20,8 @@ Open a suite's **Review** page after saving a run. It has three panes:
 
 Incomplete evidence cannot receive a human pass or failure. A review marked **Source changed** must be reviewed again. Draft notes are retained locally; read storage errors before leaving unfinished work.
 
+Opening a pattern's sample or **Show all examples** selects **Human failures** with that tag. You can change the verdict filter to inspect other reviews sharing the same tag.
+
 ## Keep judge tuning and validation separate
 
 Use **Use as judge check** on saved human successes and failures. Put tuning examples in **Development** and untouched validation examples in **Held-out test**. Every repetition and run of a case moves together. Select a judge and **Run judge checks** to replay recorded outputs, subject to external-evidence approval.

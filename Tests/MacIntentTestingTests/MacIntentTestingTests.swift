@@ -201,12 +201,13 @@ struct MacIntentTestingTests {
         #expect(MacIntentRunner.signingTeam(in: "TeamIdentifier=not set") == "not set")
     }
 
+    /// Rejects missing tools and terminates an owned subprocess when it exceeds its deadline.
     @MainActor @Test func subprocessLaunchFailureAndTimeoutAreBounded() async throws {
         let logURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
         let log = try FileHandle(forWritingTo: logURL)
         defer { try? log.close(); try? FileManager.default.removeItem(at: logURL) }
-        let runner = MacIntentRunner()
+        let runner = NativeTestSession()
         do {
             _ = try await runner.execute(executable: URL(fileURLWithPath: "/missing-command"), arguments: [],
                                          directory: FileManager.default.temporaryDirectory,
