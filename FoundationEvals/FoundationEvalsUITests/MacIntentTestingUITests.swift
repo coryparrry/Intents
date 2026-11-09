@@ -406,8 +406,16 @@ final class MacIntentTestingUITests: XCTestCase {
                                 "--evaluation-window-width", "1250", "--evaluation-window-height", "880"]
         app.launch()
         defer { app.terminate() }
-        try openWorkspace(in: app, fixture: fixture)
+        app.activate()
+        app.menuBars.menuBarItems["Evaluation"].click()
+        app.menuItems["Show App Intents"].click()
         chooseMode("Siri Studio", in: app)
+        app.buttons["Guided setup"].click()
+        XCTAssertFalse(app.radioGroups["Siri Studio page"].exists,
+                       "The app-selection screen must not indicate an unrelated selected page")
+        XCTAssertTrue(app.buttons["mac-intent-choose-app"].exists)
+        chooseAppFile(fixture, in: app)
+        XCTAssertTrue(app.radioGroups["Siri Studio page"].waitForExistence(timeout: 5))
         let progress = app.staticTexts["siri-guide-progress"]
         XCTAssertTrue(progress.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.buttons["siri-guide-continue"].exists)
@@ -512,7 +520,7 @@ final class MacIntentTestingUITests: XCTestCase {
     /// Returns from the technical Direct Action form or opens it through Advanced.
     @MainActor
     private func chooseMode(_ label: String, in app: XCUIApplication) {
-        if app.radioGroups["Siri Studio page"].exists {
+        if app.radioGroups["Siri Studio page"].exists || app.staticTexts["siri-guide-progress"].exists {
             if label == "Direct Action" { advancedAction("Test an action directly", in: app) }
             return
         }

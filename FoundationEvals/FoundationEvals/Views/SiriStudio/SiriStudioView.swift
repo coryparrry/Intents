@@ -65,11 +65,13 @@ struct SiriStudioView: View {
         .background(SiriStudioWindowReader(reference: panelWindow).frame(width: 0, height: 0))
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Picker("Siri Studio page", selection: $page) {
-                    ForEach(SiriStudioPage.allCases) { Text($0.title).tag($0) }
+                if catalog != nil {
+                    Picker("Siri Studio page", selection: $page) {
+                        ForEach(SiriStudioPage.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .accessibilityIdentifier("Siri Studio page")
                 }
-                .pickerStyle(.segmented).labelsHidden().fixedSize()
-                .accessibilityIdentifier("Siri Studio page")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Guided setup", systemImage: "list.number") { hidesGuide = false; page = .setup }
