@@ -39,7 +39,7 @@ struct SiriStudioView: View {
                 SiriStudioGuide(step: guideStep, busy: busy,
                     canCreateExample: catalog?.actions.isEmpty == false && (studio.document?.scenarios.count ?? 200) < 200,
                     advance: advanceGuide, createExample: createGuidedExample,
-                    directAction: showDirectAction, dismiss: { hidesGuide = true })
+                    directAction: returnToDirectAction, dismiss: { hidesGuide = true })
             }
             if catalog == nil || (guideStep == .app && page != .results) {
                 chooseAppState
@@ -64,6 +64,13 @@ struct SiriStudioView: View {
         .navigationTitle("App Intents")
         .background(SiriStudioWindowReader(reference: panelWindow).frame(width: 0, height: 0))
         .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button("Back to Direct Action", systemImage: "chevron.backward", action: returnToDirectAction)
+                    .labelStyle(.titleAndIcon)
+                    .accessibilityIdentifier("siri-studio-back-to-direct-action")
+                    .help("Save your conversation and return to direct App Intent testing.")
+                    .disabled(busy)
+            }
             ToolbarItem(placement: .principal) {
                 if catalog != nil {
                     Picker("Siri Studio page", selection: $page) {
@@ -355,7 +362,7 @@ struct SiriStudioView: View {
     private var advancedMenu: some View {
         Menu("Advanced", systemImage: "slider.horizontal.3") {
             Toggle("Show advanced controls", isOn: $showsAdvanced)
-            Button("Test an action directly") { perform { try studio.save(); showDirectAction() } }.disabled(busy)
+            Button("Test an action directly", action: returnToDirectAction).disabled(busy)
             Divider()
             Button("Export Swift…") { export(swift: true) }.disabled(busy || studio.validationError != nil || !hasSelectedDraft)
             Button("Export all scenarios as Swift…") { export(swift: true, all: true) }.disabled(busy || studio.allValidationError != nil)
@@ -542,6 +549,12 @@ struct SiriStudioView: View {
             panel.orderOut(nil)
             completion(url)
         }
+    }
+
+    /// Saves conversation edits before leaving Studio and keeps the editor open if saving fails.
+    private func returnToDirectAction() {
+        guard !busy else { return }
+        perform { try studio.save(); showDirectAction() }
     }
 
     /// Keeps file errors in the workspace diagnostic.
