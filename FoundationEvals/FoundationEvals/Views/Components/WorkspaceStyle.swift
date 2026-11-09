@@ -88,6 +88,15 @@ extension View {
         modifier(WorkspaceGlassSurface(radius: radius))
     }
 
+    /// Keeps chart annotations opaque and legible outside the chart renderer's glass compositing pass.
+    func workspaceChartCallout() -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return foregroundStyle(Color.primary)
+            .background(WorkspaceStyle.surface, in: shape)
+            .overlay { shape.strokeBorder(WorkspaceStyle.border, lineWidth: 1) }
+            .shadow(color: .black.opacity(0.12), radius: 5, x: 0, y: 2)
+    }
+
     /// Adds a rounded recessed background using the workspace inset color.
     func workspaceInset(radius: CGFloat = WorkspaceStyle.controlRadius) -> some View {
         modifier(WorkspaceInsetSurface(radius: radius))

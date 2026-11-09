@@ -177,7 +177,7 @@ struct HomeTrendChart: View {
                                 .font(.caption).foregroundStyle(WorkspaceStyle.secondaryText)
                         }
                         .padding(.horizontal, 12).padding(.vertical, 8)
-                        .workspaceSurface(radius: 12)
+                        .workspaceChartCallout()
                         .allowsHitTesting(false)
                     }
             }

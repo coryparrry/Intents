@@ -334,6 +334,7 @@ final class MacIntentTestingUITests: XCTestCase {
         chooseAppFile(updated, in: app)
         XCTAssertTrue(issue.waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["siri-studio-setup-status"].firstMatch.waitForExistence(timeout: 5))
+        reveal(app.buttons["Write a conversation"], in: app)
         app.buttons["Write a conversation"].click()
         XCTAssertTrue(app.textViews["siri-studio-utterance-1"].waitForExistence(timeout: 5))
         let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
@@ -391,6 +392,47 @@ final class MacIntentTestingUITests: XCTestCase {
         attachment.name = "Siri Studio recovered authoring and confirmed turn removal"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    /// Guides app selection and setup, creates an editable action-backed example, and exposes direct testing without a hidden menu.
+    @MainActor
+    func testGuidedSetupCreatesExampleAndExposesDirectAction() throws {
+        continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "siri-guide")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let fixture = try makeCatalogFixture(in: storage)
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.appending(path: "Workspace").path,
+                                "--evaluation-window-width", "1250", "--evaluation-window-height", "880"]
+        app.launch()
+        defer { app.terminate() }
+        app.activate()
+        app.menuBars.menuBarItems["Evaluation"].click()
+        app.menuItems["Show App Intents"].click()
+        chooseMode("Siri Studio", in: app)
+        app.buttons["Guided setup"].click()
+        XCTAssertFalse(app.radioGroups["Siri Studio page"].exists,
+                       "The app-selection screen must not indicate an unrelated selected page")
+        XCTAssertTrue(app.buttons["mac-intent-choose-app"].exists)
+        chooseAppFile(fixture, in: app)
+        XCTAssertTrue(app.radioGroups["Siri Studio page"].waitForExistence(timeout: 5))
+        let progress = app.staticTexts["siri-guide-progress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["siri-guide-continue"].exists)
+        let example = app.buttons["siri-guide-example"]
+        XCTAssertTrue(example.waitForExistence(timeout: 5))
+        example.click()
+        let utterance = app.textViews["siri-studio-utterance-1"]
+        XCTAssertTrue(utterance.waitForExistence(timeout: 5))
+        XCTAssertEqual(utterance.value as? String, "In CatalogFixture, Echo.")
+        XCTAssertTrue(app.menuButtons["siri-studio-expected-action-1"].exists)
+        let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        attachment.name = "Guided App Intents example conversation"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        app.buttons["Test an action without Siri"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["App Intent step 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textViews["Inputs JSON"].exists)
     }
 
     /// Opens the app workspace and loads synthetic catalog metadata without executing an intent.
@@ -478,7 +520,7 @@ final class MacIntentTestingUITests: XCTestCase {
     /// Returns from the technical Direct Action form or opens it through Advanced.
     @MainActor
     private func chooseMode(_ label: String, in app: XCUIApplication) {
-        if app.radioGroups["Siri Studio page"].exists {
+        if app.radioGroups["Siri Studio page"].exists || app.staticTexts["siri-guide-progress"].exists {
             if label == "Direct Action" { advancedAction("Test an action directly", in: app) }
             return
         }
