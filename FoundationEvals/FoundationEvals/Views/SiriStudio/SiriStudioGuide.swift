@@ -9,7 +9,7 @@ enum SiriStudioGuideStep: Int, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .app: "Choose a development build of the native Mac app you want to test. The requirements below show where to find it."
-        case .mac: "Complete the next setup action below, then Recheck setup. You can start writing your conversation while you finish."
+        case .mac: "Choose Check my Mac to review any missing setup steps. Complete Mac setup before running; you can write your conversation while you finish."
         case .conversation: "Write what you would say to Siri, then choose the action you expect below the message. Create an example if you're unsure, and edit its request with the details your action needs."
         case .run: "Run this conversation, then read Siri's replies and called actions in Results. A failed check shows what differed from your expectations."
         }
