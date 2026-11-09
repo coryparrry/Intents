@@ -189,6 +189,9 @@ existing drafts remain unchanged. You can write while finishing Mac setup.
 Once setup and the selected conversation are ready, **Run this conversation**
 opens Results. Use **Guided setup** in the toolbar to reopen the guide, or
 **Test an action without Siri** to test explicit inputs without Siri.
+Use **Back to Direct Action** in the toolbar to leave Siri Studio from any page,
+including Results or when the guide is hidden. Conversation edits are saved
+before switching, and remain available when you return to Siri Studio.
 
 Signing guidance follows [Apple's code signing documentation](https://developer.apple.com/documentation/xcode/sharing-your-teams-signing-certificates).
 The project helper is available through [Homebrew's XcodeGen formula](https://formulae.brew.sh/formula/xcodegen).

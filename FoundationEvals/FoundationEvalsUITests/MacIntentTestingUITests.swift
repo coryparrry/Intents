@@ -394,7 +394,7 @@ final class MacIntentTestingUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Guides app selection and setup, creates an editable action-backed example, and exposes direct testing without a hidden menu.
+    /// Guides a first conversation and preserves it while returning from Studio without an app, with the guide hidden, and from Results.
     @MainActor
     func testGuidedSetupCreatesExampleAndExposesDirectAction() throws {
         continueAfterFailure = false
@@ -414,6 +414,11 @@ final class MacIntentTestingUITests: XCTestCase {
         XCTAssertFalse(app.radioGroups["Siri Studio page"].exists,
                        "The app-selection screen must not indicate an unrelated selected page")
         XCTAssertTrue(app.buttons["mac-intent-choose-app"].exists)
+        let back = app.buttons["siri-studio-back-to-direct-action"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        back.click()
+        XCTAssertTrue(app.buttons["Choose built macOS app…"].waitForExistence(timeout: 5))
+        chooseMode("Siri Studio", in: app)
         chooseAppFile(fixture, in: app)
         XCTAssertTrue(app.radioGroups["Siri Studio page"].waitForExistence(timeout: 5))
         let progress = app.staticTexts["siri-guide-progress"]
@@ -433,6 +438,42 @@ final class MacIntentTestingUITests: XCTestCase {
         app.buttons["Test an action without Siri"].click()
         XCTAssertTrue(app.descendants(matching: .any)["App Intent step 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.textViews["Inputs JSON"].exists)
+
+        chooseMode("Siri Studio", in: app)
+        choosePage("Conversations", in: app)
+        app.buttons["Hide guide"].click()
+        XCTAssertFalse(progress.exists)
+        let editedRequest = "Echo my edited request."
+        utterance.click()
+        utterance.typeKey("a", modifierFlags: .command)
+        utterance.typeText(editedRequest)
+        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(back.isHittable)
+        let hiddenGuide = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        hiddenGuide.name = "Siri Studio back navigation with guide hidden"
+        hiddenGuide.lifetime = .keepAlways
+        add(hiddenGuide)
+        back.click()
+        XCTAssertTrue(app.textViews["Inputs JSON"].waitForExistence(timeout: 5))
+        let documentURL = storage.appending(path: "Workspace/SiriStudio/Scenarios/example.MacIntentUITestFixture.json")
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: documentURL)) as? [String: Any])
+        let scenarios = try XCTUnwrap(saved["scenarios"] as? [[String: Any]])
+        let turns = scenarios.flatMap { $0["turns"] as? [[String: Any]] ?? [] }
+        XCTAssertTrue(turns.contains { $0["utterance"] as? String == editedRequest },
+                      "The back button must save edited conversation text before leaving Studio")
+
+        chooseMode("Siri Studio", in: app)
+        choosePage("Results", in: app)
+        XCTAssertFalse(progress.exists)
+        XCTAssertTrue(back.waitForExistence(timeout: 5), app.debugDescription)
+        back.click()
+        XCTAssertTrue(app.textViews["Inputs JSON"].waitForExistence(timeout: 5))
+
+        chooseMode("Siri Studio", in: app)
+        choosePage("Conversations", in: app)
+        XCTAssertTrue(utterance.waitForExistence(timeout: 5))
+        XCTAssertEqual(utterance.value as? String, editedRequest,
+                       "Returning from Direct Action must preserve the authored conversation")
     }
 
     /// Opens the app workspace and loads synthetic catalog metadata without executing an intent.
