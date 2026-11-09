@@ -471,6 +471,12 @@ final class MacIntentTestingUITests: XCTestCase {
 
         chooseMode("Siri Studio", in: app)
         choosePage("Conversations", in: app)
+        choosePage("Results", in: app)
+        choosePage("Setup", in: app)
+        choosePage("Conversations", in: app)
+        XCTAssertEqual(app.buttons.matching(identifier: "siri-studio-back-to-direct-action").count, 1,
+                       "Page transitions must not retain a second interactive toolbar")
+        XCTAssertEqual(app.radioGroups.matching(identifier: "Siri Studio page").count, 1)
         XCTAssertTrue(utterance.waitForExistence(timeout: 5))
         XCTAssertEqual(utterance.value as? String, editedRequest,
                        "Returning from Direct Action must preserve the authored conversation")

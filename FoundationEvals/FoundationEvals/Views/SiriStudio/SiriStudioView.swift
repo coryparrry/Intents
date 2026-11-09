@@ -4,7 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Matches the workspace's editor navigation while separating authoring, evidence, and setup.
-private enum SiriStudioPage: String, CaseIterable, Identifiable {
+private enum SiriStudioPage: String, CaseIterable, Identifiable, Sendable {
     case conversations, results, setup
     var id: Self { self }
     var title: String {
@@ -31,6 +31,17 @@ struct SiriStudioView: View {
     @State private var allowance = 900
     @State private var pendingDeletion: SiriStudioScenario?
     @State private var panelWindow = SiriStudioPanelWindow()
+
+    /// Seeds the initial destination so the catalog observer cannot add a second arrival animation during mode entry.
+    init(native: MacIntentTestingStore, studio: SiriStudioStore, catalog: MacIntentCatalog?,
+         chooseApp: @escaping () -> Void, showDirectAction: @escaping () -> Void) {
+        self.native = native
+        self.studio = studio
+        self.catalog = catalog
+        self.chooseApp = chooseApp
+        self.showDirectAction = showDirectAction
+        _page = State(initialValue: catalog?.productIdentity == nil ? .conversations : .setup)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -61,6 +72,7 @@ struct SiriStudioView: View {
         .padding(.top, 20).padding(.bottom, 18)
         .frame(maxWidth: WorkspaceStyle.readableWidth, maxHeight: .infinity, alignment: .top)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .workspacePageTransition(value: page)
         .navigationTitle("App Intents")
         .background(SiriStudioWindowReader(reference: panelWindow).frame(width: 0, height: 0))
         .toolbar {

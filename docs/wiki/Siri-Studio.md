@@ -192,6 +192,8 @@ opens Results. Use **Guided setup** in the toolbar to reopen the guide, or
 Use **Back to Direct Action** in the toolbar to leave Siri Studio from any page,
 including Results or when the guide is hidden. Conversation edits are saved
 before switching, and remain available when you return to Siri Studio.
+Switching modes and Studio pages uses the workspace's standard page motion and
+respects macOS Reduce Motion.
 
 Signing guidance follows [Apple's code signing documentation](https://developer.apple.com/documentation/xcode/sharing-your-teams-signing-certificates).
 The project helper is available through [Homebrew's XcodeGen formula](https://formulae.brew.sh/formula/xcodegen).
