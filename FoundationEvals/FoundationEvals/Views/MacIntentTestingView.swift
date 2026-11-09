@@ -33,6 +33,7 @@ struct MacIntentTestingView: View {
                 }.accessibilityIdentifier("App Intent steps")
             }
         }
+        .workspacePageTransition(value: mode)
         .fileImporter(isPresented: $choosingApp, allowedContentTypes: [.applicationBundle]) { result in
             do {
                 let url = try result.get()
