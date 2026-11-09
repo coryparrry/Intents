@@ -12,7 +12,7 @@ struct MacIntentTestingView: View {
     @State private var showsAdvancedOptions = false
 
     var body: some View {
-        Group {
+        ZStack(alignment: .topLeading) {
             if mode == "siri" {
                 SiriStudioView(native: model, studio: model.siri, catalog: model.catalog,
                     chooseApp: { choosingApp = true }, showDirectAction: { mode = "direct" })
@@ -33,6 +33,7 @@ struct MacIntentTestingView: View {
                 }.accessibilityIdentifier("App Intent steps")
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .workspacePageTransition(value: mode)
         .fileImporter(isPresented: $choosingApp, allowedContentTypes: [.applicationBundle]) { result in
             do {
