@@ -115,7 +115,7 @@ private struct RunTrendPanel: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 12).padding(.vertical, 8)
-                        .workspaceSurface(radius: 12)
+                        .workspaceChartCallout()
                         .allowsHitTesting(false)
                     }
             }

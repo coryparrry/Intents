@@ -174,3 +174,21 @@ up with the editor. Use **Save**, or **Retry Save** after a write failure. Openi
 another document or choosing another app saves the current draft first; a failed
 save keeps it available. Removing a turn asks before deleting its request and
 expectations.
+
+## Guided first test
+
+App Intents opens with a four-step guide: **Choose app → Prepare Mac → Write
+conversation → Run and review**. Choose a development-signed native Mac `.app`,
+not an Xcode project or an iPhone/iPad build. Setup gives ordered instructions
+for the next missing prerequisite, including signing and XcodeGen installation.
+Use **Check my Mac** after completing an action.
+
+**Create an example conversation** adds a new editable draft using an action
+from the selected app. Edit its request with the details your action needs;
+existing drafts remain unchanged. You can write while finishing Mac setup.
+Once setup and the selected conversation are ready, **Run this conversation**
+opens Results. Use **Guided setup** in the toolbar to reopen the guide, or
+**Test an action without Siri** to test explicit inputs without Siri.
+
+Signing guidance follows [Apple's code signing documentation](https://developer.apple.com/documentation/xcode/sharing-your-teams-signing-certificates).
+The project helper is available through [Homebrew's XcodeGen formula](https://formulae.brew.sh/formula/xcodegen).

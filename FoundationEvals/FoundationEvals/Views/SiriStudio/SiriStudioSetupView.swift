@@ -47,6 +47,12 @@ struct SiriStudioSetupView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(step.title).fontWeight(.medium)
                             Text(showsAdvanced || step.id == "signing" ? step.detail : help(for: step.id)).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                            if !step.complete {
+                                ForEach(Array(instructions(for: step.id).enumerated()), id: \.offset) { index, instruction in
+                                    Text("\(index + 1). \(instruction)")
+                                        .font(.callout).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
                         }
                         Spacer(minLength: 8)
                         if !step.complete { action(step.action) }
@@ -91,6 +97,19 @@ struct SiriStudioSetupView: View {
         }
     }
 
+    /// Gives concrete, ordered recovery actions for the prerequisite currently blocking the first test.
+    private func instructions(for step: String) -> [String] {
+        switch step {
+        case "macos": ["Open Software Update and install macOS 27.3 or later.", "Return to Intents and choose Recheck setup."]
+        case "xcode": ["Install Xcode 27.3 or later and open it once.", "Accept its license and finish installing the requested components, then Recheck setup."]
+        case "signing": ["Open your project in Xcode. Select the Mac app target, then Signing & Capabilities, and choose your development team.", "In Xcode Settings, select your Apple Account and Manage Certificates. Create an Apple Development certificate if one is missing.", "Build the app with that team, replace its copy in Applications, then choose the updated app in Intents. Recheck setup to fill the matching certificate automatically."]
+        case "xcodegen": ["Copy the install command, open Terminal, paste it and press Return.", "If brew is not available, install Homebrew from brew.sh first.", "When installation finishes, return here and Recheck setup."]
+        case "registered": ["Copy the updated development build to Applications.", "Open that copy once, then quit it. Choose that same copy in Intents and Recheck setup."]
+        case "stopped": ["Switch to the selected app and use its app menu → Quit; closing its window is not enough.", "Return here and Recheck setup."]
+        default: ["Open Siri Settings, enable Siri AI and wait for its model downloads to finish.", "Confirm the switch below only after Siri is ready. Intents cannot verify this setting automatically."]
+        }
+    }
+
     /// Offers only explicit prerequisite actions; setup never installs tools, signs apps, or quits another app automatically.
     @ViewBuilder private func action(_ action: SiriStudioSetupStep.Action) -> some View {
         switch action {
@@ -107,8 +126,8 @@ struct SiriStudioSetupView: View {
                 Link("Get Xcode", destination: URL(string: "https://developer.apple.com/download/all/?q=Xcode")!)
             }
         case .signing:
-            if native.siriSetup.report?.applicationTeam != nil {
-                Text("Use Xcode → Settings → Accounts").font(.caption).foregroundStyle(.secondary)
+            if let xcode = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode") {
+                Button("Open Xcode") { NSWorkspace.shared.open(xcode) }
             }
         case .xcodegen:
             Button(copied ? "Command copied" : "Copy install command") {
@@ -116,6 +135,10 @@ struct SiriStudioSetupView: View {
                 NSPasteboard.general.setString("brew install xcodegen", forType: .string)
                 copied = true
             }
+            if let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
+                Button("Open Terminal") { NSWorkspace.shared.open(terminal) }
+            }
+            Link("Homebrew setup", destination: URL(string: "https://brew.sh")!)
         case .registerApp:
             if let installed = native.siriSetup.report?.registeredApplicationPath {
                 Button("Show installed copy") {
