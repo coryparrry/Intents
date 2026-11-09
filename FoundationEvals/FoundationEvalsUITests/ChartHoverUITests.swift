@@ -6,10 +6,11 @@ final class ChartHoverUITests: XCTestCase {
 
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    /// Captures hover details from a two-suite Overview in both appearances.
     @MainActor
     func testOverviewHoverCapturesFirstMiddleAndLastRunDetails() throws {
         for appearance in ["Light", "Dark"] {
-            try withWorkspace(appearance: appearance) { app in
+            try withWorkspace(appearance: appearance, suiteCount: 2) { app in
                 try assertHoverDetails(in: app, chartLabel: "Pass rate over time", screenshotPrefix: "overview-\(appearance.lowercased())")
             }
         }
@@ -74,9 +75,10 @@ final class ChartHoverUITests: XCTestCase {
         }
     }
 
+    /// Opens an isolated workspace with the requested number of chart series.
     @MainActor
-    private func withWorkspace(appearance: String, _ body: (XCUIApplication) throws -> Void) throws {
-        let storage = try makeWorkspace()
+    private func withWorkspace(appearance: String, suiteCount: Int = 1, _ body: (XCUIApplication) throws -> Void) throws {
+        let storage = try makeWorkspace(suiteCount: suiteCount)
         defer { try? FileManager.default.removeItem(at: storage) }
         let app = XCUIApplication()
         app.launchArguments = [
@@ -97,56 +99,66 @@ final class ChartHoverUITests: XCTestCase {
         try body(app)
     }
 
-    private func makeWorkspace() throws -> URL {
+    /// Writes independent suites with matching pass rates and staggered run times.
+    private func makeWorkspace(suiteCount: Int) throws -> URL {
         let storage = try UITestStorage.makeDirectory(prefix: "chart-hover")
         do {
             let projectID = UUID().uuidString
-            let suiteID = UUID().uuidString
             let date = "2026-01-01T12:00:00Z"
-            let cases: [[String: Any]] = (1...2).map { index in
-                ["id": UUID().uuidString, "name": "Case \(index)", "prompt": "Return yes", "expected": "yes"]
+            let suites: [[String: Any]] = (0..<suiteCount).map { index in
+                ["id": UUID().uuidString,
+                 "name": index == 0 ? Self.suiteName : "Second hover regression fixture",
+                 "createdAt": date, "updatedAt": date]
             }
-            let suite: [String: Any] = [
-                "id": suiteID, "name": Self.suiteName, "version": "v1",
-                "scoringMode": "exactMatch", "cases": cases
-            ]
             let catalog: [String: Any] = [
                 "formatVersion": 1, "selectedProjectID": projectID,
                 "projects": [[
                     "id": projectID, "name": "Chart hover verification",
-                    "createdAt": date, "updatedAt": date, "selectedSuiteID": suiteID,
-                    "suites": [["id": suiteID, "name": Self.suiteName, "createdAt": date, "updatedAt": date]]
+                    "createdAt": date, "updatedAt": date, "selectedSuiteID": suites[0]["id"]!,
+                    "suites": suites
                 ]]
             ]
-            let suiteDirectory = storage.appending(path: "Projects/\(projectID)/Suites/\(suiteID)")
-            let runsDirectory = suiteDirectory.appending(path: "Runs")
-            try FileManager.default.createDirectory(at: runsDirectory, withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(at: suiteDirectory.appending(path: "Attachments"), withIntermediateDirectories: true)
             try write(catalog, to: storage.appending(path: "workspace-v1.json"))
-            try write(suite, to: suiteDirectory.appending(path: "suite.json"))
-
-            for passedCount in 0...2 {
-                let runID = UUID().uuidString
-                let results: [[String: Any]] = cases.enumerated().map { index, testCase in
-                    [
-                        "id": UUID().uuidString, "caseID": testCase["id"]!, "caseName": testCase["name"]!,
-                        "repetition": 1, "prompt": "Return yes", "expected": "yes",
-                        "response": index < passedCount ? "yes" : "no",
-                        "status": index < passedCount ? "passed" : "failed", "durationMilliseconds": 1,
-                        "usage": ["inputTokens": 0, "cachedInputTokens": 0, "outputTokens": 0, "reasoningTokens": 0]
-                    ]
+            for (suiteIndex, entry) in suites.enumerated() {
+                let suiteID = entry["id"] as! String
+                let suiteName = entry["name"] as! String
+                let hour = suiteIndex == 0 ? "12" : "18"
+                let cases: [[String: Any]] = (1...2).map { index in
+                    ["id": UUID().uuidString, "name": "Case \(index)", "prompt": "Return yes", "expected": "yes"]
                 }
-                let run: [String: Any] = [
-                    "id": runID, "suiteID": suiteID, "projectID": projectID,
-                    "suiteName": Self.suiteName, "suiteVersion": "v1", "instructions": "Return yes",
-                    "criteria": "Exact text", "scoringMode": "exactMatch", "repetitions": 1,
-                    "plannedSampleCount": 2, "plannedCases": cases, "historySequence": passedCount + 1,
-                    "startedAt": "2026-01-0\(passedCount + 1)T12:00:00Z",
-                    "completedAt": "2026-01-0\(passedCount + 1)T12:00:01Z", "cancelled": false,
-                    "environment": ["operatingSystem": "macOS", "locale": "en_GB", "model": "UI fixture", "modelContextSize": 4096],
-                    "attachments": [], "results": results
+                let suite: [String: Any] = [
+                    "id": suiteID, "name": suiteName, "version": "v1",
+                    "scoringMode": "exactMatch", "cases": cases
                 ]
-                try write(run, to: runsDirectory.appending(path: "\(runID).json"))
+                let suiteDirectory = storage.appending(path: "Projects/\(projectID)/Suites/\(suiteID)")
+                let runsDirectory = suiteDirectory.appending(path: "Runs")
+                try FileManager.default.createDirectory(at: runsDirectory, withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(at: suiteDirectory.appending(path: "Attachments"), withIntermediateDirectories: true)
+                try write(suite, to: suiteDirectory.appending(path: "suite.json"))
+
+                for passedCount in 0...2 {
+                    let runID = UUID().uuidString
+                    let results: [[String: Any]] = cases.enumerated().map { index, testCase in
+                        [
+                            "id": UUID().uuidString, "caseID": testCase["id"]!, "caseName": testCase["name"]!,
+                            "repetition": 1, "prompt": "Return yes", "expected": "yes",
+                            "response": index < passedCount ? "yes" : "no",
+                            "status": index < passedCount ? "passed" : "failed", "durationMilliseconds": 1,
+                            "usage": ["inputTokens": 0, "cachedInputTokens": 0, "outputTokens": 0, "reasoningTokens": 0]
+                        ]
+                    }
+                    let run: [String: Any] = [
+                        "id": runID, "suiteID": suiteID, "projectID": projectID,
+                        "suiteName": suiteName, "suiteVersion": "v1", "instructions": "Return yes",
+                        "criteria": "Exact text", "scoringMode": "exactMatch", "repetitions": 1,
+                        "plannedSampleCount": 2, "plannedCases": cases, "historySequence": passedCount + 1,
+                        "startedAt": "2026-01-0\(passedCount + 1)T\(hour):00:00Z",
+                        "completedAt": "2026-01-0\(passedCount + 1)T\(hour):00:01Z", "cancelled": false,
+                        "environment": ["operatingSystem": "macOS", "locale": "en_GB", "model": "UI fixture", "modelContextSize": 4096],
+                        "attachments": [], "results": results
+                    ]
+                    try write(run, to: runsDirectory.appending(path: "\(runID).json"))
+                }
             }
             return storage
         } catch {
