@@ -17,9 +17,19 @@ import { RunCatalog } from './run-catalog.mjs';
 
 const pluginURL = new URL('../', import.meta.url);
 const UNCHECKED = { available: null, reason: 'Check model availability' };
-/** Summarizes saved result counts and public revision, preserving invalid historical timestamps as explicit catalog warnings. */
+/** Separates scored verdicts from subject/judge errors in catalog coverage and preserves invalid timestamps as explicit warnings. */
 export function summary(run) {
   const results = run.results || [];
+  const counts = { passed: 0, failed: 0, errors: 0, unscored: 0 };
+  for (const result of results) {
+    const subject = result.appSample || result.trace?.appSample;
+    const assessment = result.assessmentSample;
+    if (result.error || result.trace?.error || subject?.status === 'error' || subject?.errorCategory || subject?.errorMessage
+        || assessment?.status === 'error' || assessment?.errorCategory || assessment?.errorMessage) counts.errors++;
+    else if (result.passed === true) counts.passed++;
+    else if (result.passed === false) counts.failed++;
+    else counts.unscored++;
+  }
   const timestamps = {}; const invalidTimestamps = {};
   for (const key of ['startedAt', 'finishedAt']) {
     if (key === 'finishedAt' && run[key] === undefined) continue;
@@ -29,7 +39,7 @@ export function summary(run) {
   // Preserve malformed historical evidence on disk and in exports, while keeping
   // the catalog usable and showing exactly which original values need attention.
   const timestampIssue = Object.keys(invalidTimestamps).length ? { timestampWarning: 'Stored run has invalid timestamps', invalidTimestamps } : {};
-  return { id: run.id, suiteId: run.suiteId, suiteName: run.suite.name, projectId: run.projectId || run.suite.projectId, suiteRevision: run.suiteRevision, revision: publicRecord(run).revision, status: run.status, ...timestamps, ...timestampIssue, ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}), ...(run.model ? { model: run.model } : {}), totalResults: results.length, plannedResults: run.suite.cases.length * run.suite.repetitions, passed: results.filter((item) => item.passed === true).length, failed: results.filter((item) => item.passed === false).length, unscored: results.filter((item) => item.passed === null).length, ...(run.error ? { error: run.error } : {}) };
+  return { id: run.id, suiteId: run.suiteId, suiteName: run.suite.name, projectId: run.projectId || run.suite.projectId, suiteRevision: run.suiteRevision, revision: publicRecord(run).revision, status: run.status, ...timestamps, ...timestampIssue, ...(run.durationMs !== undefined ? { durationMs: run.durationMs } : {}), ...(run.model ? { model: run.model } : {}), totalResults: results.length, plannedResults: run.suite.cases.length * run.suite.repetitions, ...counts, scoredResults: counts.passed + counts.failed, ...(run.error ? { error: run.error } : {}) };
 }
 /** Projects only the evidence needed for catalog counts, freshness and selected-assessment health. */
 function catalogRun(run) {

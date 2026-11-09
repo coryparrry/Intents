@@ -12,32 +12,7 @@ enum MacIntentSource {
         }
         guard Set(catalog.actions.map(\.id)).count == catalog.actions.count else { throw MacIntentTestingError("Duplicate action identifiers in catalog.") }
         let methods = try cases.map { test in
-            guard let action = catalog.actions.first(where: { $0.id == test.actionIdentifier }) else {
-                throw MacIntentTestingError("Unknown action \(test.actionIdentifier). Reload the selected app.")
-            }
-            guard test.inputsJSON.utf8.count <= 64 * 1024,
-                  let inputs = try parseJSON(test.inputsJSON) as? [String: Any] else {
-                throw MacIntentTestingError("Inputs for \(action.title) must be a JSON object of parameter identifiers and values (up to 64 KB).")
-            }
-            let unknown = Set(inputs.keys).subtracting(action.parameters.map(\.id))
-            guard unknown.isEmpty else { throw MacIntentTestingError("Unknown inputs for \(action.title): \(unknown.sorted().joined(separator: ", ")).") }
-            var lines: [String] = []
-            for p in action.parameters {
-                guard let value = inputs[p.id] else {
-                    if p.required { throw MacIntentTestingError("Missing required input \(p.id) for \(action.title).") }
-                    continue
-                }
-                let expression: String
-                if p.type == "Enum" {
-                    guard let rawValue = value as? String, let enumID = p.enumIdentifier, p.enumCases.contains(rawValue) else {
-                        throw MacIntentTestingError("Input \(p.id) must be an enum identifier from: \(p.enumCases.joined(separator: ", ")).")
-                    }
-                    expression = "definitions.enums[\(literal(enumID))].makeCase(\(literal(rawValue)))"
-                } else {
-                    expression = try scalar(value, type: p.type, context: "Input \(p.id)")
-                }
-                lines.append("        intent[dynamicMember: \(literal(p.id))] = \(expression)")
-            }
+            let (action, lines) = try intentInputs(test, catalog: catalog)
             var assertion = "        _ = try await intent.run()"
             if let expectedJSON = test.expectedValueJSON {
                 guard expectedJSON.utf8.count <= 64 * 1024 else { throw MacIntentTestingError("Expected value exceeds 64 KB.") }
@@ -67,6 +42,37 @@ enum MacIntentSource {
         \(methods.joined(separator: "\n\n"))
         }
         """
+    }
+
+    /// Validates and emits the shared input assignments for a Direct Action or Siri setup.
+    static func intentInputs(_ test: MacIntentTestCase, catalog: MacIntentCatalog) throws -> (MacIntentAction, [String]) {
+        guard let action = catalog.actions.first(where: { $0.id == test.actionIdentifier }) else {
+            throw MacIntentTestingError("Unknown action \(test.actionIdentifier). Reload the selected app.")
+        }
+        guard test.inputsJSON.utf8.count <= 64 * 1024,
+              let inputs = try parseJSON(test.inputsJSON) as? [String: Any] else {
+            throw MacIntentTestingError("Inputs for \(action.title) must be a JSON object of parameter identifiers and values (up to 64 KB).")
+        }
+        let unknown = Set(inputs.keys).subtracting(action.parameters.map(\.id))
+        guard unknown.isEmpty else { throw MacIntentTestingError("Unknown inputs for \(action.title): \(unknown.sorted().joined(separator: ", ")).") }
+        var lines: [String] = []
+        for p in action.parameters {
+            guard let value = inputs[p.id] else {
+                if p.required { throw MacIntentTestingError("Missing required input \(p.id) for \(action.title).") }
+                continue
+            }
+            let expression: String
+            if p.type == "Enum" {
+                guard let rawValue = value as? String, let enumID = p.enumIdentifier, p.enumCases.contains(rawValue) else {
+                    throw MacIntentTestingError("Input \(p.id) must be an enum identifier from: \(p.enumCases.joined(separator: ", ")).")
+                }
+                expression = "definitions.enums[\(literal(enumID))].makeCase(\(literal(rawValue)))"
+            } else {
+                expression = try scalar(value, type: p.type, context: "Input \(p.id)")
+            }
+            lines.append("        intent[dynamicMember: \(literal(p.id))] = \(expression)")
+        }
+        return (action, lines)
     }
 
     /// Produces a quoted Swift string literal with interpolation markers, control characters, and backslashes escaped.
@@ -106,27 +112,32 @@ enum MacIntentSource {
 
     /// Encodes the generated host/UI-test project as JSON accepted by XcodeGen, keeping signing settings as data.
     static func project(configuration: MacIntentRunConfiguration, identifier: String) throws -> Data {
-        // XcodeGen accepts JSON as YAML; JSONEncoder prevents setting injection.
+        try nativeProject(configuration: configuration, identifier: identifier, name: "MacIntentRun",
+                          host: "MacIntentHost", tests: "MacIntentTests", prefix: "dev.intents.testing", macOS: "27.0")
+    }
+
+    /// Encodes the common manually signed XcodeGen project for either native testing mode.
+    static func nativeProject(configuration: MacIntentRunConfiguration, identifier: String, name: String,
+                              host: String, tests: String, prefix: String, macOS: String) throws -> Data {
         let settings: [String: Any] = [
-            "SWIFT_VERSION": "6.0", "MACOSX_DEPLOYMENT_TARGET": "27.0",
+            "SWIFT_VERSION": "6.0", "MACOSX_DEPLOYMENT_TARGET": macOS,
             "GENERATE_INFOPLIST_FILE": "YES", "CODE_SIGN_STYLE": "Manual",
             "CODE_SIGN_IDENTITY": configuration.signingIdentity,
             "DEVELOPMENT_TEAM": configuration.teamIdentifier,
             "ENABLE_APP_SANDBOX": "NO",
         ]
         let spec: [String: Any] = [
-            "name": "MacIntentRun",
+            "name": name,
             "settings": ["base": settings],
             "targets": [
-                "MacIntentHost": ["type": "application", "platform": "macOS", "sources": ["Host"],
-                                  "settings": ["base": ["PRODUCT_BUNDLE_IDENTIFIER": "dev.intents.testing.host.\(identifier)"]]],
-                "MacIntentTests": ["type": "bundle.ui-testing", "platform": "macOS", "sources": ["Tests"],
-                                   "dependencies": [["target": "MacIntentHost"]],
-                                   "settings": ["base": ["PRODUCT_BUNDLE_IDENTIFIER": "dev.intents.testing.tests.\(identifier)",
-                                                         "TEST_TARGET_NAME": "MacIntentHost"]]],
+                host: ["type": "application", "platform": "macOS", "sources": ["Host"],
+                       "settings": ["base": ["PRODUCT_BUNDLE_IDENTIFIER": "\(prefix).host.\(identifier)"]]],
+                tests: ["type": "bundle.ui-testing", "platform": "macOS", "sources": ["Tests"],
+                        "dependencies": [["target": host]],
+                        "settings": ["base": ["PRODUCT_BUNDLE_IDENTIFIER": "\(prefix).tests.\(identifier)",
+                                             "TEST_TARGET_NAME": host]]],
             ],
-            "schemes": ["MacIntentRun": ["build": ["targets": ["MacIntentHost": "all"]],
-                                         "test": ["targets": ["MacIntentTests"]]]],
+            "schemes": [name: ["build": ["targets": [host: "all"]], "test": ["targets": [tests]]]],
         ]
         return try JSONSerialization.data(withJSONObject: spec, options: [.prettyPrinted, .sortedKeys])
     }

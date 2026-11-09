@@ -2,13 +2,6 @@ import SwiftUI
 
 struct ProductionResultDetailView: View {
     @Bindable var model: ProductionWorkspaceStore
-    @Binding var reviewer: String
-    @State private var assignee = ""
-    @State private var note = ""
-    @State private var tags = ""
-    @State private var outcome: ProductionOutcome = .failed
-    @State private var verifiedOutput = ""
-    @State private var verifiedCost = ""
     @State private var trace: EvaluationRun?
     /// Presents validated response details and operator review for the selected batch record.
     var body: some View {
@@ -41,21 +34,26 @@ struct ProductionResultDetailView: View {
                         if let review = model.review {
                             Text("Assigned to \(review.assignee ?? "nobody") · \(review.events.count) audit entries\(review.disagreement ? " · Disagreement needs adjudication" : "")").font(.callout).foregroundStyle(.secondary)
                         }
-                        TextField("Your reviewer name", text: $reviewer)
-                        HStack { TextField("Assign to", text: $assignee); Button("Assign") { append(.assign) }.disabled(assignee.isEmpty || reviewer.isEmpty || note.isEmpty) }
-                        Picker("Verdict", selection: $outcome) { Text("Pass").tag(ProductionOutcome.passed); Text("Fail").tag(ProductionOutcome.failed); Text("Needs evidence").tag(ProductionOutcome.needsEvidence) }.pickerStyle(.segmented)
-                        TextField("Failure patterns, separated by commas", text: $tags)
-                        TextField("Evidence and explanation (required)", text: $note, axis: .vertical).lineLimit(3...8)
+                        if let error = model.reviewDraftSaveError {
+                            Text(error).font(.callout).foregroundStyle(WorkspaceStyle.warning)
+                            Button("Retry saving draft") { model.saveReviewDrafts() }
+                        }
+                        Text("Form input is saved separately from the audit. Assignments and labels keep it for further review; successful reconciliation clears an unchanged form.").font(.caption).foregroundStyle(.secondary)
+                        TextField("Your reviewer name", text: field(\.reviewer))
+                        HStack { TextField("Assign to", text: field(\.assignee)); Button("Assign") { append(.assign) }.disabled(draft.assignee.isEmpty || draft.reviewer.isEmpty || draft.note.isEmpty) }
+                        Picker("Verdict", selection: field(\.outcome)) { Text("Pass").tag(ProductionOutcome.passed); Text("Fail").tag(ProductionOutcome.failed); Text("Needs evidence").tag(ProductionOutcome.needsEvidence) }.pickerStyle(.segmented)
+                        TextField("Failure patterns, separated by commas", text: field(\.tags))
+                        TextField("Evidence and explanation (required)", text: field(\.note), axis: .vertical).lineLimit(3...8)
                         HStack {
                             Button("Record label") { append(.label) }.buttonStyle(.borderedProminent)
-                            Button("Adjudicate") { append(.adjudicate) }.buttonStyle(.bordered).disabled(model.review?.assignee != reviewer)
-                        }.disabled(reviewer.isEmpty || note.isEmpty)
+                            Button("Adjudicate") { append(.adjudicate) }.buttonStyle(.bordered).disabled(model.review?.assignee != draft.reviewer)
+                        }.disabled(draft.reviewer.isEmpty || draft.note.isEmpty)
                         if record.response.outcome == .needsEvidence && model.review?.response == nil {
                             Text("Verify the action's actual app state before reconciliation. This records human evidence and retains the interrupted result.").font(.callout).foregroundStyle(.secondary)
-                            TextField("Verified output", text: $verifiedOutput, axis: .vertical)
-                            TextField("Verified outstanding cost (optional)", text: $verifiedCost)
+                            TextField("Verified output", text: field(\.verifiedOutput), axis: .vertical)
+                            TextField("Verified outstanding cost (optional)", text: field(\.verifiedCost))
                             Button("Reconcile verified action") { append(.reconcile) }.buttonStyle(.bordered)
-                                .disabled(reviewer.isEmpty || note.isEmpty || model.review?.assignee != reviewer || outcome == .needsEvidence || (!verifiedCost.isEmpty && Double(verifiedCost) == nil))
+                                .disabled(draft.reviewer.isEmpty || draft.note.isEmpty || model.review?.assignee != draft.reviewer || draft.outcome == .needsEvidence || (!draft.verifiedCost.isEmpty && Double(draft.verifiedCost) == nil))
                         }
                         ForEach(model.review?.events ?? []) { event in
                             VStack(alignment: .leading, spacing: 3) { Text("\(event.reviewer) · \(event.action.rawValue) · \(event.outcome?.rawValue ?? event.assignee ?? "verified result")").font(.caption.weight(.medium)); Text(event.note).font(.caption).foregroundStyle(.secondary) }
@@ -65,19 +63,43 @@ struct ProductionResultDetailView: View {
             }
         }
         .onChange(of: model.selectedRecord?.response.requestID) { _,_ in
-            note = ""; tags = ""; assignee = ""; outcome = .failed; verifiedOutput = ""; verifiedCost = ""; trace = nil
+            trace = nil
         }.sheet(isPresented: Binding(get: { trace != nil }, set: { if !$0 { trace = nil } })) {
             if let trace { VStack { HStack { Text("Saved batch trace").font(.headline); Spacer(); Button("Done") { self.trace = nil } }; WorkflowTraceView(run: trace) }.padding(24).frame(minWidth: 800, minHeight: 600) }
         }
     }
-    /// Appends the chosen operator action using the selected saved response and entered review evidence.
+    private var draft: ProductionReviewDraft {
+        guard let jobID = model.selectedJobID, let requestID = model.selectedRecord?.response.requestID else { return ProductionReviewDraft() }
+        return model.reviewDraft(jobID: jobID, requestID: requestID)
+    }
+    /// Binds each edit to the result identity captured when its form is rendered.
+    private func field<Value>(_ path: WritableKeyPath<ProductionReviewDraft, Value>) -> Binding<Value> {
+        let jobID = model.selectedJobID, requestID = model.selectedRecord?.response.requestID
+        return Binding(get: {
+            guard let jobID, let requestID else { return ProductionReviewDraft()[keyPath: path] }
+            return model.reviewDraft(jobID: jobID, requestID: requestID)[keyPath: path]
+        }, set: { value in
+            guard let jobID, let requestID else { return }
+            var current = model.reviewDraft(jobID: jobID, requestID: requestID)
+            current[keyPath: path] = value
+            model.updateReviewDraft(current, jobID: jobID, requestID: requestID)
+        })
+    }
+    /// Appends the selected action using the current result's durable draft.
     private func append(_ action: ProductionReviewAction) {
-        model.appendReview(action: action, reviewer: reviewer, assignee: assignee, outcome: outcome, note: note, tags: tags, verifiedOutput: verifiedOutput, verifiedCost: Double(verifiedCost))
+        model.appendReview(action: action, reviewer: draft.reviewer, assignee: draft.assignee, outcome: draft.outcome, note: draft.note, tags: draft.tags, verifiedOutput: draft.verifiedOutput, verifiedCost: Double(draft.verifiedCost))
     }
 }
 
 /// Artifacts are supporting evidence; a worker cannot override the saved response with an unrelated trace.
 enum ProductionResultPresentation {
+    /// Shows a directional change only when the candidate has a scored rate; zero remains a real score.
+    static func baselineComparison(before: Double, after: Double?) -> String {
+        let baseline = String(format: "%.1f%%", before * 100)
+        guard let after else { return "Baseline \(baseline) · Comparison unavailable — no scored responses" }
+        return "Baseline \(baseline) · Change \(String(format: "%+.1f", (after - before) * 100)) percentage points"
+    }
+
     /// Returns a single native trace only when its request, revision, output and outcome match the authoritative saved record.
     static func nativeRun(record: ProductionRecord, job: ProductionJob) -> EvaluationRun? {
         guard let data = record.response.artifact,

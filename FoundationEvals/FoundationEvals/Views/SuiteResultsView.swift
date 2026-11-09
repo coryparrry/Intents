@@ -56,10 +56,12 @@ private struct RunTrendPanel: View {
     var body: some View {
         HStack(alignment: .top, spacing: 40) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Latest pass rate").font(.subheadline).foregroundStyle(.secondary)
+                Text("Latest scored pass rate").font(.subheadline).foregroundStyle(.secondary)
                 Text(runs[0].passRate.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—")
                     .font(.system(size: 44, weight: .semibold)).monospacedDigit()
                     .contentTransition(.numericText())
+                Text(RunCoverageSummary(run: runs[0]).caption)
+                    .font(.caption).foregroundStyle(.secondary)
                 if let delta = trend.delta {
                     let rounded = Int(delta.rounded())
                     Label(rounded == 0 ? "No change" : "\(rounded > 0 ? "+" : "")\(rounded) pts vs previous run",
@@ -78,6 +80,8 @@ private struct RunTrendPanel: View {
             .frame(width: 230, alignment: .leading)
             VStack(alignment: .leading, spacing: 10) {
                 Text(trend.title).font(.headline)
+                Text("Each point describes one saved run. Changes require complete, compatible evidence.")
+                    .font(.caption).foregroundStyle(.secondary)
                 if trend.points.isEmpty {
                     Text("No scored runs yet")
                         .font(.callout).foregroundStyle(.secondary)
@@ -94,17 +98,10 @@ private struct RunTrendPanel: View {
 
     private var chart: some View {
         Chart(trend.points) { point in
-            AreaMark(x: .value("Run", point.label), y: .value("Pass rate", point.rate))
-                .interpolationMethod(.monotone)
-                .foregroundStyle(LinearGradient(colors: [Color.accentColor.opacity(0.22), Color.accentColor.opacity(0)],
-                                                startPoint: .top, endPoint: .bottom))
-            LineMark(x: .value("Run", point.label), y: .value("Pass rate", point.rate))
-                .interpolationMethod(.monotone)
-                .foregroundStyle(Color.accentColor)
-                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
             PointMark(x: .value("Run", point.label), y: .value("Pass rate", point.rate))
                 .foregroundStyle(color(for: point.run))
                 .symbolSize(point.label == hovered ? 100 : 40)
+                .accessibilityLabel("\(point.run.startedAt.formatted()) · \(Int(point.rate.rounded()))% · \(RunCoverageSummary(run: point.run).caption)")
             if point.label == hovered {
                 RuleMark(x: .value("Run", point.label))
                     .foregroundStyle(Color.primary.opacity(0.18))
@@ -112,7 +109,7 @@ private struct RunTrendPanel: View {
                     .annotation(position: .top, spacing: 6, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(Int(point.rate.rounded()))% passed").font(.callout.weight(.semibold)).monospacedDigit()
-                            Text("\(point.run.passedCount) passed · \(point.run.failedCount) failed")
+                            Text(RunCoverageSummary(run: point.run).caption)
                                 .font(.caption).foregroundStyle(.secondary)
                             Text(point.run.startedAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption).foregroundStyle(.secondary)
@@ -138,9 +135,42 @@ private struct RunTrendPanel: View {
 
     /// Colors runs with errors or interrupted execution as warnings, then distinguishes unavailable, perfect, and failing pass rates.
     private func color(for run: EvaluationRun) -> Color {
-        if run.errorCount > 0 || run.cancelled || run.stoppedEarly { return WorkspaceStyle.warning }
+        if run.errorCount > 0 || run.cancelled || run.terminationReason != nil { return WorkspaceStyle.warning }
         guard let rate = run.passRate else { return .secondary.opacity(0.4) }
         return rate >= 1 ? .accentColor : WorkspaceStyle.failure
+    }
+}
+
+/// Keeps scored rates beside their planned coverage and execution state.
+struct RunCoverageSummary {
+    let scored: Int
+    let completed: Int
+    let planned: Int?
+    let status: String
+    let isFullyScored: Bool
+
+    /// Summarizes saved evidence without interpreting missing, unscored or interrupted samples as passes.
+    init(run: EvaluationRun) {
+        let analysis = EvaluationRunAnalysis(run: run)
+        scored = analysis.scoredSampleCount
+        completed = analysis.completedSampleCount
+        if let count = run.plannedSampleCount, count >= 0 {
+            planned = count
+        } else if let cases = run.plannedCases ?? run.suiteDefinition?.cases, run.repetitions > 0 {
+            let count = cases.count.multipliedReportingOverflow(by: run.repetitions)
+            planned = count.overflow ? nil : count.partialValue
+        } else {
+            planned = nil
+        }
+        let complete = planned.map { $0 > 0 } == true && completed == planned && !run.cancelled && run.terminationReason == nil
+        status = run.cancelled ? "Cancelled" : run.terminationReason != nil ? "Stopped early"
+            : planned == nil ? "Coverage unavailable" : complete ? "Complete" : "Incomplete"
+        isFullyScored = complete && scored == planned
+    }
+
+    var caption: String {
+        let denominator = planned.map(String.init) ?? "?"
+        return "\(scored) / \(denominator) scored · \(completed) / \(denominator) saved · \(status)"
     }
 }
 
@@ -158,7 +188,7 @@ struct RunTrendSummary {
     let delta: Double?
     let comparisonCaption: String
 
-    /// Builds trend points from the most recent twelve supplied runs and computes the latest-versus-previous percentage-point change when both are scored.
+    /// Retains individual scored run points and compares only complete, compatible evidence from the same suite.
     init(runs: [EvaluationRun]) {
         let recent = Array(runs.prefix(12))
         recentCount = recent.count
@@ -166,12 +196,15 @@ struct RunTrendSummary {
             guard let rate = run.passRate else { return nil }
             return Point(run: run, label: "\(index)", rate: rate * 100)
         }
-        if runs.count > 1, let latest = runs[0].passRate, let previous = runs[1].passRate {
+        if runs.count > 1, RunCoverageSummary(run: runs[0]).isFullyScored,
+           RunCoverageSummary(run: runs[1]).isFullyScored, runs[0].suiteID == runs[1].suiteID,
+           EvaluationRunComparison(current: runs[0], baseline: runs[1]).compatibility == .compatible,
+           let latest = runs[0].passRate, let previous = runs[1].passRate {
             delta = (latest - previous) * 100
         } else {
             delta = nil
         }
-        comparisonCaption = runs.count == 1 ? "First saved run" : "No comparable scored run"
+        comparisonCaption = runs.count == 1 ? "First saved run" : "Comparison unavailable: runs must be complete and compatible."
     }
 
     var title: String {
@@ -210,6 +243,8 @@ private struct WorkspaceRunRow: View {
             VStack(alignment: .trailing, spacing: 6) {
                 Text(run.passRate.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—")
                     .font(.title3.weight(.semibold)).monospacedDigit()
+                Text(RunCoverageSummary(run: run).caption)
+                    .font(.caption).foregroundStyle(.secondary)
                 WorkspaceProportionBar(segments: [
                     WorkspaceRingSegment(count: run.passedCount, color: WorkspaceStyle.success),
                     WorkspaceRingSegment(count: run.failedCount, color: WorkspaceStyle.failure),

@@ -15,6 +15,7 @@ final class ChartHoverUITests: XCTestCase {
         }
     }
 
+    /// Captures pass-rate trend hover details for the first, middle, and last saved runs.
     @MainActor
     func testHistoryHoverCapturesFirstMiddleAndLastRunDetails() throws {
         for appearance in ["Light", "Dark"] {
@@ -22,9 +23,9 @@ final class ChartHoverUITests: XCTestCase {
                 let suite = app.groups["Suite overview \(Self.suiteName)"].buttons.firstMatch
                 XCTAssertTrue(suite.waitForExistence(timeout: 5), app.debugDescription)
                 suite.click()
-                let history = app.radioGroups["Editor page"].radioButtons["History"]
-                XCTAssertTrue(history.waitForExistence(timeout: 5), app.debugDescription)
-                history.click()
+                let runs = app.radioGroups["Editor page"].radioButtons["Runs"]
+                XCTAssertTrue(runs.waitForExistence(timeout: 5), app.debugDescription)
+                runs.click()
                 try assertHoverDetails(in: app, chartLabel: "Pass rate trend", screenshotPrefix: "history-\(appearance.lowercased())")
             }
         }

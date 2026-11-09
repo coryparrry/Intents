@@ -5,9 +5,9 @@ const result = (caseId, passed, durationMs, extra = {}) => ({ caseId, repetition
 const run = { suite: { cases: ['exact', 'wrong', 'capture', 'error'].map(id => ({ id })), repetitions: 1 }, results: [
   result('exact', true, 100), result('wrong', false, 300), result('capture', null, 200), result('error', false, 50, { trace: { error: { message: 'Unavailable' }, transcript: [] } })
 ] };
-test('report counts errors once and calculates pass rate from persisted boolean outcomes', () => {
+test('report counts errors once and calculates pass rate only from scored outcomes', () => {
   const metrics = runMetrics(run);
-  assert.deepEqual(metrics, { total: 4, planned: 4, passed: 1, failed: 1, errors: 1, unscored: 1, passRate: 1 / 3, averageLatency: 162.5, longestLatency: 300 });
+  assert.deepEqual(metrics, { total: 4, planned: 4, passed: 1, failed: 1, errors: 1, unscored: 1, passRate: 1 / 2, averageLatency: 162.5, longestLatency: 300 });
   assert.equal(outcome(run.results[3]), 'Error');
 });
 test('empty/unscored runs have no pass rate and missing durations are not invented', () => {

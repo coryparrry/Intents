@@ -21,16 +21,17 @@ struct SuiteReviewView: View {
     @State private var page = SuiteReviewPage.samples
     @State private var selectedSampleID: String?
     @State private var selectedTag: String?
+    @State private var filter = ReviewSampleFilter.all
 
     var body: some View {
         WorkspacePaneLayout(heading: "Review", selection: $page) {
             switch page {
             case .samples:
-                ReviewSamplesPane(store: store, selectedID: $selectedSampleID, selectedTag: $selectedTag,
+                ReviewSamplesPane(store: store, selectedID: $selectedSampleID, selectedTag: $selectedTag, filter: $filter,
                                   showCases: showCases, showCompare: showCompare)
             case .patterns:
                 ReviewPatternsPane(store: store) { tag, sample in
-                    selectedTag = tag; selectedSampleID = sample.id; page = .samples
+                    selectedTag = tag; selectedSampleID = sample.id; filter = .failed; page = .samples
                 }
             case .judges:
                 ReviewJudgeChecksPane(store: store)
@@ -39,11 +40,22 @@ struct SuiteReviewView: View {
     }
 }
 
-private enum ReviewSampleFilter: String, CaseIterable, Identifiable {
+enum ReviewSampleFilter: String, CaseIterable, Identifiable {
     case all, unreviewed, failed, needsEvidence
     var id: Self { self }
     var title: String {
         switch self { case .all: "All samples"; case .unreviewed: "Not reviewed"; case .failed: "Human failures"; case .needsEvidence: "Needs more evidence" }
+    }
+
+    /// Applies the current human verdict and tag together; stale annotations must be excluded by the projection first.
+    func includes(current: EvaluationReviewAnnotation?, hasCompleteEvidence: Bool, tag: String?) -> Bool {
+        let matchesVerdict = switch self {
+        case .all: true
+        case .unreviewed: current == nil
+        case .failed: current?.verdict == .failed
+        case .needsEvidence: current?.verdict == .needsEvidence || !hasCompleteEvidence
+        }
+        return matchesVerdict && (tag == nil || current?.tags.contains(tag!) == true)
     }
 }
 
@@ -51,10 +63,10 @@ private struct ReviewSamplesPane: View {
     @Bindable var store: EvaluationStore
     @Binding var selectedID: String?
     @Binding var selectedTag: String?
+    @Binding var filter: ReviewSampleFilter
     let showCases: (UUID) -> Void
     let showCompare: () -> Void
     @State private var search = ""
-    @State private var filter = ReviewSampleFilter.all
     @State private var diverse = true
     @State private var availableWidth: CGFloat = 900
 
@@ -63,13 +75,8 @@ private struct ReviewSamplesPane: View {
         let ordered = diverse ? EvaluationReviewWorkflow.diverseQueue(projection.samples) : projection.samples
         return ordered.filter { sample in
             let current = projection.currentAnnotationsByID[sample.id]
-            let matchesFilter = switch filter {
-            case .all: true
-            case .unreviewed: current == nil
-            case .failed: current?.verdict == .failed
-            case .needsEvidence: current?.verdict == .needsEvidence || !sample.sample.hasCompleteSubjectEvidenceForJudging
-            }
-            return matchesFilter && (selectedTag == nil || current?.tags.contains(selectedTag!) == true)
+            return filter.includes(current: current, hasCompleteEvidence: sample.sample.hasCompleteSubjectEvidenceForJudging,
+                                   tag: selectedTag)
                 && (search.isEmpty || [sample.sample.caseName, sample.sample.prompt, sample.sample.response,
                                       current?.note ?? "", current?.tags.joined(separator: " ") ?? ""].contains {
                     $0.localizedCaseInsensitiveContains(search)

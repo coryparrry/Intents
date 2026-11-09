@@ -30,7 +30,9 @@ struct ProductionReportPane: View {
                     }
                     Text(report.samplingNotice).font(.callout).foregroundStyle(.secondary)
                     Text("P95 latency \(report.p95UpperMilliseconds.map { String(format: "%.0f ms (upper estimate)", $0) } ?? "Unavailable") · Reported cost $\(String(format: "%.4f", report.reportedCost)) · \(report.missingCostCount) costs unavailable").font(.caption).foregroundStyle(.secondary)
-                    if let before = report.baselinePassRate { Text("Baseline \(rate(before)) · Change \(String(format: "%+.1f", ((report.counts.passRate ?? 0)-before)*100)) percentage points").font(.callout) }
+                    if let before = report.baselinePassRate {
+                        Text(ProductionResultPresentation.baselineComparison(before: before, after: report.counts.passRate)).font(.callout)
+                    }
                     ForEach(report.issues, id: \.self) { Text($0).font(.callout).foregroundStyle(.secondary) }
                     HStack {
                         Button("Export evidence…") { model.export() }.buttonStyle(.bordered)

@@ -95,7 +95,7 @@ final class MacIntentOwnedCommand {
                 }
             }
             if cancelled || Task.isCancelled { throw CancellationError() }
-            if timedOut { throw MacIntentTestingError("\(executable.lastPathComponent) exceeded its \(timeout)-second timeout and was stopped.") }
+            if timedOut { throw NativeTestCommandTimeout(command: executable.lastPathComponent, seconds: timeout) }
             if leftovers { throw MacIntentTestingError("The command exited while its child work was still running. That work was stopped; this command did not complete cleanly.") }
             guard let status else { throw MacIntentTestingError("The command's exit status could not be verified.") }
             return status
@@ -222,4 +222,12 @@ final class MacIntentOwnedCommand {
     private func checked(_ status: Int32) throws {
         guard status == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(status)) }
     }
+}
+
+
+/// Identifies an owned command that exceeded its deadline and was stopped.
+struct NativeTestCommandTimeout: LocalizedError {
+    let command: String
+    let seconds: Double
+    var errorDescription: String? { "\(command) exceeded its \(seconds)-second timeout and was stopped." }
 }

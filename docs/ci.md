@@ -31,6 +31,10 @@ The maintained app scheme sets the native bound; the portable dispatcher sets
 it for its own process. UI shards use recorded durations with fallback estimates
 for new tests, run on independent desktops, and retain logs and result bundles.
 Selected UI tests must execute and pass; a skipped selected method is a failure.
+Each UI shard has a 25-minute execution limit inside a 30-minute job, leaving
+time for preparation and retained failure evidence. This covers the complete
+Siri Studio workflow, including its native file sheets; test assertions and
+per-test execution limits remain enforced by the maintained runner.
 The optional stability worker repeats the settings accessibility check ten times.
 
 The **Compile app and tests** terminal check enforces the complete selected

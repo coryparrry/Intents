@@ -39,6 +39,7 @@ Intents is a native macOS workbench for testing Apple's Foundation Models. Creat
 | **Agent integration** | Authenticated controls for the shared workspace, evaluations, batches, review, and developer runners. [MCP guide](docs/MCP_CONTROL_GUIDE.md). |
 | **App feature runners** | A public Swift package for evaluating real app closures on a paired iPhone, iPad, or Mac. [Integration guide](docs/DEVELOPER_SWIFT_INTEGRATION.md). |
 | **App Intent tests** | Inspect a built Mac app and run JSON input/result checks with Apple AppIntentsTesting, through the native UI or `intents-native-tests`. [Setup and qualification](docs/wiki/Mac-App-Intent-tests.md). |
+| Siri Studio | Choose a Mac app with Siri actions and follow its setup guide, then run a finished conversation while other drafts remain incomplete. Conversations, Results, and Setup follow the evaluation editor flow; technical controls are under Advanced. [Requirements and workflow](docs/wiki/Siri-Studio.md). |
 
 ## Install
 
@@ -72,7 +73,7 @@ Xcode 27+ is needed to build from source or run Mac App Intent tests. It is not 
 2. Use **Setup → Instructions** for shared instructions and text, JSON, CSV, PDF, or image reference files.
 3. Use **Setup → Scoring** to choose a method and number of repetitions.
 4. Click **Run**. Open the saved run's **Workflow trace** or **Report** to inspect its response, score, explanation, timing, token usage, and tool activity.
-5. Reopen runs from **Results** or the sidebar, use **Compare** for earlier runs, or export a JSON report. See the [user wiki](docs/wiki/Home.md) for detailed steps.
+5. Reopen runs from **Runs** or the sidebar, use **Runs → Compare runs** for earlier runs, or export a JSON report. See the [user wiki](docs/wiki/Home.md) for detailed steps.
 
 | Scoring mode | Use it for |
 |---|---|
@@ -105,7 +106,7 @@ For large batches, open **Batch runs** in the sidebar. Freeze the current suite 
 
 ## Test Mac App Intents
 
-Select a normally installed, registered Mac app in **App Intent Testing**, or use
+Select a normally installed, registered Mac app in **App Intents**, or use
 `intents-native-tests catalog --app /path/to/MyApp.app` and `intents-native-tests run`
 with a JSON case manifest. The command builds a native macOS UI-test runner using
 Apple AppIntentsTesting. It needs Xcode 27+, macOS 27+, XcodeGen, and the same Apple

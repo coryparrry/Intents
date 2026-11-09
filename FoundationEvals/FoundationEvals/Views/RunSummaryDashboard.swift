@@ -51,12 +51,12 @@ struct RunSummaryDashboard: View {
                     .lineLimit(1)
                 Text("average")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WorkspaceStyle.secondaryText)
             }
             if run.results.isEmpty {
                 Text("No response timing captured")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WorkspaceStyle.secondaryText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Chart(Array(run.results.enumerated()), id: \.element.id) { index, result in
@@ -141,7 +141,7 @@ struct RunSummaryDashboard: View {
                     VStack(spacing: 0) {
                         Text("\(run.passedCount)")
                             .font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
-                        Text("of \(run.results.count)").font(.caption2).foregroundStyle(.secondary)
+                        Text("of \(run.results.count)").font(.caption2).foregroundStyle(WorkspaceStyle.secondaryText)
                     }
                     .accessibilityHidden(true)
                 }
@@ -155,7 +155,7 @@ struct RunSummaryDashboard: View {
             Spacer(minLength: 0)
             Text("Only scored samples count toward pass rate.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WorkspaceStyle.secondaryText)
         }
         .summaryCard()
     }
@@ -191,7 +191,7 @@ struct RunSummaryDashboard: View {
     private func outcomeRow(_ title: LocalizedStringKey, count: Int, color: Color) -> some View {
         HStack(spacing: 8) {
             WorkspaceStatusDot(color: color, size: 7)
-            Text(title).foregroundStyle(.secondary)
+            Text(title).foregroundStyle(WorkspaceStyle.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             Text(count.formatted()).monospacedDigit().fontWeight(.semibold)
@@ -209,11 +209,11 @@ struct RunSummaryDashboard: View {
                 .lineLimit(1)
             Text(label)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WorkspaceStyle.secondaryText)
             if let detail {
                 Text(detail)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WorkspaceStyle.secondaryText)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -223,7 +223,7 @@ struct RunSummaryDashboard: View {
 }
 
 private extension View {
-    /// Applies the shared padded surface and flexible alignment used by dashboard summary cards.
+    /// Applies glass and flexible alignment to a dashboard summary card.
     func summaryCard() -> some View {
         padding(18)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

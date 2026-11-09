@@ -346,7 +346,7 @@ final class EvaluationStore {
         suiteLocalState.baselineApprovals.last { $0.isCurrent }
     }
 
-    /// Creates and selects a project containing a fresh starter suite, returning the new project ID.
+    /// Creates and selects a project containing an empty suite or the chosen starter, returning the new project ID.
     /// Requires an idle workspace and a recoverable current draft; catalog failure attempts to remove the staged project.
     @discardableResult
     func createProject(name: String, starter: EvaluationStarterPack? = nil) throws -> UUID {
@@ -355,6 +355,7 @@ final class EvaluationStore {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw EvaluationStoreError.invalidSuite("Project name cannot be empty.") }
         var newSuite = starter?.makeSuite() ?? EvaluationSuite()
+        if starter == nil { newSuite.cases = [] }
         newSuite.id = UUID()
         let now = Date()
         let projectID = UUID()
@@ -491,8 +492,25 @@ final class EvaluationStore {
         }
     }
 
+    /// Restores a project's catalog visibility without changing selection, suite archive flags, or saved evidence.
+    /// Missing projects, busy/read-only workspaces and catalog write failures leave the archive intact.
+    func restoreProject(id: UUID) throws {
+        try requireIdle()
+        guard let project = workspace.projects.first(where: { $0.id == id }) else {
+            throw EvaluationWorkspaceError.missingProject
+        }
+        guard project.isArchived else { return }
+        guard project.suites.contains(where: { !$0.isArchived }) else {
+            throw EvaluationStoreError.resourceConflict("Restore a suite in this project before restoring the project.")
+        }
+        try updateProject(id) { project in
+            project.archivedAt = nil
+            project.updatedAt = Date()
+        }
+    }
+
     /// Creates and selects a fresh suite in the current project and returns its ID.
-    /// An empty name keeps the starter's name; failed staging or catalog publication triggers cleanup of the new directory.
+    /// Without a starter or document draft the suite is empty. Failed staging or catalog publication removes the new directory.
     @discardableResult
     func createSuite(name: String, starter: EvaluationStarterPack? = nil, documentDraft: EvaluationDocumentDraft? = nil) throws -> UUID {
         try requireIdle()
@@ -501,6 +519,7 @@ final class EvaluationStore {
             throw EvaluationStoreError.invalidSuite("Open the document draft's original project before creating its suite.")
         }
         var newSuite = try documentDraft?.makeSuite() ?? starter?.makeSuite() ?? EvaluationSuite()
+        if documentDraft == nil, starter == nil { newSuite.cases = [] }
         if documentDraft == nil { newSuite.id = UUID() }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { newSuite.name = trimmed }
@@ -654,15 +673,49 @@ final class EvaluationStore {
         return copied.id
     }
 
-    /// Renames the selected suite to a trimmed, nonempty name and attempts to save it.
-    /// Throws for another suite ID, a busy workspace, or an invalid or unsaved candidate.
+    /// Renames the selected suite, allowing metadata edits to blank definitions without making them runnable.
+    /// Throws for another suite ID, a busy workspace or an unsuccessful save; blank-suite failures restore all prior files and drafts.
     func renameSuite(id: UUID, name: String) throws {
         try requireIdle()
         guard id == selectedSuiteID else { throw EvaluationStoreError.resourceConflict("Switch to the suite before renaming it.") }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw EvaluationStoreError.invalidSuite("Suite name cannot be empty.") }
+        if suite.cases.isEmpty, draftSuite.cases.isEmpty {
+            try renameBlankSuite(to: trimmed)
+            return
+        }
         draftSuite.name = trimmed
         guard saveSuite() else { throw EvaluationStoreError.invalidSuite(notice ?? "The suite could not be saved.") }
+    }
+
+    /// Changes only an empty canonical definition's name and rebases its unfinished draft without adopting other edits.
+    /// The existing rollback snapshot protects canonical content, linked metadata, catalog and draft on any write failure.
+    private func renameBlankSuite(to name: String) throws {
+        let snapshot = try candidateAdoptionSnapshot()
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        isDraftSavePending = false
+        var renamed = suite
+        renamed.name = name
+        var renamedDraft = draftSuite
+        renamedDraft.name = name
+        do {
+            try persistRepositoryDefinitionIfLinked(renamed)
+            try CanonicalJSON.data(for: renamed).write(to: suiteDirectory.appending(path: "suite.json"), options: .atomic)
+            try updateSelectedSuiteRecord { record in
+                record.name = name
+                record.updatedAt = Date()
+            }
+            let draft = SuiteDraftRecord(canonicalRevision: try Self.revision(for: renamed), suite: renamedDraft)
+            try CanonicalJSON.data(for: draft).write(to: draftSuiteURL, options: .atomic)
+            suite = renamed
+            draftSuite = renamedDraft
+            draftSaveFailed = false
+            latestJudgeCheck = nil
+        } catch {
+            try restoreCandidateAdoption(snapshot, failureMessage: "The blank suite could not be renamed.")
+            throw error
+        }
     }
 
     /// Archives a suite while idle, selecting an active replacement when necessary.
@@ -695,6 +748,25 @@ final class EvaluationStore {
                 project.suites[index].archivedAt = Date()
                 project.updatedAt = Date()
             }
+        }
+    }
+
+    /// Restores one suite by stable project and suite IDs without selecting it or rewriting its files.
+    /// Also permits child recovery in archived projects; the project remains archived until restored separately.
+    func restoreSuite(id: UUID, projectID: UUID) throws {
+        try requireIdle()
+        guard let project = workspace.projects.first(where: { $0.id == projectID }) else {
+            throw EvaluationWorkspaceError.missingProject
+        }
+        guard let record = project.suites.first(where: { $0.id == id }) else {
+            throw EvaluationWorkspaceError.missingSuite
+        }
+        guard record.isArchived else { return }
+        try updateProject(projectID) { project in
+            guard let index = project.suites.firstIndex(where: { $0.id == id }) else { return }
+            project.suites[index].archivedAt = nil
+            project.suites[index].updatedAt = Date()
+            project.updatedAt = Date()
         }
     }
 

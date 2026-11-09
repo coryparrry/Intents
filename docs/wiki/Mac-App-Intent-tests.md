@@ -1,6 +1,9 @@
 # Test Mac App Intents
 
-Use **App Intent Testing** in Intents, or the `intents-native-tests` command, to
+Use **App Intents → Advanced → Test an action directly** for the workflow below. For multi-turn tests of Siri’s
+action choices and replies, switch to [Siri Studio](Siri-Studio.md).
+
+Use **App Intents** in Intents, or the `intents-native-tests` command, to
 inspect a built Mac app and run explicit input/result checks. Execution uses
 Apple’s `AppIntentsTesting` framework in a generated macOS UI-test target.
 Your subject app does not need an Intents SDK or custom test adapter.
@@ -25,6 +28,10 @@ after rebuilding or replacing the selected app.
 Selecting an app inspects its bundle in the background. **Inspecting built app…**
 shows progress, and **Cancel** stops that inspection. Choosing another app cancels
 the earlier inspection before loading the new selection.
+The selected app must actually contain its compiled actions. An older installed
+copy may lack actions added to your project; build and install the updated Mac
+app before selecting it. Siri Studio retains a rejected app’s name and provides
+a recovery guide instead of returning to an unexplained empty chooser.
 
 Intents reads compiled App Intents metadata to produce a best-effort catalog.
 Missing metadata or an unsupported declaration may leave an action unavailable.
@@ -98,9 +105,9 @@ execution-only smoke coverage.
 
 Review the intended effect before testing a data-changing action in your own app.
 
-1. Open **App Intent Testing** in the sidebar. Select **Choose built macOS app…** and choose the installed `.app`.
+1. Open **App Intents** in the sidebar. Select **Choose built macOS app…** and choose the installed `.app`.
 2. Select an **Action** and enter a JSON object in **Inputs JSON** using the parameter identifiers shown in the app.
-3. Enable **Compare returned value** and enter a JSON scalar matching the action's `String`, `Bool`, `Int`, or `Double` output type. For an execution-only smoke check, turn the comparison off.
+3. Enable **Compare returned value** and enter the expected JSON value. For an execution-only smoke check, turn the comparison off.
 4. Under **Xcode and signing**, enter the developer directory, signing identity, and team identifier. Select **Run native test**.
 5. Read the result and use **Show log in Finder** or **Open result bundle** to inspect the evidence.
 

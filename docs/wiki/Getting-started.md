@@ -28,7 +28,7 @@ run `brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
 1. Select **New Suite** at the bottom of the sidebar.
 2. Enter a suite name. Select **Blank suite** for your own cases, or select a starter pack for editable examples.
 3. Select **Create suite**.
-4. Open the suite's **Cases** page. Select the first case. Enter a case name and prompt.
+4. Open the suite's **Cases** page. For a blank suite, select **Add Case**; for a starter pack, select an example. Enter a case name and prompt.
 5. Select **Add Case** to add another question.
 6. Open **Setup → Instructions**. Enter instructions that apply to every case. If each prompt is complete, leave this field empty.
 7. Open **Setup → Scoring**. Select **Contains text** for a first literal-text check.
@@ -55,7 +55,7 @@ For practice, use the prompt `Reply with only the capital of France` and the req
 
 - To draft an evaluation from a text-based PDF, Markdown, or text file, select **New Suite → From document…**. Review the generated questions, answers, and scoring criteria before creating the suite. [Document suites](Document-suites.md).
 - To send suite cases to a feature in your own iPhone, iPad, or Mac app, pair a developer runner and select its feature from the run destination menu. [App feature runners](App-feature-runners.md).
-- To call an action in a built macOS app with explicit inputs, open **App Intent Testing** in the sidebar. Choose a development-signed build and enter the action's JSON inputs and optional expected result. [Mac App Intent tests](Mac-App-Intent-tests.md).
+- To call an action in a built macOS app with explicit inputs, open **App Intents** in the sidebar. Choose a development-signed build and enter the action's JSON inputs and optional expected result. [Mac App Intent tests](Mac-App-Intent-tests.md).
 
 The sidebar also opens **Evaluations** for review, **Batch runs** for resumable jobs, and **Traces** for saved execution evidence.
 

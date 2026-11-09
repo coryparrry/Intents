@@ -8,6 +8,7 @@ struct WorkspaceManagerView: View {
     @State private var error: String?
     @State private var isCreatingProject = false
     @State private var isCreatingSuite = false
+    @State private var showsArchived = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -57,6 +58,38 @@ struct WorkspaceManagerView: View {
                 }.frame(minWidth: 260)
             }
             .frame(minHeight: 230)
+            DisclosureGroup("Archived projects and suites", isExpanded: $showsArchived) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if !store.projects.contains(where: { $0.isArchived || $0.suites.contains(where: \.isArchived) }) {
+                            Text("No archived projects or suites.").foregroundStyle(.secondary)
+                        }
+                        ForEach(store.projects) { project in
+                            if project.isArchived {
+                                HStack {
+                                    Label(project.name, systemImage: "archivebox")
+                                    Spacer()
+                                    Button("Restore project") { perform { try store.restoreProject(id: project.id) } }
+                                        .accessibilityIdentifier("Restore project \(project.id)")
+                                }
+                            }
+                            ForEach(project.suites.filter(\.isArchived)) { record in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Label(record.name, systemImage: "checklist")
+                                        Text(project.name + (project.isArchived ? " · Project archived" : "")).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Button("Restore suite") { perform { try store.restoreSuite(id: record.id, projectID: project.id) } }
+                                        .accessibilityIdentifier("Restore suite \(record.id)")
+                                }
+                            }
+                        }
+                    }.padding(.top, 8)
+                }.frame(maxHeight: 150)
+                Text("Restore keeps saved runs and reviews. Select the restored project or suite above to open it.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }.accessibilityIdentifier("Archived projects and suites")
             Divider()
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 12) {
                 GridRow {

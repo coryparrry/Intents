@@ -11,10 +11,11 @@ import Observation
 
     /// Creates production and runner controls rooted in the evaluation store's workspace storage,
     /// sharing that store and its content-free telemetry with authenticated app control and local intent testing.
-    init(store: EvaluationStore) {
+    init(store: EvaluationStore, isolatedStorage: URL? = nil) {
         self.store = store
         production = ProductionWorkspaceStore(root: store.overviewStorageDirectory, telemetry: store.telemetry)
         runners = DeveloperRunnerStore(evaluationStore: store)
-        appIntentTesting = MacIntentTestingStore(telemetry: store.telemetry)
+        appIntentTesting = MacIntentTestingStore(telemetry: store.telemetry,
+            siriStudioRoot: isolatedStorage?.appending(path: "SiriStudio", directoryHint: .isDirectory))
     }
 }

@@ -1,0 +1,21 @@
+name: Courtside
+options:
+  deploymentTarget:
+    macOS: '27.3'
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    GENERATE_INFOPLIST_FILE: YES
+    PRODUCT_BUNDLE_IDENTIFIER: dev.intents.samples.Courtside
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: Apple Development
+targets:
+  Courtside:
+    type: application
+    platform: macOS
+    sources: [App]
+schemes:
+  Courtside:
+    build:
+      targets:
+        Courtside: all

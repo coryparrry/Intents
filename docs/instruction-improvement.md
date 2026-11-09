@@ -11,7 +11,7 @@ suite uses another provider for comparisons.
 ## Start a comparison
 
 1. Open a suite and choose **Improve instructions** from **Setup → Instructions**
-   or **Compare → Instruction experiments**.
+   or **Runs → Compare runs → Instruction experiments**.
 2. Use at least two distinct cases with scoring enabled. Resolve any readiness
    issue shown in the setup sheet.
 3. Review the **Practice** and **Final check** groups. Expand **Choose examples**

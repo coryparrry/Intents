@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ProductionReviewPane: View {
     @Bindable var model: ProductionWorkspaceStore
-    @State private var reviewer = ""
 
     private struct Row: Identifiable {
         let record: ProductionRecord
@@ -45,7 +44,7 @@ struct ProductionReviewPane: View {
                     .accessibilityIdentifier("Batch result list")
                     if model.selectedRecord != nil {
                         Divider()
-                        ProductionResultDetailView(model: model, reviewer: $reviewer)
+                        ProductionResultDetailView(model: model)
                             .id(model.selectedRecord?.response.requestID)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(20)
                     }

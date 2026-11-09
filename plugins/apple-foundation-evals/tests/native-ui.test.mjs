@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDraftAutosave } from '../ui/autosave.js';
-import { caseTitle,resultTitle } from '../ui/presentation.js';
-import { nativeScore } from '../ui/native-results.js';
+import { caseTitle,resultTitle,runMetrics,outcome } from '../ui/presentation.js';
+import { nativeScore, nativeHistoryCoverage, renderNativeHistory } from '../ui/native-results.js';
+import { JSDOM } from 'jsdom';
+import { summary } from '../server/app.mjs';
+import { sampleEnvelope } from '../server/app-format.mjs';
 import { nativeRewritePrompt,promptRewriteRequest,watchPromptPreview } from '../ui/workflows.js';
 import { newAppSuite } from '../ui/native-suite.js';
 
@@ -130,4 +133,83 @@ test('completed or closed preview ignores a delayed stream and does not cancel a
 
 test('file preview re-export preserves the raw app trace and its assessment evidence',async()=>{
  const {traceExportPayload}=await import('../ui/presentation.js');const raw={id:'app-id',samples:[{id:'sample-id',score:4}],assessments:[{id:'judge-id'}]};const normalized={id:'plugin-id',results:[],appRun:raw};assert.deepEqual(traceExportPayload(normalized),raw);assert.equal(traceExportPayload({id:'legacy'}).run.id,'legacy');
+});
+
+/** Supplies a complete catalog summary without claiming it contains frozen comparison contracts. */
+function historyRun(overrides = {}) {
+  const run = { id: 'run', suiteName: 'Fixture', suiteId: 'suite', suiteRevision: 'saved-revision',
+    status: 'completed', startedAt: '2026-11-08', passed: 1, failed: 0, errors: 0, unscored: 0,
+    totalResults: 1, plannedResults: 1, ...overrides };
+  return { scoredResults: run.passed + run.failed, ...run };
+}
+
+test('history coverage separates incomplete and unscored samples from a true zero pass rate', () => {
+  assert.deepEqual(nativeHistoryCoverage(historyRun({ passed: 0, failed: 1 })),
+    { rate: 0, complete: true, caption: '1 / 1 scored · 1 / 1 saved · Complete' });
+  assert.deepEqual(nativeHistoryCoverage(historyRun({ passed: 0, unscored: 1 })),
+    { rate: null, complete: true, caption: '0 / 1 scored · 1 / 1 saved · Complete' });
+  assert.deepEqual(nativeHistoryCoverage(historyRun({ plannedResults: 2 })),
+    { rate: 1, complete: false, caption: '1 / 2 scored · 1 / 2 saved · Incomplete' });
+  assert.match(nativeHistoryCoverage(historyRun({ status: 'cancelled' })).caption, /Cancelled/);
+  assert.match(nativeHistoryCoverage(historyRun({ status: 'failed' })).caption, /Incomplete/);
+  assert.deepEqual(nativeHistoryCoverage(historyRun({ totalResults: undefined })),
+    { rate: null, complete: false, caption: 'Coverage unavailable' });
+  assert.equal(nativeHistoryCoverage(historyRun({ totalResults: 0 })).rate, null);
+  assert.equal(nativeHistoryCoverage(historyRun({ scoredResults: undefined })).caption, 'Coverage unavailable');
+});
+
+test('rendered history shows coverage and suppresses unsupported improvement claims', t => {
+  const dom = new JSDOM('<!doctype html><main></main>');
+  t.after(() => dom.window.close());
+  /** Creates real DOM nodes so the test reads the same visible text and accessible bars as the history surface. */
+  function node(tag, text, className) {
+    const element = dom.window.document.createElement(tag);
+    if (text != null) element.textContent = String(text);
+    if (className) element.className = className;
+    return element;
+  }
+  const selected = [];
+  const ctx = { node,
+    /** Retains zero and unavailable rates as distinct visible values. */
+    rate: value => value == null ? '—' : `${value * 100}%`,
+    /** Uses stable fixture dates without locale-dependent formatting. */
+    date: value => value,
+    /** Supplies unrelated latency text for rendered history rows. */
+    duration: () => '1 ms',
+    /** Creates the history panel title in the same DOM tree. */
+    panelHeader: title => node('h2', title),
+    /** Leaves decorative icons out of visible evidence assertions. */
+    icon: () => node('span'),
+    /** Renders the row's outcome label as accessible text. */
+    pill: title => node('span', title),
+    /** Records the run opened by an actual history-row click. */
+    selectRun: id => selected.push(id),
+    /** Wires history selection to real button clicks. */
+    button(title, action, className) { const button = node('button', title, className); button.onclick = action; return button; } };
+  const page = dom.window.document.querySelector('main');
+  renderNativeHistory(ctx, page, [historyRun({ id: 'partial', plannedResults: 2 }), historyRun({ id: 'zero', passed: 0, failed: 1 })]);
+  assert.match(page.textContent, /1 \/ 2 scored · 1 \/ 2 saved · Incomplete/);
+  assert.match(page.textContent, /1 \/ 1 scored · 1 \/ 1 saved · Complete/);
+  assert.match(page.textContent, /Comparison unavailable/);
+  assert.doesNotMatch(page.textContent, /points since previous/);
+  assert.match(page.querySelector('.trend-bar').getAttribute('aria-label'), /0%.*Complete/);
+  page.querySelector('.history-row').click(); assert.deepEqual(selected, ['partial']);
+});
+
+test('actual app error projections never turn execution or judge errors into scored failures in history', () => {
+  for (const kind of ['subject', 'judge', 'unscored', 'failed']) {
+    const sample = { id: 'sample', caseID: 'case', repetition: 1, status: kind === 'subject' ? 'error' : kind === 'failed' ? 'failed' : 'unscored',
+      response: '', ...(kind === 'subject' ? { errorCategory: 'modelUnavailable', errorMessage: 'Unavailable' } : {}) };
+    const result = sampleEnvelope(sample);
+    if (kind === 'judge') { result.passed = false; result.assessmentSample = { status: 'error', errorCategory: 'judgeUnavailable' }; }
+    const projected = summary({ id: 'run', suiteId: 'suite', status: 'completed', startedAt: '2026-11-08T00:00:00Z',
+      suite: { name: 'Fixture', cases: [{ id: 'case' }], repetitions: 1 }, results: [result] });
+    assert.equal(projected.scoredResults, kind === 'failed' ? 1 : 0, kind);
+    assert.equal(projected.errors, ['subject', 'judge'].includes(kind) ? 1 : 0, kind);
+    assert.equal(outcome(result), ['subject', 'judge'].includes(kind) ? 'Error' : kind === 'failed' ? 'Failed' : 'Unscored', kind);
+    assert.equal(runMetrics({ results: [result] }).passRate, kind === 'failed' ? 0 : null, kind);
+    const coverage = nativeHistoryCoverage(projected);
+    assert.equal(coverage.rate, kind === 'failed' ? 0 : null, kind);
+    assert.match(coverage.caption, kind === 'failed' ? /1 \/ 1 scored/ : /0 \/ 1 scored/);
+  }
 });

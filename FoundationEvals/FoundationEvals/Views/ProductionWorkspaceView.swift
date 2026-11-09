@@ -45,7 +45,7 @@ struct ProductionWorkspaceView: View {
             VStack(alignment: .leading, spacing: 22) {
                 if pane != .review {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Batch runs").font(.largeTitle.weight(.bold))
+                        Text("Batch runs").font(.title2.weight(.semibold))
                         Text(pane.subtitle).font(.callout).foregroundStyle(.secondary)
                     }
                 }
@@ -241,10 +241,13 @@ struct ProductionWorkspaceView: View {
             }.workspaceSurface()
             VStack(alignment: .leading, spacing: 14) {
                 Text("Scheduled runs").font(.headline)
-                Text("An unattended worker must be running for due jobs to launch. Schedules create fresh evidence; they do not alter the template batch.").font(.callout).foregroundStyle(.secondary)
+                Text("A polling worker or an explicit tick creates due jobs; a matching worker executes them. Keeping this app open does not start schedules. Schedules retain the template batch.").font(.callout).foregroundStyle(.secondary)
                 ForEach(model.schedules) { schedule in
                     HStack {
-                        Text("Every \(Int(schedule.intervalSeconds/60)) min · \(schedule.remainingRuns) remaining").font(.callout)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(model.jobs.first { $0.id == schedule.templateJobID }?.name ?? "Template \(schedule.templateJobID.uuidString)").font(.callout.weight(.medium))
+                            Text(ProductionSchedulePresentation.details(schedule)).font(.caption).foregroundStyle(.secondary)
+                        }
                         Spacer()
                         Button(schedule.paused ? "Resume schedule" : "Pause schedule") {
                             model.setSchedulePaused(schedule, paused: !schedule.paused)
@@ -264,5 +267,15 @@ struct ProductionWorkspaceView: View {
                 }
             }.padding(18).workspaceSurface()
         }
+    }
+}
+
+/// Distinguishes schedule timing and state without implying that the foreground app executes it.
+enum ProductionSchedulePresentation {
+    /// Keeps the due date visible for paused schedules while marking exhausted schedules as complete.
+    static func details(_ schedule: ProductionSchedule) -> String {
+        let state = schedule.remainingRuns == 0 ? "Complete" : schedule.paused ? "Paused" : "Active"
+        let next = schedule.remainingRuns == 0 ? "No further runs" : "Next due \(schedule.nextRun.formatted(date: .abbreviated, time: .shortened))"
+        return "\(state) · \(next) · Every \(Int(schedule.intervalSeconds / 60)) min · \(schedule.remainingRuns) remaining"
     }
 }

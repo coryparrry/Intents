@@ -115,7 +115,7 @@ struct WorkspaceOverviewView: View {
             Button { isCreatingSuite = true } label: {
                 Label("New Suite", systemImage: "plus").labelStyle(.titleAndIcon)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .controlSize(.large)
             .disabled(isBusy)
         }

@@ -52,6 +52,76 @@ struct WorkspacePresentationTests {
         #expect(RunTrendSummary(runs: [unscored]).points.isEmpty)
     }
 
+    /// Only fully scored compatible runs can support an improvement; a true zero remains comparable.
+    @Test func trendComparesCompleteCompatibleRunsIncludingZeroPercent() {
+        let latest = fixture()
+        var previous = latest
+        previous.id = UUID()
+        previous.startedAt = latest.startedAt.addingTimeInterval(-60)
+        previous.results[0].status = .failed
+        previous.results[0].score = 1
+        #expect(RunTrendSummary(runs: [latest, previous]).delta == 100)
+        #expect(RunTrendSummary(runs: [previous, latest]).delta == -100)
+        previous.results[0].status = .passed; previous.results[0].score = 4
+        #expect(RunTrendSummary(runs: [latest, previous]).delta == 0)
+    }
+
+    /// Partial, interrupted, unscored, mismatched and malformed evidence never produces a directional headline.
+    @Test(arguments: ["missing", "cancelled", "stopped", "unscored", "error", "rubric", "prompt", "expected", "caseSet", "repetitions", "coordinates", "suite"])
+    func trendSuppressesUnsupportedChanges(kind: String) {
+        let previous = fixture()
+        var latest = previous
+        latest.id = UUID()
+        switch kind {
+        case "missing": latest.results = []
+        case "cancelled": latest.cancelled = true
+        case "stopped": latest.terminationReason = "Stopped by policy"
+        case "unscored": latest.results[0].status = .unscored
+        case "error": latest.results[0].status = .error
+        case "rubric": latest.criteria = "Changed rubric"
+        case "prompt": latest.plannedCases?[0].prompt = "Changed prompt"
+        case "expected": latest.plannedCases?[0].expected = "Changed answer"
+        case "caseSet": latest.plannedCases?.append(.init(name: "Added", prompt: "New", expected: "New")); latest.plannedSampleCount = 2
+        case "repetitions": latest.repetitions = 2; latest.plannedSampleCount = 2
+        case "coordinates": latest.results[0].repetition = 2
+        default: latest.suiteID = UUID()
+        }
+        let trend = RunTrendSummary(runs: [latest, previous])
+        #expect(trend.delta == nil)
+        #expect(trend.comparisonCaption.contains("unavailable"))
+    }
+
+    /// The same coverage context is used by the headline, history rows and point annotations.
+    @Test func runCoverageDistinguishesSavedScoredAndInterruptedSamples() {
+        var run = fixture()
+        #expect(RunCoverageSummary(run: run).caption == "1 / 1 scored · 1 / 1 saved · Complete")
+        run.plannedSampleCount = 2
+        #expect(RunCoverageSummary(run: run).caption == "1 / 2 scored · 1 / 2 saved · Incomplete")
+        run.cancelled = true
+        #expect(RunCoverageSummary(run: run).caption.contains("Cancelled"))
+        run.cancelled = false; run.terminationReason = "Stopped by policy"
+        #expect(RunCoverageSummary(run: run).caption.contains("Stopped early"))
+        run.terminationReason = nil; run.results[0].status = .unscored
+        #expect(RunCoverageSummary(run: run).scored == 0)
+        #expect(!RunCoverageSummary(run: run).isFullyScored)
+        run.plannedSampleCount = nil; run.plannedCases = nil; run.suiteDefinition = nil
+        #expect(RunCoverageSummary(run: run).planned == nil)
+        #expect(RunCoverageSummary(run: run).caption.contains("Coverage unavailable"))
+    }
+
+    /// A pattern's tag must retain the human-failure verdict until the user deliberately broadens the filter.
+    @Test func patternFilterExcludesOtherVerdictsSharingTheTag() {
+        let annotations = EvaluationReviewVerdict.allCases.map { verdict in
+            EvaluationReviewAnnotation(id: UUID(), runID: UUID(), sampleID: UUID(), sourceDigest: "fixture",
+                verdict: verdict, note: "Reviewed", tags: ["shared tag"], updatedAt: Date())
+        }
+        let failures = annotations.filter { ReviewSampleFilter.failed.includes(current: $0, hasCompleteEvidence: true, tag: "shared tag") }
+        #expect(failures.map(\.verdict) == [.failed])
+        #expect(annotations.filter { ReviewSampleFilter.all.includes(current: $0, hasCompleteEvidence: true, tag: "shared tag") }.count == 3)
+        #expect(!ReviewSampleFilter.failed.includes(current: nil, hasCompleteEvidence: true, tag: "shared tag"))
+        #expect(!ReviewSampleFilter.failed.includes(current: failures.first, hasCompleteEvidence: true, tag: "other tag"))
+    }
+
     @Test func changedSuitesDoNotDisplayOldPassingChecksAsCurrent() {
         let run = fixture()
         #expect(SuiteCheckState.evaluate(run: run, currentRevision: "changed", hasDraft: false) == .changed)

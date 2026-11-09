@@ -52,6 +52,7 @@ struct EvaluationDevelopmentWorkflowTests {
         #expect(bootstrap.notice?.contains("left unchanged") == true)
     }
 
+    /// Distinct valid suites retain their authored content and stable identities across project switches.
     @MainActor
     @Test func projectsAndSuitesKeepIndependentDraftsAndStableIDs() throws {
         let directory = try temporaryDirectory()
@@ -64,6 +65,7 @@ struct EvaluationDevelopmentWorkflowTests {
 
         let secondSuite = try store.createSuite(name: "Second suite")
         store.draftSuite.instructions = "Second-only instructions"
+        store.draftSuite.cases = [EvaluationCase(name: "Second fixture", prompt: "Return READY", expected: "READY")]
         #expect(store.saveSuite())
         try store.switchSuite(id: originalSuite)
         #expect(store.draftSuite.name == "Original suite")

@@ -1,7 +1,12 @@
 /** Identifies a recorded sample by case identifier and repetition. */
 export const resultKey = result => `${result.caseId}:${result.repetition}`;
-/** Classifies trace errors before pass or fail verdicts, leaving absent verdicts unscored. */
-export const outcome = result => result.trace?.error ? 'Error' : result.passed === true ? 'Passed' : result.passed === false ? 'Failed' : 'Unscored';
+/** Classifies subject and selected-judge errors before scored verdicts, leaving absent verdicts unscored. */
+export function outcome(result) {
+  const subject = result.appSample || result.trace?.appSample, assessment = result.assessmentSample;
+  if (result.error || result.trace?.error || subject?.status === 'error' || subject?.errorCategory || subject?.errorMessage
+      || assessment?.status === 'error' || assessment?.errorCategory || assessment?.errorMessage) return 'Error';
+  return result.passed === true ? 'Passed' : result.passed === false ? 'Failed' : 'Unscored';
+}
 /** Chooses a recorded case name, readable non-generated identifier or one-based fallback title. */
 export function caseTitle(test, index = 0) {
   if (test?.name?.trim() || test?.caseName?.trim() || (test?.appSample || test?.trace?.appSample)?.caseName?.trim()) return test.name?.trim() || test.caseName?.trim() || (test.appSample || test.trace.appSample).caseName.trim();
@@ -31,7 +36,7 @@ export function runMetrics(run) {
   const passed = count('Passed'), failed = count('Failed'), errors = count('Error'), unscored = count('Unscored');
   const latencies = results.map(result => result.durationMs).filter(value => Number.isFinite(value) && value >= 0);
   return { total: results.length, planned: (run.suite?.cases?.length || 0) * (run.suite?.repetitions || 1), passed, failed, errors, unscored,
-    passRate: results.some(result => typeof result.passed === 'boolean') ? results.filter(result => result.passed === true).length / results.filter(result => typeof result.passed === 'boolean').length : null,
+    passRate: passed + failed ? passed / (passed + failed) : null,
     averageLatency: latencies.length ? latencies.reduce((sum, value) => sum + value, 0) / latencies.length : null,
     longestLatency: latencies.length ? Math.max(...latencies) : null };
 }

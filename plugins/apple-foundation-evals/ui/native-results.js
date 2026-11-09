@@ -51,14 +51,54 @@ export function nativeResultTable(ctx,run,results,onSelect,selected) {
   for(const name of ['Case','Outcome','Score','Latency','Tokens','Repetition'])head.append(ctx.node('th',name));const thead=ctx.node('thead');thead.append(head);table.append(thead);const body=ctx.node('tbody');
   for(const result of results){const row=ctx.node('tr');row.classList.toggle('selected',resultKey(result)===resultKey(selected || {}));const name=ctx.node('td'),pick=ctx.button(resultTitle(run,result),()=>onSelect(result),'result-pick');pick.prepend(ctx.icon('trace'));name.append(pick);const status=ctx.node('td');status.append(ctx.pill(outcome(result)));row.append(name,status,ctx.node('td',nativeScore(result)),ctx.node('td',ctx.duration(result.durationMs)),ctx.node('td',(result.appSample || result.trace?.appSample)?.usage ? `${(result.appSample || result.trace.appSample).usage.inputTokens || 0} → ${(result.appSample || result.trace.appSample).usage.outputTokens || 0}` : '—'),ctx.node('td',result.repetition));body.append(row);}table.append(body);wrap.append(table);return wrap;
 }
-/** Appends run-history controls and a pass-rate trend calculated from scored samples. */
-export function renderNativeHistory(ctx,page,runs) {
-  if(runs.length){const trend=ctx.node('section',null,'surface run-trend'),latest=runs[0],previous=runs[1],
-  /** Returns the pass fraction among passed and failed samples, or null when neither outcome is recorded. */
-  rate=run=>run.passed+run.failed ? run.passed/(run.passed+run.failed) : null;const stat=ctx.node('div');stat.append(ctx.node('span','Latest pass rate','hint'),ctx.node('strong',ctx.rate(rate(latest)),'trend-value'));if(previous && rate(latest)!=null && rate(previous)!=null)stat.append(ctx.node('small',`${Math.round((rate(latest)-rate(previous))*100)} points since previous run`));trend.append(stat);const bars=ctx.node('div',null,'trend-bars');for(const run of runs.slice(0,12).reverse()){const bar=ctx.button('',()=>ctx.selectRun(run.id,'report'),'trend-bar');bar.title=`${ctx.date(run.startedAt)} · ${ctx.rate(rate(run))}`;bar.style.height=`${Math.max(3,(rate(run) || 0)*86)}px`;bar.setAttribute('aria-label',bar.title);bars.append(bar);}trend.append(bars);page.append(trend);}
-  const panel=ctx.node('section',null,'surface history-panel');panel.append(ctx.panelHeader('Run history',runs.length));
-  if(!runs.length)panel.append(ctx.empty('Ready for your first run','Run this suite to collect responses, scores, and execution traces. Your results will appear here.'));
-  for(const run of runs){const row=ctx.button('',()=>ctx.selectRun(run.id,'report'),'history-row'),copy=ctx.node('div');copy.append(ctx.node('strong',ctx.date(run.startedAt)),ctx.node('small',`${run.suiteName} · ${run.totalResults} / ${run.plannedResults} samples · ${run.suite?.version || ''}`));const result=ctx.node('div',null,'history-outcome');result.append(ctx.pill(run.health?.staleEvidence ? 'Definition changed' : run.errors ? 'Error' : run.failed ? 'Failed' : run.passed ? 'Passed' : run.status),ctx.node('small',`${ctx.rate(run.passed+run.failed ? run.passed/(run.passed+run.failed) : null)} · ${ctx.duration(run.durationMs)}`));row.append(ctx.icon('trace'),copy,result);panel.append(row);}page.append(panel);
+/** Summarizes catalog coverage without treating missing counters or unscored samples as completed scoring. */
+export function nativeHistoryCoverage(run) {
+  const counters = [run.passed, run.failed, run.errors, run.unscored, run.scoredResults, run.totalResults, run.plannedResults];
+  if (!counters.every(value => Number.isInteger(value) && value >= 0)
+      || run.scoredResults !== run.passed + run.failed
+      || run.scoredResults + run.errors + run.unscored !== run.totalResults || run.totalResults > run.plannedResults) {
+    return { rate: null, complete: false, caption: 'Coverage unavailable' };
+  }
+  const scored = run.scoredResults;
+  const status = run.status === 'cancelled' ? 'Cancelled'
+    : run.status === 'completed' && run.totalResults === run.plannedResults && run.plannedResults > 0 ? 'Complete'
+    : 'Incomplete';
+  return { rate: scored ? run.passed / scored : null, complete: status === 'Complete',
+    caption: `${scored} / ${run.plannedResults} scored · ${run.totalResults} / ${run.plannedResults} saved · ${status}` };
+}
+/** Appends saved-run coverage; catalog summaries lack the full scoring evidence needed to claim a comparable change. */
+export function renderNativeHistory(ctx, page, runs) {
+  if (runs.length) {
+    const trend = ctx.node('section', null, 'surface run-trend');
+    const latest = nativeHistoryCoverage(runs[0]), stat = ctx.node('div');
+    stat.append(ctx.node('span', 'Latest scored pass rate', 'hint'),
+      ctx.node('strong', ctx.rate(latest.rate), 'trend-value'), ctx.node('small', latest.caption),
+      ctx.node('small', 'Comparison unavailable in history. Open Analysis to compare saved evidence.'));
+    trend.append(stat);
+    const bars = ctx.node('div', null, 'trend-bars');
+    for (const run of runs.slice(0, 12).reverse()) {
+      const coverage = nativeHistoryCoverage(run), bar = ctx.button('', () => ctx.selectRun(run.id, 'report'), 'trend-bar');
+      bar.title = `${ctx.date(run.startedAt)} · ${ctx.rate(coverage.rate)} · ${coverage.caption}`;
+      bar.style.height = `${Math.max(3, (coverage.rate ?? 0) * 86)}px`;
+      bar.setAttribute('aria-label', bar.title); bars.append(bar);
+    }
+    trend.append(bars); page.append(trend);
+  }
+  const panel = ctx.node('section', null, 'surface history-panel');
+  panel.append(ctx.panelHeader('Run history', runs.length));
+  if (!runs.length) panel.append(ctx.empty('Ready for your first run', 'Run this suite to collect responses, scores, and execution traces. Your results will appear here.'));
+  for (const run of runs) {
+    const row = ctx.button('', () => ctx.selectRun(run.id, 'report'), 'history-row'), copy = ctx.node('div');
+    const coverage = nativeHistoryCoverage(run);
+    copy.append(ctx.node('strong', ctx.date(run.startedAt)), ctx.node('small', `${run.suiteName} · ${coverage.caption}`));
+    const result = ctx.node('div', null, 'history-outcome');
+    result.append(ctx.pill(run.health?.staleEvidence ? 'Definition changed'
+      : !coverage.complete ? run.status === 'cancelled' ? 'Cancelled' : 'Incomplete'
+      : run.errors ? 'Error' : run.failed ? 'Failed' : run.passed ? 'Passed' : run.status),
+      ctx.node('small', `${ctx.rate(coverage.rate)} · ${ctx.duration(run.durationMs)}`));
+    row.append(ctx.icon('trace'), copy, result); panel.append(row);
+  }
+  page.append(panel);
 }
 /** Appends the segmented evidence-inspector tabs using the supplied selection callback. */
 function inspectorTabs(ctx,inspector,tabs,key,onChange) { const header=ctx.node('div',null,'inspector-tabs');header.append(ctx.segmented(tabs,key,onChange,'Evidence inspector'));inspector.append(header); }
