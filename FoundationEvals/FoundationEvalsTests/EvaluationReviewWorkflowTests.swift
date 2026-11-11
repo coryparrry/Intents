@@ -1,9 +1,129 @@
 import CryptoKit
 import Foundation
+import Observation
+import Synchronization
 import Testing
 @testable import FoundationEvals
 
 struct EvaluationReviewWorkflowTests {
+    /// Keeps cached presentation and discovery order current after nested source edits, saved labels, evidence corruption, removals, and suite switches.
+    @MainActor @Test func cachedProjectionInvalidatesAndRetainsObservation() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        var fixture = try ReviewFixture(suite: store.suite)
+        store.runs = [fixture.run]
+        let first = try #require(store.reviewProjection.samples.first)
+        _ = store.diverseReviewSamples
+        let changed = Mutex(false)
+        withObservationTracking {
+            _ = store.reviewProjection
+            _ = store.diverseReviewSamples
+        } onChange: { changed.withLock { $0 = true } }
+        store.runs[0].results[0].response = "Updated synthetic output"
+        #expect(changed.withLock { $0 })
+        let updated = try #require(store.reviewProjection.samples.first)
+        #expect(updated.sourceDigest != first.sourceDigest)
+        #expect(updated.sample.response == "Updated synthetic output")
+        #expect(store.diverseReviewSamples.map(\.id) == [updated.id])
+        fixture.run = store.runs[0]
+        let annotation = fixture.annotation(verdict: .failed)
+        try store.saveReview(annotation)
+        #expect(store.reviewProjection.currentAnnotationsByID[updated.id]?.id == annotation.id)
+        store.runs[0].subjectEvidence?.digest = "invalid"
+        #expect(store.reviewProjection.currentAnnotationsByID.isEmpty)
+        #expect(store.diverseReviewSamples.first?.sourceDigest != updated.sourceDigest)
+        store.runs.removeAll()
+        #expect(store.reviewProjection.samples.isEmpty)
+        #expect(store.diverseReviewSamples.isEmpty)
+        store.runs = [fixture.run]
+        #expect(store.reviewProjection.samples.count == 1)
+        _ = try store.createSuite(name: "Another isolated suite")
+        #expect(store.reviewProjection.samples.isEmpty)
+        #expect(store.diverseReviewSamples.isEmpty)
+    }
+
+    /// Rebuilds cached run metadata when assessment selection or sample identity changes without changing array sizes.
+    @MainActor @Test func cachedProjectionFollowsSameSizeHistoryChanges() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        var fixture = try ReviewFixture(suite: store.suite)
+        let assessment = try fixture.addAssessment()
+        store.runs = [fixture.run]
+        let oldID = try #require(store.diverseReviewSamples.first?.id)
+        store.runs[0].selectedAssessmentID = assessment.id
+        #expect(store.reviewProjection.samples.first?.run.selectedAssessmentID == assessment.id)
+        store.runs[0].results[0].id = UUID()
+        let projection = store.reviewProjection
+        #expect(projection.samplesByID[oldID] == nil)
+        #expect(store.diverseReviewSamples.map(\.id) == EvaluationReviewWorkflow.diverseQueue(projection.samples).map(\.id))
+        #expect(store.diverseReviewSamples.first?.id != oldID)
+    }
+
+    /// Keeps targeted lookup identical to the full queue for unavailable, duplicate, foreign, and unencodable sources.
+    @Test(arguments: ["valid", "missing", "foreign", "badSample", "badContext", "duplicateRun", "duplicateSample"])
+    func targetedLookupMatchesReviewQueue(scenario: String) throws {
+        var fixture = try ReviewFixture()
+        let sampleID = fixture.run.results[0].id
+        let runID = fixture.run.id
+        var runs = [fixture.run]
+        switch scenario {
+        case "missing": runs = []
+        case "foreign": runs[0].suiteID = UUID()
+        case "badSample": runs[0].results[0].durationMilliseconds = .nan
+        case "badContext": runs[0].suiteDefinition?.modelConfiguration.temperature = .nan
+        case "duplicateRun":
+            fixture.run.historySequence = 9
+            fixture.run.results[0].response = "Newest source"
+            runs.append(fixture.run)
+        case "duplicateSample":
+            runs[0].results[0].durationMilliseconds = .nan
+            runs[0].results.append(fixture.run.results[0])
+        default: break
+        }
+        let expected = EvaluationReviewWorkflow.samples(runs: runs, suiteID: fixture.suite.id)
+            .first { $0.run.id == runID && $0.sample.id == sampleID }
+        let actual = EvaluationReviewWorkflow.sample(runs: runs, suiteID: fixture.suite.id, runID: runID, sampleID: sampleID)
+        #expect(actual?.id == expected?.id)
+        #expect(actual?.sourceDigest == expected?.sourceDigest)
+        #expect(actual?.sample.response == expected?.sample.response)
+        #expect(EvaluationReviewWorkflow.sample(runs: runs, suiteID: fixture.suite.id, runID: runID, sampleID: UUID()) == nil)
+    }
+
+    /// Measures the former full-queue lookup against the store's targeted path using only synthetic history and verifies identical evidence.
+    @MainActor @Test func targetedLookupLargeHistoryBenchmark() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EvaluationStore(supportDirectory: directory)
+        let fixture = try ReviewFixture(suite: store.suite)
+        store.runs = (0..<20).map { index in
+            var run = fixture.run
+            run.id = UUID()
+            run.historySequence = UInt64(index)
+            run.results = (0..<50).map { repetition in
+                var sample = fixture.run.results[0]
+                sample.id = UUID()
+                sample.repetition = repetition + 1
+                sample.response = String(repeating: "Synthetic output. ", count: 120)
+                return sample
+            }
+            return run
+        }
+        let target = try #require(store.runs.first)
+        let targetSample = try #require(target.results.last)
+        let clock = ContinuousClock()
+        let before = clock.now
+        let expected = try #require(store.reviewSamples.first { $0.run.id == target.id && $0.sample.id == targetSample.id })
+        let fullQueueDuration = before.duration(to: clock.now)
+        let start = clock.now
+        let actual = try store.reviewSample(runID: target.id, sampleID: targetSample.id)
+        let targetedDuration = start.duration(to: clock.now)
+        #expect(actual.sourceDigest == expected.sourceDigest)
+        #expect(throws: EvaluationReviewError.self) { try store.reviewSample(runID: target.id, sampleID: UUID()) }
+        print("Synthetic review lookup, 20 runs / 1000 samples: full queue \(fullQueueDuration), targeted \(targetedDuration)")
+    }
+
     /// Preserves saved review hashes when batching captured or legacy runs with optional context and Unicode evidence.
     @Test(arguments: [false, true], 0..<4)
     func batchedSourceDigestsPreserveTheExistingRepresentation(legacy: Bool, optionalFields: Int) throws {

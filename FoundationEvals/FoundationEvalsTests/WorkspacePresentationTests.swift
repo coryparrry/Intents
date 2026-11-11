@@ -5,6 +5,30 @@ import SwiftUI
 
 @MainActor
 struct WorkspacePresentationTests {
+    /// Keeps overview counters and chart outcomes aligned with selected assessments, including original errors and invalid judge evidence.
+    @Test(arguments: ["passed", "failed", "unscored", "subjectError", "judgeError", "missingAssessment", "duplicateAssessment"])
+    func overviewOutcomeReductionPreservesAssessmentSemantics(scenario: String) throws {
+        var run = fixture(status: scenario == "subjectError" ? .error : .passed)
+        var selected = assessment(for: run, status: scenario == "failed" ? .failed : scenario == "unscored" ? .unscored : .passed)
+        if scenario == "judgeError" { selected.samples[0].errorCategory = "fixtureUnavailable" }
+        run.assessments = scenario == "duplicateAssessment" ? [selected, selected] : [selected]
+        if scenario == "missingAssessment" { run.selectedAssessmentID = UUID() }
+        let record = EvaluationSuiteRecord(id: run.suiteID, name: run.suiteName,
+            createdAt: .now, updatedAt: .now, archivedAt: nil, repositoryDefinitionPath: nil, lastRepositoryRevision: nil)
+        let summary = SuiteOverviewSummary(record: record, suite: EvaluationSuite(), currentRevision: "current",
+            draft: nil, runs: [run], localState: .init())
+        let point = try #require(summary.history.first)
+        let expected: SuiteCheckState = scenario == "passed" ? .passed : scenario == "failed" ? .failed
+            : scenario == "unscored" ? .collected : .incomplete
+        #expect(summary.passedCount == run.passedCount)
+        #expect(summary.failedCount == run.failedCount)
+        #expect(summary.errorCount == run.errorCount)
+        #expect(summary.state == expected)
+        #expect(point.state == expected)
+        #expect(point.rate == run.passRate)
+        #expect(point.hasFailures == (run.failedCount > 0 || run.errorCount > 0))
+    }
+
 
     /// The compact cohort list must not make later results impossible to find or exceed the existing display limit.
     @Test func cohortListSearchesBeyondTheInitiallyVisibleRows() {

@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 extension EvaluationStore {
     var reviewSamples: [EvaluationReviewSample] {
-        EvaluationReviewWorkflow.samples(runs: runs, suiteID: selectedSuiteID)
+        reviewProjection.samples
     }
 
     /// Validates and durably saves an annotation, reporting success only after suite-local persistence.
@@ -48,7 +48,9 @@ extension EvaluationStore {
 
     /// Finds a saved review sample in the selected suite, throwing when either requested ID is unavailable.
     func reviewSample(runID: UUID, sampleID: UUID) throws -> EvaluationReviewSample {
-        guard let sample = reviewSamples.first(where: { $0.run.id == runID && $0.sample.id == sampleID }) else {
+        guard let sample = EvaluationReviewWorkflow.sample(
+            runs: runs, suiteID: selectedSuiteID, runID: runID, sampleID: sampleID
+        ) else {
             throw EvaluationReviewError.invalid("Choose a saved sample from the current suite.")
         }
         return sample
