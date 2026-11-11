@@ -16,11 +16,10 @@ struct WorkspaceOverviewView: View {
     private var isBusy: Bool { store.isRunning || store.isReassessing || store.isProcessingFiles || runners.executingRunID != nil }
     private var records: [EvaluationSuiteRecord] { store.suiteRecords.filter { !$0.isArchived } }
     private var summaries: [SuiteOverviewSummary] { records.compactMap { summary(for: $0) } }
-    private var isLoaded: Bool { summaries.count == records.count }
-    private var hasAnyRun: Bool { summaries.contains { $0.lastCheckedAt != nil } }
-    private var visibleRecords: [EvaluationSuiteRecord] {
+    /// Applies search and attention filtering to the current render's summaries without rebuilding saved history.
+    private func visibleRecords(summaries: [UUID: SuiteOverviewSummary]) -> [EvaluationSuiteRecord] {
         records.filter { record in
-            let value = summary(for: record)
+            let value = summaries[record.id]
             let name = value?.name ?? record.name
             return (search.isEmpty || name.localizedCaseInsensitiveContains(search))
                 && (!attentionOnly || value.map { $0.state.needsAttention } == true)
@@ -42,6 +41,10 @@ struct WorkspaceOverviewView: View {
     }
 
     var body: some View {
+        let summaries = summaries
+        let summariesByID = Dictionary(summaries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let isLoaded = summaries.count == records.count
+        let hasAnyRun = summaries.contains { $0.lastCheckedAt != nil }
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 header
@@ -54,7 +57,7 @@ struct WorkspaceOverviewView: View {
                             hasSuite: !records.isEmpty,
                             hasCases: summaries.contains { $0.caseCount > 0 },
                             disabled: isBusy,
-                            primaryTitle: records.first.map { "Open \(summary(for: $0)?.name ?? $0.name)" } ?? "Create a Suite"
+                            primaryTitle: records.first.map { "Open \(summariesByID[$0.id]?.name ?? $0.name)" } ?? "Create a Suite"
                         ) {
                             if let first = records.first { open(first.id) } else { isCreatingSuite = true }
                         }
@@ -63,7 +66,7 @@ struct WorkspaceOverviewView: View {
                     }
                 }
                 .transition(.blurReplace)
-                gallery
+                gallery(summaries: summariesByID)
                 if hasAnyRun {
                     VStack(alignment: .leading, spacing: 14) {
                         WorkspaceSectionTitle("Recent runs")
@@ -121,8 +124,10 @@ struct WorkspaceOverviewView: View {
         }
     }
 
-    private var gallery: some View {
-        VStack(alignment: .leading, spacing: 14) {
+    /// Renders the suite rows from the same summary snapshot used by the overview hero and recent-run timeline.
+    private func gallery(summaries: [UUID: SuiteOverviewSummary]) -> some View {
+        let visibleRecords = visibleRecords(summaries: summaries)
+        return VStack(alignment: .leading, spacing: 14) {
             WorkspaceSectionTitle("Suites", count: records.count) {
                 Picker("Show", selection: $attentionOnly) {
                     Text("All").tag(false)
@@ -141,7 +146,7 @@ struct WorkspaceOverviewView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(visibleRecords.enumerated()), id: \.element.id) { index, record in
-                        SuiteRow(summary: summary(for: record), name: record.name,
+                        SuiteRow(summary: summaries[record.id], name: record.name,
                                  isRunning: store.isRunning && record.id == store.selectedSuiteID,
                                  disabled: isBusy, open: { open(record.id) }, run: { open(record.id, run: true) })
                             .transition(.opacity)

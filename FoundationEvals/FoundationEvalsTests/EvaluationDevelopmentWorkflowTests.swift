@@ -3,6 +3,39 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationDevelopmentWorkflowTests {
+    /// Restores sequence order from other suites only for fully decodable, correctly named history belonging to that suite and project.
+    @MainActor @Test(arguments: ["owned", "legacy", "archived", "foreignProject", "foreignSuite", "renamed", "malformed"])
+    func startupSequenceScanValidatesUnselectedHistory(scenario: String) async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = EvaluationStore(supportDirectory: directory)
+        let sourceSuiteID = original.selectedSuiteID
+        original.draftSuite.scoringMode = .exactMatch
+        #expect(original.saveSuite())
+        let adapter = ClosureFeatureAdapter(displayName: "Synthetic startup sequence") { _ in "READY" }
+        var run = try await original.runFeatureAdapter(expectedRevision: original.suiteRevision, adapter: adapter)
+        let sequence = UInt64(Date().addingTimeInterval(86_400).timeIntervalSince1970 * 1_000_000)
+        run.historySequence = sequence
+        if scenario == "legacy" { run.projectID = nil }
+        if scenario == "foreignProject" { run.projectID = UUID() }
+        if scenario == "foreignSuite" { run.suiteID = UUID() }
+        let runs = EvaluationWorkspacePersistence.suiteDirectory(supportDirectory: directory,
+            projectID: original.selectedProjectID, suiteID: original.selectedSuiteID).appending(path: "Runs")
+        let url = runs.appending(path: scenario == "renamed" ? "renamed.json" : "\(run.id.uuidString).json")
+        let data = scenario == "malformed" ? Data("{\"historySequence\":99999999999999999}".utf8) : try CanonicalJSON.data(for: run)
+        try data.write(to: url)
+        _ = try original.createSuite(name: "Another suite")
+        if scenario == "archived" { try original.archiveSuite(id: sourceSuiteID) }
+        let restarted = EvaluationStore(supportDirectory: directory)
+        restarted.draftSuite.scoringMode = .exactMatch
+        restarted.draftSuite.cases = [EvaluationCase(name: "Ready", prompt: "Ready", expected: "READY")]
+        #expect(restarted.saveSuite())
+        let next = try await restarted.runFeatureAdapter(expectedRevision: restarted.suiteRevision, adapter: adapter)
+        let nextSequence = try #require(next.historySequence)
+        #expect((nextSequence > sequence) == ["owned", "legacy", "archived"].contains(scenario))
+        #expect(try Data(contentsOf: url) == data)
+    }
+
     @Test(arguments: [(Int.max, 2), (2, Int.max), (101, 1), (0, 1), (1, 0), (-1, 1)])
     func experimentOrderRejectsInvalidOrOversizedPlans(caseCount: Int, repetitions: Int) {
         #expect(EvaluationExperimentAnalyzer.balancedOrder(

@@ -36,12 +36,34 @@ enum SuiteCheckState: String, Sendable {
 
     /// The outcome at the time of execution, independent of later edits to the suite.
     static func savedRun(_ run: EvaluationRun) -> Self {
+        guard !run.results.isEmpty, !run.cancelled, !run.stoppedEarly,
+              run.results.count == run.plannedResultCount else { return .incomplete }
+        return SavedRunOutcome(run: run).state
+    }
+}
+
+/// Reduces a selected assessment once for overview counts, chart rates, and the saved-run outcome.
+private struct SavedRunOutcome {
+    var passed = 0
+    var failed = 0
+    var errors = 0
+    let state: SuiteCheckState
+    var rate: Double? { passed + failed == 0 ? nil : Double(passed) / Double(passed + failed) }
+
+    /// Preserves subject and selected-judge error detection, incomplete captures, and collected-only outcomes in a single result pass.
+    init(run: EvaluationRun) {
+        for sample in run.effectiveResults {
+            if sample.status == .passed { passed += 1 }
+            if sample.status == .failed { failed += 1 }
+            if sample.status == .error || sample.errorCategory != nil || sample.errorMessage != nil
+                || sample.judgeErrorCategory != nil || sample.judgeErrorMessage != nil { errors += 1 }
+        }
         if run.results.isEmpty || run.cancelled || run.stoppedEarly || run.results.count != run.plannedResultCount
-            || run.errorCount > 0 || run.results.contains(where: { $0.status == .error })
-            || run.selectedAssessment?.samples.contains(where: { $0.status == .error }) == true { return .incomplete }
-        if run.scoredCount == 0 { return .collected }
-        if run.scoredCount != run.results.count { return .incomplete }
-        return run.failedCount > 0 ? .failed : .passed
+            || errors > 0 || run.results.contains(where: { $0.status == .error })
+            || run.selectedAssessment?.samples.contains(where: { $0.status == .error }) == true { state = .incomplete }
+        else if passed + failed == 0 { state = .collected }
+        else if passed + failed != run.results.count { state = .incomplete }
+        else { state = failed > 0 ? .failed : .passed }
     }
 }
 
@@ -101,12 +123,15 @@ struct SuiteOverviewSummary: Identifiable, Sendable {
         repetitions = (draft ?? suite).repetitions
         hasDraft = draft.map { $0 != suite } ?? false
         let run = runs.max { ($0.historySequence ?? 0, $0.startedAt) < ($1.historySequence ?? 0, $1.startedAt) }
-        state = SuiteCheckState.evaluate(run: run, currentRevision: currentRevision, hasDraft: hasDraft)
+        if let run {
+            let outcome = SavedRunOutcome(run: run)
+            state = hasDraft || run.suiteRevision != currentRevision ? .changed : outcome.state
+            passedCount = outcome.passed
+            failedCount = outcome.failed
+            errorCount = outcome.errors
+        }
         latestRunID = run?.id
         lastCheckedAt = run?.startedAt
-        passedCount = run?.passedCount ?? 0
-        failedCount = run?.failedCount ?? 0
-        errorCount = run?.errorCount ?? 0
         let approval = localState.baselineApprovals.last { $0.isCurrent }
         approvedRunID = BaselinePresentation.approvedRun(approval: approval, runs: runs)?.id
         history = SuiteHistoryPoint.recent(runs)
@@ -118,9 +143,10 @@ extension SuiteHistoryPoint {
     static func recent(_ runs: [EvaluationRun], limit: Int = 24) -> [SuiteHistoryPoint] {
         runs.sorted { ($0.historySequence ?? 0, $0.startedAt) < ($1.historySequence ?? 0, $1.startedAt) }
             .suffix(limit).sorted { $0.startedAt < $1.startedAt }.map {
-            SuiteHistoryPoint(id: $0.id, date: $0.startedAt, rate: $0.passRate,
-                              hasFailures: $0.failedCount > 0 || $0.errorCount > 0,
-                              state: .savedRun($0), historySequence: $0.historySequence)
+            let outcome = SavedRunOutcome(run: $0)
+            return SuiteHistoryPoint(id: $0.id, date: $0.startedAt, rate: outcome.rate,
+                                     hasFailures: outcome.failed > 0 || outcome.errors > 0,
+                                     state: outcome.state, historySequence: $0.historySequence)
         }
     }
 }

@@ -72,7 +72,8 @@ private struct ReviewSamplesPane: View {
 
     /// Filters the current projection without rebuilding source digests or rescanning saved annotations for each row.
     private func filteredSamples(_ projection: EvaluationReviewProjection) -> [EvaluationReviewSample] {
-        let ordered = diverse ? EvaluationReviewWorkflow.diverseQueue(projection.samples) : projection.samples
+        let ordered = diverse ? store.diverseReviewSamples : projection.samples
+        if filter == .all, selectedTag == nil, search.isEmpty { return ordered }
         return ordered.filter { sample in
             let current = projection.currentAnnotationsByID[sample.id]
             return filter.includes(current: current, hasCompleteEvidence: sample.sample.hasCompleteSubjectEvidenceForJudging,
@@ -85,8 +86,7 @@ private struct ReviewSamplesPane: View {
     }
 
     var body: some View {
-        let projection = EvaluationReviewWorkflow.projection(runs: store.runs, suiteID: store.selectedSuiteID,
-                                                           state: store.suiteLocalState.review)
+        let projection = store.reviewProjection
         let samples = filteredSamples(projection)
         VStack(alignment: .leading, spacing: 14) {
             HStack {
