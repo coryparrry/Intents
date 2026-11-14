@@ -66,10 +66,9 @@ struct EvaluationPromptImprovement: Identifiable, Codable, Sendable {
               heldCandidate.instructions == selectedCandidate.instructions,
               baseline.instructions == source.instructions, heldBaseline.instructions == source.instructions,
               development.passedCount > baseline.passedCount else { return false }
-        return heldOutSuite.cases.allSatisfy { test in
-            heldCandidate.effectiveResults.count { $0.caseID == test.id && $0.status == .passed }
-                >= heldBaseline.effectiveResults.count { $0.caseID == test.id && $0.status == .passed }
-        }
+        let candidatePasses = EvaluationPromptImprovementRules.passingCounts(heldCandidate)
+        let baselinePasses = EvaluationPromptImprovementRules.passingCounts(heldBaseline)
+        return heldOutSuite.cases.allSatisfy { candidatePasses[$0.id, default: 0] >= baselinePasses[$0.id, default: 0] }
     }
 
     /// Copies the source suite for one partition and retains only its applicable critical-case IDs.
@@ -83,6 +82,13 @@ struct EvaluationPromptImprovement: Identifiable, Codable, Sendable {
 }
 
 enum EvaluationPromptImprovementRules {
+    /// Counts selected-assessment passes by case in one projection, leaving failed, unscored, and missing cases at zero.
+    static func passingCounts(_ run: EvaluationRun) -> [UUID: Int] {
+        run.effectiveResults.reduce(into: [:]) { counts, sample in
+            if sample.status == .passed { counts[sample.caseID, default: 0] += 1 }
+        }
+    }
+
     /// Requires distinct development and held-out cases, an automated scoring mode, and at most 100 planned samples.
     static func validationIssue(suite: EvaluationSuite, heldOutCaseIDs: Set<UUID>) -> String? {
         guard !suite.hasDocumentCases else {
@@ -115,10 +121,12 @@ enum EvaluationPromptImprovementRules {
               run.results.count == suite.cases.count * suite.repetitions,
               run.scoredCount == run.results.count,
               Set(run.results.map(\.id)).count == run.results.count else { return false }
+        let samplesByCase = Dictionary(grouping: run.effectiveResults, by: \.caseID)
+        let expectedRepetitions = Set(1...suite.repetitions)
         for test in suite.cases {
-            let samples = run.effectiveResults.filter { $0.caseID == test.id }
+            let samples = samplesByCase[test.id] ?? []
             guard samples.count == suite.repetitions,
-                  Set(samples.map(\.repetition)) == Set(1...suite.repetitions),
+                  Set(samples.map(\.repetition)) == expectedRepetitions,
                   samples.allSatisfy({ $0.prompt == test.prompt && $0.expected == test.expected
                       && $0.judgeErrorCategory == nil && $0.judgeErrorMessage == nil }) else { return false }
         }

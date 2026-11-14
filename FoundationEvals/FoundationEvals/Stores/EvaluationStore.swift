@@ -26,11 +26,17 @@ final class EvaluationStore {
 
     private(set) var suite: EvaluationSuite
     var draftSuite: EvaluationSuite
-    var runs: [EvaluationRun]
+    var runs: [EvaluationRun] {
+        didSet { cachedReviewProjection = nil; cachedDiverseReviewSamples = nil }
+    }
     private(set) var workspace: EvaluationWorkspaceCatalog
     private(set) var selectedProjectID: UUID
-    private(set) var selectedSuiteID: UUID
-    private(set) var suiteLocalState: EvaluationSuiteLocalState
+    private(set) var selectedSuiteID: UUID {
+        didSet { cachedReviewProjection = nil; cachedDiverseReviewSamples = nil }
+    }
+    private(set) var suiteLocalState: EvaluationSuiteLocalState {
+        didSet { cachedReviewProjection = nil; cachedDiverseReviewSamples = nil }
+    }
     private(set) var judgeConnections: [EvaluationJudgeConnection]
     private(set) var latestJudgeCheck: EvaluationJudgeCheckReport?
     private(set) var isReassessing = false
@@ -55,6 +61,8 @@ final class EvaluationStore {
 
     @ObservationIgnored let telemetry: TelemetryController?
     @ObservationIgnored private var evaluationTelemetry: TelemetrySpan?
+    @ObservationIgnored private var cachedReviewProjection: EvaluationReviewProjection?
+    @ObservationIgnored private var cachedDiverseReviewSamples: [EvaluationReviewSample]?
     private let runner = EvaluationRunner()
     private let experimentRunner = EvaluationExperimentRunner()
     private let featureAdapterRunner = EvaluationFeatureAdapterRunner()
@@ -68,6 +76,27 @@ final class EvaluationStore {
     @ObservationIgnored private var checkpointTelemetryContext: (runID: UUID, span: TelemetrySpan)?
     private let pendingCompletedRunsWriter: (Data, URL) throws -> Void
     var overviewStorageDirectory: URL { supportDirectory }
+
+    /// Reuses presentation-only source digests and label indexes until history, suite identity, or local review state changes.
+    /// Reads observed inputs even on cache hits so SwiftUI continues tracking their mutations; mutation boundaries validate independently.
+    var reviewProjection: EvaluationReviewProjection {
+        let sources = runs
+        let suiteID = selectedSuiteID
+        let review = suiteLocalState.review
+        if let cachedReviewProjection { return cachedReviewProjection }
+        let projection = EvaluationReviewWorkflow.projection(runs: sources, suiteID: suiteID, state: review)
+        cachedReviewProjection = projection
+        return projection
+    }
+
+    /// Reuses the deterministic discovery ordering with the same observed inputs and invalidation boundaries as its source projection.
+    var diverseReviewSamples: [EvaluationReviewSample] {
+        let projection = reviewProjection
+        if let cachedDiverseReviewSamples { return cachedDiverseReviewSamples }
+        let samples = EvaluationReviewWorkflow.diverseQueue(projection.samples)
+        cachedDiverseReviewSamples = samples
+        return samples
+    }
     @ObservationIgnored lazy var reviewDrafts = EvaluationReviewDraftStore(directory: supportDirectory.appending(path: "ReviewDrafts"))
     @ObservationIgnored private var pendingPromptEdits: [UUID: String] = [:]
     @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
@@ -5559,7 +5588,7 @@ final class EvaluationStore {
 
     // Save order spans every suite, including archived suites and other projects.
     // Restore once at startup rather than depending on the currently selected history.
-    /// Returns the highest saved history sequence across every project and suite, including archived entries.
+    /// Scans validated history one run at a time for the global sequence, including archived suites, without sorting or retaining history.
     private static func maximumRunHistorySequence(
         catalog: EvaluationWorkspaceCatalog, supportDirectory: URL
     ) -> UInt64 {
@@ -5569,8 +5598,15 @@ final class EvaluationStore {
                 let directory = EvaluationWorkspacePersistence.suiteDirectory(
                     supportDirectory: supportDirectory, projectID: project.id, suiteID: suite.id
                 ).appending(path: "Runs", directoryHint: .isDirectory)
-                let history = loadRuns(from: directory, projectID: project.id, suiteID: suite.id).runs
-                maximum = max(maximum, history.compactMap(\.historySequence).max() ?? 0)
+                guard let urls = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { continue }
+                for url in urls where url.pathExtension == "json" {
+                    guard let data = try? Data(contentsOf: url),
+                          let run = try? CanonicalJSON.decode(EvaluationRun.self, from: data),
+                          url.deletingPathExtension().lastPathComponent == run.id.uuidString,
+                          run.suiteID == suite.id,
+                          run.projectID == nil || run.projectID == project.id else { continue }
+                    maximum = max(maximum, run.historySequence ?? 0)
+                }
             }
         }
         return maximum
@@ -5597,11 +5633,13 @@ final class EvaluationStore {
                     if FileManager.default.fileExists(atPath: checkpoints.path) { failure = .storage }
                     continue
                 }
+                let checkpointURLs = urls.filter { $0.pathExtension == "json" }
+                guard !checkpointURLs.isEmpty else { continue }
                 let runsDirectory = directory.appending(path: "Runs", directoryHint: .isDirectory)
                 let existing = loadRuns(
                     from: runsDirectory, projectID: project.id, suiteID: suite.id
                 ).runs
-                for url in urls where url.pathExtension == "json" {
+                for url in checkpointURLs {
                     guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
                         continue
                     }

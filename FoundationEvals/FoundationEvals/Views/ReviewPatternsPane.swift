@@ -7,6 +7,7 @@ struct ReviewPatternsPane: View {
         EvaluationReviewWorkflow.patterns(samples: store.reviewSamples, state: store.suiteLocalState.review)
     }
     var body: some View {
+        let patterns = patterns
         VStack(alignment: .leading, spacing: 16) {
             Text("Only current, human-confirmed failures appear here. Counts describe these reviewed examples; several repetitions can belong to one case.")
                 .font(.callout).foregroundStyle(.secondary)

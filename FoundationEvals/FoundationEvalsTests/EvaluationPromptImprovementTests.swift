@@ -4,6 +4,27 @@ import Testing
 @testable import FoundationEvals
 
 struct EvaluationPromptImprovementTests {
+    /// Verifies grouped completeness still rejects missing coordinates, duplicate repetitions, wrong inputs, and judge errors.
+    @Test(arguments: ["valid", "missingCase", "duplicateRepetition", "prompt", "expected", "judgeError"])
+    func groupedCompletenessPreservesCaseValidation(scenario: String) async {
+        let suite = makeImprovement().source
+        let harness = ImprovementHarness(heldOutID: suite.cases.last!.id)
+        var run = await harness.evaluate(suite)
+        switch scenario {
+        case "missingCase": run.results[0].caseID = UUID()
+        case "duplicateRepetition": run.results[0].repetition = run.results[1].repetition
+        case "prompt": run.results[0].prompt = "Changed input"
+        case "expected": run.results[0].expected = "Changed reference"
+        case "judgeError": run.results[0].judgeErrorMessage = "Unavailable"
+        default: break
+        }
+        #expect(EvaluationPromptImprovementRules.isComplete(run, for: suite) == (scenario == "valid"))
+        let counts = EvaluationPromptImprovementRules.passingCounts(run)
+        for test in suite.cases {
+            #expect(counts[test.id, default: 0] == run.effectiveResults.count { $0.caseID == test.id && $0.status == .passed })
+        }
+    }
+
     @Test func presentationExplainsSetupAndInterruptedResults() {
         var plan = makeImprovement()
         #expect(PromptImprovementPresentation.setupIssue(suite: plan.source, heldOutCaseIDs: plan.heldOutCaseIDs) == nil)

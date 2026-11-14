@@ -29,6 +29,21 @@ enum EvaluationReviewWorkflow {
         }
     }
 
+    /// Resolves one source without encoding unrelated samples, preserving queue order and skipping unencodable sources.
+    static func sample(runs: [EvaluationRun], suiteID: UUID, runID: UUID, sampleID: UUID) -> EvaluationReviewSample? {
+        let matches = runs.filter { $0.suiteID == suiteID && $0.id == runID }.sorted {
+            ($0.historySequence ?? 0, $0.startedAt) > ($1.historySequence ?? 0, $1.startedAt)
+        }
+        for run in matches {
+            guard let context = try? SampleDigestContext(run: run) else { continue }
+            for sample in run.results where sample.id == sampleID {
+                guard let digest = try? context.digest(for: sample) else { continue }
+                return EvaluationReviewSample(run: run, sample: sample, sourceDigest: digest)
+            }
+        }
+        return nil
+    }
+
     /// Builds sources and label indexes once, checking each run's immutable evidence integrity once for presentation.
     /// Mutation boundaries still validate their supplied source independently through `isCurrent`.
     static func projection(runs: [EvaluationRun], suiteID: UUID, state: EvaluationReviewState) -> EvaluationReviewProjection {
