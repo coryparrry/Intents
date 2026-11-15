@@ -143,6 +143,62 @@ struct SiriStudioTests {
         }
     }
 
+    /// Makes an existing public destination private even when authoring validation blocks execution.
+    @MainActor @Test func blockedRunSecuresExistingOutputDirectory() async throws {
+        let files = FileManager.default
+        let directory = files.temporaryDirectory.appending(path: "siri-private-run-\(UUID())")
+        try files.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: directory) }
+        try files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        let catalog = try fixtureCatalog()
+        let document = SiriStudioDocument(bundleIdentifier: catalog.bundleIdentifier, scenarios: [.init(name: "Unfinished")])
+        let configuration = MacIntentRunConfiguration(developerDirectory: URL(filePath: "/missing-xcode"),
+            signingIdentity: "", teamIdentifier: "", outputDirectory: directory)
+        let record = try await SiriStudioRunner().run(document: document, catalog: catalog, configuration: configuration)
+        #expect(record.state == .blocked)
+        #expect(try SiriStudioRunRecord.read(from: directory).document == document)
+        let permissions = try #require(files.attributesOfItem(atPath: directory.path)[.posixPermissions] as? NSNumber)
+        #expect(permissions.intValue & 0o777 == 0o700)
+    }
+
+    /// Neither run nor import may overwrite existing evidence or change a symlink target's permissions.
+    @MainActor @Test(arguments: [false, true]) func outputDestinationsRejectExistingEvidenceAndSymlinks(importing: Bool) async throws {
+        let files = FileManager.default
+        let root = files.temporaryDirectory.appending(path: "siri-output-rejection-\(UUID())")
+        let destination = root.appending(path: "evidence")
+        try files.createDirectory(at: destination, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: root) }
+        try files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
+        let original = Data("Saved evidence".utf8)
+        let savedRun = destination.appending(path: "run.json")
+        try original.write(to: savedRun)
+        let catalog = try fixtureCatalog()
+        let document = SiriStudioDocument(bundleIdentifier: catalog.bundleIdentifier, scenarios: [.init(name: "Unfinished")])
+        let runner = SiriStudioRunner()
+        /// Exercises public admission without launching Xcode or a subject app.
+        func reject(_ output: URL) async {
+            await #expect(throws: MacIntentTestingError.self) {
+                if importing {
+                    _ = try await runner.importResult(root.appending(path: "fixture.xcresult"), document: document,
+                        developerDirectory: URL(filePath: "/missing-xcode"), outputDirectory: output)
+                } else {
+                    _ = try await runner.run(document: document, catalog: catalog,
+                        configuration: .init(developerDirectory: URL(filePath: "/missing-xcode"),
+                            signingIdentity: "", teamIdentifier: "", outputDirectory: output))
+                }
+            }
+        }
+        await reject(destination)
+        #expect(try Data(contentsOf: savedRun) == original)
+        try files.removeItem(at: savedRun)
+        let link = root.appending(path: "linked-evidence")
+        try files.createSymbolicLink(at: link, withDestinationURL: destination)
+        await reject(link)
+        #expect(try files.contentsOfDirectory(atPath: destination.path).isEmpty)
+        let permissions = try #require(files.attributesOfItem(atPath: destination.path)[.posixPermissions] as? NSNumber)
+        #expect(permissions.intValue & 0o777 == 0o755)
+    }
+
     /// Opens actual compiled metadata from the synthetic Courtside app.
     private func fixtureCatalog() throws -> MacIntentCatalog {
         try MacIntentCatalog.decode(data: Data(contentsOf: Self.fixture.appending(path: "Courtside.actions.json")),

@@ -216,9 +216,14 @@ public struct SiriStudioRunRecord: Codable, Sendable {
             ?? (states.isEmpty ? .blocked : .passed)
     }
 
-    /// Reopens a saved run while preventing legacy or mismatched evidence from retaining a current verdict.
+    /// Reads at most 64 MiB and prevents legacy or mismatched evidence from retaining a current verdict.
     public static func read(from directory: URL) throws -> Self {
-        let record = try JSONDecoder().decode(Self.self, from: Data(contentsOf: directory.appendingPathComponent("run.json")))
+        let file = try FileHandle(forReadingFrom: directory.appendingPathComponent("run.json"))
+        defer { try? file.close() }
+        let limit = 64 * 1024 * 1024
+        let bytes = try file.read(upToCount: limit + 1) ?? Data()
+        guard bytes.count <= limit else { throw MacIntentTestingError("Saved Siri Studio runs must be at most 64 MiB.") }
+        let record = try JSONDecoder().decode(Self.self, from: bytes)
         let scenarios = record.scenarios.map { result in
             guard result.state != .blocked && result.state != .cancelled else { return result }
             let authored = record.document.scenarios.first { $0.id == result.id }
