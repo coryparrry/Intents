@@ -195,7 +195,7 @@ public final class SiriStudioRunner {
         return record
     }
 
-    /// Requires a real, empty evidence directory and makes existing destinations private before writing authored content.
+    /// Rejects populated, linked or ACL-bearing directories before making the evidence destination private.
     private static func prepareOutputDirectory(_ directory: URL) throws {
         let files = FileManager.default
         try files.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -203,6 +203,16 @@ public final class SiriStudioRunner {
         guard values.isDirectory == true, values.isSymbolicLink != true,
               try files.contentsOfDirectory(atPath: directory.path).isEmpty else {
             throw MacIntentTestingError("Choose an empty Siri Studio run directory without a symbolic link.")
+        }
+        if let acl = acl_get_file(directory.path, ACL_TYPE_EXTENDED) {
+            defer { acl_free(UnsafeMutableRawPointer(acl)) }
+            var entry: acl_entry_t?
+            guard acl_valid(acl) == 0,
+                  acl_get_entry(acl, Int32(ACL_FIRST_ENTRY.rawValue), &entry) == -1, errno == EINVAL else {
+                throw MacIntentTestingError("Choose a Siri Studio output folder without extended access permissions (ACLs).")
+            }
+        } else if errno != ENOENT {
+            throw MacIntentTestingError("Could not verify access permissions for the Siri Studio output folder.")
         }
         try files.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
     }
