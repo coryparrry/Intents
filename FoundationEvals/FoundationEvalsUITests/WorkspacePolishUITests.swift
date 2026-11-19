@@ -81,15 +81,22 @@ final class WorkspacePolishUITests: XCTestCase {
         XCTAssertTrue(importButton.waitForExistence(timeout: 5))
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == YES"), object: importButton)
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
-        let version = app.sheets.firstMatch.textFields["Version"]
+        let importSheet = app.sheets.firstMatch
+        let datasetName = importSheet.textFields["Dataset import name"]
+        let version = importSheet.textFields["Dataset import version"]
         XCTAssertTrue(version.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(datasetName.label, "Dataset name")
+        XCTAssertEqual(version.label, "Version")
+        XCTAssertTrue(importSheet.popUpButtons["Sampling"].exists)
         version.click()
         version.typeKey("a", modifierFlags: .command)
         version.typeText("review-1")
-        let importSheet = app.sheets.firstMatch
-        importSheet.descendants(matching: .any)["Dataset production data"].firstMatch.click()
-        let redaction = importSheet.descendants(matching: .any)["Dataset redaction confirmation"].firstMatch
+        let productionData = importSheet.switches["Dataset production data"]
+        XCTAssertEqual(productionData.label, "Contains production data")
+        productionData.click()
+        let redaction = importSheet.switches["Dataset redaction confirmation"]
         XCTAssertTrue(redaction.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(redaction.label, "I have reviewed and redacted this file")
         XCTAssertFalse(importButton.isEnabled)
         redaction.click()
         importButton.click()

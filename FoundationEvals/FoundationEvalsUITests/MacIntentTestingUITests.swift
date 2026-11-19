@@ -334,9 +334,10 @@ final class MacIntentTestingUITests: XCTestCase {
         try openWorkspace(in: app, fixture: fixture)
         chooseMode("Siri Studio", in: app)
         choosePage("Conversations", in: app)
-        let recoveryWarning = app.descendants(matching: .any).matching(NSPredicate(
-            format: "identifier == %@ AND label CONTAINS %@",
-            "siri-studio-diagnostic", "Studio opened the last saved conversations"
+        let recoveryMessage = "Studio opened the last saved conversations"
+        let recoveryWarning = app.staticTexts.matching(NSPredicate(
+            format: "identifier == %@ AND (label CONTAINS %@ OR value CONTAINS %@)",
+            "siri-studio-diagnostic", recoveryMessage, recoveryMessage
         )).firstMatch
         XCTAssertTrue(recoveryWarning.waitForExistence(timeout: 5), app.debugDescription)
         let utterance = app.descendants(matching: .any)["siri-studio-utterance-1"].firstMatch

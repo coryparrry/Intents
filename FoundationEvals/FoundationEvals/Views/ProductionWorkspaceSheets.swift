@@ -57,13 +57,20 @@ struct ProductionImportSheet: View {
             }.padding(14).workspaceSurface()
             Form {
                 TextField("Dataset name", text: $name)
+                    .accessibilityLabel("Dataset name")
+                    .accessibilityIdentifier("Dataset import name")
                 TextField("Version", text: $version)
+                    .accessibilityLabel("Version")
+                    .accessibilityIdentifier("Dataset import version")
                 Picker("Sampling", selection: $sampling) { ForEach(ProductionSampling.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } }
+                    .accessibilityLabel("Sampling")
                 Toggle("Contains production data", isOn: $production)
+                    .accessibilityLabel("Contains production data")
                     .accessibilityIdentifier("Dataset production data")
                 if production {
                     Text("Remove personal information, credentials and sensitive content before import. Nothing is captured or uploaded automatically.").font(.callout).foregroundStyle(.secondary)
                     Toggle("I have reviewed and redacted this file", isOn: $confirmed)
+                        .accessibilityLabel("I have reviewed and redacted this file")
                         .accessibilityIdentifier("Dataset redaction confirmation")
                 }
             }.formStyle(.grouped).disabled(isImporting)
