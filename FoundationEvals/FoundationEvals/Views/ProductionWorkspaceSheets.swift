@@ -41,6 +41,8 @@ struct ProductionImportSheet: View {
     @State private var confirmed = false
     @State private var preview: [ProductionExample] = []
     @State private var previewError: String?
+    @State private var isImporting = false
+    @State private var importError: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Import examples").font(.title2.weight(.semibold))
@@ -58,18 +60,48 @@ struct ProductionImportSheet: View {
                 TextField("Version", text: $version)
                 Picker("Sampling", selection: $sampling) { ForEach(ProductionSampling.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } }
                 Toggle("Contains production data", isOn: $production)
+                    .accessibilityIdentifier("Dataset production data")
                 if production {
                     Text("Remove personal information, credentials and sensitive content before import. Nothing is captured or uploaded automatically.").font(.callout).foregroundStyle(.secondary)
                     Toggle("I have reviewed and redacted this file", isOn: $confirmed)
+                        .accessibilityIdentifier("Dataset redaction confirmation")
                 }
-            }.formStyle(.grouped)
-            HStack { Spacer(); Button("Cancel") { dismiss() }; Button("Import") {
-                model.importDataset(file: file, name: name, version: version, sampling: sampling, productionData: production, confirmed: confirmed); dismiss()
-            }.buttonStyle(.borderedProminent).disabled(preview.isEmpty || previewError != nil || name.trimmingCharacters(in: .whitespaces).isEmpty || version.isEmpty || production && !confirmed) }
-        }.padding(24).frame(width: 540).task {
+            }.formStyle(.grouped).disabled(isImporting)
+            if let importError {
+                Text(importError).font(.callout).foregroundStyle(.red)
+                    .accessibilityIdentifier("Dataset import error")
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.disabled(isImporting)
+                Button(isImporting ? "Importing…" : "Import", action: submitImport)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isImporting || preview.isEmpty || previewError != nil
+                        || name.trimmingCharacters(in: .whitespaces).isEmpty || version.isEmpty || production && !confirmed)
+            }
+        }.padding(24).frame(width: 540)
+        .interactiveDismissDisabled(isImporting)
+        .task {
             name = file.deletingPathExtension().lastPathComponent
             do { preview = try await Task.detached { try ProductionStorage.previewExamples(from: file) }.value }
             catch { previewError = error.localizedDescription }
+        }
+    }
+
+    /// Retains the selected file and its metadata until full validation and storage succeed.
+    private func submitImport() {
+        guard !isImporting else { return }
+        isImporting = true
+        importError = nil
+        let task = model.importDataset(file: file, name: name, version: version, sampling: sampling,
+                                       productionData: production, confirmed: confirmed, failed: { error in
+            isImporting = false
+            confirmed = false
+            importError = error.localizedDescription
+        }, completed: { dismiss() })
+        if task == nil {
+            isImporting = false
+            importError = "Batch storage is unavailable."
         }
     }
 }
@@ -93,6 +125,7 @@ struct ProductionJobSheet: View {
     @State private var cohortValue = ""
     @State private var cohortPassRate = 100.0
     @State private var showsAdvanced = false
+    @State private var isCreating = false
     @State private var error: String?
     /// Mirrors the stored batch limits so invalid hidden values cannot dismiss the sheet.
     private var validTimeout: Bool { timeout.isFinite && (0.1...3_600).contains(timeout) }
@@ -158,7 +191,7 @@ struct ProductionJobSheet: View {
                             .accessibilityIdentifier("Batch cohort minimum pass rate")
                     }
                 }
-            }.formStyle(.grouped).textFieldStyle(.roundedBorder)
+            }.formStyle(.grouped).textFieldStyle(.roundedBorder).disabled(isCreating)
             if !(0...100).contains(cohortPassRate) {
                 Text("The cohort minimum pass rate must be between 0 and 100. Open Advanced options to change it.")
                     .font(.callout).foregroundStyle(.red)
@@ -171,20 +204,50 @@ struct ProductionJobSheet: View {
                 Text("Job time budget must be between 1 second and 720 hours. Open Advanced options to change it.")
                     .font(.callout).foregroundStyle(.red)
             }
-            if let error { Text(error).font(.callout).foregroundStyle(.red) }
-            HStack { Spacer(); Button("Cancel") { dismiss() }; Button("Create batch") {
-                do {
-                    var targets = [ProductionTarget(operatingSystem: os.isEmpty ? nil : os, locale: locale.isEmpty ? nil : locale)]
-                    if !secondLocale.isEmpty { targets.append(.init(operatingSystem: os.isEmpty ? nil : os, locale: secondLocale)) }
-                    try model.createJob(store: store, dataset: dataset, name: name, repetitions: repetitions, passRate: passRate, timeout: timeout, budgetHours: budget,
-                                        baseline: baseline, targets: targets, requiredCohortKey: cohortKey, requiredCohortValue: cohortValue, cohortPassRate: cohortPassRate)
-                    dismiss()
-                } catch { self.error = error.localizedDescription }
-            }.buttonStyle(.borderedProminent).disabled(name.isEmpty || dataset.isEmpty || !(0...100).contains(passRate) || !(0...100).contains(cohortPassRate) || !validTimeout || !validBudget) }
-        }.padding(24).frame(width: 600, height: showsAdvanced ? 680 : 520).onAppear {
+            if let error {
+                Text(error).font(.callout).foregroundStyle(.red)
+                    .accessibilityIdentifier("Batch creation error")
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.disabled(isCreating)
+                Button(isCreating ? "Creating batch…" : "Create batch", action: createBatch)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isCreating || name.isEmpty || dataset.isEmpty || !(0...100).contains(passRate)
+                        || !(0...100).contains(cohortPassRate) || !validTimeout || !validBudget)
+            }
+        }.padding(24).frame(width: 600, height: showsAdvanced ? 680 : 520)
+        .interactiveDismissDisabled(isCreating)
+        .onAppear {
             dataset = model.datasets.first(where: { $0.revision == initialDatasetRevision })?.revision
                 ?? model.datasets.first?.revision ?? ""
             name = store.draftSuite.name + " · batch"
+        }
+    }
+
+    /// Keeps the form and entered values available until storage accepts the batch or returns a validation error.
+    private func createBatch() {
+        guard !isCreating else { return }
+        isCreating = true
+        error = nil
+        var targets = [ProductionTarget(operatingSystem: os.isEmpty ? nil : os, locale: locale.isEmpty ? nil : locale)]
+        if !secondLocale.isEmpty {
+            targets.append(.init(operatingSystem: os.isEmpty ? nil : os, locale: secondLocale))
+        }
+        do {
+            try model.createJob(store: store, dataset: dataset, name: name, repetitions: repetitions,
+                                passRate: passRate, timeout: timeout, budgetHours: budget, baseline: baseline,
+                                targets: targets, requiredCohortKey: cohortKey, requiredCohortValue: cohortValue,
+                                cohortPassRate: cohortPassRate) { result in
+                isCreating = false
+                switch result {
+                case .success: dismiss()
+                case .failure(let failure): error = failure.localizedDescription
+                }
+            }
+        } catch {
+            isCreating = false
+            self.error = error.localizedDescription
         }
     }
 }

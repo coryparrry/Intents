@@ -63,7 +63,7 @@ In **Comparison details**, runner messages call Practice **Development** and Fin
 2. Read the run's responses and checks.
 3. If the evidence is suitable, select **Approve as baseline**.
 
-For an AI-assessed run, the selected assessment is part of the approval. The panel can also reassess saved responses with a configured judge. It can record a corrected judgment and preserve the original. Select **Release report** to read the run's release check.
+For an AI-assessed run, the selected assessment is part of the approval. The panel can also reassess saved responses with a configured judge. It can record a corrected judgment and preserve the original. Select **Release report** to read the run's release check. The open report updates when the run's evidence or baseline approval changes.
 
 Use **Setup → Scoring → Release requirements** to set limits for errors, pass-rate changes, latency, and critical cases. You can also require an approved baseline. A release report applies these saved limits. It does not replace a review of unclear evidence.
 

@@ -13,6 +13,14 @@ Open **Batch runs** in the sidebar for larger, resumable jobs or review of captu
 5. Start it on a matching Mac. Read saved progress and worker provenance. Pause and resume to continue remaining requests.
 6. Open **Reports** for pass rates, cohorts, distinct-source confidence, cost, latency, and gate failures.
 
+If batch creation is rejected, the form shows the error and keeps your entries
+so you can correct them and retry.
+
+The dataset preview checks the first few rows. If full import finds an error, the
+form keeps the selected file, dataset name, and version. Correct the file in
+place or update the form, then retry **Import**. If it contains production data,
+review the corrected file and confirm redaction again before retrying.
+
 The dataset and execution configuration are frozen for the job. Later suite edits apply to new jobs. **Repeat batch** creates a fresh job from the frozen setup. Cancellation is permanent for the selected job and retains checkpoints.
 
 The app's native worker can retain conversations, structured output, configured tools, supported providers, rubric scoring, and traces. The standalone CLI's native worker supports on-device text with exact/contains scoring or collection. Command workers execute a developer-owned trusted executable. See the [full production guide](https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md) for each backend's setup.
@@ -35,6 +43,11 @@ Missing, unscored, uncertain, or required cost/latency evidence prevents qualifi
 
 ## Workers and schedules
 
-The Workers pane records worker labels and schedules. A schedule needs the app or a polling worker to tick and execute jobs; it does not install a daemon or provision machines. Shared storage requires trusted users, coherent file locks, and atomic rename. Worker labels are reported provenance, not hardware attestation.
+The Workers pane records worker labels and schedules. Start an unattended worker
+in polling mode to create and run jobs as they come due. You can also tick a
+schedule explicitly through the CLI or MCP, then run the created job in Jobs.
+Leaving the desktop workspace open does not advance schedules. Shared storage
+requires trusted users, coherent file locks, and atomic rename. Worker labels
+report what the worker registered.
 
 The [CLI, worker, baseline, and credential reference](https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md) includes unattended commands and report exit codes. The [MCP guide](https://github.com/coryparrry/Intents/blob/main/docs/MCP_CONTROL_GUIDE.md) covers authenticated batch controls and safe retries.

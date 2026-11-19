@@ -197,12 +197,13 @@ final class ProductionWorkspaceStore {
 
     /// Runs a storage operation off the main actor, then delivers completed and refresh on the main actor.
     /// Optional telemetry ends after durable work and before refresh; the typed result decides whether successful work counts feature use.
-    /// Shutdown drains admitted work even when UI publication closes.
+    /// Shutdown drains admitted work even when UI publication closes. A failure handler can keep a submitting editor open for retry.
     /// Returns nil when closing or storage is absent; untagged operations do not emit telemetry.
     @discardableResult
     func perform<T: Sendable>(_ operation: @escaping @Sendable (ProductionStorage) throws -> T,
                               telemetryOperation: TelemetryOperation? = nil,
                               recordsFeature: @escaping @MainActor (T) -> Bool = { _ in true },
+                              failed: (@MainActor (any Error) -> Void)? = nil,
                               completed: @escaping @MainActor (T) -> Void = { _ in }) -> Task<Void, Never>? {
         guard !isClosing, let storage else { return nil }
         let span = telemetryOperation.flatMap { telemetry?.begin($0) }
@@ -215,7 +216,11 @@ final class ProductionWorkspaceStore {
                 await self.refresh()
             } catch {
                 self.telemetry?.end(span, failure: Self.executionFailure(error))
-                self.error = error.localizedDescription
+                if let failed {
+                    if !self.isClosing { failed(error) }
+                } else {
+                    self.error = error.localizedDescription
+                }
             }
         }
     }
@@ -248,10 +253,15 @@ final class ProductionWorkspaceStore {
 
     /// Schedules dataset import with version, sampling, production-data flag, and redaction confirmation passed to storage.
     /// Records adoption only for a newly published revision and returns the tracked disk operation; duplicate imports remain successful diagnostics.
+    /// A submitting form can receive the failure or dismiss after storage accepts the dataset.
     @discardableResult
-    func importDataset(file: URL, name: String, version: String, sampling: ProductionSampling, productionData: Bool, confirmed: Bool) -> Task<Void, Never>? {
+    func importDataset(file: URL, name: String, version: String, sampling: ProductionSampling,
+                       productionData: Bool, confirmed: Bool,
+                       failed: (@MainActor (any Error) -> Void)? = nil,
+                       completed: @escaping @MainActor () -> Void = {}) -> Task<Void, Never>? {
         perform({ try $0.importDatasetWithOutcome(from: file, name: name, version: version, sampling: sampling, productionData: productionData, redactionConfirmed: confirmed) },
-                telemetryOperation: .datasetImport, recordsFeature: { $0.didPublish })
+                telemetryOperation: .datasetImport, recordsFeature: { $0.didPublish },
+                failed: failed, completed: { _ in completed() })
     }
     /// Snapshots draft cases into a temporary JSONL dataset and imports it through tracked storage work.
     /// Captures the draft before dispatch, counts only newly published revisions, and returns tracked work that cleans up its temporary input.
@@ -293,10 +303,12 @@ final class ProductionWorkspaceStore {
         return configuration
     }
     /// Creates a batch using frozen native setup and the supplied dataset, targets, budgets, baseline, and cohort gates.
-    /// Pass-rate inputs are percentages and budgetHours is converted to seconds; successful storage completion selects the new job.
+    /// Delivers storage errors to the open editor and selects the new batch only after it is durable.
+    @discardableResult
     func createJob(store: EvaluationStore, dataset: String, name: String, repetitions: Int, passRate: Double,
                    timeout: Double, budgetHours: Double, baseline: UUID?, targets: [ProductionTarget],
-                   requiredCohortKey: String, requiredCohortValue: String, cohortPassRate: Double) throws {
+                   requiredCohortKey: String, requiredCohortValue: String, cohortPassRate: Double,
+                   completion: @escaping @MainActor (Result<Void, any Error>) -> Void) throws -> Task<Void, Never> {
         var configuration = try nativeConfiguration(store: store)
         configuration.repetitions = repetitions
         configuration.timeoutSeconds = timeout; configuration.maximumElapsedSeconds = budgetHours * 3600
@@ -306,9 +318,15 @@ final class ProductionWorkspaceStore {
             configuration.gate.cohortMinimumPassRates[requiredCohortKey + "=" + requiredCohortValue] = cohortPassRate/100
         }
         let frozen = configuration
-        perform({ storage in
-            return try storage.createJob(name: name, datasetRevision: dataset, configuration: frozen, resolveCriticalCaseIDs: true)
-        }, completed: { self.select($0.id) })
+        guard let task = perform({ storage in
+            try storage.createJob(name: name, datasetRevision: dataset, configuration: frozen, resolveCriticalCaseIDs: true)
+        }, failed: { completion(.failure($0)) }, completed: { job in
+            self.select(job.id)
+            completion(.success(()))
+        }) else {
+            throw ProductionFailure.unavailable("Batch storage is unavailable.")
+        }
+        return task
     }
     /// Clones the named frozen job, defaulting to the selection, and selects the new batch.
     func duplicateJob(jobID: UUID? = nil) {

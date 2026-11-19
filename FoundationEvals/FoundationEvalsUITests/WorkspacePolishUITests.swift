@@ -48,7 +48,7 @@ final class WorkspacePolishUITests: XCTestCase {
         XCTAssertFalse(instruction.exists)
     }
 
-    /// Waits for a completed captured batch before verifying cohort expansion, collapse, and search.
+    /// Recovers from a late dataset import error and reviews the completed captured batch's cohorts.
     @MainActor
     func testBatchReportExpandsAndSearchesCohorts() throws {
         let storage = try UITestStorage.makeDirectory(prefix: "cohort-display")
@@ -59,7 +59,9 @@ final class WorkspacePolishUITests: XCTestCase {
                 "capturedOutput": "Answer \(index)", "metadata": ["task": String(format: "segment-%02d", index)]]
             return try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: example), encoding: .utf8))
         }
-        try rows.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
+        let validRows = rows.joined(separator: "\n")
+        let invalidRows = validRows + "\n" + (try XCTUnwrap(rows.first))
+        try invalidRows.write(to: file, atomically: true, encoding: .utf8)
         let app = XCUIApplication()
         app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", storage.path]
         app.launch()
@@ -79,6 +81,29 @@ final class WorkspacePolishUITests: XCTestCase {
         XCTAssertTrue(importButton.waitForExistence(timeout: 5))
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == YES"), object: importButton)
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
+        let version = app.sheets.firstMatch.textFields["Version"]
+        XCTAssertTrue(version.waitForExistence(timeout: 5), app.debugDescription)
+        version.click()
+        version.typeKey("a", modifierFlags: .command)
+        version.typeText("review-1")
+        let importSheet = app.sheets.firstMatch
+        importSheet.descendants(matching: .any)["Dataset production data"].firstMatch.click()
+        let redaction = importSheet.descendants(matching: .any)["Dataset redaction confirmation"].firstMatch
+        XCTAssertTrue(redaction.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(importButton.isEnabled)
+        redaction.click()
+        importButton.click()
+        let error = app.sheets.firstMatch.staticTexts["Dataset import error"]
+        XCTAssertTrue(error.waitForExistence(timeout: 5), app.debugDescription)
+        let message = error.label + (error.value as? String ?? "")
+        XCTAssertTrue(message.contains("Duplicate example ID: case-0"), message)
+        XCTAssertEqual(version.value as? String, "review-1")
+        XCTAssertFalse(importButton.isEnabled, "The corrected production file needs fresh redaction confirmation")
+        let rejectionScreenshot = try UITestStorage.screenshotURL(name: "dataset-import-rejected")
+        try app.windows.firstMatch.screenshot().pngRepresentation.write(to: rejectionScreenshot)
+        try validRows.write(to: file, atomically: true, encoding: .utf8)
+        redaction.click()
+        XCTAssertTrue(importButton.isEnabled)
         importButton.click()
         let options = app.menuButtons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "Dataset options ")).firstMatch
         XCTAssertTrue(options.waitForExistence(timeout: 10))

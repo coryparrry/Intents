@@ -26,6 +26,52 @@ import Testing
         #expect(recovered.document?.scenarios[0].revision == 2)
     }
 
+    /// A corrupt or incompatible autosave cannot hide saved conversations or be overwritten when editing resumes.
+    @Test(arguments: ["malformed", "foreign", "unsupported"])
+    func unreadableDraftPreservesSavedConversations(kind: String) throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let studio = makeStore(root)
+        studio.load(catalog())
+        studio.document?.scenarios = [scenario()]
+        try studio.save()
+        let saved = try #require(studio.document)
+        let drafts = root.appending(path: "Drafts")
+        let file = drafts.appending(path: "\(saved.bundleIdentifier).json")
+        var incompatible = saved
+        if kind == "foreign" { incompatible.bundleIdentifier = "another.app" }
+        if kind == "unsupported" { incompatible.version += 1 }
+        let invalid = kind == "malformed" ? Data("{ partial json".utf8) : try JSONEncoder().encode([
+            "document": incompatible, "saved": saved
+        ])
+        let bytes: Data
+        if kind == "malformed" {
+            bytes = invalid
+        } else {
+            var envelope = try #require(JSONSerialization.jsonObject(with: invalid) as? [String: Any])
+            envelope["needsSave"] = true
+            bytes = try JSONSerialization.data(withJSONObject: envelope)
+        }
+        try bytes.write(to: file, options: .atomic)
+
+        let reopened = makeStore(root)
+        reopened.load(catalog())
+        try #require(reopened.document == saved)
+        #expect(!reopened.hasUnsavedEdits)
+        #expect(reopened.diagnostic?.contains("preserved") == true)
+        let backup = try #require(FileManager.default.contentsOfDirectory(at: drafts, includingPropertiesForKeys: nil).first)
+        #expect(backup != file && backup.lastPathComponent.contains("-unreadable-"))
+        #expect(try Data(contentsOf: backup) == bytes)
+
+        reopened.document?.scenarios[0].name = "Edited after recovery"
+        try reopened.save()
+        let restored = makeStore(root)
+        restored.load(catalog())
+        #expect(restored.document?.scenarios.first?.name == "Edited after recovery")
+        #expect(restored.diagnostic == nil)
+        #expect(try Data(contentsOf: backup) == bytes)
+    }
+
     /// Opening an exported copy saves the previous draft before adoption and recovers the imported copy after relaunch.
     @Test func replacingDocumentPreservesBothCurrentAndIncomingWork() throws {
         let root = try temporaryRoot()

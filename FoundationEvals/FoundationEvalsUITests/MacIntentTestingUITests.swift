@@ -299,6 +299,60 @@ final class MacIntentTestingUITests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: saved), invalid)
     }
 
+    /// Opens an explicitly saved conversation when its autosave is corrupt and keeps the original draft bytes.
+    @MainActor
+    func testSiriStudioOpensSavedConversationAfterCorruptAutosave() throws {
+        continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "siri-studio-corrupt-autosave")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let fixture = try makeCatalogFixture(in: storage)
+        let workspace = storage.appending(path: "Workspace")
+        let scenarios = workspace.appending(path: "SiriStudio/Scenarios")
+        let drafts = workspace.appending(path: "SiriStudio/Drafts")
+        for directory in [scenarios, drafts] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let bundle = "example.MacIntentUITestFixture"
+        let checks: [String: Any] = ["calls": [], "ordering": "ordered", "forbidden": [], "replyContains": []]
+        let saved: [String: Any] = ["version": 1, "bundleIdentifier": bundle, "scenarios": [[
+            "id": UUID().uuidString, "name": "Saved fixture conversation", "revision": 1, "repeatCount": 1,
+            "scenarioExpectations": checks, "turns": [[
+                "id": UUID().uuidString, "utterance": "Saved fixture request.", "expectations": checks
+            ]]
+        ]]]
+        let savedURL = scenarios.appending(path: "\(bundle).json")
+        let savedBytes = try JSONSerialization.data(withJSONObject: saved)
+        try savedBytes.write(to: savedURL)
+        let corruptDraft = Data("{ partial autosave".utf8)
+        try corruptDraft.write(to: drafts.appending(path: "\(bundle).json"))
+
+        let app = XCUIApplication()
+        app.launchArguments += ["--disable-mcp-autostart", "--evaluation-storage", workspace.path,
+                                "--evaluation-window-width", "1250", "--evaluation-window-height", "880"]
+        app.launch()
+        defer { app.terminate() }
+        try openWorkspace(in: app, fixture: fixture)
+        chooseMode("Siri Studio", in: app)
+        choosePage("Conversations", in: app)
+        let recoveryWarning = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier == %@ AND label CONTAINS %@",
+            "siri-studio-diagnostic", "Studio opened the last saved conversations"
+        )).firstMatch
+        XCTAssertTrue(recoveryWarning.waitForExistence(timeout: 5), app.debugDescription)
+        let utterance = app.descendants(matching: .any)["siri-studio-utterance-1"].firstMatch
+        XCTAssertTrue(utterance.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(utterance.value as? String, "Saved fixture request.")
+        XCTAssertTrue(app.buttons["siri-studio-new-scenario"].isEnabled)
+        XCTAssertEqual(try Data(contentsOf: savedURL), savedBytes)
+        let backups = try FileManager.default.contentsOfDirectory(at: drafts, includingPropertiesForKeys: nil)
+        let backup = try XCTUnwrap(backups.first { $0.lastPathComponent.hasPrefix("\(bundle)-unreadable-") })
+        XCTAssertEqual(try Data(contentsOf: backup), corruptDraft)
+        let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        attachment.name = "Siri Studio reopened saved work after corrupt autosave"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     /// Explains a rejected older app, preserves that selection when cancelling, and guides an updated build into setup.
     @MainActor
     func testAppSelectionExplainsMissingActionsAndGuidesRecovery() throws {

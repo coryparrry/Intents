@@ -156,7 +156,29 @@ final class EvaluationReviewUITests: XCTestCase {
         XCTAssertTrue(sheet.buttons["Create batch"].isEnabled)
         advanced.click()
         XCTAssertEqual(timeout.value as? String, "90")
-        sheet.buttons["Cancel"].click()
+        advanced.click()
+
+        // Storage validates the full name after submission. A rejection must leave the form editable.
+        let name = sheet.textFields["Batch name"]
+        let oversized = String(repeating: "x", count: 201)
+        name.click()
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText(oversized)
+        sheet.buttons["Create batch"].click()
+        XCTAssertTrue(sheet.staticTexts["Batch creation error"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(name.value as? String, oversized)
+        advanced.click()
+        XCTAssertEqual(timeout.value as? String, "90")
+        advanced.click()
+
+        name.click()
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText("Recovered batch draft")
+        sheet.buttons["Create batch"].click()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: sheet)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 10), .completed, app.debugDescription)
+        app.radioGroups["Batch workspace"].radioButtons["Jobs"].click()
+        XCTAssertTrue(app.staticTexts["Recovered batch draft"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
     }
 
     /// Selects a named result cell and preserves its response while toggling report columns at narrow and wide widths.

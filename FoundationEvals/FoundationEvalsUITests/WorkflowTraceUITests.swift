@@ -404,6 +404,33 @@ final class WorkflowTraceUITests: XCTestCase {
         }
     }
 
+    /// Opening another saved run must never leave the first run's release verdict in its report.
+    @MainActor
+    func testReleaseReportFollowsTheSelectedRun() throws {
+        try withFixtureApplication(openTrace: false, includeBaseline: true) { app in
+            let openReport = app.buttons["Release report"]
+            reveal(openReport, in: app)
+            openReport.click()
+            let report = app.staticTexts.matching(NSPredicate(
+                format: "label CONTAINS %@ OR value CONTAINS %@", "Exit status:", "Exit status:"
+            )).firstMatch
+            XCTAssertTrue(report.waitForExistence(timeout: 5))
+            XCTAssertTrue((report.label + (report.value as? String ?? "")).contains(WorkflowTraceFixture.runID))
+
+            let earlierID = "D0000000-0000-0000-0000-000000000003"
+            let earlierRun = app.descendants(matching: .any)["Sidebar run \(earlierID)"].firstMatch
+            try UITestStorage.waitFor(earlierRun, in: app, timeout: 5)
+            earlierRun.click()
+            reveal(openReport, in: app)
+            XCTAssertFalse(report.exists)
+            openReport.click()
+            XCTAssertTrue(report.waitForExistence(timeout: 5))
+            let displayed = report.label + (report.value as? String ?? "")
+            XCTAssertTrue(displayed.contains(earlierID))
+            XCTAssertFalse(displayed.contains(WorkflowTraceFixture.runID))
+        }
+    }
+
     /// Verifies report controls and setup sections remain reachable at minimum window width.
     @MainActor
     func testNavigationKeepsControlsVisibleAtMinimumWidth() throws {

@@ -175,6 +175,11 @@ another document or choosing another app saves the current draft first; a failed
 save keeps it available. Removing a turn asks before deleting its request and
 expectations.
 
+If Studio finds a corrupt or incompatible autosave and can preserve it, it
+opens the last saved conversations or a new document if you have never saved.
+The message above the editor gives the backup filename in the local Siri Studio
+`Drafts` folder.
+
 ## Guided first test
 
 App Intents opens with a four-step guide: **Choose app → Prepare Mac → Write
