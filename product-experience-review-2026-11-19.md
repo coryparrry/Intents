@@ -296,6 +296,20 @@ website checks and 40 website tests passed. The documentation detector
 reported 34 of 34 changed functions documented. The proposed PR body passed
 release-note validation with 11 entries.
 
+The last fully passing GitHub run spent 24 minutes 26 seconds in its largest
+desktop test step, with a 25-minute limit. Its timing file still estimated the
+Mac App Intent suite at the fallback of about two minutes. The measured suite
+took more than nine. The timing update imports observed results for all 58
+tests and all eight suites from that passing run. The router still selects
+those same suites and their new tests once each. Measured loads for the new
+three-way split are 986.7, 1007.9 and 655.0 seconds before new cases and job
+overhead. The first-use tests now run in **native-intents+review** and
+**runs+traces**.
+
+The refreshed matrix passed all 396 routed script tests and selected the
+same eight suite selectors exactly once. The timing change and log update
+do not change the app or test bundle inputs from the preceding build.
+
 ## Product assessment and evidence limits
 
 Intents gives developers a reason to return when changing a prompt, model, tool,
