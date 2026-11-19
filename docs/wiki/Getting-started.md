@@ -28,7 +28,8 @@ run `brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
 1. Open **Overview** and select **Create example suite**.
 2. Read the prompt and expected answer in **Cases**. The example checks that the response is exactly `Paris` after removing surrounding whitespace.
 3. With **This Mac** selected as the run destination, select **Run**. If you can’t run yet, the suite shows what needs attention.
-4. When the run finishes, read its **Report** to see the answer and why it passed or failed. Return to **Cases** to change the prompt and run it again.
+4. When the run finishes, read its **Report** to see the expected answer, response, and verdict. **Exact text** checks the whole response, so `Paris.` fails if the expected answer is `Paris`.
+5. If the check fails, select **Edit case**. Correct the expected answer if it’s wrong, or clarify the prompt if the answer is right. Select **Run** again. Both runs stay in the sidebar for comparison.
 
 ## Create your own evaluation
 

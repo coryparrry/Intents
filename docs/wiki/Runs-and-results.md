@@ -27,6 +27,8 @@ If **Retry Save** appears after a run, the app did not save it. Restore storage 
 
 **Report** shows counts, saved responses, scores, explanations, analysis, and the run's settings. Select **All**, **Passed**, **Failed**, or **Issues** to filter samples. Read the response and tool output before you rely on a score.
 
+When a single text check fails, **Edit case** opens the case if it’s still in the suite. Check the expected answer and clarify the prompt as needed. Select **Run** to check your changes. The failed report stays in history with its original evidence.
+
 Select **Export Run as JSON** in the toolbar to save a copy of the run. If a span has a transcript export, that export contains the complete saved transcript. The preview in the app can be shorter. Review prompts, references, responses, tool arguments, and outputs before you share an export.
 
 ## Read scores

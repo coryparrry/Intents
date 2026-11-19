@@ -310,6 +310,70 @@ The refreshed matrix passed all 396 routed script tests and selected the
 same eight suite selectors exactly once. The timing change and log update
 do not change the app or test bundle inputs from the preceding build.
 
+### GitHub execution
+
+- The [original hosted run](https://github.com/coryparrry/Intents/actions/runs/44581117011)
+  passed app and test bundle compilation. Its desktop log confirms the fresh
+  Overview example opened with its expected answer and no active run.
+  GitHub superseded that run when the measured timing update was pushed.
+- The [rebalanced run](https://github.com/coryparrry/Intents/actions/runs/44583042911)
+  passed on PR head `391c4dacd`. All five required checks passed. All 60 desktop
+  tests ran with zero failures across the three GitHub runners.
+- [Native Intents and review](https://github.com/coryparrry/Intents/actions/runs/44583042911/job/135771416582)
+  passed 17 tests. The fresh Overview regression proved that creating the
+  example exposes the editable answer without starting a request. The empty
+  Traces regression reached Cases and still opened human review separately.
+- [Runs and traces](https://github.com/coryparrry/Intents/actions/runs/44583042911/job/135771416630)
+  passed 24 tests. The end-to-end first-result test passed in 40.631 seconds.
+  It opened a fresh workspace, created the example, ran it with the loopback
+  provider, and read the saved report. I inspected the 1,000 × 752
+  [hosted screenshot](https://github.com/coryparrry/Intents/actions/runs/44583042911/artifacts/14559594286).
+  The pass verdict, expected answer, actual response, and explanation are
+  visible together above the results table. The retained report says one
+  response passed and one was collected.
+- [Suite editor](https://github.com/coryparrry/Intents/actions/runs/44583042911/job/135771416512)
+  passed all 19 tests. The longest desktop shard executed its tests in about
+  16 minutes within the existing 25-minute limit.
+- All desktop interaction occurred on GitHub. The first-result test verified
+  app navigation, scoring, and rendered evidence with a synthetic model
+  response. Apple Intelligence availability and first-time user comprehension
+  were not measured.
+
+## Recover from a failed first check
+
+The first-result report explained the mismatch but gave the operator no route
+from the failed report to the exact case. The new **Edit case** button opens
+that case when it still exists and uses the same scoring method. The report
+explains that Exact text includes punctuation. It tells the operator to correct
+an incorrect expected answer, otherwise clarify the prompt, then select **Run**
+again. The earlier report remains in history with its original evidence.
+[Failure guidance](FoundationEvals/FoundationEvals/Views/RunReportSummary.swift) ·
+[Case editor handoff](FoundationEvals/FoundationEvals/ContentView.swift#L119)
+
+The shortcut applies to a completed single text mismatch. Execution errors,
+field assertions, selected reassessments, changed scoring modes, and removed
+cases keep the ordinary detailed report. That avoids advising someone to
+change the expected answer when a different check caused the verdict.
+[Eligibility regression](FoundationEvals/FoundationEvalsTests/WorkspacePresentationTests.swift#L176)
+
+The new hosted test creates the same example from Overview. Its loopback
+model returns `Paris.` when the expected answer is `Paris`. The test reads
+the failure and next steps without scrolling, uses **Edit case**, clarifies
+the prompt while leaving the expected answer intact, and reruns. The fixture
+returns `Paris` only after receiving the revised prompt. The test reopens
+the earlier failed report and checks that its answer and verdict are
+unchanged. It captures the failure and the successful rerun.
+[Failure and retry UI regression](FoundationEvals/FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests.swift#L86)
+
+Pre-push verification built the full Xcode 27.3 scheme and both test bundles.
+Eleven headless native regressions passed, including the guard against editing
+a removed case or following guidance for a different scoring method or
+selected reassessment. The routed scripts passed 396 tests and 13 macOS tests.
+Actionlint, ShellCheck, example syntax, the 40 website tests, documentation
+coverage, changed-declaration checks and the proposed release notes passed.
+Portable Swift and production inputs match the prior passing GitHub run. The
+complete diff selects all ordinary CI and the same three GitHub desktop shards.
+
 ## Product assessment and evidence limits
 
 Intents gives developers a reason to return when changing a prompt, model, tool,
@@ -322,8 +386,8 @@ product because they answer a distinct question and save the evidence needed to
 return to it. A developer can start with one scored case and add either workflow
 when their need changes.
 
-The easier entry path is a source and fixture conclusion. First-time user
-comprehension, the new desktop layout, and a live run of the example on an
+GitHub verified the first-use path and the result layout with a repeatable
+fixture. First-time user comprehension and a live run of the example on an
 Apple Intelligence Mac remain unverified.
 
 This review covers the native app and its direct handoffs to the connector,

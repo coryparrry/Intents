@@ -75,7 +75,48 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
     /// Starts from a new workspace and verifies the expected answer, actual answer, and verdict are visible together.
     @MainActor
     func testFirstModelCheckExplainsTheSavedResult() throws {
-        continueAfterFailure = false
+        try runFirstModelCheck(endpointPath: "/first-check")
+        try checkFirstResult(passed: true, response: "Paris")
+        capture("first-model-check")
+    }
+
+    /// Recovers from an exact-text mismatch by editing the original case and rerunning without changing its expected answer.
+    @MainActor
+    func testFirstModelCheckFailureGuidesEditAndRerun() throws {
+        try runFirstModelCheck(endpointPath: "/first-check-retry")
+        try checkFirstResult(passed: false, response: "Paris.")
+        try checkReportText("Failed check next step", contains: "including punctuation")
+        try checkReportText("Failed check next step", contains: "Correct the expected answer")
+        try checkReportText("Failed check next step", contains: "clarify the prompt. Then select Run")
+        let edit = app.buttons["Edit case"]
+        try UITestStorage.waitFor(edit, in: app, timeout: 5)
+        XCTAssertTrue(edit.isHittable, app.debugDescription)
+        capture("first-model-check-failed")
+
+        edit.click()
+        let expected = app.textViews["Scoring expected text"]
+        try UITestStorage.waitFor(expected, in: app, timeout: 5)
+        XCTAssertEqual(expected.value as? String, "Paris")
+        let prompt = app.textViews["Case prompt"]
+        try UITestStorage.waitFor(prompt, in: app, timeout: 5)
+        XCTAssertEqual(prompt.value as? String, "Reply with only the capital of France.")
+        replaceText(in: prompt, with: "Reply with exactly the word Paris without punctuation.")
+        app.buttons["Run evaluation"].click()
+        XCTAssertTrue(fixture.waitForRequest(timeout: 5), "Rerunning must send the updated prompt")
+        try UITestStorage.waitFor(app.buttons["Export Run as JSON"], in: app, timeout: 8)
+        try checkFirstResult(passed: true, response: "Paris")
+        capture("first-model-check-after-edit")
+
+        let original = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND value BEGINSWITH %@", "Sidebar run ", "0% passed")).firstMatch
+        try UITestStorage.waitFor(original, in: app, timeout: 5)
+        original.click()
+        try checkFirstResult(passed: false, response: "Paris.")
+    }
+
+    /// Opens the example from a new workspace and replaces only the hosted runner's unavailable model.
+    @MainActor
+    private func runFirstModelCheck(endpointPath: String) throws {
         app.activate()
         if !app.windows.firstMatch.waitForExistence(timeout: 3) {
             app.typeKey("1", modifierFlags: .command)
@@ -89,25 +130,36 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Export Run as JSON"].exists)
 
         // Hosted desktops have no Apple Intelligence model. Only the provider changes.
-        configureLoopbackModel(endpointPath: "/first-check")
+        configureLoopbackModel(endpointPath: endpointPath)
         app.radioButtons["Cases"].click()
         app.buttons["Run evaluation"].click()
         XCTAssertTrue(fixture.waitForRequest(timeout: 5))
         try UITestStorage.waitFor(app.buttons["Export Run as JSON"], in: app, timeout: 8)
-        let window = app.windows.firstMatch
+    }
+
+    /// Reads the decisive evidence in a saved first result without scrolling.
+    @MainActor
+    private func checkFirstResult(passed: Bool, response: String) throws {
         for (identifier, text) in [
-            ("Evaluation result headline", "All responses passed their checks"),
+            ("Evaluation result headline", passed ? "All responses passed their checks" : "The response failed its check"),
             ("Short check expected answer", "Paris"),
-            ("Short check response", "Paris"),
-            ("Short check explanation", "Exact match after trimming whitespace.")
+            ("Short check response", response),
+            ("Short check explanation", passed ? "Exact match after trimming whitespace." : "Response did not exactly match the expected text.")
         ] {
-            let element = app.descendants(matching: .any)
-                .matching(NSPredicate(format: "identifier == %@ AND (label CONTAINS %@ OR value CONTAINS %@)", identifier, text, text))
-                .firstMatch
-            try UITestStorage.waitFor(element, in: app, timeout: 5)
-            XCTAssertTrue(window.frame.contains(element.frame) && !element.frame.isEmpty, "Result text must fit on screen: \(identifier)")
+            try checkReportText(identifier, contains: text)
         }
-        try window.screenshot().pngRepresentation.write(to: UITestStorage.screenshotURL(name: "first-model-check"))
+    }
+
+    /// Requires report text to appear within the visible report viewport.
+    @MainActor
+    private func checkReportText(_ identifier: String, contains text: String) throws {
+        let element = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@ AND (label CONTAINS %@ OR value CONTAINS %@)", identifier, text, text))
+            .firstMatch
+        try UITestStorage.waitFor(element, in: app, timeout: 5)
+        let report = app.scrollViews["Run report scroll"]
+        XCTAssertTrue(report.frame.intersection(app.windows.firstMatch.frame).contains(element.frame)
+                      && !element.frame.isEmpty, "Result text must fit on screen: \(identifier)")
     }
 
     /// Cancels a held-open request and retains its cancelled report before the provider finishes.
@@ -539,8 +591,11 @@ private final class LocalHTTPModelFixture: @unchecked Sendable {
             send("HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n" + event, on: connection, complete: true)
             return
         }
-        if requestLine.contains(" /first-check ") {
-            let event = #"{"kind":"response","action":"append","content":"Paris","tokenCount":1}"# + "\n"
+        if requestLine.contains(" /first-check ") || requestLine.contains(" /first-check-retry ") {
+            let body = String(decoding: request, as: UTF8.self)
+            let needsRetry = requestLine.contains(" /first-check-retry ") && !body.contains("Reply with exactly the word Paris without punctuation.")
+            let response = needsRetry ? "Paris." : "Paris"
+            let event = "{\"kind\":\"response\",\"action\":\"append\",\"content\":\"\(response)\",\"tokenCount\":1}\n"
             send("HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n" + event,
                  on: connection, complete: true)
             return

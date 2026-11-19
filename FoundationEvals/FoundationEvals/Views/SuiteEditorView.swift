@@ -89,11 +89,12 @@ struct SuiteEditorView: View {
     @State private var runError: String?
     @FocusState private var isEditorFocused: Bool
 
-    /// Connects the suite store and seeds the selected editor page from the requested initial page.
-    init(store: EvaluationStore, initialPage: SuiteEditorPage = .cases) {
+    /// Opens the requested page and preselects the case when coming from a saved report.
+    init(store: EvaluationStore, initialPage: SuiteEditorPage = .cases, initialCaseID: UUID? = nil) {
         self.store = store
         self.initialPage = initialPage
         _selectedPage = State(initialValue: initialPage)
+        _selectedCaseID = State(initialValue: initialCaseID)
     }
 
     private var isRunActive: Bool { store.isRunning || runners.executingRunID != nil }

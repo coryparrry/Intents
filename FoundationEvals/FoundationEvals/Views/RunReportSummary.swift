@@ -15,7 +15,9 @@ struct RunReportPresentation {
         if run.cancelled { return "This run was cancelled" }
         if run.results.isEmpty { return "No responses were collected" }
         if run.results.count < run.plannedResultCount { return "This run is incomplete" }
-        if run.failedCount > 0 { return "Some responses failed their checks" }
+        if run.failedCount > 0 {
+            return run.results.count == 1 ? "The response failed its check" : "Some responses failed their checks"
+        }
         if attentionCount > 0 { return "Some responses need attention" }
         return "All responses passed their checks"
     }
@@ -29,24 +31,38 @@ struct RunReportPresentation {
         return "Select a response below to read it and see why it passed."
     }
 
-    /// Keeps a single short text check readable at the top of a completed report.
-    var shortTextCheck: EvaluationSampleResult? {
-        let results = run.effectiveResults
-        guard !run.cancelled, !run.stoppedEarly, run.plannedResultCount == 1,
+    /// Returns one completed response whose verdict is explained by its text check alone.
+    private var singleTextCheck: EvaluationSampleResult? {
+        guard run.selectedAssessment == nil, run.selectedAssessmentID == nil,
+              !run.cancelled, !run.stoppedEarly, run.plannedResultCount == 1,
               run.scoringMode == .exactMatch || run.scoringMode == .containsExpected,
-              results.count == 1, let result = results.first,
+              run.results.count == 1, let result = run.results.first,
               result.status == .passed || result.status == .failed,
               attentionCount == 0,
               result.fieldAssertionResults?.isEmpty != false,
-              !result.expected.isEmpty, !result.response.isEmpty,
-              result.expected.count <= 120, result.response.count <= 120,
-              result.rationale?.isEmpty == false else { return nil }
+              !result.expected.isEmpty, result.rationale?.isEmpty == false else { return nil }
         return result
+    }
+
+    /// Keeps a single short text check readable at the top of a completed report.
+    var shortTextCheck: EvaluationSampleResult? {
+        guard let result = singleTextCheck, !result.response.isEmpty,
+              result.expected.count <= 120, result.response.count <= 120 else { return nil }
+        return result
+    }
+
+    /// Links a text mismatch to its case only if it still exists in the suite that produced the run.
+    func editableFailedCase(in suite: EvaluationSuite) -> UUID? {
+        guard suite.id == run.suiteID, suite.scoringMode == run.scoringMode,
+              let result = singleTextCheck, result.status == .failed,
+              suite.cases.contains(where: { $0.id == result.caseID }) else { return nil }
+        return result.caseID
     }
 }
 
 struct RunReportSummary: View {
     let run: EvaluationRun
+    let editCase: (() -> Void)?
     @State private var shown = false
 
     private var isIncomplete: Bool {
@@ -69,6 +85,17 @@ struct RunReportSummary: View {
                 LabeledText(label: result.status == .passed ? "Why it passed" : "Why it failed", text: explanation)
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("Short check explanation")
+            }
+            if let editCase {
+                Text(run.scoringMode == .exactMatch
+                     ? "Exact text checks the whole response, including punctuation. Correct the expected answer if it’s wrong. Otherwise, clarify the prompt. Then select Run again."
+                     : "Correct the required text if it’s wrong. Otherwise, clarify what the prompt should include. Then select Run again.")
+                    .font(.callout)
+                    .foregroundStyle(WorkspaceStyle.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("Failed check next step")
+                Button("Edit case", systemImage: "pencil", action: editCase)
+                    .buttonStyle(.bordered)
             }
         }
         .padding(18)

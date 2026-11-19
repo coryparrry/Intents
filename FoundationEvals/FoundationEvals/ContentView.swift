@@ -9,6 +9,7 @@ struct ContentView: View {
     @Environment(\.controlActiveState) private var windowActivity
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var reportCaseID: UUID?
 
     /// Creates the workspace view with shared app control and production state, constructing control when none is supplied.
     init(store: EvaluationStore, control: EvaluationAppControl? = nil) {
@@ -29,7 +30,10 @@ struct ContentView: View {
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .background { SuiteAutosaveObserver(store: store) }
         .onChange(of: store.telemetry?.isEnabled) { _, _ in recordScreen() }
-        .onChange(of: store.selection, initial: true) { _, _ in recordScreen() }
+        .onChange(of: store.selection, initial: true) { _, selection in
+            if selection != .suite { reportCaseID = nil }
+            recordScreen()
+        }
         .onChange(of: windowActivity, initial: true) { _, activity in
             if activity == .key { recordScreen() }
         }
@@ -115,7 +119,7 @@ struct ContentView: View {
         case .appIntentTesting:
             MacIntentTestingView(model: appControl.appIntentTesting)
         case .suite:
-            SuiteEditorView(store: store)
+            SuiteEditorView(store: store, initialCaseID: reportCaseID)
                 .disclosureGroupStyle(FullWidthDisclosureStyle())
         case .run(let id):
             if let run = store.run(with: id) {
@@ -127,7 +131,10 @@ struct ContentView: View {
                             && $0.suiteID == run.suiteID
                             && $0.startedAt < run.startedAt
                     }
-                )
+                ) { caseID in
+                    reportCaseID = caseID
+                    store.selection = .suite
+                }
                 .disclosureGroupStyle(FullWidthDisclosureStyle())
             } else {
                 ContentUnavailableView(
