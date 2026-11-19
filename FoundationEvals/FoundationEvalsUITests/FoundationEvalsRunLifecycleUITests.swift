@@ -72,6 +72,44 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertEqual(runStatus.label, "Completed")
     }
 
+    /// Starts from a new workspace and verifies the expected answer, actual answer, and verdict are visible together.
+    @MainActor
+    func testFirstModelCheckExplainsTheSavedResult() throws {
+        continueAfterFailure = false
+        app.activate()
+        if !app.windows.firstMatch.waitForExistence(timeout: 3) {
+            app.typeKey("1", modifierFlags: .command)
+        }
+        let start = app.buttons["Create example suite"]
+        try UITestStorage.waitFor(start, in: app, timeout: 5)
+        start.click()
+        let expected = app.textViews["Scoring expected text"]
+        try UITestStorage.waitFor(expected, in: app, timeout: 5)
+        XCTAssertEqual(expected.value as? String, "Paris")
+        XCTAssertFalse(app.buttons["Export Run as JSON"].exists)
+
+        // Hosted desktops have no Apple Intelligence model. Only the provider changes.
+        configureLoopbackModel(endpointPath: "/first-check")
+        app.radioButtons["Cases"].click()
+        app.buttons["Run evaluation"].click()
+        XCTAssertTrue(fixture.waitForRequest(timeout: 5))
+        try UITestStorage.waitFor(app.buttons["Export Run as JSON"], in: app, timeout: 8)
+        let window = app.windows.firstMatch
+        for (identifier, text) in [
+            ("Evaluation result headline", "All responses passed their checks"),
+            ("Short check expected answer", "Paris"),
+            ("Short check response", "Paris"),
+            ("Short check explanation", "Exact match after trimming whitespace.")
+        ] {
+            let element = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "identifier == %@ AND (label CONTAINS %@ OR value CONTAINS %@)", identifier, text, text))
+                .firstMatch
+            try UITestStorage.waitFor(element, in: app, timeout: 5)
+            XCTAssertTrue(window.frame.contains(element.frame) && !element.frame.isEmpty, "Result text must fit on screen: \(identifier)")
+        }
+        try window.screenshot().pngRepresentation.write(to: UITestStorage.screenshotURL(name: "first-model-check"))
+    }
+
     /// Cancels a held-open request and retains its cancelled report before the provider finishes.
     @MainActor
     func testCancelShowsCancelledRun() throws {
@@ -328,6 +366,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         try JSONSerialization.data(withJSONObject: suite).write(to: storage.appending(path: "suite.json"), options: .atomic)
     }
 
+    /// Sets up a named exact-text suite and connects the selected fixture endpoint.
     @MainActor
     private func configureSuite(name: String, endpointPath: String) {
         replaceText(in: app.textFields["Suite name"], with: name)
@@ -338,7 +377,12 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         let expected = app.textViews["Scoring expected text"]
         XCTAssertTrue(expected.waitForExistence(timeout: 3))
         replaceText(in: expected, with: "Deterministic fixture stream.")
+        configureLoopbackModel(endpointPath: endpointPath)
+    }
 
+    /// Selects the loopback model without editing the suite's cases, name, or scoring.
+    @MainActor
+    private func configureLoopbackModel(endpointPath: String) {
         selectSetup("Model")
         let provider = app.popUpButtons["Model provider"]
         XCTAssertTrue(provider.waitForExistence(timeout: 3))
@@ -473,6 +517,7 @@ private final class LocalHTTPModelFixture: @unchecked Sendable {
         }
     }
 
+    /// Sends a deterministic response using the scenario chosen by the fixture URL.
     private func respond(to request: Data, on connection: NWConnection) {
         requestReceived.signal()
         let requestLine = String(decoding: request, as: UTF8.self)
@@ -492,6 +537,12 @@ private final class LocalHTTPModelFixture: @unchecked Sendable {
             let response = body.contains("Return only the answer.") ? "Deterministic fixture stream." : "Wrong answer."
             let event = "{\"kind\":\"response\",\"action\":\"append\",\"content\":\"\(response)\",\"tokenCount\":4}\n"
             send("HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n" + event, on: connection, complete: true)
+            return
+        }
+        if requestLine.contains(" /first-check ") {
+            let event = #"{"kind":"response","action":"append","content":"Paris","tokenCount":1}"# + "\n"
+            send("HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n" + event,
+                 on: connection, complete: true)
             return
         }
         let firstEvent = #"{"kind":"response","action":"append","content":"Deterministic fixture stream.","tokenCount":4}"# + "\n"

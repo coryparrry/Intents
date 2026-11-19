@@ -54,13 +54,11 @@ struct WorkspaceOverviewView: View {
                 Group {
                     if isLoaded, !hasAnyRun {
                         HomeOnboarding(
-                            hasSuite: !records.isEmpty,
-                            hasCases: summaries.contains { $0.caseCount > 0 },
+                            selectedSuiteName: summariesByID[store.selectedSuiteID]?.name,
                             disabled: isBusy,
-                            primaryTitle: records.first.map { "Open \(summariesByID[$0.id]?.name ?? $0.name)" } ?? "Create a Suite"
-                        ) {
-                            if let first = records.first { open(first.id) } else { isCreatingSuite = true }
-                        }
+                            createExample: createExample,
+                            openSuite: { open(store.selectedSuiteID) }
+                        )
                     } else {
                         HomeHero(summaries: summaries, total: records.count, isLoaded: isLoaded, compact: availableWidth < 760)
                     }
@@ -113,7 +111,7 @@ struct WorkspaceOverviewView: View {
         WorkspacePageHeader(
             store.selectedProject.name,
             eyebrow: eyebrow,
-            subtitle: "See how Apple’s Foundation Models answer your prompts."
+            subtitle: "Save prompts and expected answers together, then run them again after a change."
         ) {
             Button { isCreatingSuite = true } label: {
                 Label("New Suite", systemImage: "plus").labelStyle(.titleAndIcon)
@@ -122,6 +120,15 @@ struct WorkspaceOverviewView: View {
             .controlSize(.large)
             .disabled(isBusy)
         }
+    }
+
+    /// Opens a new editable example without changing the current suite or starting a model request.
+    private func createExample() {
+        do {
+            let pack = EvaluationStarterPack.firstCheck
+            try store.createSuite(name: pack.title, starter: pack)
+            store.selection = .suite
+        } catch { store.notice = error.localizedDescription }
     }
 
     /// Renders the suite rows from the same summary snapshot used by the overview hero and recent-run timeline.

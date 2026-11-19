@@ -10,6 +10,8 @@ The review follows tasks whose failure could lose work, misstate an evaluation r
 - First pass traced workspace and suite persistence, case import and document drafts. It also traced Studio's per-app recovery and reproduced how a damaged draft could hide saved conversations.
 - Second pass traced batch, review, and run evidence. It reproduced a batch storage rejection after form submission and found stale release-report text and inaccurate scheduling guidance.
 - Final source pass traced the remaining navigation and handoffs. An independent audit added Overview, the Traces sidebar, guided Siri setup, documented backup and restore, Evaluation menu shortcuts, and the diagnostic clipboard export.
+- The follow-up checked whether each workspace leads from setup to a saved result and a next action. It found three additional disconnects in Cases, Batch runs, and Siri Studio. The follow-up started from the hosted-tested `cafba2ebf` and uses source and isolated regression checks.
+- The first-use pass simplified the route from opening Intents to an understandable pass or fail. It also made the sidebar destinations and run blockers clearer.
 
 ## Confirmed issues and fixes
 
@@ -17,14 +19,14 @@ The review follows tasks whose failure could lose work, misstate an evaluation r
 | --- | --- | --- |
 | **High.** Siri Studio cannot open saved conversations when the recovery file is corrupt | Save a conversation, damage the separate autosave, and reopen the same app in Studio. The source and a disposable on-disk reproduction both showed that decoding aborted the entire load. Explicitly saved work became unavailable. | Studio moves the unreadable recovery file aside before opening the last saved conversations and reports the backup filename. The focused executable passed after the fix, including a byte-for-byte backup check and reopening a later edit. Regression cases also cover foreign app and unsupported-version draft envelopes. |
 | **Medium.** A rejected batch loses the entire creation form | Submit a name of 201 characters. The desktop sheet's source dismissed immediately after starting asynchronous creation. In the focused reproduction, the real store then rejected the name and created no job. Other storage validation failures, such as a mismatched baseline, took the same path. | The form waits for the storage result. It keeps the entered settings and shows the error inline if rejected. The focused check used real production storage and confirmed a corrected retry saved one batch with the original timeout. Desktop UI regression authored. |
-| **High.** Run reports can retain a release verdict from earlier evidence | Open **Release report**, then switch saved runs or change the selected assessment. The report was stored as Markdown in view state, even though the workspace retains the view identity and the release evaluator uses the active assessment, suite and approval. The retained verdict could disagree with the current evidence. | The report is bound to the selected run ID and recalculated from its current release evidence while visible. Added a desktop regression that switches runs and checks the reported run ID. Verified by source inspection and Swift parsing. Desktop interaction remains unverified. |
+| **High.** Run reports can retain a release verdict from earlier evidence | Open **Release report**, then switch saved runs or change the selected assessment. The report was stored as Markdown in view state, even though the workspace retains the view identity and the release evaluator uses the active assessment, suite and approval. The retained verdict could disagree with the current evidence. | The report is bound to the selected run ID and recalculated from its current release evidence while visible. On both hosted runs, the desktop regression switched saved runs and confirmed that the displayed run ID changed. Same-run assessment refresh was source-traced. |
 | **Medium.** Scheduling instructions imply an open desktop will run due jobs | Create a schedule and leave the desktop open. The Workers pane reads schedules and writes changes, but it never ticks them. Only explicit CLI/MCP ticks or polling workers advance a schedule. Operators following the incorrect guide can miss scheduled runs. | Updated the batch guide to explain starting a polling worker or explicitly ticking the schedule and running the created job. Confirmed current tick call sites in the CLI, native worker, and MCP. |
 
 ## Verification during the fix passes
 
 - The original Siri store failed the damaged-autosave fixture. The updated store passed four cases with the real Siri document and recovery implementation, temporary files, and a stubbed telemetry interface. Checked malformed data, a draft for another app, an unsupported version, and a corrupt draft without an explicitly saved document. Each case preserved the exact original bytes, then saved and reopened a new edit.
 - Baseline batch creation returned before the rejection and left storage empty. The updated store delivered the error to the caller, then saved and selected one corrected job. The probe compiled the actual batch sheet and store with the production storage package and used a stubbed evaluation configuration and telemetry interface.
-- The native Xcode 27.3 build was stopped while compiling dependencies as free disk space fell to about 1 GiB. No native test, interactive desktop flow, or live integration was qualified by that build attempt. Only the review's temporary derived data was removed.
+- The native Xcode 27.3 build was stopped while compiling dependencies as free disk space fell to about 1 GiB. That attempt established no native runtime evidence. Later local and hosted builds are recorded below.
 
 - `swiftc -frontend -parse` passed for all seven modified Swift files. `git diff --check` passed.
 - `python3 script/docstring_coverage.py --minimum 85` reported 2,819 of 2,819 functions documented. `python3 script/changed_function_docs.py --base HEAD` reported 9 of 9 changed declarations documented. All 37 documentation-detector tests passed.
@@ -52,6 +54,34 @@ recovery fixture showed the saved conversation and warning in the accessibility
 tree. The check matched only the accessibility label, but SwiftUI exposed the
 warning as a text value. The assertion now checks both properties for the same
 warning text before verifying the saved conversation and original draft bytes.
+[First App Intents and review results](https://github.com/coryparrry/Intents/actions/runs/44538262126/artifacts/14539107842).
+
+The corrected candidate `cafba2ebf` passed the full local Xcode build and the
+native unit suite recheck. [The second GitHub run](https://github.com/coryparrry/Intents/actions/runs/44542947775)
+passed on that exact commit. All 58 desktop UI tests passed.
+
+- The [second Xcode build](https://github.com/coryparrry/Intents/actions/runs/44542947775/job/135626394749)
+  and [portable and native regression job](https://github.com/coryparrry/Intents/actions/runs/44542947775/job/135629079139) passed.
+- The [second traces shard](https://github.com/coryparrry/Intents/actions/runs/44542947775/job/135629079227)
+  passed all 16 tests, including the release report switching between saved runs.
+- The [second suite-editor shard](https://github.com/coryparrry/Intents/actions/runs/44542947775/job/135629078965)
+  passed all 19 tests. The dataset test covered accessible import controls, a
+  late duplicate ID, retained version, fresh redaction confirmation and
+  successful import of the corrected file. The inspected screenshot shows the
+  error under the retained form and the disabled Import button before
+  reconfirmation. [Suite-editor results and screenshot](https://github.com/coryparrry/Intents/actions/runs/44542947775/artifacts/14540468407).
+- The [second App Intents and review shard](https://github.com/coryparrry/Intents/actions/runs/44542947775/job/135629078870)
+  passed all 23 tests. The batch form retained its invalid input and advanced
+  setting until the operator corrected the name. Siri Studio reopened the saved
+  conversation, showed the recovery notice, kept the saved file's bytes and
+  preserved the original corrupt draft. The inspected screenshot shows the
+  recovery notice and original conversation in the editor.
+  [App Intents and review results and screenshots](https://github.com/coryparrry/Intents/actions/runs/44542947775/artifacts/14541623208).
+- GitHub reported the aggregate gate and all required checks green on
+  `cafba2ebf`. All desktop UI execution took place on GitHub runners.
+  The tests used synthetic app and data fixtures. Live Siri, external providers,
+  and a full workspace restore remain outside the verified results.
+
 
 The follow-up found a dataset import failure alongside batch creation. A JSONL
 file can have three valid preview rows and a duplicate ID later in the file.
@@ -89,7 +119,7 @@ The macOS script selection passed all 13 tests in test_foundation_evals_cli, tes
 
 ## Journey ledger
 
-The source pass traced 37 journeys across 14 app surfaces. Each entry follows the action to stored state or handoff, including readback and failure handling. The ledger records source coverage and initial fixture evidence. Hosted run results are recorded separately above.
+The initial source pass traced 37 journeys across 14 app surfaces. Each entry follows the action to stored state or handoff, including readback and failure handling. Three additional paths are traced in the coherence follow-up below. The hosted results above identify the tested commit and fixtures.
 
 ### Workspace and project management
 
@@ -116,7 +146,7 @@ The source pass traced 37 journeys across 14 app surfaces. Each entry follows th
 
 - **Run locally, cancel, retry saving, and reopen the result.** The active checkpoint is published into history with the run's identity. Inspect the saved report, trace or performance after relaunch. Cancel preserves available partial evidence. Failed publication blocks further work until retry or explicit preservation of unreadable recovery bytes. *Runtime.* Desktop flow unverified. Requires matching test app or service for a live trial. [Entry](FoundationEvals/FoundationEvals/Views/SuiteRunControls.swift#L229) · [State](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L3636) · [Save or handoff](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L4712) · [Readback](FoundationEvals/FoundationEvals/ContentView.swift#L121) · [Reopen](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L5665) · [Failure](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L3610)
 - **Inspect traces, compare runs, and export evidence.** Run comparison and trace inspector rebuild from saved run data. Trace selection and comparison UI state are session choices. A JSON export is a standalone artifact. The comparison is constrained by earlier runs of the same suite and rejects incompatible or incomplete evidence. *Runtime.* Desktop flow unverified. [Entry](FoundationEvals/FoundationEvals/Views/SuiteResultsView.swift#L25) · [State](FoundationEvals/FoundationEvals/Views/RunDetailView.swift#L89) · [Save or handoff](FoundationEvals/FoundationEvals/Views/RunDetailView.swift#L115) · [Readback](FoundationEvals/FoundationEvals/Views/WorkflowTraceView.swift#L279) · [Reopen](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L5522) · [Failure](plugins/apple-foundation-evals/native/AppEngine/EvaluationDevelopmentAnalysis.swift#L150)
-- **Reassess and correct judgments, then check release requirements.** The selected assessment lives with the run, and approval is stored by run/assessment in suite-local state. The report can be regenerated against current settings and persisted evidence. Reassessment leaves the original response evidence intact. The evaluator checks coverage, provenance and current suite revision before a pass. The report was corrected to follow the current run and assessment. *Runtime.* Desktop flow unverified. [Entry](FoundationEvals/FoundationEvals/Views/RunWorkflowPanel.swift#L73) · [State](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L1264) · [Save or handoff](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L1461) · [Readback](FoundationEvals/FoundationEvals/Views/RunWorkflowPanel.swift#L92) · [Reopen](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L970) · [Failure](plugins/apple-foundation-evals/native/AppEngine/EvaluationDevelopmentAnalysis.swift#L202)
+- **Reassess and correct judgments, then check release requirements.** The selected assessment lives with the run, and approval is stored by run/assessment in suite-local state. The report can be regenerated against current settings and persisted evidence. Reassessment leaves the original response evidence intact. The evaluator checks coverage, provenance and current suite revision before a pass. The report was corrected to follow the current run and assessment. *Runtime.* Hosted fixtures verified release-report run switching. Live reassessment and same-run assessment refresh were source-traced. [Entry](FoundationEvals/FoundationEvals/Views/RunWorkflowPanel.swift#L73) · [State](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L1264) · [Save or handoff](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L1461) · [Readback](FoundationEvals/FoundationEvals/Views/RunWorkflowPanel.swift#L92) · [Reopen](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L970) · [Failure](plugins/apple-foundation-evals/native/AppEngine/EvaluationDevelopmentAnalysis.swift#L202)
 
 ### Review, judge checks and instruction experiments
 
@@ -130,8 +160,8 @@ The source pass traced 37 journeys across 14 app surfaces. Each entry follows th
 
 ### Batch runs
 
-- **Import, freeze, and inspect immutable datasets.** Dataset revision and manifest load together from production storage. Imported captures can start a captured-output review without rerunning the subject. JSONL parsing, review of redaction and content validation precede publication. Document cases cannot be flattened into a batch dataset. *Runtime.* Focused fixture executed. Desktop flow unverified. [Entry](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L128) · [State](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L269) · [Save or handoff](Packages/ProductionEvals/Sources/ProductionEvals/Services/ProductionDatasets.swift#L87) · [Readback](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L143) · [Reopen](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L117) · [Failure](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceSheets.swift#L72)
-- **Create and retry batch setup.** The job freezes a dataset revision, repetitions, targets, scoring and policy. It appears by its persisted ID after successful creation. Configuration and storage rejection show inline and preserve the form, including advanced values. Successful creation dismisses and selects the durable job. *Runtime.* Focused fixture executed. Desktop flow unverified. [Entry](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceSheets.swift#L236) · [State](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L308) · [Save or handoff](Packages/ProductionEvals/Sources/ProductionEvals/Services/ProductionJobs.swift#L57) · [Readback](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L182) · [Reopen](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L117) · [Failure](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceSheets.swift#L252)
+- **Import, freeze, and inspect immutable datasets.** Dataset revision and manifest load together from production storage. Imported captures can start a captured-output review without rerunning the subject. JSONL parsing, review of redaction and content validation precede publication. Document cases cannot be flattened into a batch dataset. *Runtime.* Hosted suite-editor fixtures verified late duplicate handling, redaction reconfirmation and corrected import. Freezing a live suite was source-traced. [Entry](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L128) · [State](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L269) · [Save or handoff](Packages/ProductionEvals/Sources/ProductionEvals/Services/ProductionDatasets.swift#L87) · [Readback](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L143) · [Reopen](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L117) · [Failure](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceSheets.swift#L72)
+- **Create and retry batch setup.** The job freezes a dataset revision, repetitions, targets, scoring and policy. It appears by its persisted ID after successful creation. Configuration and storage rejection show inline and preserve the form, including advanced values. Successful creation dismisses the form and opens Jobs with the durable job selected. *Runtime.* Hosted fixtures verified retaining settings and saving a corrected batch from Jobs. The new handoff from Datasets was checked separately in this follow-up. [Entry](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceSheets.swift#L236) · [State](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L308) · [Save or handoff](Packages/ProductionEvals/Sources/ProductionEvals/Services/ProductionJobs.swift#L57) · [Readback](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L182) · [Reopen](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L117) · [Failure](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceSheets.swift#L252)
 - **Run, pause, resume or cancel a batch.** Jobs reread immutable configuration and saved chunks, leases and controls. The desktop UI refreshes pending or completed evidence from the same store used by workers. Pause persists before interrupting local work. Resume requires compatible worker admission. Cancellation is permanent for that job. Interrupted side-effectful work is recorded for reconciliation. *Runtime.* Desktop flow unverified. Requires matching test app or service for a live trial. [Entry](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L193) · [State](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L391) · [Save or handoff](Packages/ProductionEvals/Sources/ProductionEvals/Services/ProductionJobs.swift#L104) · [Readback](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L73) · [Reopen](Packages/ProductionEvals/Sources/ProductionEvals/Services/ProductionJobs.swift#L65) · [Failure](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L360)
 - **Review or reconcile results, approve baseline and export.** Operator drafts reload separately from the audit. The report rereads the frozen job, reviews, and baseline bound to current evidence. Export publishes a separate evidence folder. Disagreements remain unresolved until an assigned reviewer acts. Edits, pause/cancel or changed evidence invalidate stale approvals instead of advancing the gate. *Runtime.* Desktop flow unverified. [Entry](FoundationEvals/FoundationEvals/Views/ProductionResultDetailView.swift#L55) · [State](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L475) · [Save or handoff](Packages/ProductionEvals/Sources/ProductionEvals/Services/ProductionBaselineApproval.swift#L43) · [Readback](FoundationEvals/FoundationEvals/Views/ProductionReportPane.swift#L38) · [Reopen](Packages/ProductionEvals/Sources/ProductionEvals/Services/ProductionAnalysis.swift#L71) · [Failure](Packages/ProductionEvals/Sources/ProductionEvals/Services/ProductionAnalysis.swift#L170)
 - **Schedule jobs and inspect worker provenance.** Schedule templates and worker registrations reload from production storage. Polling advances due slots using deterministic job IDs. Pause and resume use the expected schedule revision. The UI stores a schedule and a worker or polling command is required to run it. *Runtime.* Desktop flow unverified. Requires matching test app or service for a live trial. [Entry](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L260) · [State](Packages/ProductionEvals/Sources/ProductionEvals/Services/ProductionSchedules.swift#L44) · [Save or handoff](Packages/ProductionEvals/Sources/ProductionEvals/Services/ProductionSchedules.swift#L32) · [Readback](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L245) · [Reopen](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L117) · [Failure](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L350)
@@ -139,7 +169,7 @@ The source pass traced 37 journeys across 14 app surfaces. Each entry follows th
 ### App Intents and Siri Studio
 
 - **Inspect a Mac app and run a direct App Intent test.** App Intents keeps its mode preference. A new session requires selecting the app again. Its local XCTest result bundle/log remain on disk. Catalog loads can be cancelled, cannot publish a superseded selection and verify app identity. Editing test inputs clears its old verdict. Native app execution needs matching signing and registration. *Runtime.* Desktop flow unverified. Requires matching test app or service for a live trial. [Entry](FoundationEvals/FoundationEvals/Views/MacIntentTestingView.swift#L60) · [State](FoundationEvals/FoundationEvals/Stores/MacIntentTestingStore.swift#L145) · [Save or handoff](Sources/MacIntentTesting/MacIntentRunner.swift#L122) · [Readback](FoundationEvals/FoundationEvals/Views/MacIntentTestingView.swift#L142) · [Failure](FoundationEvals/FoundationEvals/Stores/MacIntentTestingStore.swift#L48)
-- **Author, save, reopen or recover Siri conversations.** Studio restores the saved per-bundle document and a newer recoverable draft after selecting the same app again. Explicit export creates a shareable scenario JSON file. App switches save outgoing work. Malformed or incompatible recovery is preserved before opening saved work. An unreadable saved canonical file remains protected and is reported. *Runtime.* Focused fixture executed. Desktop flow unverified. [Entry](FoundationEvals/FoundationEvals/Views/SiriStudio/SiriStudioView.swift#L300) · [State](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L145) · [Save or handoff](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L321) · [Readback](FoundationEvals/FoundationEvals/Views/SiriStudio/SiriStudioView.swift#L272) · [Reopen](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L78) · [Failure](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L362)
+- **Author, save, reopen or recover Siri conversations.** Studio restores the saved per-bundle document and a newer recoverable draft after selecting the same app again. Explicit export creates a shareable scenario JSON file. App switches save outgoing work. Malformed or incompatible recovery is preserved before opening saved work. An unreadable saved canonical file remains protected and is reported. *Runtime.* Hosted fixtures verified reopening after a corrupt draft and retaining the original bytes. [Entry](FoundationEvals/FoundationEvals/Views/SiriStudio/SiriStudioView.swift#L300) · [State](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L145) · [Save or handoff](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L321) · [Readback](FoundationEvals/FoundationEvals/Views/SiriStudio/SiriStudioView.swift#L272) · [Reopen](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L78) · [Failure](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L362)
 - **Run Siri or import and inspect saved result evidence.** Siri evidence has a unique run folder. Open saved run reads its authored snapshot and result reports without relaunching Siri. Open either verdict-only or explicit transcript export. Siri requires a compatible macOS/Xcode development identity. Native operation owns cancellation. Edited conversations display stale evidence and result import enforces result integrity. *Runtime.* Desktop flow unverified. Requires matching test app or service for a live trial. [Entry](FoundationEvals/FoundationEvals/Views/SiriStudio/SiriStudioView.swift#L390) · [State](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L218) · [Save or handoff](Sources/MacIntentTesting/SiriStudio/SiriStudioRunner.swift#L160) · [Readback](FoundationEvals/FoundationEvals/Views/SiriStudio/SiriStudioView.swift#L363) · [Reopen](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L231) · [Failure](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L246)
 - **Detect and confirm Siri prerequisites.** Setup restores no signing secret or prior confirmation. Choose the installed registered app and inspect the selected Xcode and matching certificate again. App changes invalidate an in-flight probe. Edited settings are never overwritten, and a report for different settings blocks Run until rechecked. Confirmation of Siri downloads comes from the user. XcodeGen installation and app registration are explicit handoffs. *Runtime.* Desktop flow unverified. Requires matching test app or service for a live trial. [Entry](FoundationEvals/FoundationEvals/Views/SiriStudio/SiriStudioSetupView.swift#L74) · [State](FoundationEvals/FoundationEvals/Stores/MacIntentTestingStore.swift#L107) · [Save or handoff](FoundationEvals/FoundationEvals/Stores/SiriStudioSetupStore.swift#L48) · [Readback](FoundationEvals/FoundationEvals/Views/SiriStudio/SiriStudioSetupView.swift#L30) · [Failure](FoundationEvals/FoundationEvals/Stores/SiriStudioSetupStore.swift#L75)
 
@@ -160,30 +190,133 @@ The source pass traced 37 journeys across 14 app surfaces. Each entry follows th
 
 ### Model evaluations overview
 
-- **Check project readiness and open the relevant run.** Overview reloads every active suite in the selected project. Saved runs, compatible drafts, baseline state and repository revisions feed readiness and recent history. Needs attention and search filter visible summaries. The loader flags missing or changed evidence and excludes uncommitted pending runs. Opening a recent run first activates its owning suite. *Runtime.* Desktop flow unverified. [Entry](FoundationEvals/FoundationEvals/Views/WorkspaceOverviewView.swift#L88) · [State](FoundationEvals/FoundationEvals/Views/WorkspaceOverviewView.swift#L96) · [Save or handoff](FoundationEvals/FoundationEvals/Services/WorkspaceOverviewLoader.swift#L30) · [Readback](FoundationEvals/FoundationEvals/Views/WorkspaceOverviewView.swift#L73) · [Reopen](FoundationEvals/FoundationEvals/Services/WorkspaceOverviewLoader.swift#L6) · [Failure](FoundationEvals/FoundationEvals/Views/WorkspaceOverviewView.swift#L175)
+- **Check project readiness and open the relevant run.** Overview reloads every active suite in the selected project. Saved runs, compatible drafts, baseline state and repository revisions feed readiness and recent history. Needs attention and search filter visible summaries. The loader flags missing or changed evidence and excludes uncommitted pending runs. Opening a recent run first activates its owning suite. *Runtime.* Hosted fixtures verified the Overview timeline and expansion of recent runs. Repository-change cases are source and native unit evidence. [Entry](FoundationEvals/FoundationEvals/Views/WorkspaceOverviewView.swift#L88) · [State](FoundationEvals/FoundationEvals/Views/WorkspaceOverviewView.swift#L96) · [Save or handoff](FoundationEvals/FoundationEvals/Services/WorkspaceOverviewLoader.swift#L30) · [Readback](FoundationEvals/FoundationEvals/Views/WorkspaceOverviewView.swift#L73) · [Reopen](FoundationEvals/FoundationEvals/Services/WorkspaceOverviewLoader.swift#L6) · [Failure](FoundationEvals/FoundationEvals/Views/WorkspaceOverviewView.swift#L175)
 
 ### Traces sidebar
 
-- **Find a saved trace by case, suite or version.** The index is scoped to the selected suite and reads saved runs. Opening one shows its report and Workflow trace tab. Trace filter and span selection are transient. Unmatched searches and missing timelines are surfaced, and an empty index links back to Evaluations. *Runtime.* Desktop flow unverified. [Entry](FoundationEvals/FoundationEvals/Views/WorkspaceTracesView.swift#L32) · [State](FoundationEvals/FoundationEvals/Views/WorkspaceTracesView.swift#L40) · [Save or handoff](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L4680) · [Readback](FoundationEvals/FoundationEvals/Views/RunDetailView.swift#L77) · [Reopen](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L5522) · [Failure](FoundationEvals/FoundationEvals/Views/WorkspaceTracesView.swift#L45)
+- **Find a saved trace by case, suite or version.** The index is scoped to the selected suite and reads saved runs. Opening one shows its report and Workflow trace tab. Trace filter and span selection are transient. Unmatched searches and missing timelines are surfaced, and an empty index links back to Evaluations. *Runtime.* Hosted fixtures verified navigation to saved evidence and trace inspection. The full combination of search inputs was source-traced. [Entry](FoundationEvals/FoundationEvals/Views/WorkspaceTracesView.swift#L32) · [State](FoundationEvals/FoundationEvals/Views/WorkspaceTracesView.swift#L40) · [Save or handoff](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L4680) · [Readback](FoundationEvals/FoundationEvals/Views/RunDetailView.swift#L77) · [Reopen](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L5522) · [Failure](FoundationEvals/FoundationEvals/Views/WorkspaceTracesView.swift#L45)
 
 ### App menu and desktop distribution
 
 - **Use the Evaluation menu to navigate and control a run.** Menu navigation and shortcuts use the shared store. The menu writes cases and references through the same suite persistence used by the editor. Runs saved from the menu appear in regular history. The same admission rules apply for starting and cancelling a run. Commands that only navigate do not alter saved evidence. *Runtime.* Desktop flow unverified. [Entry](FoundationEvals/FoundationEvals/FoundationEvalsApp.swift#L186) · [State](FoundationEvals/FoundationEvals/FoundationEvalsApp.swift#L204) · [Save or handoff](FoundationEvals/FoundationEvals/Views/SuiteRunControls.swift#L229) · [Readback](FoundationEvals/FoundationEvals/ContentView.swift#L105) · [Reopen](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L970) · [Failure](FoundationEvals/FoundationEvals/FoundationEvalsApp.swift#L227)
 
 
+## Whole-app coherence follow-up
+
+The principal workflow holds together. Create a suite, add cases and choose
+scoring and a destination, run it, and inspect the saved report. Then use
+**Review** to label a response or make a regression case, **Compare runs** to
+evaluate a change, and **Release report** to apply release requirements. The
+suite and run history give this workflow a clear place to resume.
+
+| Starting task | Expected result and next step | Source check |
+| --- | --- | --- |
+| Create or return to a suite | A project owns the suite, its draft and its saved runs. **Overview** flags changed definitions. An old run is still readable. The first run guide leads through Cases, Setup and the destination control. | [First run](docs/wiki/Getting-started.md#L27) · [Overview](FoundationEvals/FoundationEvals/Models/WorkspacePresentation.swift#L117) · [Restore](docs/wiki/Data-and-troubleshooting.md#L13) |
+| Run and understand an evaluation | The selected destination is explicit. A disconnected selected app runner blocks the run. A saved response gives the operator a score, its supporting evidence and a trace when available. Human reviews and release approvals are separate actions. | [Destination](FoundationEvals/FoundationEvals/Views/SuiteRunControls.swift#L229) · [Results](docs/wiki/Runs-and-results.md#L22) · [Human review](docs/wiki/Review-and-judge-checks.md#L13) |
+| Expand a suite into a batch or review captured data | The job freezes dataset and execution settings. **Jobs** owns start and resume. **Results** shows saved responses and operator review. **Reports** provides the batch's release evidence. | [Batch panes](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L4) · [Batch and capture guide](docs/wiki/Production-batches.md#L7) |
+| Test an action in a built app or check a Siri conversation | **Direct Action** tests the callback with supplied inputs. **Siri Studio** runs authored conversation checks against the selected development build. Reopening saved results reads their recorded evidence without invoking Siri. | [Direct Action](docs/wiki/Mac-App-Intent-tests.md) · [Siri setup](docs/wiki/Siri-Studio.md#L6) · [Open saved result](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L231) |
+| Share work, recover it, or hand it to a worker or agent | Exports and MCP expose specific evidence, and workers have their own execution and scheduling controls. The cold-copy guide identifies the stores and credentials that are needed to recover a workspace. | [MCP](docs/wiki/Codex-and-MCP.md) · [Worker scheduling](docs/wiki/Production-batches.md#L46) · [Backup and restore](docs/wiki/Data-and-troubleshooting.md#L13) |
+
+### Confirmed disconnects corrected in the worktree
+
+| Problem and trigger | User impact and correction |
+| --- | --- |
+| **Medium.** A saved Siri pass appears current for a rebuilt app. Select a different build with the same bundle ID, then open a saved passing run without changing the conversation or launch arguments. The selected catalog and the saved run have different hashes, but the former label only checked the conversation and arguments. | The conversation list and Results now show **Previous app build** alongside the original verdict. A matching conversation with no confirmed build identity shows **App build unverified**. Reopening, inspecting, and exporting the original evidence still work. Intents compares the catalog captured at selection, so a rebuild in place must be reselected. [Run snapshot](Sources/MacIntentTesting/SiriStudio/SiriStudioRunner.swift#L153) · [Verdict](FoundationEvals/FoundationEvals/Stores/SiriStudioStore.swift#L245) · [Regression](FoundationEvals/FoundationEvalsTests/SiriStudioStoreTests.swift#L218) |
+| **Medium.** Creating a batch from **Datasets** left the user looking at the dataset after success. The selected job ID had changed, but the pane stayed on Datasets and the run controls live in Jobs. | Once storage accepts the batch, Intents opens **Jobs** with the saved job selected. A rejected batch stays on the submitting form with its entries. The batch guide now also uses the actual **Results** tab name and explains the start step after **Review captured outputs**. [Dataset entry](FoundationEvals/FoundationEvals/Views/ProductionWorkspaceView.swift#L152) · [Durable handoff](FoundationEvals/FoundationEvals/Stores/ProductionWorkspaceStore.swift#L320) · [Regression](FoundationEvals/FoundationEvalsTests/ProductionWorkspaceStoreTests.swift#L9) |
+| **Medium.** Finishing **Improve instructions** could replace the suite's case verdicts with a partial trial. Save an ordinary passing suite run and then save newer Practice or Final check trial records. **Cases** used whichever record was newest, even for a trial that omitted that case. **Overview** and the default release check excluded those trial records. | **Cases** now reads the same run as the default release check. Partial trials remain in the run history for comparison and trace inspection. The regression covers saving the trials and reopening the suite. The guide has one correct route to **Improve instructions**. [Case readback](FoundationEvals/FoundationEvals/Views/SuiteCasesView.swift#L16) · [Run selection](FoundationEvals/FoundationEvals/Stores/EvaluationStore.swift#L1915) · [Regression](FoundationEvals/FoundationEvalsTests/EvaluationPromptImprovementTests.swift#L314) |
+
+An independent source audit cross-checked the ledger against actual entry
+points. An independent diff review checked the three code changes and their
+regression fixtures. The source queue checker passed with 40 journeys across
+14 app surfaces.
+
+### Follow-up verification
+
+- `xcodebuild build-for-testing -project FoundationEvals/FoundationEvals.xcodeproj -scheme FoundationEvals -configuration Debug -destination 'platform=macOS'` passed on Xcode 27.3. The build used isolated DerivedData, ad-hoc signing, two build jobs, and disabled indexing. It compiled both test bundles.
+- A command-line Swift Testing runner linked the Xcode-built app library and native test objects. The filtered run passed the three affected tests. The Siri test passed all three startup-argument cases, including a different build, a matching build, and missing build evidence. The batch test used real temporary storage and checked both rejected and corrected writes. The Cases test checked the saved regular run after later trials and after reopening. The runner did not launch Intents.
+- Swift parsing, `git diff --check`, and documentation checks passed. Coverage was 2,820 of 2,820 declarations tracked by the repository detector and 8 of 8 changed function declarations.
+- The 58 GitHub desktop passes above apply to `cafba2ebf`. The follow-up changes are local to the worktree. Their rendered desktop flows remain unverified. No desktop automation ran on this Mac.
+
+## First-use pass
+
+The initial screen asked users to understand cases, scoring, and review before
+they had seen a simple check. The seeded example used an AI rubric with three
+criteria. A person learning the app had to understand an AI judgment before
+they could tell what a basic pass meant.
+
+| Where the user got stuck | What changed |
+| --- | --- |
+| The Overview gave several abstract steps, followed by a button that opened the first listed suite even when the user was working in another. | **Create example suite** creates a separate editable suite and opens its one case. The user can see the prompt and the expected answer, `Paris`. A deterministic exact-text check explains the verdict. Running is explicit. **Open [suite name]** returns to the selected suite. [Overview actions](FoundationEvals/FoundationEvals/Views/WorkspaceOverviewView.swift#L55) · [Example definition](FoundationEvals/FoundationEvals/Services/EvaluationStarterPacks.swift#L44) |
+| A new blank suite said to select a test case when there were no cases. A longer reason why Run was disabled was replaced with **Can't run**. | The blank case editor has an **Add a case** action and explains what a case contains. The suite header shows the full reason Run is blocked. When expected text is missing, it names the scoring rule and asks for an expected answer. [Blank case editor](FoundationEvals/FoundationEvals/Views/SuiteCasesView.swift#L55) · [Run reason](FoundationEvals/FoundationEvals/Views/SuiteEditorView.swift#L438) |
+| **Evaluations** opened the human review page. An empty **Traces** index sent users there to start a run. | **Review outputs** says what the sidebar destination opens. The empty trace screen has an **Open suite** button that leads to the runnable case editor. [Sidebar](FoundationEvals/FoundationEvals/Views/WorkspaceSidebar.swift#L94) · [Traces action](FoundationEvals/FoundationEvals/Views/WorkspaceTracesView.swift#L27) |
+
+The first-run guide now starts with the same example and explains how to read
+the saved verdict. The example uses the existing suite write and reopen paths
+and an ordinary evaluation run. The original suite stays available. Paired
+devices, service credentials, and developer signing still have their own setup.
+[First-run guide](docs/wiki/Getting-started.md#L28) · [Save and score regression](FoundationEvals/FoundationEvalsTests/EvaluationWorkspaceCreationTests.swift#L8)
+
+### First-use verification
+
+- The full `FoundationEvals` Xcode 27.3 build compiled the app and both test bundles. The command and signing setup match the follow-up build above.
+- Nine native regression tests passed in a command-line runner linked to the Xcode build. These include saving the example, reopening it without a run, showing an actionable message when its expected answer is missing, then saving a pass and a fail with an explanation. The original suite remained unchanged.
+- Independent review caught wording that promised a verdict in Collect only mode. The shared empty response panel now promises only a response. The updated example still explains its exact-text verdict.
+- The source queue passed with 43 journeys across the same 14 app surfaces. Swift parsing, diff checks, local document links, and documentation checks passed. All 15 changed function declarations have comments as tracked by the repository detector.
+- The Overview and Traces regressions were compiled for future hosted execution. They were not run on the desktop. The changes remain in the review worktree.
+
+## Hosted first-result follow-up
+
+A report for one short text check used to put its verdict above a results
+table. The expected answer, response, and explanation were farther down in
+the detail pane. The report now shows those three facts together at the top
+for a completed text-only check. Field checks and runs with execution issues
+keep their full evidence view so a partial explanation cannot be mistaken
+for the cause of the verdict. [Report summary](FoundationEvals/FoundationEvals/Views/RunReportSummary.swift#L32)
+
+The GitHub desktop regression opens a disposable workspace, creates the
+example from Overview, reads its expected answer, and runs it through the
+ordinary evaluation path. A loopback fixture supplies `Paris` because the
+hosted runner does not supply Apple Intelligence. The test requires the
+saved report's verdict, expected text, response, and exact-match explanation
+to fit in the visible window. It saves a screenshot for inspection.
+[First-result UI regression](FoundationEvals/FoundationEvalsUITests/FoundationEvalsRunLifecycleUITests.swift#L77)
+
+The complete PR diff selects all ordinary CI, including three desktop
+shards. The first-use tests are in **native-intents+review+runs**. The user
+specified GitHub runners for all desktop tests. Portable Swift and
+production checks retain their inputs from the previous passing candidate
+`cafba2ebf` and will run again in hosted CI.
+
+Pre-push checks passed on the full candidate. Xcode 27.3 built the app and
+both test bundles. The headless runner passed ten tests, including the first
+check and the guard against presenting a text-only explanation for a field
+or execution failure. The routed Python checks passed 396 tests and the
+macOS script checks passed 13. Actionlint, ShellCheck, example syntax,
+website checks and 40 website tests passed. The documentation detector
+reported 34 of 34 changed functions documented. The proposed PR body passed
+release-note validation with 11 entries.
+
 ## Product assessment and evidence limits
 
 Intents gives developers a reason to return when changing a prompt, model, tool,
 or app feature. A saved suite reruns the same cases, and the trace and review views
 show which requests, outputs and judgments drove the result. The biggest trust
-risk is using a clear-looking verdict after selected evidence changes. The stale
-report fix removes one path to that error.
+risk is using a clear-looking verdict after selected evidence changes. The
+result must say which cases, assessment, run and app build it describes.
+Batch jobs and App Intents have different prerequisites, but both fit the
+product because they answer a distinct question and save the evidence needed to
+return to it. A developer can start with one scored case and add either workflow
+when their need changes.
+
+The easier entry path is a source and fixture conclusion. First-time user
+comprehension, the new desktop layout, and a live run of the example on an
+Apple Intelligence Mac remain unverified.
 
 This review covers the native app and its direct handoffs to the connector,
 workers, model providers, and test runners. It does not qualify the separate
 standalone plugin UI, public website, CLI distribution, or release/updater
 artifact. The installed or released app was not changed. Live on-device/cloud
 models, external judges, Core AI resources, physical app runners, Direct Action
-and live Siri, provider privacy delivery, and interactive desktop rendering
-remain unverified. No live user workspace, app credentials or Codex configuration
-were used. Workspace-wide backup and restore was source-traced only.
+and live Siri, and provider privacy delivery remain unverified. The review used
+synthetic workspaces and fixtures. Workspace-wide backup and restore was
+source-traced only.

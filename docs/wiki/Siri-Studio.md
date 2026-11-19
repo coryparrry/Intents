@@ -47,7 +47,10 @@ Argument constraints on forbidden calls and enum case matching are pending live
 preview qualification. **Advanced → Open scenario document…** opens a copy of
 exported JSON. Opening a scenario returns to Conversations; opening or importing
 a result switches to Results. Historical results remain readable when their
-draft was removed; Run and selected-conversation Swift export require a current draft.
+draft was removed. Run and selected-conversation Swift export require a current
+draft. Siri Studio labels saved verdicts for a different app build **Previous
+app build**. Imports without a recorded build show **App build unverified** when
+the conversation and launch arguments match.
 
 Validation and Swift export work without running Siri. **Advanced → Export Swift…** saves
 the exact test source for the selected scenario. Use **Advanced → Export all

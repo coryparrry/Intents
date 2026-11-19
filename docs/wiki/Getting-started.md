@@ -23,7 +23,14 @@ brew install --cask coryparrry/tap/intents
 The cask requires Apple Silicon and macOS 27 or later. To upgrade with Homebrew,
 run `brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
 
-## Create a small evaluation
+## Try an example
+
+1. Open **Overview** and select **Create example suite**.
+2. Read the prompt and expected answer in **Cases**. The example checks that the response is exactly `Paris` after removing surrounding whitespace.
+3. With **This Mac** selected as the run destination, select **Run**. If you can’t run yet, the suite shows what needs attention.
+4. When the run finishes, read its **Report** to see the answer and why it passed or failed. Return to **Cases** to change the prompt and run it again.
+
+## Create your own evaluation
 
 1. Select **New Suite** at the bottom of the sidebar.
 2. Enter a suite name. Select **Blank suite** for your own cases, or select a starter pack for editable examples.
@@ -39,7 +46,7 @@ run `brew update && brew upgrade --cask --greedy coryparrry/tap/intents`.
 12. Select the new saved run in the sidebar.
 13. The run opens on **Report**, where you can read each response and score. Select **Workflow trace** to inspect the recorded execution steps.
 
-If **Run** is disabled, open **Run Details** from the destination menu. You can also point to **Run** to read the reason.
+If **Run** is disabled, read the reason under the suite name. Open **Run Details** from the destination menu for the planned requests and responses.
 
 For practice, use the prompt `Reply with only the capital of France` and the required text `Paris`. **Contains text** passes when the response includes that text. If extra words must cause a failure, use **Exact text**.
 
@@ -57,7 +64,7 @@ For practice, use the prompt `Reply with only the capital of France` and the req
 - To send suite cases to a feature in your own iPhone, iPad, or Mac app, pair a developer runner and select its feature from the run destination menu. [App feature runners](App-feature-runners.md).
 - To call an action in a built macOS app with explicit inputs, open **App Intents** in the sidebar. Choose a development-signed build and enter the action's JSON inputs and optional expected result. [Mac App Intent tests](Mac-App-Intent-tests.md).
 
-The sidebar also opens **Evaluations** for review, **Batch runs** for resumable jobs, and **Traces** for saved execution evidence.
+The sidebar also opens **Review outputs** for human review, **Batch runs** for resumable jobs, and **Traces** for saved execution evidence.
 
 ## Review the output before expanding the test
 

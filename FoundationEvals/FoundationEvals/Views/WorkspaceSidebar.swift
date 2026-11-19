@@ -96,7 +96,7 @@ struct WorkspaceSidebar: View {
                     .labelStyle(WorkspaceSidebarLabelStyle(color: .blue))
                     .accessibilityIdentifier("Sidebar overview")
                     .tag(WorkspaceDestination.overview)
-                Label("Evaluations", systemImage: "checklist")
+                Label("Review outputs", systemImage: "checklist")
                     .labelStyle(WorkspaceSidebarLabelStyle(color: .green))
                     .accessibilityIdentifier("Sidebar evaluations")
                     .tag(WorkspaceDestination.evaluations)

@@ -13,7 +13,7 @@ struct SuiteCasesView: View {
                 || $0.prompt.localizedCaseInsensitiveContains(search)
         }
     }
-    private var latestRun: EvaluationRun? { store.runs.first }
+    private var latestRun: EvaluationRun? { store.latestSuiteCheck }
 
     private var selectedCaseIndex: Int? {
         guard let selectedCaseID, visibleCases.contains(where: { $0.id == selectedCaseID }) else { return nil }
@@ -54,6 +54,12 @@ struct SuiteCasesView: View {
                         }
                         .id(caseID) // Each case opens at the top of the editor.
                         .accessibilityIdentifier("Case editor scroll")
+                    } else if store.draftSuite.cases.isEmpty {
+                        WorkspaceEmptyState(symbol: "text.bubble", title: "Add your first case",
+                                            detail: "A case is a prompt and, when scoring needs it, an expected answer.",
+                                            actionTitle: "Add a case", actionSymbol: "plus", action: addCase)
+                            .disabled(isBusy)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         WorkspaceEmptyState(symbol: "text.bubble", title: "Select a test case", detail: "Choose a case to edit its prompt and expected response.")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -403,7 +409,7 @@ private struct LatestResponsePanel: View {
             } else {
                 HStack(spacing: 10) {
                     Image(systemName: "text.bubble").foregroundStyle(.tertiary)
-                    Text(run == nil ? "Run the suite to see the model’s answer here." : "This case wasn’t part of the latest run.")
+                    Text(run == nil ? "Select Run to see the response here." : "This case wasn’t part of the latest run.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 14)

@@ -2,15 +2,15 @@
 
 [Home](Home.md) · [Runs and results](Runs-and-results.md) · [Codex and MCP](Codex-and-MCP.md)
 
-Open **Batch runs** in the sidebar for larger, resumable jobs or review of captured application outputs. This workspace has **Datasets**, **Jobs**, **Review**, **Reports**, and **Workers**. Ordinary suite runs and suite **Review** remain separate.
+Open **Batch runs** in the sidebar for larger, resumable jobs or review of captured application outputs. This workspace has **Datasets**, **Jobs**, **Results**, **Reports**, and **Workers**. Suite **Review** is available from the suite editor.
 
 ## Create a batch
 
 1. Configure the selected suite's instructions, model, tools, and scoring.
 2. In **Datasets**, freeze the current suite or import a reviewed UTF-8 JSONL file. Confirm redaction when importing production data.
 3. Give examples stable IDs and group related examples with a pseudonymous `sourceID`. Include verified expected answers when scoring needs them.
-4. In **Jobs**, create a batch with its dataset, repetitions, target labels, limits, and release requirements.
-5. Start it on a matching Mac. Read saved progress and worker provenance. Pause and resume to continue remaining requests.
+4. Select **New batch** from the dataset or from **Jobs**. Set the dataset, repetitions, target labels, limits, and release requirements. A successful save opens the new batch in **Jobs**.
+5. Select **Run on this Mac** on a matching Mac. Read saved progress and worker provenance. Pause and resume to continue remaining requests.
 6. Open **Reports** for pass rates, cohorts, distinct-source confidence, cost, latency, and gate failures.
 
 If batch creation is rejected, the form shows the error and keeps your entries
@@ -29,7 +29,7 @@ If a request reaches its deadline or is cancelled, the worker records the interr
 
 ## Review original outputs
 
-Include `capturedOutput` and optional `feedback` in JSONL, then choose **Review captured outputs** in Datasets. These outputs are not regenerated. Use **Review** to assign and label results. Disagreement remains uncertain until adjudicated. Reconcile interrupted actions only after verifying their saved state and outstanding cost.
+Include `capturedOutput` and optional `feedback` in JSONL, then choose **Review captured outputs** in **Datasets**. Select **Run on this Mac** in **Jobs** to prepare the saved responses for review. Intents reuses the captured responses. Use **Results** to assign and label them. Disagreement remains uncertain until adjudicated. Reconcile interrupted actions only after verifying their saved state and outstanding cost.
 
 Capture is opt-in and uses an application-owned sanitizer. An import's redaction confirmation is your review of the data; it does not redact the file automatically. Keep exports private until you have checked prompts, responses, metadata, traces, and artifacts.
 

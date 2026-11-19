@@ -401,6 +401,7 @@ final class EvaluationReviewUITests: XCTestCase {
         try app.windows.firstMatch.screenshot().pngRepresentation.write(to: UITestStorage.screenshotURL(name: "eval-sidebar"))
     }
 
+    /// The empty trace index leads to Cases, where the user can run the suite. Human review remains reachable separately.
     @MainActor
     func testSidebarDestinationsHandleNoSavedRuns() throws {
         let storage = try UITestStorage.makeDirectory(prefix: "eval-sidebar-empty")
@@ -410,9 +411,33 @@ final class EvaluationReviewUITests: XCTestCase {
         defer { app.terminate() }
         sidebarDestination("Sidebar traces", in: app).click()
         XCTAssertTrue(emptyState("No saved traces yet", in: app).waitForExistence(timeout: 3), app.debugDescription)
-        app.buttons["Open evaluations"].click()
+        app.buttons["Open suite"].click()
+        XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5), app.debugDescription)
+        let cases = app.radioGroups["Editor page"].radioButtons["Cases"]
+        XCTAssertTrue(cases.isSelected || (cases.value as? NSNumber)?.intValue == 1
+                      || (cases.value as? String) == "1", app.debugDescription)
+        openReview(app)
         XCTAssertTrue(emptyState("Choose a saved output", in: app).waitForExistence(timeout: 3))
-        assertReviewSelected(in: app)
+    }
+
+    /// Opening the example shows one check with an editable expected answer and leaves execution to the user.
+    @MainActor
+    func testOverviewCreatesAnEditableFirstCheckWithoutRunningIt() throws {
+        continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "first-check")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let app = application(storage: storage)
+        launchWorkspace(app)
+        defer { app.terminate() }
+        sidebarDestination("Sidebar overview", in: app).click()
+        let example = app.buttons["Create example suite"]
+        XCTAssertTrue(example.waitForExistence(timeout: 5), app.debugDescription)
+        example.click()
+        let expected = app.textViews["Scoring expected text"]
+        XCTAssertTrue(expected.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(expected.value as? String, "Paris")
+        XCTAssertTrue(app.buttons["Run evaluation"].exists, app.debugDescription)
+        XCTAssertFalse(app.descendants(matching: .any)["Workspace status"].exists)
     }
 
     @MainActor private func launchWorkspace(_ app: XCUIApplication) {

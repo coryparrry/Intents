@@ -303,7 +303,7 @@ final class ProductionWorkspaceStore {
         return configuration
     }
     /// Creates a batch using frozen native setup and the supplied dataset, targets, budgets, baseline, and cohort gates.
-    /// Delivers storage errors to the open editor and selects the new batch only after it is durable.
+    /// Delivers storage errors to the open editor and opens the Jobs pane with the new batch after it is durable.
     @discardableResult
     func createJob(store: EvaluationStore, dataset: String, name: String, repetitions: Int, passRate: Double,
                    timeout: Double, budgetHours: Double, baseline: UUID?, targets: [ProductionTarget],
@@ -321,6 +321,7 @@ final class ProductionWorkspaceStore {
         guard let task = perform({ storage in
             try storage.createJob(name: name, datasetRevision: dataset, configuration: frozen, resolveCriticalCaseIDs: true)
         }, failed: { completion(.failure($0)) }, completed: { job in
+            self.pane = .jobs
             self.select(job.id)
             completion(.success(()))
         }) else {

@@ -242,13 +242,24 @@ import Observation
         run = opened; selection = opened.scenarios.first?.id ?? selection; diagnostic = nil
     }
 
-    /// Keeps authored expectations tied to the revision that actually ran.
-    func isStale(_ result: SiriStudioScenarioResult) -> Bool {
+    /// Labels the saved verdict with any mismatch in app build, conversation, or launch arguments.
+    func resultTitle(_ result: SiriStudioScenarioResult) -> String {
+        let verdict = result.state.label
+        let testedBuild = run?.productIdentity?.sha256
+        let selectedBuild = catalog?.productIdentity?.sha256
+        if let testedBuild, let selectedBuild, testedBuild != selectedBuild {
+            return "Previous app build · \(verdict)"
+        }
         let frozen = run?.document.scenarios.first { $0.id == result.id }
         let current = document?.scenarios.first { $0.id == result.id }
         let recordedArguments = run?.appLaunchArguments ?? run?.document.appLaunchArguments ?? []
-        let argumentsChanged = recordedArguments != appLaunchArguments
-        return argumentsChanged || current?.revision != result.revision || frozen != current
+        if recordedArguments != appLaunchArguments || current?.revision != result.revision || frozen != current {
+            return "Out of date · \(verdict)"
+        }
+        if testedBuild == nil || selectedBuild == nil {
+            return "App build unverified · \(verdict)"
+        }
+        return verdict
     }
 
     /// Displays a local diagnostic without sending it to telemetry.

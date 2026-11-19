@@ -152,6 +152,25 @@ struct WorkspacePresentationTests {
         #expect(SuiteCheckState.evaluate(run: run, currentRevision: "current", hasDraft: true) == .changed)
     }
 
+    /// Only shows a short text explanation when it can account for the entire verdict.
+    @Test func shortCheckSummaryDoesNotMisattributeFieldOrExecutionFailures() {
+        var run = fixture()
+        run.scoringMode = .exactMatch
+        run.plannedSampleCount = 1
+        run.results[0].expected = "Paris"
+        run.results[0].response = "Paris"
+        run.results[0].rationale = "Exact match after trimming whitespace."
+        #expect(RunReportPresentation(run: run).shortTextCheck?.id == run.results[0].id)
+        run.results[0].status = .failed
+        run.results[0].fieldAssertionResults = [
+            .init(assertion: .init(pointer: "/city"), passed: false, actualJSON: nil, explanation: "Missing city")
+        ]
+        #expect(RunReportPresentation(run: run).shortTextCheck == nil)
+        run.results[0].fieldAssertionResults = nil
+        run.results[0].errorMessage = "Subject interrupted"
+        #expect(RunReportPresentation(run: run).shortTextCheck == nil)
+    }
+
     @Test func missingAndCancelledSamplesCannotLookPassed() {
         var run = fixture()
         run.plannedSampleCount = 2

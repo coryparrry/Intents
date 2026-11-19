@@ -4,6 +4,7 @@ enum EvaluationStarterPack: String, CaseIterable, Identifiable, Sendable {
     case structuredExtraction
     case groundedAnswers
     case conversationBehaviour
+    case firstCheck
 
     var id: Self { self }
 
@@ -12,6 +13,7 @@ enum EvaluationStarterPack: String, CaseIterable, Identifiable, Sendable {
         case .structuredExtraction: "Structured extraction"
         case .groundedAnswers: "Grounded answers"
         case .conversationBehaviour: "Conversation behaviour"
+        case .firstCheck: "First model check"
         }
     }
 
@@ -23,6 +25,8 @@ enum EvaluationStarterPack: String, CaseIterable, Identifiable, Sendable {
             "Semantic checks against short verified references. It catches unsupported claims, but a human still approves references and baselines."
         case .conversationBehaviour:
             "Multi-turn instruction retention and correction cases. It does not simulate long production histories or tool side effects."
+        case .firstCheck:
+            "One prompt and one text check. Run it to see the model’s answer and why it passed or failed."
         }
     }
 
@@ -32,7 +36,20 @@ enum EvaluationStarterPack: String, CaseIterable, Identifiable, Sendable {
         case .structuredExtraction: structuredExtractionSuite()
         case .groundedAnswers: groundedAnswersSuite()
         case .conversationBehaviour: conversationSuite()
+        case .firstCheck: firstCheckSuite()
         }
+    }
+
+    /// Creates a single local model check with a visible expected answer and no AI judge.
+    private func firstCheckSuite() -> EvaluationSuite {
+        var suite = EvaluationSuite()
+        suite.name = title
+        suite.instructions = ""
+        suite.scoringMode = .exactMatch
+        suite.cases = [
+            EvaluationCase(name: "Capital of France", prompt: "Reply with only the capital of France.", expected: "Paris")
+        ]
+        return suite
     }
 
     /// Builds receipt examples with generated JSON fields and deterministic value assertions; review-mode assertions supply scores.

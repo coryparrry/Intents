@@ -216,7 +216,7 @@ import Testing
         #expect(recovered.appLaunchArguments == ["-TestMode", "value with spaces"])
     }
 
-    /// Marks older saved verdicts stale when startup flags change, retaining explicit recorded argument precedence.
+    /// Labels reopened verdicts by launch arguments and build evidence while retaining the historical pass.
     @Test(arguments: [(nil, nil), (nil, ["-Saved"]), ([], ["-Ignored"])] as [([String]?, [String]?)])
     func savedRunArgumentFallbackDetectsChangedStartupConditions(recorded: [String]?, frozen: [String]?) throws {
         let root = try temporaryRoot()
@@ -250,11 +250,25 @@ import Testing
         #expect(reopened.state == .passed)
         let expected = recorded ?? frozen ?? []
         studio.appLaunchArgumentsText = expected.joined(separator: "\n")
-        #expect(!studio.isStale(reopened))
+        #expect(studio.resultTitle(reopened) == "App build unverified · Passed")
         studio.appLaunchArgumentsText = (expected + ["-Changed"]).joined(separator: "\n")
-        #expect(studio.isStale(reopened))
+        #expect(studio.resultTitle(reopened) == "Out of date · Passed")
         studio.appLaunchArgumentsText = expected.joined(separator: "\n")
-        #expect(!studio.isStale(reopened))
+        #expect(studio.resultTitle(reopened) == "App build unverified · Passed")
+
+        let testedBuild = ["bundlePath": "/Fixture.app", "sha256": String(repeating: "a", count: 64)]
+        payload["productIdentity"] = testedBuild
+        try JSONSerialization.data(withJSONObject: payload).write(to: root.appending(path: "run.json"))
+        let sameBuild = try JSONDecoder().decode(MacIntentProductIdentity.self, from: JSONEncoder().encode(testedBuild))
+        var rebuilt = testedBuild
+        rebuilt["sha256"] = String(repeating: "b", count: 64)
+        let differentBuild = try JSONDecoder().decode(MacIntentProductIdentity.self, from: JSONEncoder().encode(rebuilt))
+        studio.load(catalog(productIdentity: differentBuild))
+        try studio.openRun(root)
+        let historical = try #require(studio.run?.scenarios.first)
+        #expect(studio.resultTitle(historical) == "Previous app build · Passed")
+        studio.load(catalog(productIdentity: sameBuild))
+        #expect(studio.resultTitle(historical) == "Passed")
     }
 
     /// Creates only synthetic per-test storage with no user preferences or credentials.
@@ -270,8 +284,9 @@ import Testing
     }
 
     /// Provides a catalog identity without opening or executing an app.
-    private func catalog() -> MacIntentCatalog {
-        .init(bundleIdentifier: "dev.intents.store-test", appURL: URL(filePath: "/Fixture.app"), actions: [])
+    private func catalog(productIdentity: MacIntentProductIdentity? = nil) -> MacIntentCatalog {
+        .init(bundleIdentifier: "dev.intents.store-test", appURL: URL(filePath: "/Fixture.app"), actions: [],
+              productIdentity: productIdentity)
     }
 
     /// Creates a minimal authored scenario whose text can be edited independently of its saved revision.
