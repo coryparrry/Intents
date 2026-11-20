@@ -515,6 +515,31 @@ mismatch. Record where guidance was needed and whether the participant can
 reopen both runs. The hosted acceptance tests cover the same path with scripts
 and a loopback provider. They cannot measure human comprehension.
 
+## Local Computer Use walkthrough, 20 November
+
+Built the review worktree at `9a0d736c3` with Xcode 27.3 and opened the Debug
+app with an empty, temporary workspace. Used Computer Use to click and type
+in the app. All three runs used Apple Intelligence on the Mac.
+
+- **First result.** From Overview, **Create example suite** opened the Capital
+  of France case with its prompt and expected answer ready to run. **Run**
+  showed progress and opened the report when it finished. The expected answer
+  and model response were both `Paris`, and the report explained the pass.
+- **Failure and recovery.** Changing the expected answer to `Lyon` marked the
+  earlier result out of date. The next run returned `Paris` and failed. The
+  failure report showed both values, explained the exact-text mismatch, and
+  displayed **Edit case** with rerun guidance without scrolling. The shortcut
+  opened the same case. Correcting the expected answer to `Paris` and selecting
+  **Run** produced a separate passing report.
+- **Return to saved work.** After quitting and reopening the app, Overview and
+  the sidebar showed all three runs. Reopened the failed report from Overview
+  and the corrected report from the sidebar. Each kept its original verdict
+  and expected answer.
+
+The walkthrough found no blocker in this path. It adds direct evidence from the
+running app. Signed installation, upgrade, and an unaided first-time user trial
+remain open.
+
 ## Product assessment and evidence limits
 
 Intents gives developers a reason to return when changing a prompt, model, tool,
@@ -528,9 +553,9 @@ return to it. A developer can start with one scored case and add either workflow
 when their need changes.
 
 GitHub verified the first-use path and result layout with a repeatable fixture.
-The live Apple Intelligence run verified the starter case and saved verdict
-through the app's native store without opening a window. First-time user
-comprehension remains unverified.
+The local Computer Use walkthrough verified the same user-facing path with
+Apple Intelligence and reopened both outcomes after a restart. First-time
+user comprehension remains unverified.
 
 This review covers the native app and its direct handoffs to the connector,
 workers, model providers, and test runners. It does not qualify the separate
