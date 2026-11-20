@@ -500,12 +500,10 @@ Checksum, Developer ID and notarization, arm64 metadata, and the Sparkle
 installer signature passed. The disk image was mounted read-only for
 inspection and detached after checking the bundle on disk.
 
-GitHub has no signed release candidate for this PR. The existing protected
-packaging job requires an immutable draft release on the default branch and
-publishes as part of the same job. The package-only local script requires a
-clean matching release tag and configured signing and notarization credentials.
-Those prerequisites are absent here. An installer check and a signed upgrade
-from v1.6.0 remain open.
+The hosted packaging job requires an immutable draft release on the default
+branch and publishes as part of that job. The private qualification below
+used the local Developer ID identity, App Store Connect notarization and
+Sparkle account to build from the verified PR commit separately.
 [Release process](docs/releasing.md#L13)
 
 An unaided first-use trial still requires people who have not used Intents.
@@ -537,8 +535,44 @@ in the app. All three runs used Apple Intelligence on the Mac.
   and expected answer.
 
 The walkthrough found no blocker in this path. It adds direct evidence from the
-running app. Signed installation, upgrade, and an unaided first-time user trial
-remain open.
+running app. The signed installation and upgrade were checked separately below.
+An unaided first-time user trial remains open.
+
+## Private signed installer and upgrade, 20 November
+
+Built the arm64 Intents 1.7.0 candidate, build 171, from the reviewed
+`017ac7bc9f48d817c83dc7c25f845f9cb9316962` source. Xcode archived and exported
+the Release app with the existing Developer ID Application identity. Apple
+accepted the private notarization submission and the ticket was stapled to the
+disk image. The repository's installer verifier confirmed the checksum,
+expected signing team, Gatekeeper acceptance, source SHA, arm64 executable,
+Applications shortcut and Sparkle signature.
+[Private installer](dist/release-qualification/1.7.0-build-171/Intents-1.7.0-macOS-arm64.dmg)
+
+The disk image SHA-256 is
+`c0383272a996fcf8bd1b954b00b467f4683e9e743a6adcbe8e61ea0ff5a11970`.
+
+- **Clean install.** Used Computer Use in Finder to copy the signed candidate
+  from its mounted disk image to an empty temporary installation folder.
+  Gatekeeper accepted the installed copy. Opened it with empty app data,
+  selected **Create example suite**, and ran it with Apple Intelligence.
+  The report recorded a passing `Paris` response and its explanation.
+- **In-place upgrade.** Installed the published 1.6.0 build 157 into a separate
+  temporary folder through Finder. Saved a suite named **Upgrade check from
+  1.6.0** and ran it. Sparkle downloaded the same signed candidate from a
+  loopback-only appcast. **Check for Updates** showed 1.7.0 ready to install.
+  Selected **Install on Quit** and quit Intents. The existing app path then
+  contained 1.7.0 build 171 with the same code signature as the clean install.
+  Gatekeeper accepted it.
+- **Saved work after upgrade.** Reopened the updated app with the same
+  disposable app data folder. The original v1.6.0 suite and passing report
+  reopened with their original evidence, then a fresh run passed and appeared
+  beside the earlier run.
+
+Used a controlled reopen after **Install on Quit** to keep app data isolated.
+The separate **Install and Relaunch** action and the public feed remain
+unverified. The before and after app preferences matched. The installer
+stayed local and all UI interaction used Computer Use.
 
 ## Product assessment and evidence limits
 
