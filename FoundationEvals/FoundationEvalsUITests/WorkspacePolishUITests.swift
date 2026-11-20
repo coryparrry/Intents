@@ -126,6 +126,11 @@ final class WorkspacePolishUITests: XCTestCase {
         app.radioGroups["Batch workspace"].radioButtons["Reports"].click()
         let more = app.buttons["Show more cohorts"]
         XCTAssertTrue(more.waitForExistence(timeout: 20), app.debugDescription)
+        let sourceRate = app.staticTexts["Batch source pass rate"]
+        try UITestStorage.waitFor(sourceRate, in: app, timeout: 5)
+        let sourceRateText = sourceRate.label + (sourceRate.value as? String ?? "")
+        XCTAssertTrue(sourceRateText.contains("Source pass rate unavailable until every planned response has a pass or fail."), sourceRateText)
+        XCTAssertFalse(sourceRateText.contains("0.0%"), sourceRateText)
         let target = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "task=segment-11", "task=segment-11")).firstMatch
         XCTAssertFalse(target.exists)
         more.click()

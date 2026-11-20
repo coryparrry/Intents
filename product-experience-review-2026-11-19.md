@@ -374,6 +374,89 @@ coverage, changed-declaration checks and the proposed release notes passed.
 Portable Swift and production inputs match the prior passing GitHub run. The
 complete diff selects all ordinary CI and the same three GitHub desktop shards.
 
+The [GitHub run](https://github.com/coryparrry/Intents/actions/runs/44616159230)
+passed on PR head `a4da8f5b9`. All five required checks passed. The desktop
+shards passed 61 tests with zero failures. The desktop suite ran exclusively
+on GitHub.
+
+- [Runs and traces](https://github.com/coryparrry/Intents/actions/runs/44616159230/job/135888995368)
+  passed 25 tests. The new failure-and-rerun test passed in 76.762 seconds.
+  It checked the failure reason and guidance, opened the original case,
+  clarified the prompt without changing the expected answer, and reran.
+  Reopening the original run still showed `Paris.` and its failed verdict.
+  The first-use passing regression also passed.
+- I inspected both 1,000 × 752
+  [hosted screenshots](https://github.com/coryparrry/Intents/actions/runs/44616159230/artifacts/14577027269).
+  The failed report shows the expected `Paris`, actual `Paris.`, the exact
+  match explanation, the edit guidance, and **Edit case** above the results
+  table. The corrected report shows a pass and both runs in the sidebar.
+- [Suite editor](https://github.com/coryparrry/Intents/actions/runs/44616159230/job/135888995194)
+  passed 19 tests. [Native Intents and review](https://github.com/coryparrry/Intents/actions/runs/44616159230/job/135888995410)
+  passed 17 tests.
+
+The worktree guide also explains why **Edit case** can be absent for a case
+that still exists after scoring changes. Open **Cases** to edit it manually.
+This help-text clarification stays with the running log while GitHub tests
+the app commit. [Run guide](docs/wiki/Runs-and-results.md#L30)
+
+## Release readiness follow-up, 20 November
+
+The hosted batch screenshot showed **Pass rate Unscored** next to a **0.0%**
+source pass rate for a batch with twelve unscored responses. The desktop report
+now explains when the source pass rate is unavailable. A fully scored batch
+where every source failed still shows 0.0% and its interval. The displayed
+summary changes while the evidence, export, and release gate rules retain
+their existing definitions.
+[Source rate display](FoundationEvals/FoundationEvals/Views/ProductionResultDetailView.swift#L96)
+
+The run guide now explains when **Edit case** is available and points to
+**Cases** after a scoring change. That addresses the open documentation
+review finding on PR #202.
+[Run guide](docs/wiki/Runs-and-results.md#L30)
+
+### Build and first check
+
+- Xcode 27.3 `build-for-testing` built the app, native tests and desktop UI test
+  bundles. A command-line runner linked to the app's Debug build passed all
+  13 selected native tests, including the missing-score and genuine-zero cases.
+  An independent review found no issue with the rate display or its regression
+  coverage.
+- A separate command-line harness ran the app's first-check suite through
+  `EvaluationStore` in a temporary workspace on an Apple Intelligence Mac.
+  The real on-device model returned `Paris`. The app scored it as a pass,
+  recorded the explanation “Exact match after trimming whitespace.” and
+  reopened the saved result with the same verdict. Desktop UI execution is
+  reserved for GitHub. The app build used for this check was ad hoc signed.
+- The complete branch diff selects all ordinary CI, including `FoundationEvalsTests`,
+  all portable Swift suites, production package and CLI checks, and the
+  `native-intents+review`, `runs+traces` and `suite-editor` desktop shards.
+  The routed Python checks passed 396 tests and the macOS script selection
+  passed 13. Documentation checks found 2,825 of 2,825 functions documented
+  and 45 of 45 changed declarations documented. The 24 detector tests,
+  workflow lint, shell lint, example syntax check, website checks with 40 tests,
+  release-note validation, and `git diff --check` also passed. The previous
+  hosted portable Swift and production checks still apply before the push
+  because their source, test and CI inputs were unchanged. GitHub reruns the
+  full selection for the new commit.
+
+### Release checks
+
+The public installer is still [v1.6.0](https://github.com/coryparrry/Intents/releases/tag/v1.6.0).
+GitHub has no signed release candidate for this PR. The existing protected
+packaging job requires an immutable draft release on the default branch and
+publishes as part of the same job. The package-only local script requires a
+clean matching release tag and configured signing and notarization credentials.
+Those prerequisites are absent here. An installer check and a signed upgrade
+from v1.6.0 remain open.
+[Release process](docs/releasing.md#L13)
+
+An unaided first-use trial still requires people who have not used Intents.
+Ask each participant to open the signed build, find and run the example,
+explain the verdict in their own words, and recover from an exact-text
+mismatch. Record where guidance was needed and whether the participant can
+reopen both runs. The hosted acceptance tests cover the same path with scripts
+and a loopback provider. They cannot measure human comprehension.
+
 ## Product assessment and evidence limits
 
 Intents gives developers a reason to return when changing a prompt, model, tool,
@@ -386,15 +469,15 @@ product because they answer a distinct question and save the evidence needed to
 return to it. A developer can start with one scored case and add either workflow
 when their need changes.
 
-GitHub verified the first-use path and the result layout with a repeatable
-fixture. First-time user comprehension and a live run of the example on an
-Apple Intelligence Mac remain unverified.
+GitHub verified the first-use path and result layout with a repeatable fixture.
+The live Apple Intelligence run verified the starter case and saved verdict
+through the app's native store without opening a window. First-time user
+comprehension remains unverified.
 
 This review covers the native app and its direct handoffs to the connector,
 workers, model providers, and test runners. It does not qualify the separate
 standalone plugin UI, public website, CLI distribution, or release/updater
-artifact. The installed or released app was not changed. Live on-device/cloud
-models, external judges, Core AI resources, physical app runners, Direct Action
-and live Siri, and provider privacy delivery remain unverified. The review used
-synthetic workspaces and fixtures. Workspace-wide backup and restore was
-source-traced only.
+artifact. The review used synthetic workspaces and fixtures. Provider checks
+beyond the live starter case, external judges, Core AI resources, physical app
+runners, Direct Action, live Siri, and provider privacy delivery remain
+unverified. Workspace-wide backup and restore was source-traced only.

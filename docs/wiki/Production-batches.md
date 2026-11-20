@@ -39,7 +39,7 @@ A required baseline needs explicit approval of complete, eligible, current saved
 
 If the suite has critical cases, imported examples must map them through the example ID, source ID, or `metadata.suiteCaseID`. Missing mappings block job creation. Every mapped critical source must pass every trial.
 
-Missing, unscored, uncertain, or required cost/latency evidence prevents qualification. Cohort and critical-source gates apply the frozen policy. Distinct-source confidence describes this dataset; curated examples do not establish a production failure rate.
+Missing, unscored, uncertain, or required cost/latency evidence prevents qualification. Cohort and critical-source gates apply the frozen policy. The desktop report shows a source pass rate and confidence interval once every planned response has a pass or fail. Those figures describe this dataset. Curated examples cannot establish a production failure rate.
 
 ## Workers and schedules
 

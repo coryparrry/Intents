@@ -215,7 +215,35 @@ struct ProductionReviewEvidenceTests {
         for id in [pending.id, template.id, errors.id] {
             let report = try storage.report(jobID: id)
             #expect(ProductionResultPresentation.baselineComparison(before: 0.9, after: report.counts.passRate).contains("Comparison unavailable"))
+            #expect(ProductionResultPresentation.sourcePassRateSummary(report).contains("unavailable"))
         }
+    }
+
+    /// Separates batches awaiting scores from batches that have a measured zero source pass rate.
+    @Test func sourcePassRateRequiresAllPlannedScoresButKeepsMeasuredZero() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "source-rate-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (store, job, records) = try await reviewFixture(root: root)
+        let storage = try #require(store.storage)
+        let unscored = try storage.report(jobID: job.id)
+        #expect(unscored.counts.sourcePassRate == 0)
+        let unavailable = ProductionResultPresentation.sourcePassRateSummary(unscored)
+        #expect(unavailable.contains("unavailable") && !unavailable.contains("0.0%"))
+
+        for (index, record) in records.enumerated() {
+            store.selectedRecord = record
+            let write = try #require(store.appendReview(action: .label, reviewer: "A", assignee: "", outcome: .failed,
+                note: "Verified failed response", tags: "", verifiedOutput: "", verifiedCost: nil))
+            await write.value
+            let report = try storage.report(jobID: job.id)
+            let summary = ProductionResultPresentation.sourcePassRateSummary(report)
+            if index + 1 == records.count {
+                #expect(summary.contains("Source pass rate 0.0%") && summary.contains("95% interval"))
+            } else {
+                #expect(summary.contains("unavailable"))
+            }
+        }
+        await store.closeAndWait()
     }
 
     /// A stopped-writer directory snapshot restores every independent evidence root and reloads native records without merging stores.
