@@ -469,6 +469,22 @@ note entries passed revalidation. Documentation coverage was 2,825 of 2,825
 functions and 48 of 48 changed declarations. The app and its native unit,
 portable Swift and production test inputs did not change in the fixture update.
 
+The [GitHub rerun](https://github.com/coryparrry/Intents/actions/runs/44792915456)
+on `017ac7bc9f48d817c83dc7c25f845f9cb9316962` passed all 61 desktop UI tests.
+The exact PR head had five of five required checks green and zero unresolved
+review threads.
+
+- The [runs and traces group](https://github.com/coryparrry/Intents/actions/runs/44792915456/artifacts/14659067462)
+  passed 25 tests, including both first-use tests. The recovery test verified
+  mismatch guidance, the edited case, the successful rerun, and the original
+  failure in history.
+- The [native intents and review group](https://github.com/coryparrry/Intents/actions/runs/44792915456/artifacts/14659490389)
+  passed 17 tests. Both fixed-width tests passed. The inspected screenshots
+  show the saved review in Patterns at 1,000 points and the selected response
+  in the report. The captured report widths were 1,000 and 1,180 pixels.
+- The [suite-editor group](https://github.com/coryparrry/Intents/actions/runs/44792915456/artifacts/14656904485)
+  passed 19 tests, including the unscored batch rate message.
+
 ### Release checks
 
 An unsigned Xcode 27.3 Release archive built from a source export of
@@ -478,6 +494,12 @@ was arm64. This archive used the project version. The official packaging
 workflow supplies the version from its release tag.
 
 The public installer is still [v1.6.0](https://github.com/coryparrry/Intents/releases/tag/v1.6.0).
+The repository's installer verifier checked the downloaded disk image and its
+contents against release source `cb006ec8e4f4b6c2b2d34375b6c87d2f98ef4221`.
+Checksum, Developer ID and notarization, arm64 metadata, and the Sparkle
+installer signature passed. The disk image was mounted read-only for
+inspection and detached after checking the bundle on disk.
+
 GitHub has no signed release candidate for this PR. The existing protected
 packaging job requires an immutable draft release on the default branch and
 publishes as part of the same job. The package-only local script requires a
