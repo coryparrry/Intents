@@ -20,10 +20,7 @@ public final class SiriStudioRunner {
         let scenarios = try SiriStudioSource.selection(in: document, scenarioIDs)
         let directory = configuration.outputDirectory
         let files = FileManager.default
-        try files.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        guard try files.contentsOfDirectory(atPath: directory.path).isEmpty else {
-            throw MacIntentTestingError("Choose an empty Siri Studio run directory.")
-        }
+        try Self.prepareOutputDirectory(directory)
         let logURL = directory.appendingPathComponent("run.log")
         files.createFile(atPath: logURL.path, contents: nil, attributes: [.posixPermissions: 0o600])
         let log = try FileHandle(forWritingTo: logURL)
@@ -168,7 +165,7 @@ public final class SiriStudioRunner {
         try session.begin()
         defer { session.end() }
         let files = FileManager.default
-        try files.createDirectory(at: outputDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try Self.prepareOutputDirectory(outputDirectory)
         let logURL = outputDirectory.appendingPathComponent("import.log")
         files.createFile(atPath: logURL.path, contents: nil)
         let log = try FileHandle(forWritingTo: logURL)
@@ -196,6 +193,28 @@ public final class SiriStudioRunner {
             })
         try record.write(to: outputDirectory)
         return record
+    }
+
+    /// Rejects populated, linked or ACL-bearing directories before making the evidence destination private.
+    private static func prepareOutputDirectory(_ directory: URL) throws {
+        let files = FileManager.default
+        try files.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let values = try directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard values.isDirectory == true, values.isSymbolicLink != true,
+              try files.contentsOfDirectory(atPath: directory.path).isEmpty else {
+            throw MacIntentTestingError("Choose an empty Siri Studio run directory without a symbolic link.")
+        }
+        if let acl = acl_get_file(directory.path, ACL_TYPE_EXTENDED) {
+            defer { acl_free(UnsafeMutableRawPointer(acl)) }
+            var entry: acl_entry_t?
+            guard acl_valid(acl) == 0,
+                  acl_get_entry(acl, Int32(ACL_FIRST_ENTRY.rawValue), &entry) == -1, errno == EINVAL else {
+                throw MacIntentTestingError("Choose a Siri Studio output folder without extended access permissions (ACLs).")
+            }
+        } else if errno != ENOENT {
+            throw MacIntentTestingError("Could not verify access permissions for the Siri Studio output folder.")
+        }
+        try files.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
     }
 
     /// Reads the chosen Xcode's version and checks its actual Mac developer framework.

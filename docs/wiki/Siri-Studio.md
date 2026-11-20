@@ -133,6 +133,9 @@ revision, and target app against the export. Re-export and rerun tests whose
 attachments lack a content fingerprint. **Open saved run…** accepts the
 directory containing a `run.json` of up to 64 MiB. Runs and imports require an
 empty output directory, which Studio makes private before writing evidence.
+Choose a new folder without symbolic links or extended access permissions
+(ACLs). The 64 MiB limit also applies when saving a new run record, so a saved
+record can be reopened later.
 Run records and scenario documents are under
 `~/Library/Application Support/Intents/SiriStudio/`.
 Verdict-only export omits the authored and observed conversation. The separate

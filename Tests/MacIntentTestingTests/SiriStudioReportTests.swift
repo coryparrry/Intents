@@ -187,6 +187,60 @@ struct SiriStudioReportTests {
         #expect(facts.osBuild == "macOS 27.3 (26C)")
     }
 
+    /// Accepts a valid record at the documented byte limit and rejects overflow before JSON decoding.
+    @Test func savedRunInputIsBoundedAt64MiB() throws {
+        let files = FileManager.default
+        let folder = files.temporaryDirectory.appending(path: "siri-run-size-\(UUID())")
+        try files.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: folder) }
+        let record = SiriStudioRunRecord(document: .init(bundleIdentifier: "dev.intents.test", scenarios: []),
+            productIdentity: nil, xcodeBuild: nil, osBuild: "Fixture", startedAt: .now, endedAt: .now,
+            sourceURL: nil, resultBundleURL: nil, logURL: folder.appending(path: "run.log"), scenarios: [])
+        try record.write(to: folder)
+        let url = folder.appending(path: "run.json")
+        let file = try FileHandle(forWritingTo: url)
+        defer { try? file.close() }
+        let size = try file.seekToEnd()
+        let limit = 64 * 1024 * 1024
+        let padding = Data(repeating: 0x20, count: 1024 * 1024)
+        var remaining = limit - Int(size)
+        while remaining > 0 {
+            let count = min(remaining, padding.count)
+            try file.write(contentsOf: padding.prefix(count))
+            remaining -= count
+        }
+        #expect(try SiriStudioRunRecord.read(from: folder).document == record.document)
+        try file.write(contentsOf: Data([0x20]))
+        #expect(throws: MacIntentTestingError.self) { try SiriStudioRunRecord.read(from: folder) }
+        try file.truncate(atOffset: UInt64(limit + 1))
+        try file.seek(toOffset: 0)
+        try file.write(contentsOf: Data([0xFF]))
+        #expect(throws: MacIntentTestingError.self) { try SiriStudioRunRecord.read(from: folder) }
+    }
+
+    /// Rejects aggregate output above the read limit before creating or replacing a saved run.
+    @Test func savedRunWriterPreservesEvidenceWhenAggregateSizeExceedsLimit() throws {
+        let files = FileManager.default
+        let folder = files.temporaryDirectory.appending(path: "siri-run-write-size-\(UUID())")
+        try files.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: folder) }
+        let record = SiriStudioRunRecord(document: .init(bundleIdentifier: "dev.intents.test", scenarios: []),
+            productIdentity: nil, xcodeBuild: nil, osBuild: "Fixture", startedAt: .now, endedAt: .now,
+            sourceURL: nil, resultBundleURL: nil, logURL: folder.appending(path: "run.log"), scenarios: [])
+        try record.write(to: folder)
+        let url = folder.appending(path: "run.json")
+        let saved = try Data(contentsOf: url)
+        let oversized = SiriStudioRunRecord(document: record.document, productIdentity: nil, xcodeBuild: nil,
+            osBuild: String(repeating: "x", count: 64 * 1024 * 1024), startedAt: .now, endedAt: .now,
+            sourceURL: nil, resultBundleURL: nil, logURL: record.logURL, scenarios: [])
+        #expect(throws: MacIntentTestingError.self) { try oversized.write(to: folder) }
+        #expect(try Data(contentsOf: url) == saved)
+        #expect(try SiriStudioRunRecord.read(from: folder).document == record.document)
+        try files.removeItem(at: url)
+        #expect(throws: MacIntentTestingError.self) { try oversized.write(to: folder) }
+        #expect(!files.fileExists(atPath: url.path))
+    }
+
     /// Constructs the two-turn scenario shared by the transcript examples.
     private func scenario(repeats: Int) -> SiriStudioScenario {
         .init(id: id, name: "Fixture", repeatCount: repeats, turns: [

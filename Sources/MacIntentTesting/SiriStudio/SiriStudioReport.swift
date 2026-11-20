@@ -197,6 +197,9 @@ public struct SiriStudioScenarioResult: Codable, Sendable, Equatable, Identifiab
 
 /// The frozen input, verdicts and local evidence paths for a Studio run.
 public struct SiriStudioRunRecord: Codable, Sendable {
+    /// Keeps successfully saved records within the reader's documented input bound.
+    private static let maximumSavedRunBytes = 64 * 1024 * 1024
+
     public let document: SiriStudioDocument
     public let productIdentity: MacIntentProductIdentity?
     public let xcodeBuild: String?
@@ -216,9 +219,14 @@ public struct SiriStudioRunRecord: Codable, Sendable {
             ?? (states.isEmpty ? .blocked : .passed)
     }
 
-    /// Reopens a saved run while preventing legacy or mismatched evidence from retaining a current verdict.
+    /// Reads at most 64 MiB and prevents legacy or mismatched evidence from retaining a current verdict.
     public static func read(from directory: URL) throws -> Self {
-        let record = try JSONDecoder().decode(Self.self, from: Data(contentsOf: directory.appendingPathComponent("run.json")))
+        let file = try FileHandle(forReadingFrom: directory.appendingPathComponent("run.json"))
+        defer { try? file.close() }
+        let limit = Self.maximumSavedRunBytes
+        let bytes = try file.read(upToCount: limit + 1) ?? Data()
+        guard bytes.count <= limit else { throw MacIntentTestingError("Saved Siri Studio runs must be at most 64 MiB.") }
+        let record = try JSONDecoder().decode(Self.self, from: bytes)
         let scenarios = record.scenarios.map { result in
             guard result.state != .blocked && result.state != .cancelled else { return result }
             let authored = record.document.scenarios.first { $0.id == result.id }
@@ -240,11 +248,15 @@ public struct SiriStudioRunRecord: Codable, Sendable {
         return reopened
     }
 
-    /// Persists the immutable run snapshot and evidence in a single atomic write.
+    /// Atomically persists a reopenable run snapshot, leaving existing evidence untouched if it exceeds the reader's bound.
     func write(to directory: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
-        try encoder.encode(self).write(to: directory.appendingPathComponent("run.json"), options: .atomic)
+        let bytes = try encoder.encode(self)
+        guard bytes.count <= Self.maximumSavedRunBytes else {
+            throw MacIntentTestingError("Saved Siri Studio runs must be at most 64 MiB.")
+        }
+        try bytes.write(to: directory.appendingPathComponent("run.json"), options: .atomic)
     }
 }
 
