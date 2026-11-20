@@ -547,7 +547,8 @@ accepted the private notarization submission and the ticket was stapled to the
 disk image. The repository's installer verifier confirmed the checksum,
 expected signing team, Gatekeeper acceptance, source SHA, arm64 executable,
 Applications shortcut and Sparkle signature.
-[Private installer](dist/release-qualification/1.7.0-build-171/Intents-1.7.0-macOS-arm64.dmg)
+The private installer is retained in the local build output under
+`dist/release-qualification/1.7.0-build-171/`.
 
 The disk image SHA-256 is
 `c0383272a996fcf8bd1b954b00b467f4683e9e743a6adcbe8e61ea0ff5a11970`.
