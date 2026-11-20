@@ -1,5 +1,54 @@
 # Changelog
 
+## [1.7.0](https://github.com/coryparrry/Intents/compare/v1.6.0...v1.7.0) (2026-11-20)
+
+
+### Features
+
+* author Siri conversations for a built macOS app in App Intents, generate evaluation tests and import their results; live execution requires the documented macOS 27.3, Xcode 27.3 and Siri setup ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* use Siri Studio's Setup page to detect Xcode and signing and retain app-specific test launch arguments under Advanced ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+
+
+### Bug Fixes
+
+* **accessibility:** name the batch dataset import controls so VoiceOver can identify each field and switch ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* **batches:** keep batch settings available when job creation fails so you can correct the form and retry ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* **batches:** keep dataset import settings when validation fails so you can correct the file and retry ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* **batches:** open the saved job after creating a batch from a dataset ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* **batches:** show when the source pass rate is unavailable while responses still lack a pass or fail ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* **cases:** keep the latest suite verdicts visible after running a partial instruction experiment ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* disclose omitted import rows and retain the selected file and mappings when continuing into a new blank suite ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* follow a four-step App Intents setup guide, create an editable example from your app's actions and complete the detected Mac or signing setup steps before running ([b5715c1](https://github.com/coryparrry/Intents/commit/b5715c14835460e783ef5cceb35bd290d8fe2c92))
+* identify scheduled batch templates and their next due state and explain when a polling worker or schedule tick is required ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* mark saved Siri results out of date when launch arguments change and reject verdicts for changed scenarios or a different app; regenerate older Siri evaluation tests to include the required scenario identity ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* **onboarding:** start from an editable model check, see why Run is disabled, and open the runnable suite from an empty trace list ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* open a review pattern on its matching human-confirmed failures while allowing the verdict filter to be broadened deliberately ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* open Direct Action tests from App Intents &gt; Advanced &gt; Test an action directly, with three setup steps, supported-input guidance and visible validation errors ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* organize saved runs and comparisons under Runs with separate Cases, Review and Setup pages and restore the native macOS window backdrop ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* reach Direct Action testing from the App Intents guide with Test an action without Siri ([b5715c1](https://github.com/coryparrry/Intents/commit/b5715c14835460e783ef5cceb35bd290d8fe2c92))
+* read pass-rate hover details in Overview and run history without coloured glass artefacts obscuring the text ([b5715c1](https://github.com/coryparrry/Intents/commit/b5715c14835460e783ef5cceb35bd290d8fe2c92))
+* recover unsaved Siri scenarios and launch arguments after reopening, keep save errors visible with retry and confirm removal of a turn and its expectations ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* **reports:** keep the release report in sync with the selected run and its current evidence ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* **reports:** open the original case from a failed text check and explain what to change before rerunning ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* **reports:** see the expected answer, response, and scoring explanation together after a short text check ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* restore archived projects and suites from Manage projects without losing their saved runs and reviews ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* retain unfinished batch review fields across navigation and reopening, including newer edits made while an action completes ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* return from Siri Studio using Back to Direct Action in the toolbar, even from Results or with the setup guide hidden, and keep edited conversations when switching modes ([b18903b](https://github.com/coryparrry/Intents/commit/b18903b7b7f4927120a3e9fbd79ad14e268f2d87))
+* run or export a finished Siri conversation while other conversations remain unfinished; all-conversation commands still validate every draft ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* show scored and saved coverage for incomplete runs and withhold native, plugin and batch comparisons when the evidence cannot support a delta ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* **siri:** keep Siri run and import evidence private and refuse to overwrite existing evidence; choose a fresh folder if extended access permissions are reported ([c084612](https://github.com/coryparrry/Intents/commit/c0846129cab32e9005655ec69e57451bb930400c))
+* **siri:** label saved results from an earlier app build or without verified build identity ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* **siri:** reject oversized Siri run records before saving or opening them so saved evidence can be reopened ([c084612](https://github.com/coryparrry/Intents/commit/c0846129cab32e9005655ec69e57451bb930400c))
+* **siri:** reopen saved conversations after Studio preserves a corrupt autosave ([f822d56](https://github.com/coryparrry/Intents/commit/f822d56295e2cf2fd70439a06731adf1ea8493f9))
+* start blank projects and suites without an example case and allow naming them before adding runnable cases ([8e4cf54](https://github.com/coryparrry/Intents/commit/8e4cf545629b5cff00c51ae3e15cde0844b10f10))
+* use the workspace's page animations when switching between Siri Studio and Direct Action or between Studio tabs, while respecting Reduce Motion ([b23167a](https://github.com/coryparrry/Intents/commit/b23167aa3a40bf3b21d4b1a4409936cc186452c4))
+
+
+### Performance
+
+* reduce CPU work when opening workspace overviews and searching or selecting saved outputs in large run histories ([e7b0122](https://github.com/coryparrry/Intents/commit/e7b01223d4fdbd53a57d134f1146b4c1d874b433))
+* reduce repeated result processing when checking instruction-improvement comparisons ([e7b0122](https://github.com/coryparrry/Intents/commit/e7b01223d4fdbd53a57d134f1146b4c1d874b433))
+
 ## [1.6.0](https://github.com/coryparrry/Intents/compare/v1.5.2...v1.6.0) (2026-11-01)
 
 ### Features
