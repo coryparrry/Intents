@@ -72,6 +72,96 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         XCTAssertEqual(runStatus.label, "Completed")
     }
 
+    /// Starts from a new workspace and verifies the expected answer, actual answer, and verdict are visible together.
+    @MainActor
+    func testFirstModelCheckExplainsTheSavedResult() throws {
+        try runFirstModelCheck(endpointPath: "/first-check")
+        try checkFirstResult(passed: true, response: "Paris")
+        capture("first-model-check")
+    }
+
+    /// Recovers from an exact-text mismatch by editing the original case and rerunning without changing its expected answer.
+    @MainActor
+    func testFirstModelCheckFailureGuidesEditAndRerun() throws {
+        try runFirstModelCheck(endpointPath: "/first-check-retry")
+        try checkFirstResult(passed: false, response: "Paris.")
+        try checkReportText("Failed check next step", contains: "including punctuation")
+        try checkReportText("Failed check next step", contains: "Correct the expected answer")
+        try checkReportText("Failed check next step", contains: "clarify the prompt. Then select Run")
+        let edit = app.buttons["Edit case"]
+        try UITestStorage.waitFor(edit, in: app, timeout: 5)
+        XCTAssertTrue(edit.isHittable, app.debugDescription)
+        capture("first-model-check-failed")
+
+        edit.click()
+        let expected = app.textViews["Scoring expected text"]
+        try UITestStorage.waitFor(expected, in: app, timeout: 5)
+        XCTAssertEqual(expected.value as? String, "Paris")
+        let prompt = app.textViews["Case prompt"]
+        try UITestStorage.waitFor(prompt, in: app, timeout: 5)
+        XCTAssertEqual(prompt.value as? String, "Reply with only the capital of France.")
+        replaceText(in: prompt, with: "Reply with exactly the word Paris without punctuation.")
+        app.buttons["Run evaluation"].click()
+        XCTAssertTrue(fixture.waitForRequest(timeout: 5), "Rerunning must send the updated prompt")
+        try UITestStorage.waitFor(app.buttons["Export Run as JSON"], in: app, timeout: 8)
+        try checkFirstResult(passed: true, response: "Paris")
+        capture("first-model-check-after-edit")
+
+        let original = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND value BEGINSWITH %@", "Sidebar run ", "0% passed")).firstMatch
+        try UITestStorage.waitFor(original, in: app, timeout: 5)
+        original.click()
+        try checkFirstResult(passed: false, response: "Paris.")
+    }
+
+    /// Opens the example from a new workspace and replaces only the hosted runner's unavailable model.
+    @MainActor
+    private func runFirstModelCheck(endpointPath: String) throws {
+        app.activate()
+        if !app.windows.firstMatch.waitForExistence(timeout: 3) {
+            app.typeKey("1", modifierFlags: .command)
+        }
+        let start = app.buttons["Create example suite"]
+        try UITestStorage.waitFor(start, in: app, timeout: 5)
+        start.click()
+        let expected = app.textViews["Scoring expected text"]
+        try UITestStorage.waitFor(expected, in: app, timeout: 5)
+        XCTAssertEqual(expected.value as? String, "Paris")
+        XCTAssertFalse(app.buttons["Export Run as JSON"].exists)
+
+        // Hosted desktops have no Apple Intelligence model. Only the provider changes.
+        configureLoopbackModel(endpointPath: endpointPath)
+        app.radioButtons["Cases"].click()
+        app.buttons["Run evaluation"].click()
+        XCTAssertTrue(fixture.waitForRequest(timeout: 5))
+        try UITestStorage.waitFor(app.buttons["Export Run as JSON"], in: app, timeout: 8)
+    }
+
+    /// Reads the decisive evidence in a saved first result without scrolling.
+    @MainActor
+    private func checkFirstResult(passed: Bool, response: String) throws {
+        for (identifier, text) in [
+            ("Evaluation result headline", passed ? "All responses passed their checks" : "The response failed its check"),
+            ("Short check expected answer", "Paris"),
+            ("Short check response", response),
+            ("Short check explanation", passed ? "Exact match after trimming whitespace." : "Response did not exactly match the expected text.")
+        ] {
+            try checkReportText(identifier, contains: text)
+        }
+    }
+
+    /// Requires report text to appear within the visible report viewport.
+    @MainActor
+    private func checkReportText(_ identifier: String, contains text: String) throws {
+        let element = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == %@ AND (label CONTAINS %@ OR value CONTAINS %@)", identifier, text, text))
+            .firstMatch
+        try UITestStorage.waitFor(element, in: app, timeout: 5)
+        let report = app.scrollViews["Run report scroll"]
+        XCTAssertTrue(report.frame.intersection(app.windows.firstMatch.frame).contains(element.frame)
+                      && !element.frame.isEmpty, "Result text must fit on screen: \(identifier)")
+    }
+
     /// Cancels a held-open request and retains its cancelled report before the provider finishes.
     @MainActor
     func testCancelShowsCancelledRun() throws {
@@ -328,6 +418,7 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         try JSONSerialization.data(withJSONObject: suite).write(to: storage.appending(path: "suite.json"), options: .atomic)
     }
 
+    /// Sets up a named exact-text suite and connects the selected fixture endpoint.
     @MainActor
     private func configureSuite(name: String, endpointPath: String) {
         replaceText(in: app.textFields["Suite name"], with: name)
@@ -338,7 +429,12 @@ final class FoundationEvalsRunLifecycleUITests: XCTestCase {
         let expected = app.textViews["Scoring expected text"]
         XCTAssertTrue(expected.waitForExistence(timeout: 3))
         replaceText(in: expected, with: "Deterministic fixture stream.")
+        configureLoopbackModel(endpointPath: endpointPath)
+    }
 
+    /// Selects the loopback model without editing the suite's cases, name, or scoring.
+    @MainActor
+    private func configureLoopbackModel(endpointPath: String) {
         selectSetup("Model")
         let provider = app.popUpButtons["Model provider"]
         XCTAssertTrue(provider.waitForExistence(timeout: 3))
@@ -473,6 +569,7 @@ private final class LocalHTTPModelFixture: @unchecked Sendable {
         }
     }
 
+    /// Sends a deterministic response using the scenario chosen by the fixture URL.
     private func respond(to request: Data, on connection: NWConnection) {
         requestReceived.signal()
         let requestLine = String(decoding: request, as: UTF8.self)
@@ -492,6 +589,15 @@ private final class LocalHTTPModelFixture: @unchecked Sendable {
             let response = body.contains("Return only the answer.") ? "Deterministic fixture stream." : "Wrong answer."
             let event = "{\"kind\":\"response\",\"action\":\"append\",\"content\":\"\(response)\",\"tokenCount\":4}\n"
             send("HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n" + event, on: connection, complete: true)
+            return
+        }
+        if requestLine.contains(" /first-check ") || requestLine.contains(" /first-check-retry ") {
+            let body = String(decoding: request, as: UTF8.self)
+            let needsRetry = requestLine.contains(" /first-check-retry ") && !body.contains("Reply with exactly the word Paris without punctuation.")
+            let response = needsRetry ? "Paris." : "Paris"
+            let event = "{\"kind\":\"response\",\"action\":\"append\",\"content\":\"\(response)\",\"tokenCount\":1}\n"
+            send("HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n" + event,
+                 on: connection, complete: true)
             return
         }
         let firstEvent = #"{"kind":"response","action":"append","content":"Deterministic fixture stream.","tokenCount":4}"# + "\n"

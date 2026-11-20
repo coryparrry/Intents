@@ -204,31 +204,24 @@ struct HomeTrendChart: View {
 
 /// Replaces the hero until the project has a saved run.
 struct HomeOnboarding: View {
-    let hasSuite: Bool
-    let hasCases: Bool
+    let selectedSuiteName: String?
     let disabled: Bool
-    let primaryTitle: String
-    let primaryAction: () -> Void
-
-    private var current: Int { hasSuite && hasCases ? 2 : 1 }
+    let createExample: () -> Void
+    let openSuite: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Run your first evaluation").font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
-                Text("Write a few prompts, decide what a good answer looks like, then see how the model does.")
-                    .font(.callout).foregroundStyle(WorkspaceStyle.secondaryText)
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Run your first model check")
+                .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            Text("Open an example with one prompt and an expected answer. Select Run to see the model’s response and whether it passed.")
+                .font(.callout)
+                .foregroundStyle(WorkspaceStyle.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
             ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 14) { tiles }
-                VStack(alignment: .leading, spacing: 14) { tiles }
+                HStack(spacing: 14) { actions }
+                VStack(alignment: .leading, spacing: 10) { actions }
             }
-            Button(action: primaryAction) {
-                Label(primaryTitle, systemImage: hasSuite ? "arrow.right" : "plus").labelStyle(.titleAndIcon)
-                    .padding(.horizontal, 6)
-            }
-            .buttonStyle(.glassProminent)
-            .controlSize(.large)
             .disabled(disabled)
         }
         .padding(26)
@@ -236,45 +229,15 @@ struct HomeOnboarding: View {
         .workspaceSurface()
     }
 
-    @ViewBuilder
-    private var tiles: some View {
-        OnboardingTile(number: 1, title: "Write test cases",
-                       detail: "A prompt, and the answer you expect back.",
-                       isDone: hasSuite && hasCases, isCurrent: current == 1)
-        OnboardingTile(number: 2, title: "Pick how to score",
-                       detail: "Exact text, contains text, or an AI rubric.",
-                       isDone: false, isCurrent: current == 2)
-        OnboardingTile(number: 3, title: "Run and review",
-                       detail: "Read each response and see why it passed or failed.",
-                       isDone: false, isCurrent: false)
-    }
-}
-
-private struct OnboardingTile: View {
-    let number: Int
-    let title: String
-    let detail: String
-    let isDone: Bool
-    let isCurrent: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            WorkspaceStepNumber(number: number, isDone: isDone, isCurrent: isCurrent)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.headline)
-                Text(detail).font(.callout).foregroundStyle(WorkspaceStyle.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+    @ViewBuilder private var actions: some View {
+        Button("Create example suite", systemImage: "plus", action: createExample)
+            .buttonStyle(.glassProminent)
+        if let selectedSuiteName {
+            Button("Open \(selectedSuiteName)", action: openSuite)
+                .buttonStyle(.bordered)
+                .lineLimit(1)
+                .help("Open \(selectedSuiteName)")
         }
-        .padding(18)
-        .frame(minWidth: 200, maxWidth: .infinity, minHeight: 128, alignment: .topLeading)
-        .background(WorkspaceStyle.inset, in: .rect(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(isCurrent ? Color.accentColor : .clear, lineWidth: 1.5)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityValue(isDone ? "Done" : isCurrent ? "Next step" : "")
     }
 }
 

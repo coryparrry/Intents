@@ -25,9 +25,8 @@ struct ProductionReportPane: View {
                     HStack { Text(report.job.name).font(.headline); Spacer(); Text(gateName(report.exitCode)).font(.callout.weight(.semibold)) }
                     Text("\(report.completed) of \(report.planned) saved · \(report.counts.passed) passed · \(report.counts.failed) failed · \(report.counts.errors) errors · \(report.counts.unscored) unscored · \(report.counts.uncertain) uncertain").font(.callout)
                     Text("Pass rate \(rate(report.counts.passRate)) · \(report.counts.distinctSources) distinct sources").font(.callout)
-                    if let lower = report.counts.lower95, let upper = report.counts.upper95 {
-                        Text("Source pass rate \(rate(report.counts.sourcePassRate)) · 95% interval \(rate(lower))–\(rate(upper))").font(.callout)
-                    }
+                    Text(ProductionResultPresentation.sourcePassRateSummary(report))
+                        .font(.callout).accessibilityIdentifier("Batch source pass rate")
                     Text(report.samplingNotice).font(.callout).foregroundStyle(.secondary)
                     Text("P95 latency \(report.p95UpperMilliseconds.map { String(format: "%.0f ms (upper estimate)", $0) } ?? "Unavailable") · Reported cost $\(String(format: "%.4f", report.reportedCost)) · \(report.missingCostCount) costs unavailable").font(.caption).foregroundStyle(.secondary)
                     if let before = report.baselinePassRate {

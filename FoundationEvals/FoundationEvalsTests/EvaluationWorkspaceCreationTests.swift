@@ -4,6 +4,35 @@ import Testing
 
 @MainActor
 struct EvaluationWorkspaceCreationTests {
+    /// Verifies the first-check example is a separate, editable suite and its result uses an exact text check.
+    @Test func firstModelCheckPersistsAndExplainsPassAndFail() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = EvaluationStore(supportDirectory: root)
+        let original = store.suite
+        let pack = EvaluationStarterPack.firstCheck
+        let id = try store.createSuite(name: pack.title, starter: pack)
+        let reopened = EvaluationStore(supportDirectory: root)
+        #expect(reopened.selectedSuiteID == id)
+        #expect(reopened.suite.scoringMode == .exactMatch && !reopened.suite.needsModelJudge)
+        #expect(reopened.suite.cases.count == 1 && reopened.runs.isEmpty)
+        var incomplete = reopened.suite
+        incomplete.cases[0].expected = ""
+        #expect(reopened.validationIssue(for: incomplete, includeModelReadiness: false)
+            == "Enter an expected answer in each case for Exact text scoring.")
+        for (response, status) in [("Paris", EvaluationResultStatus.passed), ("The answer is Paris", .failed)] {
+            let run = try await reopened.runFeatureAdapter(
+                expectedRevision: reopened.suiteRevision,
+                adapter: ClosureFeatureAdapter(displayName: "First check fixture") { _ in response }
+            )
+            let sample = try #require(run.results.first)
+            #expect(sample.status == status)
+            #expect(sample.rationale?.isEmpty == false)
+        }
+        try reopened.switchSuite(id: original.id)
+        #expect(reopened.suite == original)
+    }
+
     /// Blank-suite renaming saves metadata while retaining unfinished edits and the requirement to add cases before running.
     @Test func blankSuiteRenamePreservesDraftAcrossReopening() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

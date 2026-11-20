@@ -93,6 +93,16 @@ struct ProductionResultDetailView: View {
 
 /// Artifacts are supporting evidence; a worker cannot override the saved response with an unrelated trace.
 enum ProductionResultPresentation {
+    /// Shows the source rate only after every planned response has a pass or fail; a fully scored zero remains visible.
+    static func sourcePassRateSummary(_ report: ProductionReport) -> String {
+        let counts = report.counts
+        guard report.completed == report.planned, counts.passed + counts.failed == report.planned,
+              let rate = counts.sourcePassRate, let lower = counts.lower95, let upper = counts.upper95 else {
+            return "Source pass rate unavailable until every planned response has a pass or fail."
+        }
+        return String(format: "Source pass rate %.1f%% · 95%% interval %.1f%%–%.1f%%", rate * 100, lower * 100, upper * 100)
+    }
+
     /// Shows a directional change only when the candidate has a scored rate; zero remains a real score.
     static func baselineComparison(before: Double, after: Double?) -> String {
         let baseline = String(format: "%.1f%%", before * 100)

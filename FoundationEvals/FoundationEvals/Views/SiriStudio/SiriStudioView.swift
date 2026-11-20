@@ -282,7 +282,7 @@ struct SiriStudioView: View {
                                 Text(scenario.turns.first?.utterance ?? "Add your first message")
                                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                 if let result = studio.run?.scenarios.first(where: { $0.id == scenario.id }) {
-                                    Text(studio.isStale(result) ? "Out of date · \(result.state.label)" : result.state.label)
+                                    Text(studio.resultTitle(result))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                             }
@@ -362,7 +362,7 @@ struct SiriStudioView: View {
                       let result = run.scenarios.first(where: { $0.id == id }) {
                 SiriStudioInspector(run: run, result: result,
                     turnID: turnID ?? studio.document?.scenarios.first(where: { $0.id == id })?.turns.first?.id,
-                    stale: studio.isStale(result), showsAdvanced: showsAdvanced, actions: catalog?.actions ?? [])
+                    resultTitle: studio.resultTitle(result), showsAdvanced: showsAdvanced, actions: catalog?.actions ?? [])
             } else {
                 WorkspaceEmptyState(symbol: "chart.bar.doc.horizontal", title: "No result yet",
                     detail: "Run a conversation to review Siri’s replies and the actions it called.")

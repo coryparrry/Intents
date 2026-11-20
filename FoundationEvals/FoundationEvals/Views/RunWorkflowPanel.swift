@@ -4,7 +4,7 @@ struct RunWorkflowPanel: View {
     @Bindable var store: EvaluationStore
     let run: EvaluationRun
     @State private var correctionSample: EvaluationSampleAssessment?
-    @State private var reportText: String?
+    @State private var releaseReportRunID: UUID?
 
     private var selectedAssessment: EvaluationAssessment? {
         guard let selected = run.selectedAssessmentID else { return run.assessments?.last }
@@ -79,7 +79,7 @@ struct RunWorkflowPanel: View {
                     if store.isReassessing { ProgressView().controlSize(.small) }
 
                     Button("Release report", systemImage: "shippingbox.and.arrow.backward") {
-                        reportText = EvaluationReleaseCheckEvaluator.markdown(store.releaseCheckReport(runID: run.id))
+                        releaseReportRunID = run.id
                     }
                     Spacer()
                     if isApprovedAssessment {
@@ -89,8 +89,8 @@ struct RunWorkflowPanel: View {
                 }
                 .disabled(store.isRunning || store.isReassessing || store.isProcessingFiles)
 
-                if let reportText {
-                    Text(reportText)
+                if releaseReportRunID == run.id {
+                    Text(EvaluationReleaseCheckEvaluator.markdown(store.releaseCheckReport(runID: run.id)))
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
                         .padding(10)

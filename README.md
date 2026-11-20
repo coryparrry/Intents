@@ -69,6 +69,10 @@ Xcode 27+ is needed to build from source or run Mac App Intent tests. It is not 
 
 ## Run your first evaluation
 
+In **Overview**, select **Create example suite** to get one editable prompt and
+an exact-text check. Select **Run** on **This Mac**, then read the saved response
+and verdict. To use your own prompts, follow the steps below.
+
 1. Select **New Suite** at the bottom of the sidebar. Open **Cases** and add prompts with an expected response or reference answer where appropriate.
 2. Use **Setup → Instructions** for shared instructions and text, JSON, CSV, PDF, or image reference files.
 3. Use **Setup → Scoring** to choose a method and number of repetitions.

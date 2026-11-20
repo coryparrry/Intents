@@ -311,6 +311,7 @@ struct EvaluationPromptImprovementTests {
         #expect(report.source.releasePolicy == plan.source.releasePolicy)
     }
 
+    /// Keeps the suite check used by Cases and release checks stable when newer partial comparison runs are saved.
     @Test @MainActor func comparisonHistoryDoesNotReplaceDefaultReleaseEvidence() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -337,6 +338,7 @@ struct EvaluationPromptImprovementTests {
         try store.saveCompletedRuns(comparisons)
         let partial = try #require(store.runs.first)
         #expect(partial.promptImprovementID == report.id)
+        #expect(store.latestSuiteCheck?.id == full.id)
         #expect(store.releaseCheckReport(runID: nil).runID == full.id)
         #expect(store.releaseCheckReport(runID: nil).outcome == .passed)
         #expect(store.releaseCheckReport(runID: partial.id).outcome == .incompleteOrIncompatibleEvidence)
@@ -345,6 +347,7 @@ struct EvaluationPromptImprovementTests {
         #expect(project.suites.first?.report.runID == full.id)
         let reopened = EvaluationStore(supportDirectory: root)
         #expect(reopened.runs.first?.promptImprovementID == report.id)
+        #expect(reopened.latestSuiteCheck?.id == full.id)
         #expect(reopened.releaseCheckReport(runID: nil).runID == full.id)
         #expect(try reopened.projectReleaseCheckReport(projectID: reopened.selectedProjectID).suites.first?.report.runID == full.id)
         let summary = SuiteOverviewSummary(record: reopened.selectedSuiteRecord, suite: reopened.suite,

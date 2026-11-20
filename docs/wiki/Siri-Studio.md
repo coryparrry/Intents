@@ -47,7 +47,10 @@ Argument constraints on forbidden calls and enum case matching are pending live
 preview qualification. **Advanced → Open scenario document…** opens a copy of
 exported JSON. Opening a scenario returns to Conversations; opening or importing
 a result switches to Results. Historical results remain readable when their
-draft was removed; Run and selected-conversation Swift export require a current draft.
+draft was removed. Run and selected-conversation Swift export require a current
+draft. Siri Studio labels saved verdicts for a different app build **Previous
+app build**. Imports without a recorded build show **App build unverified** when
+the conversation and launch arguments match.
 
 Validation and Swift export work without running Siri. **Advanced → Export Swift…** saves
 the exact test source for the selected scenario. Use **Advanced → Export all
@@ -174,6 +177,11 @@ up with the editor. Use **Save**, or **Retry Save** after a write failure. Openi
 another document or choosing another app saves the current draft first; a failed
 save keeps it available. Removing a turn asks before deleting its request and
 expectations.
+
+If Studio finds a corrupt or incompatible autosave and can preserve it, it
+opens the last saved conversations or a new document if you have never saved.
+The message above the editor gives the backup filename in the local Siri Studio
+`Drafts` folder.
 
 ## Guided first test
 

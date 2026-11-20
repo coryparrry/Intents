@@ -24,7 +24,7 @@ struct WorkspaceTracesView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         WorkspaceEmptyState(symbol: "point.3.connected.trianglepath.dotted", title: "No saved traces yet",
                             detail: "Run this suite to capture a workflow, then inspect its saved trace here.")
-                        Button("Open evaluations") { store.selection = .evaluations }.buttonStyle(.bordered)
+                        Button("Open suite") { store.selection = .suite }.buttonStyle(.bordered)
                     }.padding(18).workspaceSurface()
                 } else {
                     VStack(alignment: .leading, spacing: 0) {

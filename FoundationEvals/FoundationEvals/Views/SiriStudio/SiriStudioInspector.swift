@@ -7,7 +7,7 @@ struct SiriStudioInspector: View {
     let run: SiriStudioRunRecord
     let result: SiriStudioScenarioResult
     let turnID: UUID?
-    let stale: Bool
+    let resultTitle: String
     var showsAdvanced = false
     var actions: [MacIntentAction] = []
     @State private var selectedTurnID: UUID?
@@ -15,7 +15,7 @@ struct SiriStudioInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
-            Text(stale ? "Stale result · \(result.state.label)" : result.state.label).font(.headline)
+            Text(resultTitle).font(.headline)
             if let reason = result.reason { Text(reason).font(.callout).textSelection(.enabled) }
             if showsAdvanced, let passed = result.passed {
                 Text("\(passed) of \(result.attempted) repeats passed").font(.caption)
