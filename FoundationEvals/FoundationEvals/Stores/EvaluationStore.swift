@@ -1912,13 +1912,18 @@ final class EvaluationStore {
         }
     }
 
+    /// Returns the newest suite check, leaving partial instruction-improvement trials in run history.
+    var latestSuiteCheck: EvaluationRun? {
+        runs.first { $0.promptImprovementID == nil }
+    }
+
     /// Evaluates the selected suite's release policy using the requested run or latest ordinary run and current baseline.
     func releaseCheckReport(runID: UUID?) -> EvaluationReleaseCheckReport {
         let run: EvaluationRun?
         if let runID {
             run = runs.first { $0.id == runID }
         } else {
-            run = runs.first { $0.promptImprovementID == nil }
+            run = latestSuiteCheck
         }
         let approval = activeBaselineApproval
         let baseline = approval.flatMap { approval in runs.first { $0.id == approval.runID } }
@@ -4085,7 +4090,7 @@ final class EvaluationStore {
         }
         if candidate.scoringMode.needsExpected,
            candidate.cases.contains(where: { $0.expected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-            return "Every case needs expected text for the selected deterministic metric."
+            return "Enter an expected answer in each case for \(candidate.scoringMode.title) scoring."
         }
         if candidate.scoringMode == .modelJudge {
             if candidate.rubricCriteria.isEmpty {

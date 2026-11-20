@@ -5,6 +5,79 @@ import Testing
 
 @MainActor
 struct ProductionWorkspaceStoreTests {
+    /// Opens Jobs with the newly saved batch selected and keeps failed submissions on Datasets.
+    @Test func creatingFromDatasetsOpensTheSavedJobAfterSuccess() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "batch-from-datasets-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = ProductionWorkspaceStore(root: root)
+        let store = EvaluationStore(supportDirectory: root)
+        let storage = try #require(model.storage)
+        let dataset = try dataset(storage: storage, root: root)
+        model.pane = .datasets
+
+        /// Submits the same configuration with an invalid name first and a corrected name on retry.
+        func submit(name: String, completion: @escaping @MainActor (Result<Void, any Error>) -> Void) throws -> Task<Void, Never> {
+            try model.createJob(store: store, dataset: dataset.revision, name: name, repetitions: 1, passRate: 90,
+                                timeout: 60, budgetHours: 1, baseline: nil, targets: [.init()],
+                                requiredCohortKey: "", requiredCohortValue: "", cohortPassRate: 90,
+                                completion: completion)
+        }
+
+        var submission: Result<Void, any Error>?
+        let rejected = try submit(name: String(repeating: "x", count: 201)) { submission = $0 }
+        await rejected.value
+        if case .failure = try #require(submission) {} else { Issue.record("Expected invalid batch name to be rejected.") }
+        #expect(model.pane == .datasets && model.selectedJobID == nil)
+        #expect(try storage.jobs().isEmpty)
+
+        submission = nil
+        let accepted = try submit(name: "Retry fixture") { submission = $0 }
+        await accepted.value
+        try #require(submission).get()
+        let job = try #require(try storage.jobs().first)
+        #expect(job.name == "Retry fixture")
+        #expect(model.pane == .jobs && model.selectedJobID == job.id)
+        await model.closeAndWait()
+    }
+
+    /// Delivers failures beyond the preview to the submitting editor and completes only after a corrected dataset is durable.
+    @Test func rejectedDatasetImportCanRetryWithTheSameSettings() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "dataset-import-retry-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = ProductionWorkspaceStore(root: root)
+        let storage = try #require(model.storage)
+        let file = root.appending(path: "examples.jsonl")
+        var rows = Data()
+        for id in ["one", "two", "three"] {
+            rows.append(try ProductionCodec.encode(ProductionExample(id: id, prompt: "Fixture")))
+            rows.append(10)
+        }
+        var duplicate = rows
+        duplicate.append(try ProductionCodec.encode(ProductionExample(id: "one", prompt: "Duplicate fixture")))
+        duplicate.append(10)
+        try duplicate.write(to: file)
+        #expect(try ProductionStorage.previewExamples(from: file).count == 3)
+
+        var failure: String?
+        var completionCount = 0
+        let rejected = model.importDataset(file: file, name: "Retry fixture", version: "review-1",
+            sampling: .curated, productionData: false, confirmed: false,
+            failed: { failure = $0.localizedDescription }, completed: { completionCount += 1 })
+        await (try #require(rejected)).value
+        #expect(failure?.contains("Duplicate example ID: one") == true)
+        #expect(model.error == nil && completionCount == 0)
+        #expect(try storage.datasets().isEmpty)
+
+        try rows.write(to: file, options: .atomic)
+        let accepted = model.importDataset(file: file, name: "Retry fixture", version: "review-1",
+            sampling: .curated, productionData: false, confirmed: false, completed: { completionCount += 1 })
+        await (try #require(accepted)).value
+        #expect(completionCount == 1)
+        let imported = try #require(storage.datasets().first)
+        #expect(imported.name == "Retry fixture" && imported.version == "review-1" && imported.count == 3)
+        await model.closeAndWait()
+    }
+
     @Test(.timeLimit(.minutes(1)), arguments: [false, true])
     func pauseInterruptsOnlyAfterControlPersistence(failPersistence: Bool) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("production-pause-order-\(UUID())")

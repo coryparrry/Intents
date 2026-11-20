@@ -2,16 +2,24 @@
 
 [Home](Home.md) · [Runs and results](Runs-and-results.md) · [Codex and MCP](Codex-and-MCP.md)
 
-Open **Batch runs** in the sidebar for larger, resumable jobs or review of captured application outputs. This workspace has **Datasets**, **Jobs**, **Review**, **Reports**, and **Workers**. Ordinary suite runs and suite **Review** remain separate.
+Open **Batch runs** in the sidebar for larger, resumable jobs or review of captured application outputs. This workspace has **Datasets**, **Jobs**, **Results**, **Reports**, and **Workers**. Suite **Review** is available from the suite editor.
 
 ## Create a batch
 
 1. Configure the selected suite's instructions, model, tools, and scoring.
 2. In **Datasets**, freeze the current suite or import a reviewed UTF-8 JSONL file. Confirm redaction when importing production data.
 3. Give examples stable IDs and group related examples with a pseudonymous `sourceID`. Include verified expected answers when scoring needs them.
-4. In **Jobs**, create a batch with its dataset, repetitions, target labels, limits, and release requirements.
-5. Start it on a matching Mac. Read saved progress and worker provenance. Pause and resume to continue remaining requests.
+4. Select **New batch** from the dataset or from **Jobs**. Set the dataset, repetitions, target labels, limits, and release requirements. A successful save opens the new batch in **Jobs**.
+5. Select **Run on this Mac** on a matching Mac. Read saved progress and worker provenance. Pause and resume to continue remaining requests.
 6. Open **Reports** for pass rates, cohorts, distinct-source confidence, cost, latency, and gate failures.
+
+If batch creation is rejected, the form shows the error and keeps your entries
+so you can correct them and retry.
+
+The dataset preview checks the first few rows. If full import finds an error, the
+form keeps the selected file, dataset name, and version. Correct the file in
+place or update the form, then retry **Import**. If it contains production data,
+review the corrected file and confirm redaction again before retrying.
 
 The dataset and execution configuration are frozen for the job. Later suite edits apply to new jobs. **Repeat batch** creates a fresh job from the frozen setup. Cancellation is permanent for the selected job and retains checkpoints.
 
@@ -21,7 +29,7 @@ If a request reaches its deadline or is cancelled, the worker records the interr
 
 ## Review original outputs
 
-Include `capturedOutput` and optional `feedback` in JSONL, then choose **Review captured outputs** in Datasets. These outputs are not regenerated. Use **Review** to assign and label results. Disagreement remains uncertain until adjudicated. Reconcile interrupted actions only after verifying their saved state and outstanding cost.
+Include `capturedOutput` and optional `feedback` in JSONL, then choose **Review captured outputs** in **Datasets**. Select **Run on this Mac** in **Jobs** to prepare the saved responses for review. Intents reuses the captured responses. Use **Results** to assign and label them. Disagreement remains uncertain until adjudicated. Reconcile interrupted actions only after verifying their saved state and outstanding cost.
 
 Capture is opt-in and uses an application-owned sanitizer. An import's redaction confirmation is your review of the data; it does not redact the file automatically. Keep exports private until you have checked prompts, responses, metadata, traces, and artifacts.
 
@@ -31,10 +39,15 @@ A required baseline needs explicit approval of complete, eligible, current saved
 
 If the suite has critical cases, imported examples must map them through the example ID, source ID, or `metadata.suiteCaseID`. Missing mappings block job creation. Every mapped critical source must pass every trial.
 
-Missing, unscored, uncertain, or required cost/latency evidence prevents qualification. Cohort and critical-source gates apply the frozen policy. Distinct-source confidence describes this dataset; curated examples do not establish a production failure rate.
+Missing, unscored, uncertain, or required cost/latency evidence prevents qualification. Cohort and critical-source gates apply the frozen policy. The desktop report shows a source pass rate and confidence interval once every planned response has a pass or fail. Those figures describe this dataset. Curated examples cannot establish a production failure rate.
 
 ## Workers and schedules
 
-The Workers pane records worker labels and schedules. A schedule needs the app or a polling worker to tick and execute jobs; it does not install a daemon or provision machines. Shared storage requires trusted users, coherent file locks, and atomic rename. Worker labels are reported provenance, not hardware attestation.
+The Workers pane records worker labels and schedules. Start an unattended worker
+in polling mode to create and run jobs as they come due. You can also tick a
+schedule explicitly through the CLI or MCP, then run the created job in Jobs.
+Leaving the desktop workspace open does not advance schedules. Shared storage
+requires trusted users, coherent file locks, and atomic rename. Worker labels
+report what the worker registered.
 
 The [CLI, worker, baseline, and credential reference](https://github.com/coryparrry/Intents/blob/main/docs/PRODUCTION_EVALS_GUIDE.md) includes unattended commands and report exit codes. The [MCP guide](https://github.com/coryparrry/Intents/blob/main/docs/MCP_CONTROL_GUIDE.md) covers authenticated batch controls and safe retries.

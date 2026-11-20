@@ -52,6 +52,7 @@ struct RunDetailView: View {
     let run: EvaluationRun
     @Bindable var store: EvaluationStore
     let baselineRuns: [EvaluationRun]
+    let openCase: (UUID) -> Void
     @State private var exportDocument = JSONDocument()
     @State private var exportTelemetry = TelemetryFileExportController()
     @State private var isExporting = false
@@ -59,11 +60,12 @@ struct RunDetailView: View {
     @State private var selectedPage = RunPage.report
     @State private var selectedBaselineID: UUID?
 
-    /// Captures the run and store and seeds comparison selection with the latest compatible earlier baseline.
-    init(run: EvaluationRun, store: EvaluationStore, baselineRuns: [EvaluationRun]) {
+    /// Seeds the comparison baseline and accepts a route back to the current case editor.
+    init(run: EvaluationRun, store: EvaluationStore, baselineRuns: [EvaluationRun], openCase: @escaping (UUID) -> Void) {
         self.run = run
         self.store = store
         self.baselineRuns = baselineRuns
+        self.openCase = openCase
         _selectedBaselineID = State(initialValue: RunBaselineSelection.defaultID(for: run, candidates: baselineRuns))
     }
 
@@ -142,13 +144,14 @@ struct RunDetailView: View {
     }
 
     private var report: some View {
-        ScrollView {
+        let caseID = RunReportPresentation(run: run).editableFailedCase(in: store.draftSuite)
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 RunOverviewHeader(run: run)
                 if let execution = run.developerExecution {
                     DeveloperExecutionSummary(execution: execution)
                 }
-                RunReportSummary(run: run)
+                RunReportSummary(run: run, editCase: caseID.map { id in { openCase(id) } })
                 ResultsSection(run: run)
                     .id(run.id)
                 RunConfigurationSection(run: run)

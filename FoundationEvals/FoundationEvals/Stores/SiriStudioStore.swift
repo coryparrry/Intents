@@ -92,21 +92,18 @@ import Observation
                 return
             }
             let url = try documentURL(catalog.bundleIdentifier)
-            let opened = FileManager.default.fileExists(atPath: url.path)
+            let hasSavedDocument = FileManager.default.fileExists(atPath: url.path)
+            let opened = hasSavedDocument
                 ? try SiriStudioDocument.read(from: url) : SiriStudioDocument(bundleIdentifier: catalog.bundleIdentifier)
             guard opened.bundleIdentifier == catalog.bundleIdentifier else {
                 throw MacIntentTestingError("The saved document belongs to a different app.")
             }
-            let draftURL = try draftURL(catalog.bundleIdentifier)
-            let recovery: Draft? = if FileManager.default.fileExists(atPath: draftURL.path) {
-                try JSONDecoder().decode(Draft.self, from: boundedDraftData(draftURL))
-            } else { nil }
-            guard recovery == nil || (recovery?.document.bundleIdentifier == catalog.bundleIdentifier
-                && recovery?.document.version == SiriStudioDocument.currentVersion
-                && (recovery?.saved == nil || recovery?.saved?.bundleIdentifier == catalog.bundleIdentifier)) else {
-                throw MacIntentTestingError("The recovered draft has an unsupported version or belongs to a different app.")
+            let (recovery, backupFilename) = try loadRecoveryDraft(for: catalog.bundleIdentifier)
+            self.catalog = catalog; run = nil
+            diagnostic = backupFilename.map { filename in
+                let openedDocument = hasSavedDocument ? "Studio opened the last saved conversations." : "Studio opened a new conversation document."
+                return "The recovery draft could not be opened and was preserved as \(filename) in the Siri Studio Drafts folder. \(openedDocument)"
             }
-            self.catalog = catalog; run = nil; diagnostic = nil
             adopt(opened)
             if let recovery {
                 var revised = recovery.document
@@ -245,13 +242,24 @@ import Observation
         run = opened; selection = opened.scenarios.first?.id ?? selection; diagnostic = nil
     }
 
-    /// Keeps authored expectations tied to the revision that actually ran.
-    func isStale(_ result: SiriStudioScenarioResult) -> Bool {
+    /// Labels the saved verdict with any mismatch in app build, conversation, or launch arguments.
+    func resultTitle(_ result: SiriStudioScenarioResult) -> String {
+        let verdict = result.state.label
+        let testedBuild = run?.productIdentity?.sha256
+        let selectedBuild = catalog?.productIdentity?.sha256
+        if let testedBuild, let selectedBuild, testedBuild != selectedBuild {
+            return "Previous app build · \(verdict)"
+        }
         let frozen = run?.document.scenarios.first { $0.id == result.id }
         let current = document?.scenarios.first { $0.id == result.id }
         let recordedArguments = run?.appLaunchArguments ?? run?.document.appLaunchArguments ?? []
-        let argumentsChanged = recordedArguments != appLaunchArguments
-        return argumentsChanged || current?.revision != result.revision || frozen != current
+        if recordedArguments != appLaunchArguments || current?.revision != result.revision || frozen != current {
+            return "Out of date · \(verdict)"
+        }
+        if testedBuild == nil || selectedBuild == nil {
+            return "App build unverified · \(verdict)"
+        }
+        return verdict
     }
 
     /// Displays a local diagnostic without sending it to telemetry.
@@ -338,6 +346,35 @@ import Observation
     private func draftURL(_ bundle: String) throws -> URL {
         let name = try documentURL(bundle).lastPathComponent
         return root.appending(path: "Drafts/\(name)")
+    }
+
+    /// Loads the draft or preserves incompatible bytes beside it before reopening the saved scenarios.
+    /// Read and move failures propagate so a subsequent edit cannot overwrite unpreserved data.
+    private func loadRecoveryDraft(for bundle: String) throws -> (Draft?, String?) {
+        let url = try draftURL(bundle)
+        guard FileManager.default.fileExists(atPath: url.path) else { return (nil, nil) }
+        do {
+            let draft = try JSONDecoder().decode(Draft.self, from: boundedDraftData(url))
+            guard draft.document.bundleIdentifier == bundle,
+                  draft.document.version == SiriStudioDocument.currentVersion,
+                  draft.saved == nil || (draft.saved?.bundleIdentifier == bundle
+                      && draft.saved?.version == SiriStudioDocument.currentVersion) else {
+                throw MacIntentTestingError("The recovered draft has an unsupported version or belongs to a different app.")
+            }
+            return (draft, nil)
+        } catch is DecodingError {
+            return (nil, try preserveUnreadableDraft(at: url))
+        } catch is MacIntentTestingError {
+            return (nil, try preserveUnreadableDraft(at: url))
+        }
+    }
+
+    /// Moves an unreadable draft out of the autosave path without duplicating or replacing its bytes.
+    private func preserveUnreadableDraft(at url: URL) throws -> String {
+        let filename = "\(url.deletingPathExtension().lastPathComponent)-unreadable-\(UUID()).json"
+        let backup = url.deletingLastPathComponent().appending(path: filename)
+        try FileManager.default.moveItem(at: url, to: backup)
+        return filename
     }
 
     /// Bounds recovery reads before decoding potentially damaged or externally edited files.

@@ -156,29 +156,47 @@ final class EvaluationReviewUITests: XCTestCase {
         XCTAssertTrue(sheet.buttons["Create batch"].isEnabled)
         advanced.click()
         XCTAssertEqual(timeout.value as? String, "90")
-        sheet.buttons["Cancel"].click()
+        advanced.click()
+
+        // Storage validates the full name after submission. A rejection must leave the form editable.
+        let name = sheet.textFields["Batch name"]
+        let oversized = String(repeating: "x", count: 201)
+        name.click()
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText(oversized)
+        sheet.buttons["Create batch"].click()
+        XCTAssertTrue(sheet.staticTexts["Batch creation error"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(name.value as? String, oversized)
+        advanced.click()
+        XCTAssertEqual(timeout.value as? String, "90")
+        advanced.click()
+
+        name.click()
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText("Recovered batch draft")
+        sheet.buttons["Create batch"].click()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: sheet)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 10), .completed, app.debugDescription)
+        app.radioGroups["Batch workspace"].radioButtons["Jobs"].click()
+        XCTAssertTrue(app.staticTexts["Recovered batch draft"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
     }
 
     /// Selects a named result cell and preserves its response while toggling report columns at narrow and wide widths.
     @MainActor
     func testRunReportRevealsAdditionalColumns() throws {
         continueAfterFailure = false
-        let storage = try reviewStorage(multipleResults: true)
-        defer { try? FileManager.default.removeItem(at: storage) }
-        let app = application(storage: storage)
-        launchWorkspace(app)
-        defer { app.terminate() }
-        assertReviewFixture(in: app)
-        let latest = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Latest run:")).firstMatch
-        XCTAssertTrue(latest.waitForExistence(timeout: 5), app.debugDescription)
-        latest.click()
-        let window = app.windows.firstMatch
-        for width in [CGFloat(1000), CGFloat(1180)] {
-            let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -1, dy: 0))
-            let target = edge.withOffset(CGVector(dx: width - window.frame.width, dy: 0))
-            edge.hover()
-            edge.click(forDuration: 0.25, thenDragTo: target)
-            XCTAssertEqual(window.frame.width, width, accuracy: 8, "Exercise both narrow and wide report layouts")
+        for width in [1_000, 1_180] {
+            let storage = try reviewStorage(multipleResults: true)
+            defer { try? FileManager.default.removeItem(at: storage) }
+            let app = application(storage: storage)
+            launchWorkspace(app, windowWidth: width)
+            defer { app.terminate() }
+            assertReviewFixture(in: app)
+            let latest = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Latest run:")).firstMatch
+            XCTAssertTrue(latest.waitForExistence(timeout: 5), app.debugDescription)
+            latest.click()
+            let window = app.windows.firstMatch
+            XCTAssertEqual(window.frame.width, CGFloat(width), accuracy: 8, "Exercise both narrow and wide report layouts")
             let more = app.buttons["More columns"]
             XCTAssertTrue(more.waitForExistence(timeout: 5), app.debugDescription)
             let firstRow = app.descendants(matching: .outlineRow).containing(.staticText, identifier: "Meeting date").firstMatch
@@ -205,7 +223,7 @@ final class EvaluationReviewUITests: XCTestCase {
             XCTAssertFalse(column.exists)
             XCTAssertTrue(secondRow.isSelected)
             XCTAssertTrue(response.exists)
-            try window.screenshot().pngRepresentation.write(to: UITestStorage.screenshotURL(name: "report-columns-\(Int(width))"))
+            try window.screenshot().pngRepresentation.write(to: UITestStorage.screenshotURL(name: "report-columns-\(width)"))
         }
     }
 
@@ -311,13 +329,14 @@ final class EvaluationReviewUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Regression: Meeting date")).firstMatch.waitForExistence(timeout: 3), app.debugDescription)
     }
 
+    /// Keeps draft reviews, saving, and pattern navigation usable in a minimum-width workspace.
     @MainActor
-    /// Keeps saved reviews and pattern navigation available after narrowing the workspace.
     func testDraftNavigationPatternsAndNarrowReviewLayout() throws {
+        continueAfterFailure = false
         let storage = try reviewStorage()
         defer { try? FileManager.default.removeItem(at: storage) }
         let app = application(storage: storage)
-        launchWorkspace(app)
+        launchWorkspace(app, windowWidth: 1_000)
         defer { app.terminate() }
         openReview(app)
         let note = app.textViews["Review note"]
@@ -343,11 +362,7 @@ final class EvaluationReviewUITests: XCTestCase {
         reviewFilter.click(); app.menuItems["All samples"].click()
         XCTAssertEqual(reviewFilter.value as? String, "All samples", "Reviewers can intentionally broaden the tag view")
         let window = app.windows.firstMatch
-        let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 0.5)).withOffset(CGVector(dx: -1, dy: 0))
-        let target = edge.withOffset(CGVector(dx: 1000 - window.frame.width, dy: 0))
-        edge.hover()
-        edge.click(forDuration: 0.25, thenDragTo: target)
-        XCTAssertLessThanOrEqual(window.frame.width, 1050, "Resize must actually exercise the narrow layout")
+        XCTAssertEqual(window.frame.width, 1_000, accuracy: 8, "Exercise the narrow layout")
         XCTAssertTrue(app.radioGroups["Review"].radioButtons["Patterns"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Save review"].exists)
         choosePane("Patterns", app: app)
@@ -379,6 +394,7 @@ final class EvaluationReviewUITests: XCTestCase {
         try app.windows.firstMatch.screenshot().pngRepresentation.write(to: UITestStorage.screenshotURL(name: "eval-sidebar"))
     }
 
+    /// The empty trace index leads to Cases, where the user can run the suite. Human review remains reachable separately.
     @MainActor
     func testSidebarDestinationsHandleNoSavedRuns() throws {
         let storage = try UITestStorage.makeDirectory(prefix: "eval-sidebar-empty")
@@ -388,20 +404,56 @@ final class EvaluationReviewUITests: XCTestCase {
         defer { app.terminate() }
         sidebarDestination("Sidebar traces", in: app).click()
         XCTAssertTrue(emptyState("No saved traces yet", in: app).waitForExistence(timeout: 3), app.debugDescription)
-        app.buttons["Open evaluations"].click()
+        app.buttons["Open suite"].click()
+        XCTAssertTrue(app.buttons["Run evaluation"].waitForExistence(timeout: 5), app.debugDescription)
+        let cases = app.radioGroups["Editor page"].radioButtons["Cases"]
+        XCTAssertTrue(cases.isSelected || (cases.value as? NSNumber)?.intValue == 1
+                      || (cases.value as? String) == "1", app.debugDescription)
+        openReview(app)
         XCTAssertTrue(emptyState("Choose a saved output", in: app).waitForExistence(timeout: 3))
-        assertReviewSelected(in: app)
     }
 
-    @MainActor private func launchWorkspace(_ app: XCUIApplication) {
+    /// Opening the example shows one check with an editable expected answer and leaves execution to the user.
+    @MainActor
+    func testOverviewCreatesAnEditableFirstCheckWithoutRunningIt() throws {
+        continueAfterFailure = false
+        let storage = try UITestStorage.makeDirectory(prefix: "first-check")
+        defer { try? FileManager.default.removeItem(at: storage) }
+        let app = application(storage: storage)
+        launchWorkspace(app)
+        defer { app.terminate() }
+        sidebarDestination("Sidebar overview", in: app).click()
+        let example = app.buttons["Create example suite"]
+        XCTAssertTrue(example.waitForExistence(timeout: 5), app.debugDescription)
+        example.click()
+        let expected = app.textViews["Scoring expected text"]
+        XCTAssertTrue(expected.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(expected.value as? String, "Paris")
+        XCTAssertTrue(app.buttons["Run evaluation"].exists, app.debugDescription)
+        XCTAssertFalse(app.descendants(matching: .any)["Workspace status"].exists)
+    }
+
+    /// Opens the workspace and waits for the app to apply an optional isolated test window size.
+    @MainActor private func launchWorkspace(_ app: XCUIApplication, windowWidth: Int? = nil) {
+        if let windowWidth {
+            app.launchArguments += ["--evaluation-window-width", String(windowWidth)]
+        }
         app.launch()
         // Hosted XCTest can launch only the menu bar until the editor command runs.
         app.activate()
         app.menuBars.menuBarItems["Evaluation"].click()
         app.menuItems["Show Suite Editor"].click()
         app.activate()
-        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5),
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 5),
                       "The editor command must present the main window")
+        if let windowWidth {
+            let sized = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                abs(window.frame.width - CGFloat(windowWidth)) <= 8
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [sized], timeout: 5), .completed,
+                           "Expected a \(windowWidth)-point verification window, found \(window.frame.width) points")
+        }
     }
 
     /// Stops a fixture test before mutation if macOS launched it with the wrong workspace.

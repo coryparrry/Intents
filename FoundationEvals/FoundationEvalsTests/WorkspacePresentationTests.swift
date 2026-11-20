@@ -152,6 +152,54 @@ struct WorkspacePresentationTests {
         #expect(SuiteCheckState.evaluate(run: run, currentRevision: "current", hasDraft: true) == .changed)
     }
 
+    /// Only shows a short text explanation when it can account for the entire verdict.
+    @Test func shortCheckSummaryDoesNotMisattributeFieldOrExecutionFailures() {
+        var run = fixture()
+        run.scoringMode = .exactMatch
+        run.plannedSampleCount = 1
+        run.results[0].expected = "Paris"
+        run.results[0].response = "Paris"
+        run.results[0].rationale = "Exact match after trimming whitespace."
+        #expect(RunReportPresentation(run: run).shortTextCheck?.id == run.results[0].id)
+        run.results[0].status = .failed
+        run.results[0].fieldAssertionResults = [
+            .init(assertion: .init(pointer: "/city"), passed: false, actualJSON: nil, explanation: "Missing city")
+        ]
+        #expect(RunReportPresentation(run: run).shortTextCheck == nil)
+        run.results[0].fieldAssertionResults = nil
+        run.results[0].errorMessage = "Subject interrupted"
+        #expect(RunReportPresentation(run: run).shortTextCheck == nil)
+    }
+
+    /// Offers an edit only for a text mismatch whose original case is still in the current suite.
+    @Test func failedTextCheckLinksOnlyToItsExistingCase() {
+        var run = fixture(status: .failed)
+        var suite = EvaluationSuite()
+        run.suiteID = suite.id
+        run.scoringMode = .exactMatch
+        suite.scoringMode = .exactMatch
+        run.results[0].caseID = suite.cases[0].id
+        run.results[0].response = "READY."
+        run.results[0].rationale = "Response did not exactly match the expected text."
+        let caseID = suite.cases[0].id
+        #expect(RunReportPresentation(run: run).editableFailedCase(in: suite) == caseID)
+        run.results[0].response = String(repeating: "x", count: 121)
+        #expect(RunReportPresentation(run: run).shortTextCheck == nil)
+        #expect(RunReportPresentation(run: run).editableFailedCase(in: suite) == caseID)
+
+        var otherSuite = suite
+        otherSuite.id = UUID()
+        #expect(RunReportPresentation(run: run).editableFailedCase(in: otherSuite) == nil)
+        var collectOnly = suite
+        collectOnly.scoringMode = .review
+        #expect(RunReportPresentation(run: run).editableFailedCase(in: collectOnly) == nil)
+        var reassessed = run
+        reassessed.assessments = [assessment(for: run, status: .failed)]
+        #expect(RunReportPresentation(run: reassessed).editableFailedCase(in: suite) == nil)
+        suite.cases = []
+        #expect(RunReportPresentation(run: run).editableFailedCase(in: suite) == nil)
+    }
+
     @Test func missingAndCancelledSamplesCannotLookPassed() {
         var run = fixture()
         run.plannedSampleCount = 2

@@ -27,6 +27,8 @@ If **Retry Save** appears after a run, the app did not save it. Restore storage 
 
 **Report** shows counts, saved responses, scores, explanations, analysis, and the run's settings. Select **All**, **Passed**, **Failed**, or **Issues** to filter samples. Read the response and tool output before you rely on a score.
 
+For an original single text-check failure, **Edit case** opens the case if it’s still in the suite and the scoring method matches the report. If the button is unavailable, open the suite’s **Cases** page to find the case or add a new one. Check the expected answer and clarify the prompt as needed, then select **Run**. The failed report stays in history with its original evidence.
+
 Select **Export Run as JSON** in the toolbar to save a copy of the run. If a span has a transcript export, that export contains the complete saved transcript. The preview in the app can be shorter. Review prompts, references, responses, tool arguments, and outputs before you share an export.
 
 ## Read scores
@@ -53,9 +55,9 @@ Under **Runs → Compare runs → Instruction experiments**, select **New Experi
 
 To generate suggestions, choose **Improve instructions** in **Runs → Compare runs → Instruction experiments** or **Setup → Instructions**. Intents tries two alternatives on Practice cases. If a suggestion improves the Practice pass rate, Intents compares the best suggestion with the original on reserved Final check cases. Review the comparison before applying any changes. [Improve suite instructions](../instruction-improvement.md).
 
-To generate suggestions, choose **Improve instructions** in **Compare → Instruction experiments** or **Setup → Instructions**. Intents tries two alternatives on Practice cases. If a suggestion improves the Practice pass rate, Intents compares the best suggestion with the original on reserved Final check cases. Review the comparison before applying any changes. [Improve suite instructions](../instruction-improvement.md).
-
 In **Comparison details**, runner messages call Practice **Development** and Final check **Held-out**.
+
+Open completed instruction-improvement trials from run history to inspect their saved traces. **Cases** and **Overview** keep showing the latest suite check.
 
 ## Approve a baseline or read release requirements
 
@@ -63,7 +65,7 @@ In **Comparison details**, runner messages call Practice **Development** and Fin
 2. Read the run's responses and checks.
 3. If the evidence is suitable, select **Approve as baseline**.
 
-For an AI-assessed run, the selected assessment is part of the approval. The panel can also reassess saved responses with a configured judge. It can record a corrected judgment and preserve the original. Select **Release report** to read the run's release check.
+For an AI-assessed run, the selected assessment is part of the approval. The panel can also reassess saved responses with a configured judge. It can record a corrected judgment and preserve the original. Select **Release report** to read the run's release check. The open report updates when the run's evidence or baseline approval changes.
 
 Use **Setup → Scoring → Release requirements** to set limits for errors, pass-rate changes, latency, and critical cases. You can also require an approved baseline. A release report applies these saved limits. It does not replace a review of unclear evidence.
 

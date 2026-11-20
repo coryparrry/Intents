@@ -2,7 +2,7 @@
 
 Intents is a macOS app for testing Apple Foundation Models and features in your own app. A **suite** contains repeatable test cases. You can run a suite on this Mac or through a connected app. Intents saves each response and its evidence. Suite **Review** adds human labels, failure patterns, regression cases, and judge checks. **Batch runs** handles frozen datasets, resumable jobs, and review of captured outputs.
 
-**App Intent Testing** inspects a built Mac app and runs actions with explicit JSON inputs through Apple AppIntentsTesting. See the test guide for setup and the scope of sample verification.
+**App Intents** is the workspace for testing a built Mac app. **Direct Action** calls an action with explicit JSON inputs. **Siri Studio** checks which actions Siri chooses and how it responds during a conversation.
 
 ## Start here
 
@@ -18,6 +18,7 @@ Intents is a macOS app for testing Apple Foundation Models and features in your 
 | Compare suggested suite instructions on reserved cases before applying them | [Improve suite instructions](../instruction-improvement.md) |
 | Change the model, scoring, tools, structured output, or performance settings | [Models, scoring, and tools](Models-scoring-and-tools.md) |
 | Test App Intents in a built Mac app | [Mac App Intent tests](Mac-App-Intent-tests.md) |
+| Check Siri’s replies and action choices across a conversation | [Siri Studio](Siri-Studio.md) |
 | Run checks on a feature in my iPhone, iPad, or Mac app | [Connect an app feature runner](App-feature-runners.md) |
 | Review saved outputs, find recurring failures, or check a judge | [Review and judge checks](Review-and-judge-checks.md) |
 | Run larger jobs or review original production outputs | [Production batches](Production-batches.md) |
@@ -30,7 +31,8 @@ Intents is a macOS app for testing Apple Foundation Models and features in your 
 |---|---|---|
 | Suite on **This Mac** | The selected model uses the suite's prompts, settings, references, and tools. | The saved responses passed the selected scoring method. |
 | Suite on a **connected app** | A feature that the app registered with Intents. | The app's feature returned responses that passed the suite's checks. |
-| **App Intent Testing** | A selected action from a built macOS app. | The action completed and, if requested, its return value matched the expected JSON value. |
+| **Direct Action** | A selected action from a built macOS app. | The action completed and, if requested, its return value matched the expected JSON value. |
+| **Siri Studio** | A conversation with Siri and the selected development build. | The saved conversation and captured run met its configured checks. |
 
 Intents saves runs and reports on this Mac. A score, an Xcode test result, and a release check measure different things. Read the saved evidence before you approve a baseline or release a change. Human review and judge calibration do not themselves approve a baseline. Batch reports apply the frozen dataset and job policy; their source-grouped confidence does not establish real-world prevalence for curated data.
 
