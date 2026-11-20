@@ -394,11 +394,6 @@ on GitHub.
   passed 19 tests. [Native Intents and review](https://github.com/coryparrry/Intents/actions/runs/44616159230/job/135888995410)
   passed 17 tests.
 
-The worktree guide also explains why **Edit case** can be absent for a case
-that still exists after scoring changes. Open **Cases** to edit it manually.
-This help-text clarification stays with the running log while GitHub tests
-the app commit. [Run guide](docs/wiki/Runs-and-results.md#L30)
-
 ## Release readiness follow-up, 20 November
 
 The hosted batch screenshot showed **Pass rate Unscored** next to a **0.0%**
@@ -411,7 +406,8 @@ their existing definitions.
 
 The run guide now explains when **Edit case** is available and points to
 **Cases** after a scoring change. That addresses the open documentation
-review finding on PR #202.
+review finding on PR #202. GitHub confirmed the thread was resolved after
+the [reply](https://github.com/coryparrry/Intents/pull/202#discussion_r4645882118).
 [Run guide](docs/wiki/Runs-and-results.md#L30)
 
 ### Build and first check
@@ -427,6 +423,11 @@ review finding on PR #202.
   recorded the explanation “Exact match after trimming whitespace.” and
   reopened the saved result with the same verdict. Desktop UI execution is
   reserved for GitHub. The app build used for this check was ad hoc signed.
+- A second headless run set an incorrect expected answer of `Lyon`. Apple
+  Intelligence answered `Paris`, and the run explained that the response
+  did not exactly match the expected text. The report presentation identified
+  the case for editing. Changing the expected answer to `Paris` and rerunning
+  produced a pass. Both reports reopened with their original verdicts.
 - The complete branch diff selects all ordinary CI, including `FoundationEvalsTests`,
   all portable Swift suites, production package and CLI checks, and the
   `native-intents+review`, `runs+traces` and `suite-editor` desktop shards.
@@ -439,7 +440,42 @@ review finding on PR #202.
   because their source, test and CI inputs were unchanged. GitHub reruns the
   full selection for the new commit.
 
+### GitHub desktop recheck
+
+GitHub built the native test bundles from `21f280e90`. All 19 tests in the
+suite-editor job passed, including the batch report regression. The screenshot
+shows the missing-rate explanation under the unscored count, with the cohort
+search still usable. [Suite-editor screenshot and test results](https://github.com/coryparrry/Intents/actions/runs/44787967891/artifacts/14656271956).
+
+The runs and traces job passed all 25 tests. Both first-use tests ran. The
+inspected screenshots show a punctuation mismatch, the explanation and **Edit
+case** action, and a separate passing rerun with the failure still in history.
+[First-use test results and screenshots](https://github.com/coryparrry/Intents/actions/runs/44787967891/artifacts/14656787445).
+
+The native intents and review job passed 15 of 17 tests. Two review tests
+failed to reach the intended layout because the synthetic drag left the
+window at 1,180 points. The failure assertions recorded the original width.
+The minimum-width traces tests passed on the same commit using the app's
+isolated launch-width option. The review coverage now uses that option too.
+The report test exercises 1,000 and 1,180 points with fresh fixtures, and
+the draft and pattern workflow starts at 1,000 points. The width checks stay
+in place and the review and report actions still run.
+[First native intents and review recheck](https://github.com/coryparrry/Intents/actions/runs/44787967891/job/136470666892).
+
+The fixture update passed a fresh Xcode `build-for-testing`. It selected the
+same complete CI matrix. The 396 routed Python tests, 13 macOS script tests,
+workflow lint, shell lint, example syntax, 40 website tests and 13 release
+note entries passed revalidation. Documentation coverage was 2,825 of 2,825
+functions and 48 of 48 changed declarations. The app and its native unit,
+portable Swift and production test inputs did not change in the fixture update.
+
 ### Release checks
+
+An unsigned Xcode 27.3 Release archive built from a source export of
+`21f280e908a7ec0fd0e567c0581795b5924ee51f`. The archived app's embedded source
+SHA and build number matched the commit and its Git build count. The binary
+was arm64. This archive used the project version. The official packaging
+workflow supplies the version from its release tag.
 
 The public installer is still [v1.6.0](https://github.com/coryparrry/Intents/releases/tag/v1.6.0).
 GitHub has no signed release candidate for this PR. The existing protected
