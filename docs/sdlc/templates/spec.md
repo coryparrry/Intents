@@ -29,5 +29,5 @@ Generating prompt or durable prompt artifact: {{PROMPT_OR_LINK}}
 Relevant instruction/policy revisions (and any existing skill revisions): {{CONFIG_REVISIONS}}
 Evidence and references: {{DESIGN_EVIDENCE}}
 
-## Human progression decision
-Pending product-owner review and applicable technical/policy-owner review. Record actual decision, reviewer, timestamp, reviewed revision and authoritative reference before planning proceeds.
+## Acceptance record
+Pending adversarial review or independent agent sign-off within the accepted intent. Record the actual decision, reviewer or review pass, timestamp, reviewed revision, and evidence before planning proceeds. Route reserved policy decisions to their owners.

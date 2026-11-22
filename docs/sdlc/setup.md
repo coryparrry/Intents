@@ -1,6 +1,6 @@
 # Intents workflow setup
 
-The repository uses one [AGENTS.md](../../AGENTS.md) as its entry point. It links the [development workflow](workflow.md), [contribution procedures](../contributing.md), and [review policy](../../REVIEW.md). The maintainer in [CODEOWNERS](../../.github/CODEOWNERS) owns the shared guidance. The applicable product owner and accountable engineer record approval for each change.
+The repository uses one [AGENTS.md](../../AGENTS.md) as its entry point. It links the [development workflow](workflow.md), [contribution procedures](../contributing.md), and [review policy](../../REVIEW.md). The maintainer in [CODEOWNERS](../../.github/CODEOWNERS) owns the shared guidance and delegates in-scope intent, spec, and plan sign-off to [recorded review](workflow.md#who-can-accept-intent-spec-and-plan).
 
 ## Delivery paths
 

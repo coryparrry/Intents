@@ -3,7 +3,7 @@
 ## Scope and source of truth
 
 - Before drafting, editing, or building, inspect `git status` and trace the affected entry point through its implementation, tests, and CI. Read relevant issue and PR decisions, verify them against the current source and evidence, and summarize material findings or gaps. Preserve unrelated changes, untracked files, saved evaluations, credentials, and local configuration. Stage only the files belonging to the task.
-- Before implementing a substantial behavior change, record the intended outcome, affected code, and how each acceptance criterion will be verified. Obtain maintainer acceptance of the plan and confirm material changes in scope or risk before proceeding.
+- Before implementation, record the intended outcome, affected code, risks, and how each acceptance criterion will be verified. Obtain [recorded plan acceptance](sdlc/workflow.md#who-can-accept-intent-spec-and-plan) through adversarial review or an independent agent. Review material deviations within scope and take any proposed scope expansion to the maintainer.
 - Use the current workflow definitions and scripts as the authority for check commands and routing. Start with `README.md`, `docs/ci.md`, and `.github/workflows/ci.yml`; use `docs/releasing.md` for releases. Update affected documentation when behavior or a workflow changes.
 - Complete the authorized change through relevant validation. Distinguish implementation, local verification, current-head CI, and published release evidence; none substitutes for the others.
 

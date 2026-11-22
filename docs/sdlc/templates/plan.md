@@ -5,7 +5,7 @@ Status: draft
 Accepted intent: {{INTENT_LINK_AND_REVISION}}
 Approved spec: {{SPEC_LINK_AND_REVISION}}
 Authoritative record: {{SOURCE_OF_TRUTH_AND_RECORD_ID}}
-Engineer / high-risk approver: {{ENGINEER_AND_TECHNICAL_OWNER}}
+Technical or policy owner for reserved decisions: {{ENGINEER_AND_TECHNICAL_OWNER}}
 
 ## Current behavior and evidence
 {{CHECKED_REVISION_ENTRY_POINT_OWNING_CODE_TESTS_AND_REUSABLE_PATH}}
@@ -35,7 +35,7 @@ Engineer / high-risk approver: {{ENGINEER_AND_TECHNICAL_OWNER}}
 {{INDEPENDENT_WORKTREE_TASKS_OR_SERIAL_PLAN}}
 
 ## Acceptance record
-Pending engineer acceptance; escalate higher-risk changes to the assigned technical owner. Record actual reviewer, time, reviewed revision and authoritative reference. Implementation must not begin on an unaccepted draft.
+Pending adversarial review or independent agent sign-off within the authorized scope. Record the actual decision, reviewer or review pass, time, reviewed revision, and evidence. Begin implementation after acceptance. Route reserved technical decisions to their owner.
 
 ## Deviations during implementation
 None recorded yet. Update with the code; materially changed scope/risk requires renewed acceptance first. Preserve the original decision and reason rather than rewriting history.
