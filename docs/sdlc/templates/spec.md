@@ -30,4 +30,4 @@ Relevant instruction/policy revisions (and any existing skill revisions): {{CONF
 Evidence and references: {{DESIGN_EVIDENCE}}
 
 ## Acceptance record
-Pending adversarial review or independent agent sign-off within the accepted intent. Record the actual decision, reviewer or review pass, timestamp, reviewed revision, and evidence before planning proceeds. Route reserved policy decisions to their owners.
+Pending independent agent sign-off within the accepted intent. Record the actual decision, independent reviewer, timestamp, reviewed revision, and evidence before planning proceeds. Route reserved policy decisions to their owners.

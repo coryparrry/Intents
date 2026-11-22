@@ -12,7 +12,7 @@ Use [`intent/<change-id>/`](../../intent/README.md) for new work, with a stable 
 
 ## Who can accept intent, spec, and plan
 
-The maintainer delegates sign-off on these three stages to a dedicated adversarial review or an independent agent for work within the authorized scope. At each stage, challenge the assumptions, look for missing evidence or failure cases, and resolve material findings before accepting the reviewed revision. Record the reviewer or distinct review pass, decision, time, reviewed revision, and a durable evidence reference in the authoritative change record. A draft status or a checkpoint commit records progress only.
+The maintainer delegates sign-off on these three stages to a separate independent agent for work within the authorized scope. At each stage, challenge the assumptions, look for missing evidence or failure cases, and resolve material findings before accepting the reviewed revision. Record the independent reviewer, decision, time, reviewed revision, and a durable evidence reference in the authoritative change record. A draft status or a checkpoint commit records progress only.
 
 Review material deviations again while they remain within scope. Bring scope expansions and decisions reserved to another owner to the appropriate person. Merge, release, and other protected actions follow their own authorization and platform requirements.
 
@@ -26,7 +26,7 @@ Use the accepted intent to draft [`spec.md`](templates/spec.md) with testable ac
 
 ## 3. Plan and build
 
-Refresh discovery against the approved spec and current source. Write [`plan.md`](templates/plan.md) with the actual entry points and evidence, exact files, ordered steps, risky cases and recovery implications, and a proof method for every criterion. Use read-only exploration for planning. The delegated review challenges the proposed changes, failure cases, and verification plan. Begin implementation after the plan revision is accepted. Record deviations with the change and follow the renewed review rules above.
+Refresh discovery against the approved spec and current source. Write [`plan.md`](templates/plan.md) with the actual entry points and evidence, exact files, ordered steps, risky cases and recovery implications, and a proof method for every criterion. Use read-only exploration for planning. The delegated review challenges the proposed changes, failure cases, and verification plan. Before editing implementation, have a separate, independent agent challenge and accept the exact plan revision. The reviewer must have no authorship or implementation role on the work. Resolve material findings and obtain fresh independent acceptance before implementing a material plan deviation. Record the reviewer, decision, time, exact revision, and evidence. When a reviewer is unavailable, pause the affected implementation and report the blocker. Complete any separately required owner approvals. Record deviations with the change and follow the renewed review rules above.
 
 Keep changes focused and use repo conventions. Isolate independent write scopes when parallel work is authorized, and serialize overlapping edits. Use the established local checkpoint process. Before pausing, put progress, unfinished checks, blockers, and the next step in the active record.
 

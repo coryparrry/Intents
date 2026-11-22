@@ -14,7 +14,7 @@ Check Git status and protect unrelated work, saved evaluations, credentials, and
 
 ## Plan, prove, and maintain
 
-Resume the authoritative record or start `intent/<change-id>/` for new work. The maintainer delegates in-scope intent, spec, and plan acceptance to a dedicated adversarial review or an independent agent. Record the decision and evidence for each reviewed revision before advancing. Renew review for material deviations and bring scope changes or reserved decisions to the appropriate owner.
+Resume the authoritative record or start `intent/<change-id>/` for new work. The maintainer delegates in-scope intent, spec, and plan acceptance to a separate independent agent. Have a separate independent agent challenge and accept the exact plan before implementation. Record each acceptance and its evidence before advancing. Renew review for material deviations and bring scope changes or reserved decisions to the appropriate owner.
 
 For bugs, demonstrate and checkpoint the failing regression before fixing the code. Preserve the checkpointed test, verify the fix with the same test, and use integration tests where needed. Document changed functions. Inspect running UI changes. Record actual verification and distinguish local, current-head CI, live, and release evidence.
 

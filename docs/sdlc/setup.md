@@ -17,3 +17,7 @@ The repository uses one [AGENTS.md](../../AGENTS.md) as its entry point. It link
 Use [`intent/<change-id>/`](../../intent/README.md) for new change records and link any existing authoritative issue or plan. Keep approval and review decisions in their recorded system, with the exact revision and evidence. Keep sensitive working records in their approved private location and link an appropriate shareable reference where needed.
 
 The rollout uses manual stage transitions. See the [control register](controls.md) for enforcement boundaries and the [workflow measures](metrics.md) for proposed tracking. The [release guide](../releasing.md#retry-a-failed-release) covers draft retry. A rehearsed rollback route, real-task agent-eval baseline, and automated incident response remain pending adoption.
+
+## Independent plan review refresh
+
+On 22 November 2026 the owner required a separate independent agent for plan acceptance and delegated development sign-off. The independent policy reviewer challenged the rollout scope and accepted the revised plan `SHA-256 0cb43e8eb07a63c0fd6faa6073d2dc0f9831e285ec63c00bd7c4129e10d48eaa` before target edits. This record describes the manual workflow. Required platform and named human approvals still apply.
