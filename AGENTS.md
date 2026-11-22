@@ -2,7 +2,8 @@
 
 ## Scope and source of truth
 
-- Before editing, inspect `git status` and the relevant source, tests, and workflow. Preserve unrelated changes, untracked files, saved evaluations, credentials, and local configuration. Stage only the files belonging to the task.
+- Before drafting, editing, or building, inspect `git status` and trace the affected entry point through its implementation, tests, and CI. Read relevant issue and PR decisions, verify them against the current source and evidence, and summarize material findings or gaps. Preserve unrelated changes, untracked files, saved evaluations, credentials, and local configuration. Stage only the files belonging to the task.
+- Before implementing a substantial behavior change, record the intended outcome, affected code, and how each acceptance criterion will be verified. Obtain maintainer acceptance of the plan and confirm material changes in scope or risk before proceeding.
 - Use the current workflow definitions and scripts as the authority for check commands and routing. Start with `README.md`, `docs/ci.md`, and `.github/workflows/ci.yml`; use `docs/releasing.md` for releases. Update affected documentation when behavior or a workflow changes.
 - Complete the authorized change through relevant validation. Distinguish implementation, local verification, current-head CI, and published release evidence; none substitutes for the others.
 
@@ -13,7 +14,8 @@
 - Keep Xcode source membership, `Package.swift`, test discovery, and the dependency maps in `script/ci_routes.py` and `script/ci_native_routes.py` aligned when adding, moving, or renaming source or tests. A selected suite that runs zero eligible tests is not evidence that the change works.
 - Shared app/plugin engine sources are owned by the canonical paths in `script/shared_app_sources.json`. Edit those files rather than recreating the former app copies. Keep current source hashes in `plugins/apple-foundation-evals/native/AppEngine/provenance.json` accurate without rewriting historical origin hashes, and verify both consumers.
 - Use isolated fixtures and temporary storage for tests. Preserve the user's saved data and credentials; use synthetic or explicitly approved test content instead of private user data. Never expose secrets or private prompts, responses, files, or provider details in logs, telemetry, committed fixtures, or release evidence. Follow `docs/telemetry.md` when changing diagnostics.
-- For substantial code changes, obtain an independent subagent review of the stable diff and verify material findings before completion. Keep review scope distinct from implementation work.
+- For bug fixes, reproduce the failure and run the regression test before changing implementation. Preserve the test through the fix, rerun it to verify the result, and update affected documentation alongside the change.
+- For substantial code changes, obtain an independent subagent review of the stable diff and verify material findings before completion. Keep review scope distinct from implementation work. Review behavior and regressions, security and privacy, and whether the diff and evidence meet the accepted scope.
 
 ## Validation before pushing
 
