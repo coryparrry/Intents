@@ -47,7 +47,7 @@
   ```
 
   Inspect `/tmp/intents-prepush-coverage.json` and run its selections alongside the always-on checks below. NUL-separated output and disabled rename detection preserve unusual filenames and both sides of renames. A failed Git command stops this helper; resolve it before recording coverage.
-- Run the always-on checks from `.github/workflows/ci.yml` and `.github/workflows/docstrings.yml` as well as every selected check. The affected-area table below adds to this baseline; it does not narrow it. The current baseline is:
+- Run the always-on checks from `.github/workflows/ci.yml` and `.github/workflows/docstrings.yml` as well as every selected check. The affected-area table adds to this baseline. Stage new files for the current change before checking the committed, staged, and unstaged diffs.
 
   ```sh
   npm ci --prefix Tools/DocstringCoverage --ignore-scripts --no-audit --no-fund
@@ -58,6 +58,8 @@
   shellcheck script/*.sh
   python3 -m compileall -q examples
   (cd website && node --check dist/app.js && node --check dist/demo-data.mjs && node --check dist/demo-interactions.mjs && node scripts/inline-styles.mjs --check && node --test tests/*.test.mjs)
+  git diff --check "$(git merge-base origin/main HEAD)" HEAD --
+  git diff --cached --check
   git diff --check
   ```
 
