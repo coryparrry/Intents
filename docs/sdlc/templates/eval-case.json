@@ -1,0 +1,29 @@
+{
+  "id": "REPLACE_WITH_REAL_TASK_ID",
+  "status": "template-not-runnable",
+  "source_task": "REPLACE_WITH_REAL_ACCEPTED_TASK_REFERENCE",
+  "owner": "REPLACE_WITH_OWNER",
+  "baseline_commit": "REPLACE_WITH_IMMUTABLE_BASELINE",
+  "prompt": "REPLACE_WITH_ORIGINAL_OR_RECONSTRUCTED_TASK_PROMPT",
+  "expected_outcome": "REPLACE_WITH_ACCEPTED_OUTCOME",
+  "independent_checks": [
+    {
+      "kind": "REPLACE_WITH_TEST_BEHAVIOR_OR_POLICY_CHECK",
+      "command": null,
+      "expected_result": null
+    }
+  ],
+  "protected_expected_files": [],
+  "configuration_under_test": {
+    "instruction_revision": null,
+    "skill_revisions": [],
+    "hook_revision": null,
+    "model_and_runtime": null
+  },
+  "budget_and_timeout": {
+    "owner_approved": false,
+    "max_runtime_seconds": null,
+    "max_cost": null
+  },
+  "incident_reference": null
+}
