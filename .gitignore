@@ -35,6 +35,8 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 !/docs/workflow-traces.md
 !/docs/wiki/
 !/docs/wiki/*.md
+!/docs/contributing.md
+!/docs/sdlc/
 
 # Local environment credentials (keep a shareable example if needed).
 /.env

@@ -152,6 +152,8 @@ The [Apple Foundation Evals plugin](plugins/apple-foundation-evals/README.md) ru
 
 ## Build from source
 
+See the [contribution workflow](docs/sdlc/workflow.md) for planning, verification, and review.
+
 Use Xcode 27 with its command-line tools selected. From the repository root:
 
 ```sh
