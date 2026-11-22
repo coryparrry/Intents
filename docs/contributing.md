@@ -52,7 +52,8 @@
   ```sh
   npm ci --prefix Tools/DocstringCoverage --ignore-scripts --no-audit --no-fund
   python3 script/docstring_coverage.py --minimum 81
-  python3 -m unittest script.tests.test_docstring_coverage
+  python3 -m unittest script.tests.test_docstring_coverage script.tests.test_changed_function_docs
+  python3 script/changed_function_docs.py --base "$(git merge-base origin/main HEAD)"
   go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color -ignore 'label "xcode-27" is unknown'
   shellcheck script/*.sh
   python3 -m compileall -q examples
@@ -60,14 +61,14 @@
   git diff --check
   ```
 
-- Validate the actual proposed PR title and body as described below. Run all selected Python/macOS modules and Swift/native/UI checks using the maintained CI runners and workflow commands, including any standalone plugin or production-fixture workflow selected by its own path filters. A successful build alone is not a passing test run.
+- Substitute the actual PR base for `origin/main` when validating the documentation diff. Validate the actual proposed PR title and body as described below. Run all selected Python/macOS modules and Swift/native/UI checks using the maintained CI runners and workflow commands, including any standalone plugin or production-fixture workflow selected by its own path filters. A successful build alone is not a passing test run.
 - Treat validation as a push gate: do not commit and push a candidate with failed, missing, unfinished, or unverified required checks. Fix failures and recheck first. If a required environment or tool is unavailable, stop the push and report the exact blocker; do not use a new PR or a remote push to discover whether unchecked changes pass. An explicit user instruction can authorize an exception, which must be disclosed in the PR.
 - Reuse a completed passing check only when its relevant source, tests, build inputs, workflow configuration, and environment remain valid. Identify the source and evidence being reused and explain why the new diff does not affect it. Do not call a skipped, blocked, or pending check a reused success. Rerun affected checks after changes or concrete review findings.
 - Before pushing, record the required checks, commands, results, and any valid reused evidence. Apply this gate to the first PR push and every subsequent fix; do not wait for GitHub CI to catch locally detectable failures.
 
 | Affected area | Local verification |
 |---|---|
-| Function declarations or documentation detector | `npm ci --prefix Tools/DocstringCoverage --ignore-scripts --no-audit --no-fund`, then `python3 script/docstring_coverage.py --minimum 81` and `python3 script/changed_function_docs.py --base "$(git merge-base origin/main HEAD)"` (includes test functions); run `python3 -m unittest script.tests.test_docstring_coverage script.tests.test_changed_function_docs` when changing either detector. |
+| Function declarations or documentation detector | Run the baseline coverage, changed-function documentation, and detector test commands above. The changed-function check includes test functions. |
 | Python tools | Run the affected `script.tests.test_*` modules with `python3 -m unittest`; use the router's selection. Check example syntax with `python3 -m compileall -q examples` when changing examples. |
 | Shell scripts | `shellcheck script/*.sh` and the affected script regression tests. |
 | GitHub workflows or CI tooling | Run the affected routing, workflow, gate, and runner contract tests. Validate workflow YAML with the pinned command from CI: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color -ignore 'label "xcode-27" is unknown'`. |

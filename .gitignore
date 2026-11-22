@@ -37,6 +37,15 @@ FoundationEvals/FoundationEvals.xcodeproj/xcshareddata/xcschemes/FoundationEvals
 !/docs/wiki/*.md
 !/docs/contributing.md
 !/docs/sdlc/
+/docs/sdlc/*
+!/docs/sdlc/controls.md
+!/docs/sdlc/metrics.md
+!/docs/sdlc/setup.md
+!/docs/sdlc/workflow.md
+!/docs/sdlc/templates/
+/docs/sdlc/templates/*
+!/docs/sdlc/templates/*.md
+!/docs/sdlc/templates/eval-case.json
 
 # Local environment credentials (keep a shareable example if needed).
 /.env

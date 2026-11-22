@@ -8,4 +8,4 @@ Run on the adopted schedule and relevant instruction, skill, hook, prompt, model
 
 Each production incident adds a permanent case. Keep the suite discriminating as models and workflows improve. The suite can run offline on an approved cadence where continuous execution is unsuitable.
 
-Document the real runner command, CI trigger, budget owner, result location and pass policy in `docs/sdlc/setup.md`. Until these exist and are tested, label the eval control `not configured`, not enforced. Do not fabricate an API key, test history, baseline or pass rate.
+Document the runner command, CI trigger, budget owner, result location, and pass policy in the [setup record](../docs/sdlc/setup.md). Keep the eval control pending adoption in the [control register](../docs/sdlc/controls.md) until those prerequisites have been tested.
