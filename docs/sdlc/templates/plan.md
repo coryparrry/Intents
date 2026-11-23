@@ -35,7 +35,7 @@ Technical or policy owner for reserved decisions: {{ENGINEER_AND_TECHNICAL_OWNER
 {{INDEPENDENT_WORKTREE_TASKS_OR_SERIAL_PLAN}}
 
 ## Acceptance record
-Before editing implementation, have a separate, independent agent challenge and accept the exact plan revision. The reviewer must have no authorship or implementation role on the work. Resolve material findings and obtain fresh independent acceptance before implementing a material plan deviation. Record the reviewer, decision, time, exact revision, and evidence. When a reviewer is unavailable, pause the affected implementation and report the blocker. Complete any separately required owner approvals.
+Before editing implementation, have a separate, independent agent challenge and accept the exact plan revision. The reviewer must have no authorship or implementation role on the work. Resolve material findings and obtain fresh independent acceptance before implementing a material plan deviation. Record the reviewer, decision, time, exact revision, and evidence. When a reviewer is unavailable, pause the affected implementation and report the blocker. Route reserved technical decisions to their owner. Complete any separately required owner approvals.
 
 ## Deviations during implementation
 None recorded yet. Update with the code; materially changed scope/risk requires renewed acceptance first. Preserve the original decision and reason rather than rewriting history.

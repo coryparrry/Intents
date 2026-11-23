@@ -16,7 +16,7 @@ Skip a duplicated mechanical check only when current-head evidence shows that it
 
 ## Plan acceptance evidence
 
-Check that a separate independent agent accepted the exact plan revision before implementation and reviewed any material revisions. Record any missing decision as an Important finding. Apply separately required merge and release approvals through their assigned routes.
+Check that a separate independent agent accepted the exact plan revision before implementation and reviewed any material revisions. Record any missing decision as an Important finding. At the applicable merge or release stage, verify that required approvals are recorded through their assigned routes and report any that are missing.
 
 ## Approval and follow-through
 
