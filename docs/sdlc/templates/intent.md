@@ -23,7 +23,7 @@ Source / evidence: {{IDEA_TICKET_INCIDENT_OR_CHANNEL_REFERENCE}}
 {{QUESTIONS_WITH_OWNERS_OR_NONE}}
 
 ## Acceptance record
-Pending product-owner review. Record actual decision, reviewer, time, reviewed revision and authoritative review/merge reference. Do not pre-fill approval.
+Pending independent agent sign-off for authorized scope. Record the actual decision, independent reviewer, time, reviewed revision, and a durable evidence reference in the authoritative change record.
 
 ## Downstream records
 Spec: not started. Plan: not started. Preserve stable links as they are created.

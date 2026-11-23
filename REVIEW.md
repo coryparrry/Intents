@@ -14,9 +14,13 @@ Report a result for each pass, including passes with no findings and any unverif
 
 Skip a duplicated mechanical check only when current-head evidence shows that it ran and passed. Trace defects in generated output back to the editable source or generator. Include generated artifacts and provenance where they affect what users receive.
 
+## Plan acceptance evidence
+
+Check that a separate independent agent accepted the exact plan revision before implementation and reviewed any material revisions. Record any missing decision as an Important finding. At the applicable merge or release stage, verify that required approvals are recorded through their assigned routes and report any that are missing.
+
 ## Approval and follow-through
 
-The PR and its review threads hold the authoritative review record. Agent findings inform the maintainer's decision. Human approval remains a project requirement. Check which controls GitHub actually applies in the [control register](docs/sdlc/controls.md).
+For intent, spec, and plan, check the [delegated acceptance record](docs/sdlc/workflow.md#who-can-accept-intent-spec-and-plan). The PR and its review threads hold the authoritative PR review record. Human merge approval remains a project requirement. Check which controls GitHub actually applies in the [control register](docs/sdlc/controls.md).
 
 Follow the [repository's fix and merge requirements](docs/contributing.md#pull-request-completion-and-merge-requirements). Address and verify material findings, retest affected behavior, reply and resolve threads within authorized PR work, and verify current-head checks and thread state. The authoring agent cannot supply human approval.
 

@@ -10,17 +10,23 @@ Read linked decisions and focused Git, PR, or issue history. For existing behavi
 
 Use [`intent/<change-id>/`](../../intent/README.md) for new work, with a stable issue ID or date and slug. Create files as each stage begins using [the templates](templates/). When work already has an authoritative ticket, design, or plan, resume it and link its revision and the associated PR. If a copy is needed, identify the authority and synchronize both links through the authorized tools. Flag unsynchronized records. Read-only requests require no artifact chain.
 
+## Who can accept intent, spec, and plan
+
+The maintainer delegates sign-off on these three stages to a separate independent agent for work within the authorized scope. At each stage, challenge the assumptions, look for missing evidence or failure cases, and resolve material findings before accepting the reviewed revision. Record the independent reviewer, decision, time, reviewed revision, and a durable evidence reference in the authoritative change record. A draft status or a checkpoint commit records progress only.
+
+Review material deviations again while they remain within scope. Bring scope expansions and decisions reserved to another owner to the appropriate person. Merge, release, and other protected actions follow their own authorization and platform requirements.
+
 ## 1. Plan the change
 
-Capture the originator's problem, affected people, expected outcome, scope, constraints, and questions in [`intent.md`](templates/intent.md). Include the author, time, and evidence. The product owner accepts, revises, or rejects the intent. For every stage gate, record who decided, when, the reviewed revision, and the authoritative comment, review, or other decision reference. A file status and a checkpoint commit document progress. Advance on the human decision for that revision.
+Capture the originator's problem, affected people, expected outcome, scope, constraints, and questions in [`intent.md`](templates/intent.md). Include the author, time, and evidence. The delegated review checks that the intent represents the request and its authorized scope. Advance when the reviewed revision has recorded acceptance.
 
 ## 2. Design the behavior
 
-Use the accepted intent to draft [`spec.md`](templates/spec.md) with testable acceptance criteria, design and interface decisions, relevant policy sources and versions, the generating prompt or a safe equivalent, and open concerns. Use repo-owned privacy, interface, UI, and release guidance where it applies. Route policy conflicts to the corresponding owners. The product owner reviews the outcome and resolves concerns with the technical or policy owner before the spec is approved.
+Use the accepted intent to draft [`spec.md`](templates/spec.md) with testable acceptance criteria, design and interface decisions, relevant policy sources and versions, the generating prompt or a safe equivalent, and open concerns. Use repo-owned privacy, interface, UI, and release guidance where it applies. Route policy conflicts to the corresponding owners. The delegated review checks the spec against the accepted intent and applicable policies before accepting the revision and moving to implementation planning.
 
 ## 3. Plan and build
 
-Refresh discovery against the approved spec and current source. Write [`plan.md`](templates/plan.md) with the actual entry points and evidence, exact files, ordered steps, risky cases and recovery implications, and a proof method for every criterion. Use read-only exploration for planning. An accountable engineer accepts the plan before implementation. The maintainer can fill several roles. Record deviations in the plan with the change, and get renewed acceptance for material scope, design, or risk changes.
+Refresh discovery against the approved spec and current source. Write [`plan.md`](templates/plan.md) with the actual entry points and evidence, exact files, ordered steps, risky cases and recovery implications, and a proof method for every criterion. Use read-only exploration for planning. The delegated review challenges the proposed changes, failure cases, and verification plan. Before editing implementation, have a separate, independent agent challenge and accept the exact plan revision. The reviewer must have no authorship or implementation role on the work. Resolve material findings and obtain fresh independent acceptance before implementing a material plan deviation. Record the reviewer, decision, time, exact revision, and evidence. When a reviewer is unavailable, pause the affected implementation and report the blocker. Complete any separately required owner approvals. Record deviations with the change and follow the renewed review rules above.
 
 Keep changes focused and use repo conventions. Isolate independent write scopes when parallel work is authorized, and serialize overlapping edits. Use the established local checkpoint process. Before pausing, put progress, unfinished checks, blockers, and the next step in the active record.
 
@@ -55,4 +61,4 @@ When the maintainer adopts automated detection, use a versioned, unit-tested rul
 | Tests, commands, or release operation | The applicable [CI guide](../ci.md), [coverage guide](../DOCSTRING_COVERAGE.md), [release guide](../releasing.md), or contribution rules |
 | A second confirmed mistake or a production incident | The owning guidance or policy, with evidence and maintainer review. For incidents, also link the lesson, follow-up, recovery proof, and permanent eval. |
 
-At handoff, report the change ID and stage, what changed, the exact evidence available, which docs were updated, any unresolved findings or checks, and the next human decision. Keep task history in the active record.
+At handoff, report the change ID and stage, what changed, the exact evidence available, which docs were updated, any unresolved findings or checks, and the next required decision. Keep task history in the active record.
