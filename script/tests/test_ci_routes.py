@@ -392,6 +392,21 @@ class MatrixTests(unittest.TestCase):
         for selector in selected:
             self.assertIn(selector.split("/")[1], catalog, selector)
 
+    def test_full_ui_selection_runs_lifecycle_and_traces_on_separate_desktops(self):
+        """Give the two long UI suites independent desktops with complete ordinary coverage."""
+        matrix = routes.full_coverage("fixture")["ui_matrix"]
+        owners = {
+            test: job["name"]
+            for job in matrix
+            for test in job["tests"]
+        }
+        lifecycle = routes.UI_TARGET + "FoundationEvalsRunLifecycleUITests"
+        traces = routes.UI_TARGET + "WorkflowTraceUITests"
+        self.assertNotEqual(owners[lifecycle], owners[traces])
+        self.assertEqual(len(matrix), 4)
+        self.assertEqual(set(owners), {routes.UI_TARGET + suite for suite in routes.ordinary_ui_classes()})
+        self.assertEqual(sum(len(job["tests"]) for job in matrix), len(owners))
+
     def test_literal_ui_json_resources_exist_in_the_synchronized_bundle_root(self):
         resources = []
         for source in (ROOT / routes.UI_TESTS).rglob("*.swift"):
