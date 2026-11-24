@@ -15,4 +15,8 @@
 
 ## Runtime and delivery
 
-Native build and interactive UI verification are in progress. Candidate GitHub verification and maintainer merge approval are pending.
+- `xcodebuild build-for-testing` succeeded on Xcode 27.3 with the maintained FoundationEvals scheme and CI-style ad-hoc signing. The maintained native test runner passed 1074 cases with zero failures.
+- The local Settings invocation ended before any UI case executed because macOS cancelled XCTest authentication. The maintainer explicitly waived local UI execution for the pre-push gate and directed verification through GitHub. Current-head ordinary CI and the ten-iteration hosted stability job remain required.
+- Reused the [same-base hosted portable and production results](https://github.com/coryparrry/Intents/actions/runs/45406968289/job/138492131832) for pre-push validation. The portable and production source, tests, package locks, runner commands and selection are unchanged. Both steps passed on the hosted Xcode runner and will run again for the candidate.
+- The original main push CI was retried once on a fresh runner because the same commit finished the affected shard in nightly. The rerun is independent of candidate proof.
+- Candidate GitHub verification and maintainer merge approval are pending.
