@@ -179,18 +179,29 @@ final class WorkspacePolishUITests: XCTestCase {
                 XCTAssertFalse(app.popUpButtons["Judge generation policy"].exists)
                 let form = app.scrollViews.containing(.textField, identifier: "Judge connection name").firstMatch
                 XCTAssertTrue(form.waitForExistence(timeout: 3))
-                let scroll = form.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.20))
-                scroll.scroll(byDeltaX: 0, deltaY: -400)
-                XCTAssertTrue(requestPolicy.isHittable && form.frame.contains(requestPolicy.frame), app.debugDescription)
+                revealPolicyControl(requestPolicy, in: form, app: app)
                 requestPolicy.click()
-                scroll.scroll(byDeltaX: 0, deltaY: -250)
                 let generationPolicy = app.popUpButtons["Judge generation policy"]
                 XCTAssertTrue(generationPolicy.waitForExistence(timeout: 3), app.debugDescription)
-                XCTAssertTrue(generationPolicy.isHittable && form.frame.contains(generationPolicy.frame), app.debugDescription)
+                revealPolicyControl(generationPolicy, in: form, app: app)
             default:
                 XCTAssertTrue(app.descendants(matching: .any)["Share usage statistics"].firstMatch.exists)
             }
         }
+    }
+
+    /// Scrolls within Judges Settings until the whole policy control can be clicked.
+    @MainActor
+    private func revealPolicyControl(_ control: XCUIElement, in form: XCUIElement, app: XCUIApplication) {
+        let scroll = form.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.20))
+        for _ in 0..<6 {
+            let viewport = form.frame
+            let frame = control.frame
+            if control.isHittable && viewport.contains(frame) { return }
+            let delta: CGFloat = frame.minY < viewport.minY ? 180 : -180
+            scroll.scroll(byDeltaX: 0, deltaY: delta)
+        }
+        XCTAssertTrue(control.isHittable && form.frame.contains(control.frame), app.debugDescription)
     }
 
     @MainActor

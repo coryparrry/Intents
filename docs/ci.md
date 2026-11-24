@@ -30,6 +30,8 @@ Native and portable Swift Testing cases use a maximum concurrency of four.
 The maintained app scheme sets the native bound; the portable dispatcher sets
 it for its own process. UI shards use recorded durations with fallback estimates
 for new tests, run on independent desktops, and retain logs and result bundles.
+Targeted UI coverage uses up to three desktops. Full UI coverage can use four
+to give the lifecycle and trace suites separate desktops and more time to finish.
 Selected UI tests must execute and pass; a skipped selected method is a failure.
 Each UI shard has a 25-minute execution limit inside a 30-minute job, leaving
 time for preparation and retained failure evidence. This covers the complete

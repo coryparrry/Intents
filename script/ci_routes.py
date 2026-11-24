@@ -353,8 +353,8 @@ def ui_duration(selector):
     return UI_TIMINGS["seconds"].get(selector, UI_TIMINGS["fallback_seconds"][kind])
 
 
-def ui_matrix(groups, extra_classes=(), targeted=False, root=ROOT):
-    """Exclude manual fixtures, expand mixed suites, deduplicate selectors, and deterministically balance feature groups across at most three duration-weighted UI shards."""
+def ui_matrix(groups, extra_classes=(), targeted=False, root=ROOT, *, max_shards=3):
+    """Filter and deduplicate selectors, then balance feature groups by duration across up to max_shards desktops."""
     catalog = {**UI_BASELINE, **UI_FEATURE_TESTS}
     selections = {
         name: {test for test in (catalog[name] if targeted or name not in UI_BASELINE else UI_BASELINE[name])
@@ -403,7 +403,7 @@ def ui_matrix(groups, extra_classes=(), targeted=False, root=ROOT):
     # Recorded CI durations, rather than selector counts, keep slow feature
     # groups apart. Longest-first placement is deterministic on every runner.
     weights = {name: sum(ui_duration(test) for test in tests) for name, tests in selections.items() if tests}
-    jobs = [{"groups": [], "tests": set(), "seconds": 0} for _ in range(min(3, len(weights)))]
+    jobs = [{"groups": [], "tests": set(), "seconds": 0} for _ in range(min(max_shards, len(weights)))]
     for name in sorted(weights, key=lambda name: (-weights[name], name)):
         target = min(jobs, key=lambda job: (job["seconds"], len(job["groups"])))
         target["groups"].append(name)
@@ -425,8 +425,10 @@ def changed_ui_classes(paths, root):
 
 
 def with_matrices(plan, groups=(), extra_classes=(), targeted=False, root=ROOT):
-    """Attach UI shards to the mutable plan and disable its UI flag when selection produces no runnable shard."""
-    plan["ui_matrix"] = ui_matrix(groups, extra_classes, targeted, root) if plan["ui"] else []
+    """Attach UI shards, allowing another desktop for full UI coverage, and disable UI when no shard runs."""
+    plan["ui_matrix"] = ui_matrix(
+        groups, extra_classes, targeted, root, max_shards=3 if targeted else 4,
+    ) if plan["ui"] else []
     plan["ui"] = bool(plan["ui_matrix"])
     return plan
 
