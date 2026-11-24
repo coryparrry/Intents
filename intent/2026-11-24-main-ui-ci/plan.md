@@ -4,7 +4,8 @@ Change: 2026-11-24-main-ui-ci
 Accepted [intent](intent.md): 42742c8e1cef989352a283db94e283c29fbb4c8f1673ffa61fbd92b35d28ced9
 Accepted [spec](spec.md): 718114b7d88ffa7d32d6c794b565324dd578f326fae1efba0e76f6359ed79081
 Base: origin/main at 9cc9b15757f6b2abb70613d248f38731dffc9710
-Authority: this directory, maintainer approval required to merge
+Authority: this directory
+Reserved decision owner: the Intents maintainer for scope expansions, merge and release authorization
 
 ## Findings
 
@@ -27,4 +28,8 @@ In Settings, a fixed scroll sometimes leaves the Request policy control outside 
 
 ## Acceptance
 
-See [review](review.md). No implementation deviation recorded.
+Before implementation, an independent agent challenges and accepts the exact plan revision. Record the reviewer, decision, time, revision and evidence in [review](review.md). Resolve material findings and obtain renewed acceptance for material changes. Route expanded scope and reserved decisions to their named owner and complete required owner approvals.
+
+## Deviations
+
+The implemented test scope follows the accepted plan. The maintainer authorized hosted UI verification after local XCTest authentication failed. The documentation follow-up aligns the README with the verified CI limits and expands the approval record. See [verification](verification.md).
